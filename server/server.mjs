@@ -4,6 +4,7 @@ import { allowedOrigin, jsonResponse } from "./provider-utils.mjs";
 import { ebayConfigured, searchEbayWorldwide } from "./providers/ebay.mjs";
 import { searchConfiguredShopifyStores, shopifyConfigured } from "./providers/shopify.mjs";
 import { assessOfferMatch, dedupeNormalizedOffers } from "./match.mjs";
+import { resolveProductUrl } from "./url-resolver.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 
@@ -95,6 +96,27 @@ const server = http.createServer(async (req, res) => {
       },
       now: new Date().toISOString(),
     }, origin || "*");
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/resolve-url") {
+    const target = String(url.searchParams.get("url") || "").trim();
+    if (!target || target.length > 2000) {
+      return jsonResponse(res, 400, { error: "invalid_url" }, origin || "*");
+    }
+
+    try {
+      const offer = await resolveProductUrl(target);
+      return jsonResponse(res, 200, {
+        observedAt: new Date().toISOString(),
+        destinationCountry: "SA",
+        offer,
+      }, origin || "*");
+    } catch (error) {
+      return jsonResponse(res, 422, {
+        error: "url_resolution_failed",
+        message: error instanceof Error ? error.message : String(error),
+      }, origin || "*");
+    }
   }
 
   if (req.method === "GET" && url.pathname === "/api/search") {
