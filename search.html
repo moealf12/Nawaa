@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07111d" />
+  <meta name="description" content="محرك بحث ومقارنة الأسعار في نواة — نموذج أولي لاختبار هوية المنتج والتكلفة النهائية." />
+  <title>نواة — محرك البحث والمقارنة</title>
+  <style>
+    :root{
+      --ink:#07111d;
+      --ink-2:#0b1b2c;
+      --ink-3:#102941;
+      --paper:#f3efe9;
+      --ice:#eaf4ff;
+      --coral:#ff7584;
+      --sky:#77b9ff;
+      --green:#7dffb0;
+      --amber:#f4cb6b;
+      --text:#f7fbff;
+      --muted:#9db0c3;
+      --line:rgba(255,255,255,.13);
+      --line-dark:rgba(7,17,29,.14);
+      --radius:24px;
+      --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Arabic","Segoe UI","Noto Sans Arabic",Arial,sans-serif;
+      --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box}
+    html{background:var(--ink);scroll-behavior:smooth}
+    body{margin:0;background:
+      radial-gradient(circle at 70% 0%,rgba(58,97,210,.16),transparent 27%),
+      radial-gradient(circle at 8% 16%,rgba(255,117,132,.08),transparent 24%),
+      var(--ink);color:var(--text);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;min-height:100svh}
+    a{color:inherit;text-decoration:none}
+    button,input{font:inherit}
+    button{cursor:pointer}
+    ::selection{background:var(--coral);color:var(--ink)}
+    .noise{position:fixed;inset:0;pointer-events:none;opacity:.035;z-index:50;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitchTiles'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E")}
+    .shell{width:min(1220px,calc(100% - 40px));margin:auto}
+    .nav{height:78px;border-bottom:1px solid var(--line);background:rgba(7,17,29,.72);backdrop-filter:blur(22px);position:sticky;top:0;z-index:40}
+    .nav-inner{height:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;direction:ltr}
+    .back{justify-self:start;border:1px solid var(--line);border-radius:999px;padding:9px 14px;color:#c8d5e2;font-size:12px}
+    .logo{font-size:27px;font-weight:850;letter-spacing:-.07em;direction:rtl}.logo i{font-style:normal;color:var(--coral)}
+    .live{justify-self:end;direction:rtl;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
+    .live-dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 14px rgba(244,203,107,.55)}
+    .hero{padding:84px 0 48px}
+    .eyebrow,.mini-kicker{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--sky);direction:ltr}
+    .hero-grid{display:grid;grid-template-columns:1.25fr .75fr;gap:8vw;align-items:end}
+    h1{font-size:clamp(48px,7.6vw,112px);line-height:.93;letter-spacing:-.065em;margin:14px 0 24px;max-width:850px}
+    h1 span{color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.78)}
+    .hero-copy p{max-width:760px;color:var(--muted);font-size:clamp(16px,1.6vw,20px);line-height:1.85;margin:0}
+    .hero-aside{border-right:1px solid var(--line);padding-right:28px;color:#b9c7d5;font-size:13px}
+    .hero-aside strong{display:block;color:#fff;font-size:14px;margin-bottom:8px}
+    .demo-banner{margin:34px 0 0;border:1px solid rgba(244,203,107,.3);background:rgba(244,203,107,.055);color:#e9d79d;border-radius:18px;padding:15px 18px;display:flex;gap:12px;align-items:flex-start;font-size:12px}
+    .demo-banner b{color:#ffe6a1}
+    .search-stage{padding:18px 0 105px}
+    .search-panel{border:1px solid var(--line);background:rgba(11,27,44,.74);backdrop-filter:blur(18px);border-radius:32px;padding:18px;box-shadow:0 38px 100px rgba(0,0,0,.28)}
+    .search-form{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;background:var(--paper);color:var(--ink);border-radius:22px;padding:10px 10px 10px 18px}
+    .search-mark{font-size:24px;opacity:.7}
+    .search-form input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:var(--ink);padding:16px 4px;font-size:16px}
+    .search-form button{border:0;background:var(--coral);color:var(--ink);font-weight:850;padding:15px 22px;border-radius:15px;white-space:nowrap}
+    .search-subrow{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:13px 4px 2px}
+    .recent{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .recent-label{font-size:11px;color:#6f8397}
+    .recent button,.chips button{border:1px solid var(--line);background:transparent;color:#aebdcb;border-radius:999px;padding:7px 11px;font-size:10px}
+    .recent button:hover,.chips button:hover,.chips button.active{border-color:rgba(119,185,255,.55);color:white;background:rgba(119,185,255,.08)}
+    .status{font-size:11px;color:#73889b;white-space:nowrap}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+    .chips button.active{color:var(--sky)}
+    .url-hint{margin-top:26px;border:1px solid rgba(119,185,255,.24);background:rgba(119,185,255,.045);border-radius:24px;padding:22px;display:flex;gap:28px;align-items:center;justify-content:space-between}
+    .url-hint[hidden]{display:none}
+    .url-hint strong{display:block;font-size:19px;margin:6px 0}.url-hint p{margin:0;color:var(--muted);font-size:12px;max-width:760px}
+    .secondary-action,.primary-action{border:0;border-radius:14px;padding:14px 18px;font-weight:850}
+    .secondary-action{background:var(--ice);color:var(--ink);white-space:nowrap}
+    .primary-action{background:var(--coral);color:var(--ink);width:100%}
+    .results{margin-top:42px}
+    .result-head{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:22px}
+    .result-head h2,.no-match h2{font-size:clamp(30px,4vw,54px);letter-spacing:-.045em;line-height:1.05;margin:8px 0}
+    .result-head p,.no-match p{color:var(--muted);margin:0}
+    .identity-pill{border:1px solid rgba(125,255,176,.24);background:rgba(125,255,176,.055);color:var(--green);border-radius:14px;padding:12px 14px;font-size:11px;white-space:nowrap}
+    .result-grid{display:grid;grid-template-columns:1.5fr .58fr;gap:16px;align-items:start}
+    .section-label{display:flex;justify-content:space-between;align-items:center;color:#7f93a6;font:10px var(--mono);letter-spacing:.08em;margin-bottom:9px}
+    .section-label b{font-weight:500;color:#b7c6d4}
+    .offers-column,.uncertain-block{min-width:0}
+    .offer-card{display:grid;grid-template-columns:72px 1fr 100px 160px;gap:14px;align-items:center;border:1px solid var(--line);background:rgba(12,26,40,.84);border-radius:19px;padding:17px;margin-bottom:9px;transition:.2s ease}
+    .offer-card:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.22)}
+    .offer-card.is-best{border-color:rgba(125,255,176,.32);background:linear-gradient(90deg,rgba(125,255,176,.065),rgba(12,26,40,.9))}
+    .offer-rank{font:9px var(--mono);color:var(--green);direction:ltr}
+    .offer-store{display:grid;min-width:0}.offer-store strong{font-size:14px}.offer-store span{color:var(--muted);font-size:10px;margin-top:4px}
+    .offer-meta,.offer-price{display:grid}.offer-meta small,.offer-price small{color:#71869a;font-size:9px}.offer-meta b{font-size:12px}.offer-price{text-align:left}.offer-price strong{font-size:19px;letter-spacing:-.02em}
+    .best-panel{background:var(--ice);color:var(--ink);border-radius:24px;padding:24px;position:sticky;top:98px}
+    .best-panel .mini-kicker{color:#315cff}.best-panel>small{display:block;color:#607080;margin-top:26px}
+    .best-price{font-size:clamp(38px,4.4vw,58px);font-weight:850;letter-spacing:-.06em;margin:1px 0 15px}
+    .breakdown{border-top:1px solid var(--line-dark);border-bottom:1px solid var(--line-dark);padding:12px 0;margin-bottom:16px}
+    .breakdown div,.quote-summary div{display:grid;grid-template-columns:1fr auto;gap:10px;padding:5px 0;font-size:11px}.breakdown span,.quote-summary span{color:#647482}
+    .best-panel p{font-size:10px;color:#647482;line-height:1.7;margin-bottom:0}
+    .uncertain-block{margin-top:30px}
+    .uncertain-block .offer-card{border-style:dashed}
+    .uncertain-block .offer-rank{color:var(--amber)}
+    .integrity-note{margin-top:24px;border-top:1px solid var(--line);padding-top:18px;color:#8295a7;font-size:11px}.integrity-note strong{color:#cfd8e2}
+    .no-match{border:1px dashed rgba(255,255,255,.18);border-radius:24px;padding:30px}.no-match .primary-action{width:auto;margin-top:22px}
+    .empty-state{border:1px dashed var(--line);border-radius:18px;padding:20px;color:#7d90a2;font-size:12px}.empty-state.compact{margin:24px 0}
+    .architecture{border-top:1px solid var(--line);padding:82px 0 110px;background:linear-gradient(180deg,transparent,rgba(255,255,255,.012))}
+    .architecture-head{display:grid;grid-template-columns:.6fr 1.4fr;gap:8vw}.architecture h2{font-size:clamp(34px,5vw,68px);line-height:1;letter-spacing:-.05em;margin:10px 0}.architecture p{color:var(--muted);max-width:720px}
+    .flow{margin-top:44px;display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+    .flow article{padding:24px;border-left:1px solid var(--line);min-height:150px}.flow article:last-child{border-left:0}.flow small{font:9px var(--mono);color:var(--sky)}.flow b{display:block;margin:10px 0 6px}.flow p{font-size:11px;margin:0;color:#75899d}
+    .footer{border-top:1px solid var(--line);padding:26px 0;color:#60758a;font-size:10px}.footer-inner{display:flex;justify-content:space-between;gap:20px}
+    .modal{position:fixed;inset:0;z-index:80;background:rgba(2,7,12,.72);backdrop-filter:blur(12px);display:none;place-items:center;padding:20px}
+    .modal.open{display:grid}
+    .modal-card{width:min(560px,100%);background:var(--paper);color:var(--ink);border-radius:28px;padding:28px;box-shadow:0 40px 120px rgba(0,0,0,.5);position:relative}
+    .modal-close{position:absolute;left:18px;top:18px;border:1px solid var(--line-dark);background:transparent;width:38px;height:38px;border-radius:50%;font-size:20px}
+    .modal-card h2{font-size:32px;letter-spacing:-.04em;margin:8px 0}.modal-card>p{color:#5f6d78;font-size:12px;max-width:460px}
+    .quote-summary{border-top:1px solid var(--line-dark);margin-top:20px;padding-top:14px}
+    @media(max-width:900px){
+      .hero-grid,.architecture-head,.result-grid{grid-template-columns:1fr}
+      .hero-aside{border-right:0;border-top:1px solid var(--line);padding:20px 0 0}
+      .best-panel{position:static}
+      .flow{grid-template-columns:repeat(2,1fr)}
+      .offer-card{grid-template-columns:54px 1fr 130px}.offer-meta{display:none}
+    }
+    @media(max-width:620px){
+      .shell{width:min(100% - 24px,1220px)}
+      .nav{height:68px}.live{display:none}.nav-inner{grid-template-columns:1fr auto 1fr}.back{font-size:0;padding:9px 12px}.back:after{content:"←";font-size:14px}
+      .hero{padding-top:58px}.hero-grid{gap:28px}.demo-banner{font-size:11px}
+      .search-stage{padding-bottom:76px}.search-panel{padding:10px;border-radius:24px}
+      .search-form{grid-template-columns:auto 1fr;border-radius:17px;padding:8px}.search-form button{grid-column:1/-1;width:100%}.search-form input{font-size:15px}
+      .search-subrow{align-items:flex-start;flex-direction:column}.status{white-space:normal}
+      .url-hint{align-items:stretch;flex-direction:column}
+      .result-head{align-items:stretch;flex-direction:column}.identity-pill{width:max-content}
+      .offer-card{grid-template-columns:46px 1fr;gap:8px;padding:14px}.offer-price{grid-column:2;text-align:right;border-top:1px solid var(--line);padding-top:9px}.offer-price strong{font-size:18px}
+      .flow{grid-template-columns:1fr}.flow article{border-left:0;border-bottom:1px solid var(--line)}.flow article:last-child{border-bottom:0}
+      .footer-inner{flex-direction:column}
+    }
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="nav">
+    <div class="shell nav-inner">
+      <a class="back" href="./" aria-label="العودة إلى نواة">العودة إلى نواة ←</a>
+      <a class="logo" href="./">نواة<i>.</i></a>
+      <div class="live"><span class="live-dot"></span>Search Engine / Sprint 01</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="shell hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">NAWAA / PRODUCT DISCOVERY ENGINE</span>
+          <h1>ابحث. قارن.<br><span>ثم قرر.</span></h1>
+          <p>المحرك لا يرتب السعر الإعلاني وحده. يبدأ بهوية المنتج، يفصل المطابقات المحتملة، ثم يقارن التكلفة القابلة للوصول إلى السعودية عندما تكون مكوناتها معروفة.</p>
+        </div>
+        <aside class="hero-aside">
+          <strong>قاعدة المقارنة الأولى</strong>
+          العرض الأرخص على الشاشة ليس بالضرورة الأرخص عند الوصول. لذلك لا يدخل أي عرض في صدارة النتائج إذا كانت المطابقة أو الشحن أو الرسوم الإلزامية غير مؤكدة.
+        </aside>
+      </div>
+      <div class="shell">
+        <div class="demo-banner"><span>⚠</span><div><b>نسخة تطويرية — Sprint 01.</b> الأسعار والمصادر الموجودة في هذه الصفحة بيانات اختبار وليست أسعار سوق حية. الهدف الآن اختبار منطق المطابقة والترتيب وتجربة الاستخدام قبل توصيل المصادر الخارجية.</div></div>
+      </div>
+    </section>
+
+    <section class="search-stage">
+      <div class="shell">
+        <div class="search-panel">
+          <form class="search-form" id="searchForm">
+            <span class="search-mark">⌕</span>
+            <input id="searchInput" autocomplete="off" placeholder="اسم المنتج، الموديل، GTIN/MPN، أو الصق رابط المنتج…" aria-label="ابحث عن منتج" />
+            <button type="submit">ابحث لي ←</button>
+          </form>
+          <div class="search-subrow">
+            <div class="recent" id="recentSearches"></div>
+            <div class="status" id="searchStatus">جاهز للبحث</div>
+          </div>
+          <div class="chips" id="modeChips" aria-label="طريقة ترتيب النتائج">
+            <button class="active" type="button" data-mode="lowest">الأقل إجمالًا</button>
+            <button type="button" data-mode="fastest">الأسرع</button>
+            <button type="button" data-mode="local">محلي أولًا</button>
+          </div>
+
+          <div class="url-hint" id="urlHint" hidden></div>
+          <div class="results" id="results"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="architecture">
+      <div class="shell">
+        <div class="architecture-head">
+          <div><span class="eyebrow">ENGINE / HOW IT WORKS</span><h2>من السؤال<br>إلى قرار.</h2></div>
+          <p>هذه الصفحة هي واجهة أول Sprint فقط. البنية التي خلفها مصممة بحيث نضيف موصلات حقيقية لكل مصدر لاحقًا بدون تغيير منطق المطابقة أو التكلفة أو ترتيب النتائج.</p>
+        </div>
+        <div class="flow">
+          <article><small>01 / NORMALIZE</small><b>فهم الاستعلام</b><p>تنظيف العربية والإنجليزية، اكتشاف الرابط، وتجهيز كلمات البحث والمعرّفات.</p></article>
+          <article><small>02 / IDENTITY</small><b>تثبيت هوية المنتج</b><p>Brand + Model + Variant + GTIN/MPN قبل مقارنة أي سعر.</p></article>
+          <article><small>03 / LANDED COST</small><b>حساب التكلفة المقارنة</b><p>سعر + شحن + استيراد + ضريبة + رسوم إلزامية − خصم مؤكد.</p></article>
+          <article><small>04 / RANK</small><b>ترتيب بدون تضليل</b><p>المؤكد أولًا، ثم التقديري، والمطابقات المحتملة تبقى خارج صدارة الأرخص.</p></article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-inner">
+      <span>NAWAA — قرارك قبل الشراء</span>
+      <span>Search Engine Sprint 01 · Development Preview</span>
+    </div>
+  </footer>
+
+  <div class="modal" id="quoteModal" aria-hidden="true">
+    <div class="modal-card">
+      <button class="modal-close" id="quoteClose" type="button" aria-label="إغلاق">×</button>
+      <div id="quoteBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/search-page.mjs"></script>
+</body>
+</html>
