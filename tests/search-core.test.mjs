@@ -7,6 +7,7 @@ import {
   rankOffers,
   DEMO_CATALOG,
 } from "../src/search-core.mjs";
+import { WORLD_SOURCE_REGISTRY, sourceCoverageSummary } from "../src/source-registry.mjs";
 
 const exact = {
   productPrice: 900,
@@ -43,3 +44,10 @@ assert.equal(findBestProduct("MTJV3", DEMO_CATALOG)?.product.id, "airpods-pro-2-
 assert.equal(findBestProduct("something totally unrelated", DEMO_CATALOG), null);
 
 console.log("NAWAA search-core tests passed");
+
+
+const coverage = sourceCoverageSummary();
+assert.ok(coverage.sources >= 40);
+assert.ok(coverage.countries >= 20);
+assert.ok(WORLD_SOURCE_REGISTRY.every((source) => /^[A-Z]{2}$/.test(source.countryCode)));
+assert.equal(new Set(WORLD_SOURCE_REGISTRY.map((source) => source.id)).size, WORLD_SOURCE_REGISTRY.length);
