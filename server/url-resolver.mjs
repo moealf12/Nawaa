@@ -232,12 +232,12 @@ export async function resolveProductUrl(url) {
     ? (typeof imageRaw[0] === "string" ? imageRaw[0] : imageRaw[0] && imageRaw[0].url)
     : (typeof imageRaw === "string" ? imageRaw : imageRaw && imageRaw.url) || imageFromHtml(html);
 
-  const originalPrice = offer && offer.price ?? parseMoney(
+  const originalPrice = (offer && offer.price) ?? parseMoney(
     metaContent(html, "product:price:amount") ||
     metaContent(html, "og:price:amount") ||
     metaContent(html, "twitter:data1", "name")
   );
-  const originalCurrency = offer && offer.currency ||
+  const originalCurrency = (offer && offer.currency) ||
     metaContent(html, "product:price:currency") ||
     metaContent(html, "og:price:currency") ||
     null;
@@ -262,7 +262,7 @@ export async function resolveProductUrl(url) {
     condition: condition === "unknown" ? "new" : condition,
     availability: offer && offer.availability.includes("instock") ? "in_stock" : "unknown",
     canShipToSaudi: country.countryCode === "SA" ? true : null,
-    productPrice: priceSAR && priceSAR.value ?? null,
+    productPrice: (priceSAR && priceSAR.value) ?? null,
     originalProductPrice: originalPrice,
     shipping: null,
     importCost: null,
