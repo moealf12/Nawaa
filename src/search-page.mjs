@@ -113,6 +113,12 @@ function bucketLabel(bucket) {
   })[bucket] || bucket;
 }
 
+function countryFlag(code = "") {
+  const cc = String(code).toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return "🌐";
+  return String.fromCodePoint(...[...cc].map((char) => 127397 + char.charCodeAt(0)));
+}
+
 function offerCard(offer, index) {
   const best = index === 0 && offer.bucket === "confirmed";
   const eta = Number.isFinite(offer.deliveryDays) ? offer.deliveryDays + " يوم" : "غير مؤكد";
@@ -120,8 +126,8 @@ function offerCard(offer, index) {
     <article class="offer-card ${best ? "is-best" : ""}">
       <div class="offer-rank">${best ? "BEST" : String(index + 1).padStart(2, "0")}</div>
       <div class="offer-store">
-        <strong>${escapeHtml(offer.merchant)}</strong>
-        <span>${bucketLabel(offer.bucket)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
+        <strong><span class="country-flag" title="${escapeHtml(offer.merchantCountryNameAr || "دولة المصدر")}">${countryFlag(offer.merchantCountryCode)}</span> ${escapeHtml(offer.merchant)}</strong>
+        <span>${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${bucketLabel(offer.bucket)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
       </div>
       <div class="offer-meta">
         <small>الوصول</small>
