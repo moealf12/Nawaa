@@ -70,13 +70,62 @@ function renderRecent() {
   });
 }
 
-function renderUrlState(query) {
+async function renderUrlState(query) {
   els.urlHint.hidden = false;
+  els.results.innerHTML = "";
+  els.status.textContent = "تم اكتشاف رابط منتج";
+
+  const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
+  if (apiBase) {
+    els.urlHint.innerHTML = `
+      <div>
+        <span class="mini-kicker">PRODUCT URL DETECTED</span>
+        <strong>نستخرج بيانات المنتج من الرابط…</strong>
+        <p>نحاول قراءة هوية المنتج والسعر والعملة من البيانات المنظمة في الصفحة، ثم نحول السعر إلى الريال بدون تخمين الشحن أو الرسوم.</p>
+      </div>
+    `;
+    try {
+      const response = await fetch(apiBase + "/api/resolve-url?url=" + encodeURIComponent(query), {
+        headers: { accept: "application/json" },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.message || data?.error || "url_resolution_failed");
+
+      const offer = data.offer;
+      const liveProduct = {
+        id: null,
+        brand: "رابط مباشر",
+        model: offer.title || "منتج خارجي",
+        variant: offer.originalCurrency || "",
+        nameAr: offer.title || "منتج من رابط خارجي",
+        nameEn: offer.title || "External product",
+        aliases: [],
+        identifiers: [],
+        offers: [offer],
+      };
+
+      state.product = liveProduct;
+      renderProduct(liveProduct, query);
+      els.urlHint.innerHTML = `
+        <div>
+          <span class="mini-kicker">URL RESOLVED</span>
+          <strong>${escapeHtml(offer.title || "تم استخراج المنتج")}</strong>
+          <p>${countryFlag(offer.merchantCountryCode)} ${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${offer.originalProductPrice ?? "—"} ${escapeHtml(offer.originalCurrency || "")} · السعر المحول للريال يظهر ضمن النتيجة إن توفرت العملة.</p>
+        </div>
+        <a class="secondary-action" href="${escapeHtml(offer.sourceUrl || query)}" target="_blank" rel="noopener">فتح المصدر ↗</a>
+      `;
+      els.status.textContent = "تم استخراج بيانات المنتج من الرابط";
+      return;
+    } catch (error) {
+      console.warn("NAWAA URL resolver failed", error);
+    }
+  }
+
   els.urlHint.innerHTML = `
     <div>
       <span class="mini-kicker">PRODUCT URL DETECTED</span>
-      <strong>هذا رابط منتج، وليس اسم منتج.</strong>
-      <p>المرحلة التالية ستستخرج هوية المنتج من الرابط ثم تمرره إلى موصلات المصادر. حاليًا نستطيع حفظه كمسودة طلب تسعيرة دون ادعاء وجود سعر حي.</p>
+      <strong>اكتشفنا الرابط، لكن تعذر استخراج بياناته تلقائيًا.</strong>
+      <p>نقدر نحفظه كمسودة طلب تسعيرة بدون ادعاء وجود سعر أو تكلفة شحن مؤكدة.</p>
     </div>
     <button class="secondary-action" id="urlQuoteBtn">احفظ كطلب تسعيرة</button>
   `;
@@ -86,8 +135,6 @@ function renderUrlState(query) {
     model: "بانتظار الاستخراج",
     variant: "",
   }, null, query));
-  els.results.innerHTML = "";
-  els.status.textContent = "تم اكتشاف رابط منتج";
 }
 
 function priceBreakdown(offer) {
@@ -232,7 +279,7 @@ async function runSearch(rawQuery) {
 
   if (isLikelyUrl(query)) {
     state.product = null;
-    renderUrlState(query);
+    await renderUrlState(query);
     return;
   }
 
