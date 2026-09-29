@@ -1,0 +1,13 @@
+{
+  "name": "nawaa-search-backend",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server/server.mjs",
+    "test": "node tests/search-core.test.mjs && node tests/providers.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
