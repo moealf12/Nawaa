@@ -3,59 +3,9 @@ import { URL } from "node:url";
 import { allowedOrigin, jsonResponse } from "./provider-utils.mjs";
 import { ebayConfigured, searchEbayWorldwide } from "./providers/ebay.mjs";
 import { searchConfiguredShopifyStores, shopifyConfigured } from "./providers/shopify.mjs";
+import { assessOfferMatch, dedupeNormalizedOffers } from "./match.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
-
-function normalize(value = "") {
-  return String(value)
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\u064B-\u065F\u0670]/g, "")
-    .replace(/[أإآ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-const ACCESSORY_TERMS = [
-  "case","cover","screen protector","protector","charger","cable","adapter",
-  "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه"
-];
-
-function assessMatch(query, offer) {
-  const q = normalize(query).split(" ").filter(Boolean);
-  const title = normalize(offer.title || "");
-  if (!q.length || !title) return { exactMatch: false, matchConfidence: 0 };
-
-  const hits = q.filter((token) => title.includes(token)).length;
-  let confidence = hits / q.length;
-
-  const queryHasAccessoryIntent = ACCESSORY_TERMS.some((term) => normalize(query).includes(term));
-  const titleHasAccessory = ACCESSORY_TERMS.some((term) => title.includes(term));
-  if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.35;
-
-  const conditionPenalty = offer.condition !== "new" ? 0.15 : 0;
-  confidence = Math.max(0, Math.min(1, confidence - conditionPenalty));
-
-  return {
-    exactMatch: confidence >= 0.92 && hits === q.length && !(!queryHasAccessoryIntent && titleHasAccessory),
-    matchConfidence: Math.round(confidence * 100) / 100,
-  };
-}
-
-function dedupeOffers(offers) {
-  const seen = new Set();
-  const out = [];
-  for (const offer of offers) {
-    const key = normalize([offer.provider, offer.sourceUrl, offer.title, offer.originalProductPrice, offer.originalCurrency].join("|"));
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(offer);
-  }
-  return out;
-}
 
 async function searchAll(query) {
   const tasks = [];
@@ -93,9 +43,9 @@ async function searchAll(query) {
     }
   }
 
-  offers = dedupeOffers(offers).map((offer) => ({
+  offers = dedupeNormalizedOffers(offers).map((offer) => ({
     ...offer,
-    ...assessMatch(query, offer),
+    ...assessOfferMatch(query, offer),
     dataKind: "live",
   }));
 
