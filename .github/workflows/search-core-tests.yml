@@ -7,7 +7,6 @@ on:
       - "src/search-core.mjs"
       - "src/search-page.mjs"
       - "src/source-registry.mjs"
-      - "src/source-registry.mjs"
       - "tests/search-core.test.mjs"
       - "search.html"
       - ".github/workflows/search-core-tests.yml"
@@ -15,6 +14,7 @@ on:
     paths:
       - "src/search-core.mjs"
       - "src/search-page.mjs"
+      - "src/source-registry.mjs"
       - "tests/search-core.test.mjs"
       - "search.html"
 
