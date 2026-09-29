@@ -178,6 +178,8 @@ export const DEMO_CATALOG = [
     offers: [
       {
         merchant: "متجر محلي A — Demo",
+        merchantCountryCode: "SA",
+        merchantCountryNameAr: "السعودية",
         productPrice: 899,
         shipping: 0,
         importCost: 0,
@@ -196,7 +198,9 @@ export const DEMO_CATALOG = [
         observedAt: "2026-09-30T00:00:00+03:00",
       },
       {
-        merchant: "متجر محلي B — Demo",
+        merchant: "متجر إماراتي B — Demo",
+        merchantCountryCode: "AE",
+        merchantCountryNameAr: "الإمارات",
         productPrice: 885,
         shipping: 25,
         importCost: 0,
@@ -215,7 +219,9 @@ export const DEMO_CATALOG = [
         observedAt: "2026-09-30T00:00:00+03:00",
       },
       {
-        merchant: "متجر عالمي C — Demo",
+        merchant: "متجر أمريكي C — Demo",
+        merchantCountryCode: "US",
+        merchantCountryNameAr: "الولايات المتحدة",
         productPrice: 790,
         shipping: 78,
         importCost: 36,
@@ -234,7 +240,9 @@ export const DEMO_CATALOG = [
         observedAt: "2026-09-30T00:00:00+03:00",
       },
       {
-        merchant: "نتيجة محتملة D — Demo",
+        merchant: "نتيجة صينية محتملة D — Demo",
+        merchantCountryCode: "CN",
+        merchantCountryNameAr: "الصين",
         productPrice: 749,
         shipping: null,
         importCost: null,
@@ -267,6 +275,8 @@ export const DEMO_CATALOG = [
     offers: [
       {
         merchant: "متجر محلي A — Demo",
+        merchantCountryCode: "SA",
+        merchantCountryNameAr: "السعودية",
         productPrice: 2299,
         shipping: 0,
         importCost: 0,
@@ -285,7 +295,9 @@ export const DEMO_CATALOG = [
         observedAt: "2026-09-30T00:00:00+03:00",
       },
       {
-        merchant: "متجر عالمي B — Demo",
+        merchant: "متجر ألماني B — Demo",
+        merchantCountryCode: "DE",
+        merchantCountryNameAr: "ألمانيا",
         productPrice: 1980,
         shipping: 140,
         importCost: 70,
@@ -318,6 +330,8 @@ export const DEMO_CATALOG = [
     offers: [
       {
         merchant: "متجر محلي A — Demo",
+        merchantCountryCode: "SA",
+        merchantCountryNameAr: "السعودية",
         productPrice: 1999,
         shipping: 0,
         importCost: 0,
@@ -336,7 +350,9 @@ export const DEMO_CATALOG = [
         observedAt: "2026-09-30T00:00:00+03:00",
       },
       {
-        merchant: "نتيجة Open Box — Demo",
+        merchant: "نتيجة يابانية Open Box — Demo",
+        merchantCountryCode: "JP",
+        merchantCountryNameAr: "اليابان",
         productPrice: 1699,
         shipping: 0,
         importCost: 0,
