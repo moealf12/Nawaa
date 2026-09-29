@@ -127,7 +127,7 @@ function offerCard(offer, index) {
       <div class="offer-rank">${best ? "BEST" : String(index + 1).padStart(2, "0")}</div>
       <div class="offer-store">
         <strong><span class="country-flag" title="${escapeHtml(offer.merchantCountryNameAr || "دولة المصدر")}">${countryFlag(offer.merchantCountryCode)}</span> ${escapeHtml(offer.merchant)}</strong>
-        <span>${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${offer.dataKind === "verified_source" ? "مصدر موثق" : "بيانات اختبار"} · ${bucketLabel(offer.bucket)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
+        <span>${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${offer.dataKind === "verified_source" ? "مصدر موثق" : offer.dataKind === "live" ? "بحث حي" : "بيانات اختبار"} · ${bucketLabel(offer.bucket)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
         ${offer.sourceUrl ? '<a class="offer-source-link" href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">فتح المصدر ↗</a>' : ""}
       </div>
       <div class="offer-meta">
@@ -149,7 +149,10 @@ function renderProduct(product, query) {
   const uncertain = ranked.filter((o) => !["confirmed", "estimated"].includes(o.bucket));
   const best = summary.bestConfirmed;
 
-  els.status.textContent = `وجدنا ${summary.count} عروض تجريبية من ${summary.sources} مصادر`;
+  const hasLive = product.offers.some((offer) => offer.dataKind === "live");
+  els.status.textContent = hasLive
+    ? `وجدنا ${summary.count} عرضًا حيًا من ${summary.sources} مصادر/بائعين`
+    : `وجدنا ${summary.count} عروض تجريبية من ${summary.sources} مصادر`;
   els.urlHint.hidden = true;
 
   els.results.innerHTML = `
@@ -216,7 +219,7 @@ function renderNoMatch(query) {
   }, null, query));
 }
 
-function runSearch(rawQuery) {
+async function runSearch(rawQuery) {
   const query = String(rawQuery || "").trim();
   if (query.length < 2) {
     els.status.textContent = "اكتب حرفين على الأقل";
@@ -231,6 +234,44 @@ function runSearch(rawQuery) {
     state.product = null;
     renderUrlState(query);
     return;
+  }
+
+  const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
+  if (apiBase) {
+    els.status.textContent = "نبحث الآن في المصادر العالمية…";
+    els.results.innerHTML = '<div class="empty-state">جاري جمع العروض والتحقق من إمكانية الشحن إلى السعودية…</div>';
+
+    try {
+      const response = await fetch(apiBase + "/api/search?q=" + encodeURIComponent(query), {
+        headers: { accept: "application/json" },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.message || data?.error || "live_search_failed");
+
+      if (Array.isArray(data.offers) && data.offers.length) {
+        const liveProduct = {
+          id: null,
+          brand: "بحث عالمي",
+          model: query,
+          variant: "إلى السعودية",
+          nameAr: query,
+          nameEn: query,
+          aliases: [],
+          identifiers: [],
+          offers: data.offers,
+        };
+        state.product = liveProduct;
+        renderProduct(liveProduct, query);
+        const countries = new Set(data.offers.map((o) => o.merchantCountryCode).filter(Boolean)).size;
+        els.status.textContent = `بحث حي: ${data.offers.length} عرضًا · ${countries} دول · ${data.providersConfigured?.length || 0} موصلات`;
+        return;
+      }
+
+      els.status.textContent = "البحث الحي لم يُرجع عروضًا مطابقة";
+    } catch (error) {
+      console.warn("NAWAA live search unavailable; using local catalog", error);
+      els.status.textContent = "تعذر الوصول للمصادر الحية — نعرض الكتالوج المحلي مؤقتًا";
+    }
   }
 
   const match = findBestProduct(query, DEMO_CATALOG);
