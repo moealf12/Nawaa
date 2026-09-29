@@ -1,0 +1,33 @@
+name: Search Core Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/search-core.mjs"
+      - "src/search-page.mjs"
+      - "tests/search-core.test.mjs"
+      - "search.html"
+      - ".github/workflows/search-core-tests.yml"
+  pull_request:
+    paths:
+      - "src/search-core.mjs"
+      - "src/search-page.mjs"
+      - "tests/search-core.test.mjs"
+      - "search.html"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run search core tests
+        run: node tests/search-core.test.mjs
+      - name: Syntax check search page
+        run: node --check src/search-page.mjs
