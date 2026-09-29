@@ -38,7 +38,7 @@ const ranked = rankOffers([
 assert.equal(ranked[0].merchant, "B");
 assert.equal(ranked.at(-1).merchant, "C");
 
-const airpods = DEMO_CATALOG[0];
+const airpods = DEMO_CATALOG.find((product) => product.id === "airpods-pro-2-usbc");
 assert.ok(productMatchScore("ايربودز برو 2 usb c", airpods) >= 0.75);
 assert.equal(findBestProduct("MTJV3", DEMO_CATALOG)?.product.id, "airpods-pro-2-usbc");
 assert.equal(findBestProduct("something totally unrelated", DEMO_CATALOG), null);
