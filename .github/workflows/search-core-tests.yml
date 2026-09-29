@@ -9,6 +9,14 @@ on:
       - "src/source-registry.mjs"
       - "tests/search-core.test.mjs"
       - "search.html"
+      - "package.json"
+      - "server/server.mjs"
+      - "server/match.mjs"
+      - "server/fx.mjs"
+      - "server/provider-utils.mjs"
+      - "server/providers/ebay.mjs"
+      - "server/providers/shopify.mjs"
+      - "tests/providers.test.mjs"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
     paths:
@@ -29,7 +37,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Run search core tests
-        run: node tests/search-core.test.mjs
-      - name: Syntax check search page
-        run: node --check src/search-page.mjs
+      - name: Run test suite
+        run: npm test
+      - name: Syntax check browser and server modules
+        run: |
+          node --check src/search-page.mjs
+          node --check server/server.mjs
+          node --check server/providers/ebay.mjs
+          node --check server/providers/shopify.mjs
