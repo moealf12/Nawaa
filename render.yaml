@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: nawaa-search-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NAWAA_ALLOWED_ORIGINS
+        value: https://moealf12.github.io
+      - key: EBAY_MARKET_LIMIT
+        value: "8"
+      - key: EBAY_CLIENT_ID
+        sync: false
+      - key: EBAY_CLIENT_SECRET
+        sync: false
+      - key: SHOPIFY_STORES_JSON
+        sync: false
