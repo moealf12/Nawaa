@@ -51,3 +51,6 @@ assert.ok(coverage.sources >= 40);
 assert.ok(coverage.countries >= 20);
 assert.ok(WORLD_SOURCE_REGISTRY.every((source) => /^[A-Z]{2}$/.test(source.countryCode)));
 assert.equal(new Set(WORLD_SOURCE_REGISTRY.map((source) => source.id)).size, WORLD_SOURCE_REGISTRY.length);
+
+assert.equal(findBestProduct("iPhone 17", DEMO_CATALOG)?.product.id, "iphone-17");
+assert.equal(findBestProduct("ايفون 17", DEMO_CATALOG)?.product.id, "iphone-17");
