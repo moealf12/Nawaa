@@ -4,6 +4,7 @@ import { normalizeCondition, parseMoney } from "../server/provider-utils.mjs";
 import { parseJarirConstructorPayload, parseJarirSearchHtml } from "../server/providers/jarir.mjs";
 import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
 import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
+import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -189,5 +190,40 @@ assert.equal(carrefourOffers[0].specs.network, "5G");
 assert.equal(carrefourOffers[0].sourceMeta.stockValue, 1);
 assert.equal(carrefourOffers[0].seller.type, "retailer");
 assert.ok(carrefourOffers[0].sourceUrl.endsWith("/754835"));
+
+const sharafFixture = {
+  nbHits: 1,
+  hits: [{
+    objectID: "12345",
+    sku: "S500943806",
+    post_title: "Apple iPhone 17 (256GB) – Black – Middle East Version with FaceTime",
+    permalink: "https://saudi.sharafdg.com/en/product/apple-iphone-17-256gb-black-middle-east-version-with-facetime/",
+    sale_price: "3799",
+    regular_price: "3999",
+    stock_status: "instock",
+    image_url: "https://example.com/iphone17-black.jpg",
+    attributes: {
+      ram: "8GB",
+      screen_size: "6.3 inch",
+      operating_system: "iOS 26",
+      rear_camera: "48MP + 48MP",
+      front_camera: "18MP"
+    }
+  }]
+};
+const sharafOffers = parseSharafAlgoliaPayload(sharafFixture);
+assert.equal(sharafOffers.length, 1);
+assert.equal(sharafOffers[0].merchant, "Sharaf DG");
+assert.equal(sharafOffers[0].productPrice, 3799);
+assert.equal(sharafOffers[0].discount, 200);
+assert.equal(sharafOffers[0].availability, "in_stock");
+assert.equal(sharafOffers[0].specs.deviceType, "iPhone 17");
+assert.equal(sharafOffers[0].specs.storage.replace(" ",""), "256GB");
+assert.equal(sharafOffers[0].specs.color, "Black");
+assert.equal(sharafOffers[0].specs.regionVersion, "Middle East Version");
+assert.equal(sharafOffers[0].specs.ram, "8GB");
+assert.equal(sharafOffers[0].specs.screenSize, "6.3 inch");
+assert.equal(sharafOffers[0].specs.operatingSystem, "iOS 26");
+assert.equal(sharafOffers[0].sourceMeta.productId, "S500943806");
 
 console.log("NAWAA provider tests passed");
