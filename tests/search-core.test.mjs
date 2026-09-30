@@ -211,6 +211,10 @@ assert.equal(intelligence.rows[1].deltaPercent, 7.5);
 assert.ok(intelligence.rows[0].badges.includes("متوفر في جدة"));
 assert.ok(intelligence.rows[0].badges.includes("توصيل منزلي"));
 assert.ok(intelligence.rows[1].warnings.some((item) => item.includes("التوفر التفصيلي")));
-assert.ok(intelligence.insights.some((item) => item.type === "price" && item.text.includes("300.00")));
+assert.ok(intelligence.insights.some((item) =>
+  item.type === "price" &&
+  item.text.includes("eXtra") &&
+  item.text.includes("Jarir")
+));
 assert.ok(intelligence.insights.some((item) => item.type === "availability" && item.text.includes("eXtra")));
 assert.ok(intelligence.insights.some((item) => item.type === "cost"));
