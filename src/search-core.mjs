@@ -270,7 +270,8 @@ export function buildOfferIntelligence(group = {}) {
     return aPrice - bPrice;
   });
 
-  const baselineOffer = group.bestPriceOffer || priceOrdered[0] || null;
+  // Use the price-sorted object from this same offers array so per-row identity checks stay stable.
+  const baselineOffer = priceOrdered[0] || null;
   const baselineValue = offerDisplayValue(baselineOffer);
   const priceBasis = baselineOffer && Number.isFinite(baselineOffer.totalSAR)
     ? "comparable_total"
