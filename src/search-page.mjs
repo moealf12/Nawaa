@@ -36,6 +36,187 @@ const state = {
 const nf = new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 2 });
 const fmt = (v) => Number.isFinite(v) ? nf.format(v) + " ر.س" : "غير مؤكد";
 
+const NAWAA_PRICE_HISTORY_KEY = "nawaa_price_history_v1";
+const MAX_PRICE_HISTORY_POINTS = 800;
+
+function readPriceHistory() {
+  try {
+    const value = JSON.parse(localStorage.getItem(NAWAA_PRICE_HISTORY_KEY) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePriceHistory(points) {
+  try {
+    localStorage.setItem(
+      NAWAA_PRICE_HISTORY_KEY,
+      JSON.stringify(points.slice(-MAX_PRICE_HISTORY_POINTS))
+    );
+  } catch {
+    // History is an enhancement only; search must keep working if storage is unavailable.
+  }
+}
+
+function offerObservedValue(offer = {}) {
+  return Number.isFinite(offer.totalSAR) ? offer.totalSAR :
+    Number.isFinite(offer.productPrice) ? offer.productPrice : null;
+}
+
+function recordPriceHistory(offers = []) {
+  if (!Array.isArray(offers) || !offers.length) return;
+  const groups = groupComparableOffers(offers, "lowest");
+  const history = readPriceHistory();
+
+  for (const group of groups) {
+    for (const offer of group.offers || []) {
+      if (offer.dataKind !== "live" && offer.dataKind !== "verified_source") continue;
+      const value = offerObservedValue(offer);
+      if (!Number.isFinite(value) || !offer.merchant) continue;
+
+      const observedAt = offer.observedAt || new Date().toISOString();
+      const sameStream = history
+        .filter((point) => point.variantKey === group.key && point.merchant === offer.merchant)
+        .sort((a, b) => String(a.lastSeenAt || a.observedAt).localeCompare(String(b.lastSeenAt || b.observedAt)));
+      const latest = sameStream.at(-1);
+      const basis = Number.isFinite(offer.totalSAR) ? "comparable_total" : "advertised_price";
+
+      if (latest && latest.value === value && latest.priceBasis === basis) {
+        latest.lastSeenAt = observedAt;
+        latest.sourceUrl = offer.sourceUrl || latest.sourceUrl || null;
+        continue;
+      }
+
+      history.push({
+        variantKey: group.key,
+        merchant: offer.merchant,
+        value,
+        priceBasis: basis,
+        observedAt,
+        lastSeenAt: observedAt,
+        sourceUrl: offer.sourceUrl || null,
+      });
+    }
+  }
+
+  history.sort((a, b) => String(a.observedAt || "").localeCompare(String(b.observedAt || "")));
+  writePriceHistory(history);
+}
+
+function dateLabel(value) {
+  if (!value) return "غير معروف";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "غير معروف";
+  return new Intl.DateTimeFormat("ar-SA", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function priceHistoryForGroup(group) {
+  if (!group?.key) return null;
+  const points = readPriceHistory()
+    .filter((point) => point.variantKey === group.key && Number.isFinite(point.value))
+    .sort((a, b) => String(a.observedAt || "").localeCompare(String(b.observedAt || "")));
+
+  if (!points.length) return null;
+
+  const currentOffers = group.offers || [];
+  const currentBest = currentOffers
+    .map((offer) => ({
+      merchant: offer.merchant,
+      value: offerObservedValue(offer),
+      priceBasis: Number.isFinite(offer.totalSAR) ? "comparable_total" : "advertised_price",
+    }))
+    .filter((item) => Number.isFinite(item.value))
+    .sort((a, b) => a.value - b.value)[0] || null;
+
+  const lowest = points.reduce((best, point) => !best || point.value < best.value ? point : best, null);
+  const highest = points.reduce((best, point) => !best || point.value > best.value ? point : best, null);
+  const firstSeenAt = points[0]?.observedAt || null;
+  const latestSeenAt = points.reduce((latest, point) =>
+    String(point.lastSeenAt || point.observedAt) > String(latest || "") ? (point.lastSeenAt || point.observedAt) : latest
+  , null);
+
+  const merchants = [...new Set(currentOffers.map((offer) => offer.merchant).filter(Boolean))].map((merchant) => {
+    const merchantPoints = points.filter((point) => point.merchant === merchant);
+    const currentOffer = currentOffers.find((offer) => offer.merchant === merchant);
+    const currentValue = offerObservedValue(currentOffer);
+    const distinct = [];
+    for (const point of merchantPoints) {
+      if (!distinct.length || distinct.at(-1).value !== point.value) distinct.push(point);
+    }
+    const previous = distinct.length >= 2 ? distinct.at(-2) : null;
+    const delta = previous && Number.isFinite(currentValue) ? currentValue - previous.value : 0;
+    return {
+      merchant,
+      currentValue,
+      previousValue: previous?.value ?? null,
+      delta,
+      direction: delta < 0 ? "down" : delta > 0 ? "up" : "flat",
+      lastSeenAt: merchantPoints.at(-1)?.lastSeenAt || merchantPoints.at(-1)?.observedAt || null,
+      changes: Math.max(0, distinct.length - 1),
+    };
+  });
+
+  return {
+    points,
+    currentBest,
+    lowest,
+    highest,
+    firstSeenAt,
+    latestSeenAt,
+    merchants,
+  };
+}
+
+function priceHistoryMarkup(history) {
+  if (!history) {
+    return `
+      <div class="price-history-empty">
+        أول رصد لهذه النسخة. من الآن فصاعدًا سنحفظ تغيّر السعر على هذا الجهاز.
+      </div>
+    `;
+  }
+
+  const current = history.currentBest?.value;
+  const lowest = history.lowest?.value;
+  const gapFromLow = Number.isFinite(current) && Number.isFinite(lowest) ? current - lowest : null;
+  const status = Number.isFinite(gapFromLow) && gapFromLow === 0
+    ? "السعر الحالي يساوي أقل سعر رصدناه"
+    : Number.isFinite(gapFromLow) && gapFromLow > 0
+      ? "السعر الحالي أعلى من أقل رصد بـ " + fmt(gapFromLow)
+      : "لا توجد مقارنة كافية بعد";
+
+  const merchantRows = history.merchants.map((item) => {
+    const movement = item.direction === "down"
+      ? '<span class="history-move down">↓ نزل ' + fmt(Math.abs(item.delta)) + '</span>'
+      : item.direction === "up"
+        ? '<span class="history-move up">↑ ارتفع ' + fmt(item.delta) + '</span>'
+        : '<span class="history-move flat">— بدون تغيّر مسجل</span>';
+
+    return `
+      <div class="history-merchant">
+        <div><strong>${escapeHtml(item.merchant)}</strong><small>آخر رصد ${dateLabel(item.lastSeenAt)}</small></div>
+        <div><b>${fmt(item.currentValue)}</b>${movement}</div>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="price-history-stats">
+      <div><small>السعر الحالي</small><strong>${fmt(current)}</strong></div>
+      <div><small>أقل سعر رصدناه</small><strong>${fmt(lowest)}</strong></div>
+      <div><small>أعلى سعر رصدناه</small><strong>${fmt(history.highest?.value)}</strong></div>
+      <div><small>بدأ الرصد</small><strong>${dateLabel(history.firstSeenAt)}</strong></div>
+    </div>
+    <div class="price-history-status">${escapeHtml(status)}</div>
+    <div class="history-merchants">${merchantRows}</div>
+  `;
+}
+
 function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -641,6 +822,17 @@ function renderProduct(product, query) {
               ${selectorRow("الحالة", "conditionKey", selector.options.conditions, selector.selection.conditionKey)}
             </div>
 
+            <div class="price-history-section">
+              <div class="price-history-head">
+                <div>
+                  <span class="mini-kicker">PRICE HISTORY / LOCAL</span>
+                  <h4>سجل السعر على هذا الجهاز</h4>
+                </div>
+                <p>يبدأ من أول بحث على هذا الجهاز، وليس تاريخًا شاملًا للسوق.</p>
+              </div>
+              ${priceHistoryMarkup(priceHistoryForGroup(selectedGroup))}
+            </div>
+
             <div class="canonical-section">
               <div class="canonical-head">
                 <div>
@@ -788,6 +980,7 @@ async function runSearch(rawQuery) {
       if (!response.ok) throw new Error(data?.message || data?.error || "live_search_failed");
 
       if (Array.isArray(data.offers) && data.offers.length) {
+        recordPriceHistory(data.offers);
         const liveProduct = {
           id: null,
           brand: "بحث عالمي",
