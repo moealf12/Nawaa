@@ -174,13 +174,16 @@ function specEntries(offer) {
     ["الذاكرة", specs.ram],
     ["المعالج", specs.processor],
     ["الشاشة", specs.screenSize],
+    ["نوع الشاشة", specs.screenType],
     ["الشبكة", specs.network],
+    ["الشريحة", specs.sim],
     ["النظام", specs.operatingSystem],
-    ["الكاميرا", specs.rearCamera],
+    ["الكاميرا الخلفية", specs.rearCamera],
+    ["الكاميرا الأمامية", specs.frontCamera],
     ["البطارية", specs.battery],
     ["مقاومة الماء", specs.waterproof],
   ];
-  return items.filter(([, value]) => value !== null && value !== undefined && String(value).trim()).slice(0, 8);
+  return items.filter(([, value]) => value !== null && value !== undefined && String(value).trim()).slice(0, 10);
 }
 
 function specsMarkup(offer) {
