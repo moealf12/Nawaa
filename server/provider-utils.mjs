@@ -11,13 +11,11 @@ export function jsonResponse(res, status, body, origin = "*") {
 }
 
 export function allowedOrigin(requestOrigin = "") {
-  const configured = (process.env.NAWAA_ALLOWED_ORIGINS || "https://moealf12.github.io,http://localhost:8000,http://127.0.0.1:8000")
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
-
-  if (!requestOrigin) return configured[0] || "*";
-  return configured.includes(requestOrigin) ? requestOrigin : "";
+  // NAWAA's current search API is public and read-only. No credentials, cookies,
+  // account data, or write actions are accepted here, so GET/OPTIONS can safely
+  // be consumed by the GitHub Pages frontend and embedded mobile browsers.
+  if (!requestOrigin) return "*";
+  return "*";
 }
 
 export function parseMoney(value) {
