@@ -218,6 +218,83 @@ function priceHistoryMarkup(history) {
   `;
 }
 
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const controller = new AbortController();
+      const timeoutMs = attempt === 1 ? 25000 : 45000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+      const response = await fetch(url, {
+        ...options,
+        mode: "cors",
+        credentials: "omit",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const text = await response.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        throw new Error("invalid_json_response");
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error || "request_failed_" + response.status);
+      }
+
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(attempt * 1200);
+    }
+  }
+
+  throw lastError || new Error("request_failed");
+}
+
+async function wakeSearchApi(apiBase) {
+  try {
+    await fetchJsonWithRetry(apiBase + "/health", {
+      headers: { accept: "application/json" },
+    }, 2);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function renderLiveSearchError(query, error) {
+  state.product = null;
+  const message = error?.name === "AbortError"
+    ? "استغرق محرك البحث وقتًا أطول من المتوقع."
+    : "تعذر الاتصال بمحرك البحث الحي.";
+
+  els.status.textContent = "البحث الحي غير متاح مؤقتًا";
+  els.results.innerHTML = `
+    <section class="live-search-error">
+      <span class="mini-kicker">LIVE SEARCH INTERRUPTED</span>
+      <h2>${escapeHtml(message)}</h2>
+      <p>لن نعرض بيانات Demo بدل نتائج السوق. أعد المحاولة وسيحاول نواة إيقاظ خادم البحث والاتصال بالمصادر من جديد.</p>
+      <div class="live-error-actions">
+        <button type="button" class="primary-action" id="retryLiveSearch">إعادة البحث الحي</button>
+      </div>
+      <small>الاستعلام: ${escapeHtml(query)}</small>
+    </section>
+  `;
+
+  $("#retryLiveSearch")?.addEventListener("click", () => runSearch(query));
+}
+
 function escapeHtml(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1043,15 +1120,18 @@ async function runSearch(rawQuery) {
 
   const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
   if (apiBase) {
-    els.status.textContent = "نبحث الآن في المصادر العالمية…";
-    els.results.innerHTML = '<div class="empty-state">جاري جمع العروض والتحقق من إمكانية الشحن إلى السعودية…</div>';
+    els.status.textContent = "نجهّز محرك البحث الحي…";
+    els.results.innerHTML = '<div class="empty-state live-loading">جاري إيقاظ محرك البحث وجمع العروض الحية من المتاجر… قد تستغرق المحاولة الأولى عدة ثوانٍ.</div>';
 
     try {
-      const response = await fetch(apiBase + "/api/search?q=" + encodeURIComponent(query), {
-        headers: { accept: "application/json" },
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.message || data?.error || "live_search_failed");
+      await wakeSearchApi(apiBase);
+      els.status.textContent = "نبحث الآن في المصادر الحية…";
+
+      const data = await fetchJsonWithRetry(
+        apiBase + "/api/search?q=" + encodeURIComponent(query),
+        { headers: { accept: "application/json" } },
+        3
+      );
 
       if (Array.isArray(data.offers) && data.offers.length) {
         recordPriceHistory(data.offers);
@@ -1075,13 +1155,26 @@ async function runSearch(rawQuery) {
       }
 
       const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);
-      els.status.textContent = `لم نجد عرضًا حيًا موثوقًا · تم فحص ${attempted} أسواق/متاجر`;
+      state.product = null;
+      els.status.textContent = `لم نجد عروضًا حية · تم فحص ${attempted} أسواق/متاجر`;
+      els.results.innerHTML = `
+        <div class="no-match">
+          <span class="mini-kicker">NO LIVE OFFERS</span>
+          <h2>ما ظهر لنا عرض حي لهذا البحث.</h2>
+          <p>تم تنفيذ البحث على المصادر المتاحة بدون الرجوع إلى بيانات Demo.</p>
+          <button class="primary-action" id="retryLiveSearch">أعد البحث</button>
+        </div>
+      `;
+      $("#retryLiveSearch")?.addEventListener("click", () => runSearch(query));
+      return;
     } catch (error) {
-      console.warn("NAWAA live search unavailable; using local catalog", error);
-      els.status.textContent = "تعذر الوصول للمصادر الحية — نعرض الكتالوج المحلي مؤقتًا";
+      console.warn("NAWAA live search unavailable", error);
+      renderLiveSearchError(query, error);
+      return;
     }
   }
 
+  // Local demo catalog is used only in explicit offline/development mode when no API base is configured.
   const match = findBestProduct(query, DEMO_CATALOG);
   if (!match) {
     state.product = null;
