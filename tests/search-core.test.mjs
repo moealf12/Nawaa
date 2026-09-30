@@ -11,6 +11,7 @@ import {
   groupVariantFamilies,
   buildVariantSelectorState,
   buildCanonicalProductProfile,
+  buildOfferIntelligence,
   DEMO_CATALOG,
 } from "../src/search-core.mjs";
 import { WORLD_SOURCE_REGISTRY, sourceCoverageSummary } from "../src/source-registry.mjs";
@@ -180,3 +181,36 @@ assert.equal(canonical.sim.value, "Dual eSIM");
 assert.equal(canonical.operatingSystem.value, "iOS 26");
 assert.equal(canonical.operatingSystem.conflict, true);
 assert.ok(canonical.operatingSystem.alternatives.some((item) => item.value === "iOS"));
+
+
+const intelligenceGroup = groupComparableOffers([
+  {
+    merchant:"eXtra",
+    title:"Apple iPhone 17, 5G, 6.3 inch 256GB, Black",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Black"},
+    sourceMeta:{jeddahInStock:true,homeDeliveryEnabled:true,collectFromStoreEnabled:true},
+    productPrice:3999,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"in_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    title:"Apple iPhone 17, 256 GB, Black, 5G, Apple A19",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Black"},
+    productPrice:4299,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  }
+])[0];
+
+const intelligence = buildOfferIntelligence(intelligenceGroup);
+assert.equal(intelligence.baselineOffer.merchant, "eXtra");
+assert.equal(intelligence.baselineValue, 3999);
+assert.equal(intelligence.priceBasis, "advertised_price");
+assert.equal(intelligence.rows[0].delta, 0);
+assert.equal(intelligence.rows[1].delta, 300);
+assert.equal(intelligence.rows[1].deltaPercent, 7.5);
+assert.ok(intelligence.rows[0].badges.includes("متوفر في جدة"));
+assert.ok(intelligence.rows[0].badges.includes("توصيل منزلي"));
+assert.ok(intelligence.rows[1].warnings.some((item) => item.includes("التوفر التفصيلي")));
+assert.ok(intelligence.insights.some((item) => item.type === "price" && item.text.includes("300.00")));
+assert.ok(intelligence.insights.some((item) => item.type === "availability" && item.text.includes("eXtra")));
+assert.ok(intelligence.insights.some((item) => item.type === "cost"));
