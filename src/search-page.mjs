@@ -9,6 +9,7 @@ import {
   buildVariantSelectorState,
   buildCanonicalProductProfile,
   buildOfferIntelligence,
+  offerVariantDimensions,
 } from "./search-core.mjs";
 
 const $ = (selector) => document.querySelector(selector);
@@ -717,6 +718,35 @@ function canonicalProfileMarkup(profile = {}) {
     : '<div class="spec-empty">لا توجد مواصفات موحّدة كافية لهذه النسخة حتى الآن.</div>';
 }
 
+function exactMatchCard(group, selectedGroup) {
+  const offer = group.bestPriceOffer || group.bestOffer || group.offers?.[0];
+  if (!offer) return "";
+  const specs = offer.specs || {};
+  const title = [specs.deviceType || specs.series || offer.title, specs.storage, specs.color]
+    .filter(Boolean).join(" · ");
+  const modelNumber = specs.modelNumber || null;
+  const uniqueMerchants = new Set((group.offers || []).map((item) => item.merchant).filter(Boolean)).size;
+  const selected = selectedGroup?.key === group.key;
+  const image = offer.image
+    ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';"><span class="match-card-fallback">لا توجد صورة</span>'
+    : '<span class="match-card-fallback visible">لا توجد صورة</span>';
+
+  return `
+    <button type="button" class="match-result-card ${selected ? "active" : ""}" data-group-key="${escapeHtml(group.key)}">
+      <div class="match-card-image">${image}</div>
+      <div class="match-card-copy">
+        <span class="mini-kicker">EXACT MATCH</span>
+        <strong>${escapeHtml(title)}</strong>
+        <small>${modelNumber ? "SKU " + escapeHtml(modelNumber) + " · " : ""}${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
+      </div>
+      <div class="match-card-price">
+        <small>${group.priceBasis === "comparable_total" ? "أفضل إجمالي" : "من"}</small>
+        <b>${fmt(group.bestValue)}</b>
+      </div>
+    </button>
+  `;
+}
+
 function selectedProductMedia(offer) {
   const title = offer?.sourceMeta?.nameAr || offer?.title || "المنتج";
   return offer?.image
@@ -750,6 +780,11 @@ function renderProduct(product, query) {
   const summary = summarizeOffers(product.offers);
   const groups = groupComparableOffers(product.offers, state.mode);
 
+  const exactGroups = groups.filter((group) =>
+    group.bestOffer?.exactMatch === true &&
+    (group.bestOffer?.matchConfidence || 0) >= 0.9 &&
+    group.bestOffer?.condition === "new"
+  );
   const selectorGroups = groups.filter((group) =>
     (group.bestOffer?.matchConfidence || 0) >= 0.7
   );
@@ -823,6 +858,9 @@ function renderProduct(product, query) {
               ${selectorRow("السعة", "storageKey", selector.options.storages, selector.selection.storageKey)}
               ${selectorRow("اللون", "colorKey", selector.options.colors, selector.selection.colorKey)}
               ${selectorRow("الحالة", "conditionKey", selector.options.conditions, selector.selection.conditionKey)}
+              ${selector.options.skus?.length > 1
+                ? selectorRow("رقم الموديل", "skuKey", selector.options.skus, selector.selection.skuKey)
+                : ""}
             </div>
 
             <div class="price-history-section">
@@ -880,6 +918,19 @@ function renderProduct(product, query) {
       </aside>
     </section>
 
+    <section class="match-results-section">
+      <div class="section-label">
+        <span>كل المطابقات المباشرة</span>
+        <b>${exactGroups.length} نسخ · ${exactGroups.reduce((sum, group) => sum + (group.offers?.length || 0), 0)} عروض</b>
+      </div>
+      <div class="match-results-grid">
+        ${exactGroups.length
+          ? exactGroups.map((group) => exactMatchCard(group, selectedGroup)).join("")
+          : '<div class="empty-state">لا توجد مطابقات مباشرة إضافية.</div>'}
+      </div>
+      <p class="match-results-note">اختيار أي بطاقة يغيّر الـConfigurator لنفس الموديل والسعة واللون والـSKU بدون بحث جديد.</p>
+    </section>
+
     <section class="uncertain-block">
       <div class="section-label">
         <span>نتائج أقل صلة — خارج الـConfigurator</span>
@@ -896,6 +947,26 @@ function renderProduct(product, query) {
       لا نخلط موديلًا أو سعة أو لونًا أو حالة مختلفة في المقارنة نفسها. والمواصفات الموحّدة تحتفظ بمصدر كل قيمة وتكشف التعارضات بين المصادر.
     </div>
   `;
+
+  els.results.querySelectorAll(".match-result-card").forEach((button) => {
+    button.addEventListener("click", () => {
+      const group = exactGroups.find((item) => item.key === button.dataset.groupKey);
+      const offer = group?.bestPriceOffer || group?.bestOffer;
+      if (!offer) return;
+      const dimensions = offerVariantDimensions(offer);
+      state.selectorSelection = {
+        modelKey: dimensions.modelKey,
+        storageKey: dimensions.storageKey,
+        colorKey: dimensions.colorKey,
+        conditionKey: dimensions.conditionKey,
+        skuKey: dimensions.skuKey,
+      };
+      renderProduct(product, query);
+      requestAnimationFrame(() => {
+        document.querySelector(".product-configurator")?.scrollIntoView({ behavior:"smooth", block:"start" });
+      });
+    });
+  });
 
   els.results.querySelectorAll(".config-option").forEach((button) => {
     button.addEventListener("click", () => {
