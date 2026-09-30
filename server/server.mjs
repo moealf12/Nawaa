@@ -6,11 +6,12 @@ import { searchConfiguredShopifyStores, shopifyConfigured } from "./providers/sh
 import { assessOfferMatch, dedupeNormalizedOffers } from "./match.mjs";
 import { resolveProductUrl } from "./url-resolver.mjs";
 import { searchSaudiRetailers } from "./providers/saudi-retailers.mjs";
+import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 
 async function searchAll(query) {
-  const tasks = [searchSaudiRetailers(query)];
+  const tasks = [searchExtraUnbxd(query), searchSaudiRetailers(query)];
   if (ebayConfigured()) tasks.push(searchEbayWorldwide(query));
   if (shopifyConfigured()) tasks.push(searchConfiguredShopifyStores(query));
 
@@ -61,6 +62,7 @@ async function searchAll(query) {
 
   return {
     providersConfigured: [
+      "extra-unbxd",
       "saudi-retailers",
       ...(ebayConfigured() ? ["ebay"] : []),
       ...(shopifyConfigured() ? ["shopify"] : []),
@@ -93,6 +95,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       service: "nawaa-search",
       liveProviders: {
+        extra: true,
         ebay: ebayConfigured(),
         shopify: shopifyConfigured(),
       },
