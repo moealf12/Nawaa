@@ -82,12 +82,35 @@
     .section-label{display:flex;justify-content:space-between;align-items:center;color:#7f93a6;font:10px var(--mono);letter-spacing:.08em;margin-bottom:9px}
     .section-label b{font-weight:500;color:#b7c6d4}
     .offers-column,.uncertain-block{min-width:0}
-    .offer-card{display:grid;grid-template-columns:72px 1fr 100px 160px;gap:14px;align-items:center;border:1px solid var(--line);background:rgba(12,26,40,.84);border-radius:19px;padding:17px;margin-bottom:9px;transition:.2s ease}
+    .offer-card{display:grid;grid-template-columns:44px 112px minmax(0,1fr) 160px;gap:16px;align-items:center;border:1px solid var(--line);background:rgba(12,26,40,.84);border-radius:22px;padding:16px;margin-bottom:12px;transition:.2s ease;overflow:hidden}
     .offer-card:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.22)}
     .offer-card.is-best{border-color:rgba(125,255,176,.32);background:linear-gradient(90deg,rgba(125,255,176,.065),rgba(12,26,40,.9))}
-    .offer-rank{font:9px var(--mono);color:var(--green);direction:ltr}
-    .offer-store{display:grid;min-width:0}.offer-store strong{font-size:14px;display:flex;align-items:center;gap:7px}.offer-store span{color:var(--muted);font-size:10px;margin-top:4px}.offer-source-link{width:max-content;color:var(--sky);font-size:9px;margin-top:5px;border-bottom:1px solid rgba(119,185,255,.28)}.country-flag{font-size:15px;line-height:1;filter:saturate(.9)}
-    .offer-meta,.offer-price{display:grid}.offer-meta small,.offer-price small{color:#71869a;font-size:9px}.offer-meta b{font-size:12px}.offer-price{text-align:left}.offer-price strong{font-size:19px;letter-spacing:-.02em}
+    .offer-rank{font:9px var(--mono);color:var(--green);direction:ltr;align-self:start;padding-top:5px}
+    .offer-image{width:112px;height:112px;border-radius:16px;background:#fff;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(255,255,255,.09)}
+    .offer-image img{width:100%;height:100%;object-fit:contain;padding:7px;display:block}
+    .offer-image-fallback{display:none;place-items:center;width:100%;height:100%;padding:10px;text-align:center;color:#6f8192;background:rgba(255,255,255,.04);font-size:9px}
+    .offer-image-fallback.visible{display:grid}
+    .offer-product{min-width:0;display:grid;gap:10px}
+    .offer-product-top{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
+    .offer-product h3{font-size:15px;line-height:1.45;margin:0;color:#f8fbff;font-weight:750}
+    .offer-product p{margin:3px 0 0;color:#75899c;font-size:9px}
+    .offer-store{display:grid;min-width:128px;text-align:left;direction:rtl}
+    .offer-store strong{font-size:12px;display:flex;align-items:center;justify-content:flex-start;gap:7px}
+    .offer-store span{color:var(--muted);font-size:9px;margin-top:3px;line-height:1.5}
+    .offer-source-link{width:max-content;color:var(--sky);font-size:9px;border-bottom:1px solid rgba(119,185,255,.28)}
+    .country-flag{font-size:15px;line-height:1;filter:saturate(.9)}
+    .spec-grid{display:flex;gap:6px;flex-wrap:wrap}
+    .spec-chip{display:flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.035);border-radius:999px;padding:5px 8px;white-space:nowrap}
+    .spec-chip small{font-size:8px;color:#71869a}
+    .spec-chip b{font-size:9px;color:#dbe6ef;font-weight:700}
+    .spec-empty{font-size:9px;color:#71869a}
+    .availability-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .availability{font-size:9px;color:#8da0b2}.availability.yes{color:var(--green)}.availability.no{color:var(--amber)}
+    .offer-links{display:flex;gap:10px;align-items:center;min-height:14px}
+    .offer-price{display:grid;text-align:left;align-content:center;justify-items:start;direction:rtl}
+    .offer-price small{color:#71869a;font-size:9px}
+    .offer-price strong{font-size:22px;letter-spacing:-.03em;white-space:nowrap}
+    .offer-price span{color:#71869a;font-size:8px;margin-top:3px}
     .best-panel{background:var(--ice);color:var(--ink);border-radius:24px;padding:24px;position:sticky;top:98px}
     .best-panel .mini-kicker{color:#315cff}.best-panel>small{display:block;color:#607080;margin-top:26px}
     .best-price{font-size:clamp(38px,4.4vw,58px);font-weight:850;letter-spacing:-.06em;margin:1px 0 15px}
@@ -116,7 +139,11 @@
       .hero-aside{border-right:0;border-top:1px solid var(--line);padding:20px 0 0}
       .best-panel{position:static}
       .flow{grid-template-columns:repeat(2,1fr)}
-      .offer-card{grid-template-columns:54px 1fr 130px}.offer-meta{display:none}
+      .offer-card{grid-template-columns:38px 96px minmax(0,1fr);align-items:start}
+      .offer-image{width:96px;height:96px}
+      .offer-product{grid-column:3}
+      .offer-product-top{display:grid;gap:8px}.offer-store{text-align:right;min-width:0}
+      .offer-price{grid-column:3;text-align:right;justify-items:start;border-top:1px solid var(--line);padding-top:10px}
     }
     @media(max-width:620px){
       .shell{width:min(100% - 24px,1220px)}
@@ -127,7 +154,15 @@
       .search-subrow{align-items:flex-start;flex-direction:column}.status{white-space:normal}
       .url-hint{align-items:stretch;flex-direction:column}
       .result-head{align-items:stretch;flex-direction:column}.identity-pill{width:max-content}
-      .offer-card{grid-template-columns:46px 1fr;gap:8px;padding:14px}.offer-price{grid-column:2;text-align:right;border-top:1px solid var(--line);padding-top:9px}.offer-price strong{font-size:18px}
+      .offer-card{grid-template-columns:30px 78px minmax(0,1fr);gap:9px;padding:12px}
+      .offer-image{width:78px;height:78px;border-radius:13px}
+      .offer-product{grid-column:2/-1}
+      .offer-product-top{display:grid;gap:8px}
+      .offer-product h3{font-size:13px}
+      .offer-store{text-align:right;min-width:0}
+      .spec-grid{gap:5px}.spec-chip{padding:4px 7px}.spec-chip small,.spec-chip b{font-size:8px}
+      .availability-row{gap:7px}
+      .offer-price{grid-column:2/-1;text-align:right;justify-items:start;border-top:1px solid var(--line);padding-top:9px}.offer-price strong{font-size:19px}
       .flow{grid-template-columns:1fr}.flow article{border-left:0;border-bottom:1px solid var(--line)}.flow article:last-child{border-bottom:0}
       .footer-inner{flex-direction:column}
     }
