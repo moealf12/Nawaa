@@ -9,6 +9,8 @@ import {
   offerVariantFamilyKey,
   groupComparableOffers,
   groupVariantFamilies,
+  buildVariantSelectorState,
+  buildCanonicalProductProfile,
   DEMO_CATALOG,
 } from "../src/search-core.mjs";
 import { WORLD_SOURCE_REGISTRY, sourceCoverageSummary } from "../src/source-registry.mjs";
@@ -124,3 +126,57 @@ assert.notEqual(
   offerVariantKey(variantFamilies[0].variants[0].bestOffer),
   offerVariantKey(variantFamilies[0].variants[1].bestOffer)
 );
+
+
+const selectorGroups = groupComparableOffers([
+  {
+    merchant:"eXtra",
+    title:"Apple iPhone 17, 5G, 6.3 inch 256GB, Black",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Black",ram:"8GB",processor:"A19 Bionic",operatingSystem:"iOS"},
+    productPrice:3999,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"in_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    title:"Apple iPhone 17, 256 GB, Black, 5G, Apple A19",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256GB",color:"Black",processor:"Apple A19",screenType:"Super Retina XDR Display",operatingSystem:"iOS 26",sim:"Dual eSIM"},
+    productPrice:4299,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"eXtra",
+    title:"Apple iPhone 17 Pro, 5G, 6.3 inch 256GB, Black",
+    specs:{brand:"Apple",deviceType:"iPhone 17 Pro",storage:"256 GB",color:"Black"},
+    productPrice:4399,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"in_stock",canShipToSaudi:true,exactMatch:false,matchConfidence:.82,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    title:"Renewed Apple iPhone 17, 256 GB, Black, 5G",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Black"},
+    productPrice:3299,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"renewed",availability:"unknown",canShipToSaudi:true,exactMatch:false,matchConfidence:.85,priceConfidence:"incomplete"
+  }
+]);
+
+const selectorState = buildVariantSelectorState(selectorGroups, {});
+assert.equal(selectorState.labels.modelLabel, "iPhone 17");
+assert.equal(selectorState.labels.storageKey, "256gb");
+assert.equal(selectorState.labels.colorKey, "black");
+assert.equal(selectorState.labels.conditionKey, "new");
+assert.ok(selectorState.options.models.some((option) => option.label === "iPhone 17 Pro"));
+assert.ok(selectorState.options.conditions.some((option) => option.key === "renewed"));
+
+const proSelectorState = buildVariantSelectorState(selectorGroups, { modelKey:"iphone 17 pro" });
+assert.equal(proSelectorState.labels.modelLabel, "iPhone 17 Pro");
+assert.equal(proSelectorState.selectedGroup.bestOffer.merchant, "eXtra");
+
+const canonical = buildCanonicalProductProfile(selectorState.selectedGroup.offers);
+assert.equal(canonical.brand.value, "Apple");
+assert.equal(canonical.storage.value.replace(" ",""), "256GB");
+assert.equal(canonical.ram.value, "8GB");
+assert.equal(canonical.screenType.value, "Super Retina XDR Display");
+assert.equal(canonical.sim.value, "Dual eSIM");
+assert.equal(canonical.operatingSystem.value, "iOS 26");
+assert.equal(canonical.operatingSystem.conflict, true);
+assert.ok(canonical.operatingSystem.alternatives.some((item) => item.value === "iOS"));
