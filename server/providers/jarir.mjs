@@ -53,6 +53,14 @@ function processorFromTitle(title) {
   return [...parts].reverse().find((part) => /\b(?:Apple\s+)?A\d+|Bionic|Snapdragon|Exynos|Dimensity/i.test(part)) || null;
 }
 
+function colorFromTitle(title) {
+  const parts = String(title || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const storageIndex = parts.findIndex((part) => /\b\d+(?:\.\d+)?\s*(?:GB|TB)\b/i.test(part));
+  const candidate = storageIndex >= 0 ? parts[storageIndex + 1] : null;
+  if (!candidate || /^(?:4G|5G|LTE)$/i.test(candidate)) return null;
+  return candidate;
+}
+
 function normalizeJarirConstructorResult(result) {
   const data = result?.data || {};
   const meta = data?.metadata || {};
@@ -198,7 +206,7 @@ export function parseJarirSearchHtml(html, limit = 24) {
         brand: /\bApple\b/i.test(title) ? "Apple" : null,
         series: String(title).split(",")[0] || null,
         deviceType: String(title).split(",")[0] || null,
-        color: null,
+        color: colorFromTitle(title),
         storage: titlePart(title, /\b\d+(?:\.\d+)?\s*(?:GB|TB)\b/i),
         processor: processorFromTitle(title),
         network: titlePart(title, /^(?:4G|5G|LTE)$/i),
