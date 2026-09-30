@@ -11,14 +11,6 @@ const SOURCES = [
     currency: "SAR",
     searchUrl: (q) => "https://www.noon.com/saudi-en/search/?q=" + encodeURIComponent(q),
   },
-  {
-    id: "jarir-sa",
-    name: "Jarir",
-    countryCode: "SA",
-    countryNameAr: "السعودية",
-    currency: "SAR",
-    searchUrl: (q) => "https://www.jarir.com/sa-en/catalogsearch/result/?q=" + encodeURIComponent(q),
-  },
 ];
 
 function decode(value = "") {
