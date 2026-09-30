@@ -33,6 +33,7 @@ function specRows(offer) {
     ["نوع الشاشة", s.screenType],
     ["الشبكة", s.network],
     ["نوع الشريحة", s.sim],
+    ["نسخة المنطقة", s.regionVersion],
     ["نظام التشغيل", s.operatingSystem],
     ["الكاميرا الخلفية", s.rearCamera],
     ["الكاميرا الأمامية", s.frontCamera],
