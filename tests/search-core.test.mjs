@@ -218,3 +218,43 @@ assert.ok(intelligence.insights.some((item) =>
 ));
 assert.ok(intelligence.insights.some((item) => item.type === "availability" && item.text.includes("eXtra")));
 assert.ok(intelligence.insights.some((item) => item.type === "cost"));
+
+
+const cheaperUnavailableGroup = groupComparableOffers([
+  {
+    merchant:"eXtra",
+    title:"Apple iPhone 17 256GB Black",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Black"},
+    productPrice:3999,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"in_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    title:"Apple iPhone 17 256GB Black",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Black",sim:"Dual eSIM"},
+    productPrice:4299,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Sharaf DG",
+    title:"Apple iPhone 17 256GB Black Middle East Version",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Black",regionVersion:"Middle East Version"},
+    productPrice:2998.95,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"out_of_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  }
+])[0];
+const unavailableIntelligence = buildOfferIntelligence(cheaperUnavailableGroup);
+assert.equal(unavailableIntelligence.baselineOffer.merchant, "eXtra");
+assert.equal(unavailableIntelligence.baselineValue, 3999);
+assert.ok(unavailableIntelligence.rows.find((row) => row.offer.merchant === "Sharaf DG").warnings.some((warning) =>
+  warning.includes("غير مؤهل")
+));
+assert.ok(unavailableIntelligence.insights.some((item) =>
+  item.type === "compatibility" && item.title.includes("المنطقة")
+));
+assert.ok(unavailableIntelligence.insights.some((item) =>
+  item.type === "compatibility" && item.title.includes("SIM")
+));
+
+const regionProfile = buildCanonicalProductProfile(cheaperUnavailableGroup.offers);
+assert.equal(regionProfile.regionVersion.value, "Middle East Version");
