@@ -235,6 +235,185 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
   });
 }
 
+export function offerVariantDimensions(offer = {}) {
+  const specs = offer.specs || {};
+  const modelLabel = String(specs.deviceType || specs.model || specs.series || offer.title || "غير محدد").trim();
+  const storageLabel = String(specs.storage || "غير محدد").trim();
+  const colorLabel = String(specs.color || "غير محدد").trim();
+  const conditionLabel = String(offer.condition || "unknown").trim();
+
+  return {
+    modelKey: normalizedModel(offer),
+    modelLabel,
+    storageKey: normalizeVariantPart(storageLabel),
+    storageLabel,
+    colorKey: normalizeVariantPart(colorLabel),
+    colorLabel,
+    conditionKey: normalizeVariantPart(conditionLabel),
+    conditionLabel,
+  };
+}
+
+function facetOptions(entries, keyName, labelName) {
+  const map = new Map();
+  for (const entry of entries) {
+    const key = entry.dimensions[keyName];
+    const label = entry.dimensions[labelName];
+    if (!key || !label) continue;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        label,
+        groups: 0,
+        merchants: new Set(),
+        minPrice: Infinity,
+      });
+    }
+    const item = map.get(key);
+    item.groups += 1;
+    for (const offer of entry.group.offers || []) {
+      if (offer.merchant) item.merchants.add(offer.merchant);
+    }
+    if (Number.isFinite(entry.group.bestValue)) item.minPrice = Math.min(item.minPrice, entry.group.bestValue);
+  }
+
+  return [...map.values()].map((item) => ({
+    key: item.key,
+    label: item.label,
+    groups: item.groups,
+    merchantCount: item.merchants.size,
+    minPrice: Number.isFinite(item.minPrice) ? item.minPrice : null,
+  })).sort((a, b) => {
+    const aPrice = Number.isFinite(a.minPrice) ? a.minPrice : Infinity;
+    const bPrice = Number.isFinite(b.minPrice) ? b.minPrice : Infinity;
+    if (aPrice !== bPrice) return aPrice - bPrice;
+    return String(a.label).localeCompare(String(b.label));
+  });
+}
+
+function pickFacetKey(requestedKey, options, fallbackKey) {
+  if (requestedKey && options.some((option) => option.key === requestedKey)) return requestedKey;
+  if (fallbackKey && options.some((option) => option.key === fallbackKey)) return fallbackKey;
+  return options[0]?.key || "";
+}
+
+export function buildVariantSelectorState(variantGroups = [], requested = {}) {
+  const entries = variantGroups
+    .filter((group) => group?.bestOffer)
+    .map((group) => ({
+      group,
+      dimensions: offerVariantDimensions(group.bestOffer),
+    }));
+
+  if (!entries.length) {
+    return {
+      selection: {},
+      options: { models: [], storages: [], colors: [], conditions: [] },
+      selectedGroup: null,
+    };
+  }
+
+  const fallbackEntry =
+    entries.find((entry) => entry.group.bestOffer?.exactMatch === true && entry.group.bestOffer?.condition === "new")
+    || entries[0];
+
+  const models = facetOptions(entries, "modelKey", "modelLabel");
+  const modelKey = pickFacetKey(requested.modelKey, models, fallbackEntry.dimensions.modelKey);
+  const modelEntries = entries.filter((entry) => entry.dimensions.modelKey === modelKey);
+
+  const storages = facetOptions(modelEntries, "storageKey", "storageLabel");
+  const storageKey = pickFacetKey(requested.storageKey, storages, fallbackEntry.dimensions.storageKey);
+  const storageEntries = modelEntries.filter((entry) => entry.dimensions.storageKey === storageKey);
+
+  const conditions = facetOptions(storageEntries, "conditionKey", "conditionLabel");
+  const conditionKey = pickFacetKey(requested.conditionKey, conditions, fallbackEntry.dimensions.conditionKey);
+  const conditionEntries = storageEntries.filter((entry) => entry.dimensions.conditionKey === conditionKey);
+
+  const colors = facetOptions(conditionEntries, "colorKey", "colorLabel");
+  const colorKey = pickFacetKey(requested.colorKey, colors, fallbackEntry.dimensions.colorKey);
+
+  const selectedEntry =
+    conditionEntries.find((entry) => entry.dimensions.colorKey === colorKey)
+    || conditionEntries[0]
+    || storageEntries[0]
+    || modelEntries[0]
+    || entries[0];
+
+  return {
+    selection: {
+      modelKey: selectedEntry?.dimensions.modelKey || modelKey,
+      storageKey: selectedEntry?.dimensions.storageKey || storageKey,
+      colorKey: selectedEntry?.dimensions.colorKey || colorKey,
+      conditionKey: selectedEntry?.dimensions.conditionKey || conditionKey,
+    },
+    labels: selectedEntry?.dimensions || {},
+    options: { models, storages, colors, conditions },
+    selectedGroup: selectedEntry?.group || null,
+  };
+}
+
+function canonicalSpecNorm(value = "") {
+  return normalizeVariantPart(value)
+    .replace(/\binches?\b/g, "inch")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function buildCanonicalProductProfile(offers = []) {
+  const fields = [
+    "brand","series","deviceType","storage","color","ram","processor","screenSize","screenType",
+    "network","sim","operatingSystem","rearCamera","frontCamera","battery","waterproof","modelNumber","barcode"
+  ];
+  const profile = {};
+
+  for (const field of fields) {
+    const candidates = new Map();
+
+    for (const offer of offers) {
+      const raw = offer?.specs?.[field];
+      if (raw === null || raw === undefined || String(raw).trim() === "") continue;
+      const value = String(raw).trim();
+      const normalized = canonicalSpecNorm(value);
+      if (!normalized) continue;
+
+      if (!candidates.has(normalized)) {
+        candidates.set(normalized, {
+          value,
+          normalized,
+          sources: new Set(),
+          observations: 0,
+        });
+      }
+      const candidate = candidates.get(normalized);
+      candidate.observations += 1;
+      if (offer.merchant) candidate.sources.add(offer.merchant);
+
+      // Keep the more specific display value when normalized values collapse together.
+      if (value.length > candidate.value.length) candidate.value = value;
+    }
+
+    const ranked = [...candidates.values()].sort((a, b) => {
+      if (b.sources.size !== a.sources.size) return b.sources.size - a.sources.size;
+      if (b.observations !== a.observations) return b.observations - a.observations;
+      return b.value.length - a.value.length;
+    });
+
+    if (!ranked.length) continue;
+    const chosen = ranked[0];
+    profile[field] = {
+      value: chosen.value,
+      sources: [...chosen.sources],
+      conflict: ranked.length > 1,
+      alternatives: ranked.slice(1).map((candidate) => ({
+        value: candidate.value,
+        sources: [...candidate.sources],
+      })),
+    };
+  }
+
+  return profile;
+}
+
 export function groupVariantFamilies(variantGroups = []) {
   const families = new Map();
 
