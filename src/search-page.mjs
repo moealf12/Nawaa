@@ -681,6 +681,7 @@ function canonicalProfileMarkup(profile = {}) {
     screenType: "نوع الشاشة",
     network: "الشبكة",
     sim: "الشريحة",
+    regionVersion: "نسخة المنطقة",
     operatingSystem: "النظام",
     rearCamera: "الكاميرا الخلفية",
     frontCamera: "الكاميرا الأمامية",
@@ -805,6 +806,8 @@ function renderProduct(product, query) {
                 <div class="config-summary">
                   <span>${selectedGroup.merchantCount} ${selectedGroup.merchantCount === 1 ? "متجر" : "متاجر"}</span>
                   <span>${conditionDisplay(featuredOffer.condition || "unknown")}</span>
+                  ${selectedSpecs.regionVersion ? '<span>' + escapeHtml(selectedSpecs.regionVersion) + '</span>' : ""}
+                  ${selectedSpecs.sim ? '<span>' + escapeHtml(selectedSpecs.sim) + '</span>' : ""}
                   <span>تطابق ${Math.round((featuredOffer.matchConfidence || 0) * 100)}%</span>
                 </div>
               </div>
