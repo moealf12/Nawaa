@@ -6,6 +6,8 @@ import {
   summarizeOffers,
   groupComparableOffers,
   groupVariantFamilies,
+  buildVariantSelectorState,
+  buildCanonicalProductProfile,
 } from "./search-core.mjs";
 
 const $ = (selector) => document.querySelector(selector);
@@ -27,6 +29,7 @@ const state = {
   product: null,
   query: "",
   variantSelections: {},
+  selectorSelection: {},
 };
 
 const nf = new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 2 });
@@ -410,6 +413,97 @@ function variantGroupCard(group, index) {
   return variantFamilyCard(family, index);
 }
 
+function conditionDisplay(value = "") {
+  return ({
+    new: "جديد",
+    renewed: "مجدد",
+    refurbished: "مجدّد",
+    open_box: "Open Box",
+    used: "مستعمل",
+    unknown: "غير محدد",
+  })[String(value).toLowerCase()] || value;
+}
+
+function selectorOptionMarkup(dimension, option, selectedKey) {
+  const selected = option.key === selectedKey;
+  const isColor = dimension === "colorKey";
+  const label = dimension === "conditionKey" ? conditionDisplay(option.label) : option.label;
+  const swatch = isColor
+    ? '<i class="config-swatch" style="--swatch:' + escapeHtml(colorSwatch(option.label)) + '"></i>'
+    : "";
+  const price = Number.isFinite(option.minPrice) ? '<small>من ' + fmt(option.minPrice) + '</small>' : "";
+
+  return '<button type="button" class="config-option ' + (isColor ? 'color-option ' : '') + (selected ? 'active' : '') +
+    '" data-dimension="' + escapeHtml(dimension) + '" data-key="' + escapeHtml(option.key) +
+    '" aria-pressed="' + (selected ? 'true' : 'false') + '">' +
+    swatch + '<span>' + escapeHtml(label) + '</span>' + price + '</button>';
+}
+
+function selectorRow(label, dimension, options, selectedKey) {
+  if (!options?.length) return "";
+  return `
+    <div class="config-row">
+      <div class="config-row-label">
+        <small>${escapeHtml(label)}</small>
+        <span>${options.length} خيار</span>
+      </div>
+      <div class="config-options">
+        ${options.map((option) => selectorOptionMarkup(dimension, option, selectedKey)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function canonicalProfileMarkup(profile = {}) {
+  const labels = {
+    ram: "الذاكرة",
+    processor: "المعالج",
+    screenSize: "حجم الشاشة",
+    screenType: "نوع الشاشة",
+    network: "الشبكة",
+    sim: "الشريحة",
+    operatingSystem: "النظام",
+    rearCamera: "الكاميرا الخلفية",
+    frontCamera: "الكاميرا الأمامية",
+    battery: "البطارية",
+    waterproof: "مقاومة الماء",
+    modelNumber: "رقم الموديل",
+    barcode: "الباركود",
+  };
+  const order = Object.keys(labels);
+  const rows = order
+    .filter((field) => profile[field]?.value)
+    .slice(0, 12)
+    .map((field) => {
+      const item = profile[field];
+      const sources = item.sources?.length ? item.sources.join(" + ") : "مصدر واحد";
+      const alternatives = item.alternatives?.length
+        ? '<span class="spec-conflict">اختلاف: ' + item.alternatives.map((alt) =>
+            escapeHtml(alt.value) + (alt.sources?.length ? ' (' + escapeHtml(alt.sources.join(" + ")) + ')' : '')
+          ).join(" · ") + '</span>'
+        : "";
+      return `
+        <div class="canonical-spec">
+          <small>${escapeHtml(labels[field])}</small>
+          <b>${escapeHtml(item.value)}</b>
+          <span>المصدر: ${escapeHtml(sources)}</span>
+          ${alternatives}
+        </div>
+      `;
+    });
+
+  return rows.length
+    ? rows.join("")
+    : '<div class="spec-empty">لا توجد مواصفات موحّدة كافية لهذه النسخة حتى الآن.</div>';
+}
+
+function selectedProductMedia(offer) {
+  const title = offer?.sourceMeta?.nameAr || offer?.title || "المنتج";
+  return offer?.image
+    ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';"><span class="config-image-fallback">لا توجد صورة</span>'
+    : '<span class="config-image-fallback visible">لا توجد صورة</span>';
+}
+
 function openProductDetails(product, offer, query) {
   const payload = {
     savedAt: new Date().toISOString(),
@@ -435,65 +529,115 @@ function renderProduct(product, query) {
   const ranked = rankOffers(product.offers, state.mode);
   const summary = summarizeOffers(product.offers);
   const groups = groupComparableOffers(product.offers, state.mode);
-  const directGroups = groups.filter((group) =>
-    group.bestOffer?.exactMatch === true &&
-    group.bestOffer?.condition === "new"
+
+  const selectorGroups = groups.filter((group) =>
+    (group.bestOffer?.matchConfidence || 0) >= 0.7
   );
-  const directFamilies = groupVariantFamilies(directGroups);
-  const directGroupKeys = new Set(directGroups.map((group) => group.key));
-  const otherGroups = groups.filter((group) => !directGroupKeys.has(group.key));
+  const selectorGroupKeys = new Set(selectorGroups.map((group) => group.key));
+  const relatedGroups = groups.filter((group) => !selectorGroupKeys.has(group.key));
 
-  const primaryFamily = directFamilies[0] || null;
-  const primarySelectedKey = primaryFamily
-    ? (state.variantSelections[primaryFamily.key] || primaryFamily.defaultVariantKey)
-    : null;
-  const primarySelectedGroup = primaryFamily?.variants.find((variant) => variant.key === primarySelectedKey)
-    || primaryFamily?.variants?.[0]
-    || null;
-  const featuredOffer = primarySelectedGroup?.bestOffer || null;
-  const featuredValue = primarySelectedGroup?.bestValue ?? null;
+  const selector = buildVariantSelectorState(selectorGroups.length ? selectorGroups : groups, state.selectorSelection);
+  state.selectorSelection = { ...selector.selection };
+
+  const selectedGroup = selector.selectedGroup;
+  const featuredOffer = selectedGroup?.bestOffer || null;
+  const featuredValue = selectedGroup?.bestValue ?? null;
   const featuredConfirmed = Boolean(featuredOffer && Number.isFinite(featuredOffer.totalSAR));
+  const canonicalProfile = buildCanonicalProductProfile(selectedGroup?.offers || []);
 
+  const modelCount = selector.options.models.length;
+  const storageCount = selector.options.storages.length;
+  const colorCount = selector.options.colors.length;
+  const conditionCount = selector.options.conditions.length;
   const hasLive = product.offers.some((offer) => offer.dataKind === "live");
-  const colorCount = directFamilies.reduce((sum, family) => sum + family.variants.length, 0);
+
   els.status.textContent = hasLive
-    ? `وجدنا ${summary.count} عرضًا حيًا · ${directFamilies.length || groups.length} منتجات/سعات · ${colorCount || groups.length} ألوان/نسخ · ${summary.sources} متاجر/بائعين`
-    : `وجدنا ${summary.count} عروض · ${directFamilies.length || groups.length} منتجات/سعات · ${summary.sources} مصادر`;
+    ? `بحث حي: ${summary.count} عرضًا · ${modelCount} موديلات · ${storageCount} سعات · ${colorCount} ألوان · ${summary.sources} متاجر/بائعين`
+    : `وجدنا ${summary.count} عروض · ${modelCount} موديلات · ${summary.sources} مصادر`;
   els.urlHint.hidden = true;
+
+  const selectedSpecs = featuredOffer?.specs || {};
+  const selectedTitle = [
+    selectedSpecs.deviceType || selectedSpecs.series || featuredOffer?.title || product.model,
+    selectedSpecs.storage,
+    selectedSpecs.color,
+  ].filter(Boolean).join(" · ");
 
   els.results.innerHTML = `
     <section class="result-head">
       <div>
-        <span class="mini-kicker">NORMALIZED PRODUCT</span>
+        <span class="mini-kicker">PRODUCT INTELLIGENCE</span>
         <h2>${escapeHtml(product.nameAr)}</h2>
-        <p>${escapeHtml(product.brand)} · ${escapeHtml(product.model)} · ${escapeHtml(product.variant || "")}</p>
+        <p>اختر الموديل والسعة واللون والحالة؛ نواة يعيد بناء المقارنة والمواصفات فورًا.</p>
       </div>
-      <div class="identity-pill">✓ اختر اللون ثم قارن نفس النسخة بين المتاجر</div>
+      <div class="identity-pill">✓ مواصفات موحّدة + مقارنة نفس النسخة فقط</div>
     </section>
 
     <section class="result-grid comparison-layout">
       <div class="offers-column">
-        <div class="section-label">
-          <span>الموديلات المطابقة — الألوان داخل نفس البطاقة</span>
-          <b>${directFamilies.length}</b>
-        </div>
-        ${directFamilies.length
-          ? directFamilies.map(variantFamilyCard).join("")
-          : '<div class="empty-state">لا توجد نسخ مطابقة مباشرة يمكن تجميعها حاليًا.</div>'}
+        ${featuredOffer ? `
+          <article class="product-configurator">
+            <div class="config-hero">
+              <div class="config-image">${selectedProductMedia(featuredOffer)}</div>
+              <div class="config-title">
+                <span class="mini-kicker">SELECTED CONFIGURATION</span>
+                <h3>${escapeHtml(selectedTitle)}</h3>
+                <div class="config-summary">
+                  <span>${selectedGroup.merchantCount} ${selectedGroup.merchantCount === 1 ? "متجر" : "متاجر"}</span>
+                  <span>${conditionDisplay(featuredOffer.condition || "unknown")}</span>
+                  <span>تطابق ${Math.round((featuredOffer.matchConfidence || 0) * 100)}%</span>
+                </div>
+              </div>
+              <div class="config-price">
+                <small>${featuredConfirmed ? "أفضل إجمالي مؤكد" : "أقل سعر معلن"}</small>
+                <strong>${fmt(featuredValue)}</strong>
+                <span>${featuredConfirmed ? "التكلفة مكتملة" : "الشحن/الرسوم قد تكون غير مكتملة"}</span>
+              </div>
+            </div>
+
+            <div class="configurator-controls">
+              ${selectorRow("الموديل", "modelKey", selector.options.models, selector.selection.modelKey)}
+              ${selectorRow("السعة", "storageKey", selector.options.storages, selector.selection.storageKey)}
+              ${selectorRow("اللون", "colorKey", selector.options.colors, selector.selection.colorKey)}
+              ${selectorRow("الحالة", "conditionKey", selector.options.conditions, selector.selection.conditionKey)}
+            </div>
+
+            <div class="canonical-section">
+              <div class="canonical-head">
+                <div>
+                  <span class="mini-kicker">CANONICAL PRODUCT PROFILE</span>
+                  <h4>المواصفات الموحّدة</h4>
+                </div>
+                <p>نجمع معلومات المتاجر للنسخة المختارة، ونظهر أي اختلاف بدل إخفائه.</p>
+              </div>
+              <div class="canonical-grid">${canonicalProfileMarkup(canonicalProfile)}</div>
+            </div>
+
+            <div class="comparison-head">
+              <div>
+                <span class="mini-kicker">STORE COMPARISON</span>
+                <h4>نفس النسخة، بين المتاجر</h4>
+              </div>
+              ${Number.isFinite(selectedGroup.savingsToNext)
+                ? '<span class="saving-pill">فرق ' + fmt(selectedGroup.savingsToNext) + ' عن العرض التالي</span>'
+                : ""}
+            </div>
+            <div class="merchant-comparison">
+              ${selectedGroup.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, selectedGroup)).join("")}
+            </div>
+          </article>
+        ` : '<div class="empty-state">لا توجد نسخة قابلة للتكوين من النتائج الحالية.</div>'}
       </div>
 
       <aside class="best-panel">
-        <span class="mini-kicker">${featuredConfirmed ? "SELECTED VARIANT / CONFIRMED TOTAL" : "SELECTED VARIANT / LOWEST PRICE"}</span>
+        <span class="mini-kicker">${featuredConfirmed ? "SELECTED / CONFIRMED TOTAL" : "SELECTED / LOWEST PRICE"}</span>
         ${featuredOffer ? `
-          <small>${featuredConfirmed ? "أفضل إجمالي مؤكد للون المختار" : "أقل سعر معلن للون المختار"}</small>
+          <small>${featuredConfirmed ? "أفضل إجمالي مؤكد للنسخة المختارة" : "أقل سعر معلن للنسخة المختارة"}</small>
           <div class="best-price">${fmt(featuredValue)}</div>
           <div class="best-merchant">${countryFlag(featuredOffer.merchantCountryCode)} ${escapeHtml(featuredOffer.merchant || "")}</div>
-          <div class="best-selected-variant">${escapeHtml([
-            featuredOffer.specs?.storage,
-            featuredOffer.specs?.color,
-          ].filter(Boolean).join(" · "))}</div>
+          <div class="best-selected-variant">${escapeHtml(selectedTitle)}</div>
           <div class="breakdown">${priceBreakdown(featuredOffer)}</div>
-          <button class="primary-action" id="quoteBestBtn">اطلب تسعيرة لهذا العرض</button>
+          <button class="primary-action" id="quoteBestBtn">اطلب تسعيرة لهذه النسخة</button>
           <p>${featuredConfirmed
             ? "الإجمالي مبني على عناصر تكلفة مكتملة."
             : "هذا أقل سعر معلن للنسخة المختارة؛ لا نصفه بالأرخص نهائيًا قبل تأكيد الشحن والرسوم."}</p>
@@ -503,20 +647,30 @@ function renderProduct(product, query) {
 
     <section class="uncertain-block">
       <div class="section-label">
-        <span>نسخ أو نتائج أخرى — لا تختلط بالموديل المطلوب</span>
-        <b>${otherGroups.length}</b>
+        <span>نتائج أقل صلة — خارج الـConfigurator</span>
+        <b>${relatedGroups.length}</b>
       </div>
-      ${otherGroups.length
-        ? otherGroups.slice(0, 10).map(variantGroupCard).join("")
-        : '<div class="empty-state">لا توجد نتائج أخرى.</div>'}
-      ${otherGroups.length > 10 ? '<div class="results-truncated">تم إخفاء ' + (otherGroups.length - 10) + ' مجموعة أقل صلة لتقليل التشويش.</div>' : ""}
+      ${relatedGroups.length
+        ? relatedGroups.slice(0, 6).map(variantGroupCard).join("")
+        : '<div class="empty-state">لا توجد نتائج أقل صلة.</div>'}
+      ${relatedGroups.length > 6 ? '<div class="results-truncated">تم إخفاء ' + (relatedGroups.length - 6) + ' مجموعة أقل صلة.</div>' : ""}
     </section>
 
     <div class="integrity-note">
       <strong>قاعدة نواة:</strong>
-      اللون لا يصنع منتجًا منفصلًا في الواجهة. نجمع الموديل والسعة والحالة في بطاقة واحدة، ثم يبدّل المستخدم اللون داخلها، ونقارن فقط نفس اللون بين المتاجر.
+      لا نخلط موديلًا أو سعة أو لونًا أو حالة مختلفة في المقارنة نفسها. والمواصفات الموحّدة تحتفظ بمصدر كل قيمة وتكشف التعارضات بين المصادر.
     </div>
   `;
+
+  els.results.querySelectorAll(".config-option").forEach((button) => {
+    button.addEventListener("click", () => {
+      const dimension = button.dataset.dimension || "";
+      const key = button.dataset.key || "";
+      if (!dimension || !key) return;
+      state.selectorSelection = { ...state.selectorSelection, [dimension]: key };
+      renderProduct(product, query);
+    });
+  });
 
   els.results.querySelectorAll(".variant-selector-btn").forEach((button) => {
     button.addEventListener("click", () => {
@@ -568,7 +722,10 @@ async function runSearch(rawQuery) {
     return;
   }
 
-  if (state.query !== query) state.variantSelections = {};
+  if (state.query !== query) {
+    state.variantSelections = {};
+    state.selectorSelection = {};
+  }
   state.query = query;
   saveRecent(query);
 
