@@ -5,6 +5,7 @@ import {
   rankOffers,
   summarizeOffers,
   groupComparableOffers,
+  groupVariantFamilies,
 } from "./search-core.mjs";
 
 const $ = (selector) => document.querySelector(selector);
@@ -25,6 +26,7 @@ const state = {
   mode: "lowest",
   product: null,
   query: "",
+  variantSelections: {},
 };
 
 const nf = new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 2 });
@@ -283,47 +285,129 @@ function offerComparisonRow(offer, index, group) {
   `;
 }
 
-function variantGroupCard(group, index) {
-  const offer = group.bestOffer || group.offers[0];
+function colorSwatch(color = "") {
+  const key = String(color).trim().toLowerCase();
+  const map = {
+    black: "#11151a",
+    white: "#f4f2ed",
+    lavender: "#b9a7d8",
+    purple: "#8d6bb5",
+    sage: "#9caf88",
+    green: "#7e9d77",
+    blue: "#6f9fcb",
+    "mist blue": "#9ebbd4",
+    silver: "#c9ced4",
+    grey: "#8d949b",
+    gray: "#8d949b",
+    orange: "#d8783e",
+    "cosmic orange": "#c96c38",
+    gold: "#c6a05a",
+    "light gold": "#d7be80",
+    pink: "#d7a2b8",
+    red: "#b94b55",
+  };
+  return map[key] || "linear-gradient(135deg,#71859a,#b8c4cf)";
+}
+
+function variantSelector(family, selectedGroup) {
+  if (!family?.variants?.length || family.variants.length < 2) return "";
+  return `
+    <div class="variant-selector" role="group" aria-label="اختر اللون">
+      <span class="variant-selector-label">اللون</span>
+      <div class="variant-options">
+        ${family.variants.map((variant) => {
+          const color = variant.bestOffer?.specs?.color || "نسخة";
+          const selected = variant.key === selectedGroup?.key;
+          return `
+            <button
+              type="button"
+              class="variant-selector-btn ${selected ? "active" : ""}"
+              data-family-key="${escapeHtml(family.key)}"
+              data-variant-key="${escapeHtml(variant.key)}"
+              aria-pressed="${selected ? "true" : "false"}"
+            >
+              <i style="--swatch:${escapeHtml(colorSwatch(color))}"></i>
+              <span>${escapeHtml(color)}</span>
+              <small>${fmt(variant.bestValue)}</small>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function variantFamilyCard(family, index) {
+  if (!family?.variants?.length) return "";
+  const selectedKey = state.variantSelections[family.key] || family.defaultVariantKey;
+  const selectedGroup = family.variants.find((variant) => variant.key === selectedKey) || family.variants[0];
+  if (!selectedGroup) return "";
+
+  state.variantSelections[family.key] = selectedGroup.key;
+
+  const offer = selectedGroup.bestOffer || selectedGroup.offers?.[0];
   if (!offer) return "";
+
   const specs = offer.specs || {};
-  const title = [specs.deviceType || specs.series || offer.title, specs.storage, specs.color]
+  const title = [specs.deviceType || specs.series || offer.title, specs.storage]
     .filter(Boolean)
     .join(" · ");
+  const selectedColor = specs.color || "غير محدد";
   const imageTitle = offer.sourceMeta?.nameAr || offer.title || title;
   const media = offer.image
     ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(imageTitle) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';"><span class="variant-image-fallback">لا توجد صورة</span>'
     : '<span class="variant-image-fallback visible">لا توجد صورة</span>';
 
-  const savings = Number.isFinite(group.savingsToNext)
-    ? '<span class="saving-pill">فرق ' + fmt(group.savingsToNext) + ' عن العرض التالي</span>'
+  const savings = Number.isFinite(selectedGroup.savingsToNext)
+    ? '<span class="saving-pill">وفر ' + fmt(selectedGroup.savingsToNext) + ' مقابل العرض التالي</span>'
     : "";
 
   return `
-    <article class="variant-card">
+    <article class="variant-card variant-family-card" data-family="${escapeHtml(family.key)}">
+      <div class="variant-family-bar">
+        <div>
+          <span class="mini-kicker">PRODUCT FAMILY / ${String(index + 1).padStart(2, "0")}</span>
+          <strong>${escapeHtml(title || offer.title)}</strong>
+        </div>
+        <span>${family.variants.length} ألوان · ${family.merchantCount} متاجر</span>
+      </div>
+
+      ${variantSelector(family, selectedGroup)}
+
       <div class="variant-head">
         <div class="variant-image">${media}</div>
         <div class="variant-copy">
-          <span class="mini-kicker">MATCHED VARIANT / ${String(index + 1).padStart(2, "0")}</span>
-          <h3>${escapeHtml(title || offer.title)}</h3>
+          <span class="selected-variant-label">اللون المختار: <b>${escapeHtml(selectedColor)}</b></span>
+          <h3>${escapeHtml([title, selectedColor].filter(Boolean).join(" · "))}</h3>
           <div class="variant-badges">
-            <span>${group.merchantCount} ${group.merchantCount === 1 ? "متجر" : "متاجر"}</span>
+            <span>${selectedGroup.merchantCount} ${selectedGroup.merchantCount === 1 ? "متجر" : "متاجر"}</span>
             <span>${offer.condition === "new" ? "جديد" : escapeHtml(offer.condition || "")}</span>
             ${savings}
           </div>
           <div class="spec-grid">${specsMarkup(offer)}</div>
         </div>
         <div class="variant-best">
-          <small>${group.priceBasis === "comparable_total" ? "أفضل إجمالي مؤكد" : "أقل سعر معلن"}</small>
-          <strong>${fmt(group.bestValue)}</strong>
-          <span>${group.priceBasis === "comparable_total" ? "التكلفة المقارنة مكتملة" : "قبل أي شحن/رسوم غير مؤكدة"}</span>
+          <small>${selectedGroup.priceBasis === "comparable_total" ? "أفضل إجمالي مؤكد" : "أقل سعر معلن"}</small>
+          <strong>${fmt(selectedGroup.bestValue)}</strong>
+          <span>${selectedGroup.priceBasis === "comparable_total" ? "التكلفة المقارنة مكتملة" : "قبل أي شحن/رسوم غير مؤكدة"}</span>
         </div>
       </div>
+
       <div class="merchant-comparison">
-        ${group.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, group)).join("")}
+        ${selectedGroup.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, selectedGroup)).join("")}
       </div>
     </article>
   `;
+}
+
+function variantGroupCard(group, index) {
+  const family = {
+    key: "single|" + group.key,
+    variants: [group],
+    defaultVariantKey: group.key,
+    merchantCount: group.merchantCount,
+  };
+  return variantFamilyCard(family, index);
 }
 
 function openProductDetails(product, offer, query) {
@@ -355,16 +439,26 @@ function renderProduct(product, query) {
     group.bestOffer?.exactMatch === true &&
     group.bestOffer?.condition === "new"
   );
-  const otherGroups = groups.filter((group) => !directGroups.includes(group));
-  const bestConfirmed = summary.bestConfirmed;
-  const featuredGroup = directGroups[0] || null;
-  const featuredOffer = bestConfirmed || featuredGroup?.bestOffer || null;
-  const featuredValue = bestConfirmed?.totalSAR ?? featuredGroup?.bestValue ?? null;
+  const directFamilies = groupVariantFamilies(directGroups);
+  const directGroupKeys = new Set(directGroups.map((group) => group.key));
+  const otherGroups = groups.filter((group) => !directGroupKeys.has(group.key));
+
+  const primaryFamily = directFamilies[0] || null;
+  const primarySelectedKey = primaryFamily
+    ? (state.variantSelections[primaryFamily.key] || primaryFamily.defaultVariantKey)
+    : null;
+  const primarySelectedGroup = primaryFamily?.variants.find((variant) => variant.key === primarySelectedKey)
+    || primaryFamily?.variants?.[0]
+    || null;
+  const featuredOffer = primarySelectedGroup?.bestOffer || null;
+  const featuredValue = primarySelectedGroup?.bestValue ?? null;
+  const featuredConfirmed = Boolean(featuredOffer && Number.isFinite(featuredOffer.totalSAR));
 
   const hasLive = product.offers.some((offer) => offer.dataKind === "live");
+  const colorCount = directFamilies.reduce((sum, family) => sum + family.variants.length, 0);
   els.status.textContent = hasLive
-    ? `وجدنا ${summary.count} عرضًا حيًا · ${groups.length} نسخ/ألوان · ${summary.sources} متاجر/بائعين`
-    : `وجدنا ${summary.count} عروض · ${groups.length} نسخ/ألوان · ${summary.sources} مصادر`;
+    ? `وجدنا ${summary.count} عرضًا حيًا · ${directFamilies.length || groups.length} منتجات/سعات · ${colorCount || groups.length} ألوان/نسخ · ${summary.sources} متاجر/بائعين`
+    : `وجدنا ${summary.count} عروض · ${directFamilies.length || groups.length} منتجات/سعات · ${summary.sources} مصادر`;
   els.urlHint.hidden = true;
 
   els.results.innerHTML = `
@@ -374,31 +468,35 @@ function renderProduct(product, query) {
         <h2>${escapeHtml(product.nameAr)}</h2>
         <p>${escapeHtml(product.brand)} · ${escapeHtml(product.model)} · ${escapeHtml(product.variant || "")}</p>
       </div>
-      <div class="identity-pill">✓ التجميع حسب الموديل + السعة + اللون + الحالة</div>
+      <div class="identity-pill">✓ اختر اللون ثم قارن نفس النسخة بين المتاجر</div>
     </section>
 
     <section class="result-grid comparison-layout">
       <div class="offers-column">
         <div class="section-label">
-          <span>مطابقات مباشرة — مقارنة نفس النسخة بين المتاجر</span>
-          <b>${directGroups.length}</b>
+          <span>الموديلات المطابقة — الألوان داخل نفس البطاقة</span>
+          <b>${directFamilies.length}</b>
         </div>
-        ${directGroups.length
-          ? directGroups.map(variantGroupCard).join("")
+        ${directFamilies.length
+          ? directFamilies.map(variantFamilyCard).join("")
           : '<div class="empty-state">لا توجد نسخ مطابقة مباشرة يمكن تجميعها حاليًا.</div>'}
       </div>
 
       <aside class="best-panel">
-        <span class="mini-kicker">${bestConfirmed ? "BEST CONFIRMED TOTAL" : "LOWEST ADVERTISED PRICE"}</span>
+        <span class="mini-kicker">${featuredConfirmed ? "SELECTED VARIANT / CONFIRMED TOTAL" : "SELECTED VARIANT / LOWEST PRICE"}</span>
         ${featuredOffer ? `
-          <small>${bestConfirmed ? "أقل إجمالي مؤكد" : "أقل سعر معلن بين المطابقات المباشرة"}</small>
+          <small>${featuredConfirmed ? "أفضل إجمالي مؤكد للون المختار" : "أقل سعر معلن للون المختار"}</small>
           <div class="best-price">${fmt(featuredValue)}</div>
           <div class="best-merchant">${countryFlag(featuredOffer.merchantCountryCode)} ${escapeHtml(featuredOffer.merchant || "")}</div>
+          <div class="best-selected-variant">${escapeHtml([
+            featuredOffer.specs?.storage,
+            featuredOffer.specs?.color,
+          ].filter(Boolean).join(" · "))}</div>
           <div class="breakdown">${priceBreakdown(featuredOffer)}</div>
           <button class="primary-action" id="quoteBestBtn">اطلب تسعيرة لهذا العرض</button>
-          <p>${bestConfirmed
+          <p>${featuredConfirmed
             ? "الإجمالي مبني على عناصر تكلفة مكتملة."
-            : "هذا أقل سعر معلن فقط؛ لا نصفه بالأرخص نهائيًا قبل تأكيد الشحن والرسوم."}</p>
+            : "هذا أقل سعر معلن للنسخة المختارة؛ لا نصفه بالأرخص نهائيًا قبل تأكيد الشحن والرسوم."}</p>
         ` : '<div class="empty-state compact">لا يوجد عرض مطابق مباشر حاليًا.</div>'}
       </aside>
     </section>
@@ -409,16 +507,26 @@ function renderProduct(product, query) {
         <b>${otherGroups.length}</b>
       </div>
       ${otherGroups.length
-        ? otherGroups.slice(0, 14).map(variantGroupCard).join("")
+        ? otherGroups.slice(0, 10).map(variantGroupCard).join("")
         : '<div class="empty-state">لا توجد نتائج أخرى.</div>'}
-      ${otherGroups.length > 14 ? '<div class="results-truncated">تم إخفاء ' + (otherGroups.length - 14) + ' مجموعة أقل صلة لتقليل التشويش.</div>' : ""}
+      ${otherGroups.length > 10 ? '<div class="results-truncated">تم إخفاء ' + (otherGroups.length - 10) + ' مجموعة أقل صلة لتقليل التشويش.</div>' : ""}
     </section>
 
     <div class="integrity-note">
       <strong>قاعدة نواة:</strong>
-      نجمع فقط نفس الموديل والسعة واللون والحالة في مقارنة واحدة. وإذا كانت الشحن أو الرسوم غير مؤكدة، نعرض «أقل سعر معلن» بدل ادعاء «الأرخص نهائيًا».
+      اللون لا يصنع منتجًا منفصلًا في الواجهة. نجمع الموديل والسعة والحالة في بطاقة واحدة، ثم يبدّل المستخدم اللون داخلها، ونقارن فقط نفس اللون بين المتاجر.
     </div>
   `;
+
+  els.results.querySelectorAll(".variant-selector-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const familyKey = button.dataset.familyKey || "";
+      const variantKey = button.dataset.variantKey || "";
+      if (!familyKey || !variantKey) return;
+      state.variantSelections[familyKey] = variantKey;
+      renderProduct(product, query);
+    });
+  });
 
   els.results.querySelectorAll(".product-detail-btn").forEach((button) => {
     button.addEventListener("click", () => {
@@ -460,6 +568,7 @@ async function runSearch(rawQuery) {
     return;
   }
 
+  if (state.query !== query) state.variantSelections = {};
   state.query = query;
   saveRecent(query);
 
