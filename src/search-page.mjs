@@ -236,7 +236,8 @@ function offerCard(offer, index) {
         </div>
 
         <div class="offer-links">
-          ${offer.sourceUrl ? '<a class="offer-source-link" href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">فتح صفحة المنتج ↗</a>' : ""}
+          <button class="product-detail-btn" type="button" data-source="${escapeHtml(offer.sourceUrl || "")}">عرض التفاصيل</button>
+          ${offer.sourceUrl ? '<a class="offer-source-link" href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">فتح المصدر ↗</a>' : ""}
         </div>
       </div>
 
@@ -303,6 +304,29 @@ function renderProduct(product, query) {
       لا نسمّي عرضًا «الأرخص» إذا كانت مطابقة الموديل، حالة المنتج، الشحن، أو التكلفة النهائية غير مؤكدة.
     </div>
   `;
+
+  els.results.querySelectorAll(".product-detail-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const sourceUrl = button.dataset.source || "";
+      const selected = ranked.find((offer) => (offer.sourceUrl || "") === sourceUrl) || ranked[0] || null;
+      if (!selected) return;
+      const snapshot = {
+        savedAt: new Date().toISOString(),
+        query,
+        product: {
+          nameAr: product.nameAr,
+          nameEn: product.nameEn,
+          brand: product.brand,
+          model: product.model,
+          variant: product.variant,
+        },
+        offer: selected,
+      };
+      localStorage.setItem("nawaa_selected_offer", JSON.stringify(snapshot));
+      const target = "./product.html" + (sourceUrl ? "?source=" + encodeURIComponent(sourceUrl) : "");
+      location.href = target;
+    });
+  });
 
   $("#quoteBestBtn")?.addEventListener("click", () => openQuote(product, best, query));
 }
