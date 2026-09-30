@@ -258,3 +258,33 @@ assert.ok(unavailableIntelligence.insights.some((item) =>
 
 const regionProfile = buildCanonicalProductProfile(cheaperUnavailableGroup.offers);
 assert.equal(regionProfile.regionVersion.value, "Middle East Version");
+
+
+const formattedSkuGroups = groupComparableOffers([
+  {
+    merchant:"eXtra",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Black",modelNumber:"MG674AH/A"},
+    productPrice:3999,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"in_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256GB",color:"Black",modelNumber:"MG674AHA"},
+    productPrice:4299,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  }
+]);
+assert.equal(formattedSkuGroups.length, 1);
+assert.equal(formattedSkuGroups[0].offers.length, 2);
+
+const conflictingSkuGroups = groupComparableOffers([
+  ...formattedSkuGroups[0].offers,
+  {
+    merchant:"Sharaf DG",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256GB",color:"Black",modelNumber:"3P181AH/A"},
+    productPrice:2998.95,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  }
+]);
+assert.equal(conflictingSkuGroups.length, 2);
+assert.ok(conflictingSkuGroups.some((group) => group.bestOffer?.specs?.modelNumber === "3P181AH/A"));
