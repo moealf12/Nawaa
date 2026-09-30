@@ -181,8 +181,13 @@ function render(snapshot) {
 async function load() {
   let snapshot = null;
   try {
-    snapshot = JSON.parse(localStorage.getItem("nawaa_selected_offer") || "null");
+    snapshot = JSON.parse(sessionStorage.getItem("nawaa_product_detail") || "null");
   } catch {}
+  if (!snapshot) {
+    try {
+      snapshot = JSON.parse(localStorage.getItem("nawaa_selected_offer") || "null");
+    } catch {}
+  }
 
   const source = new URL(location.href).searchParams.get("source");
 
