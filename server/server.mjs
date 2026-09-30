@@ -1,5 +1,8 @@
 import http from "node:http";
-import { URL } from "node:url";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath, URL } from "node:url";
 import { allowedOrigin, jsonResponse } from "./provider-utils.mjs";
 import { ebayConfigured, searchEbayWorldwide } from "./providers/ebay.mjs";
 import { searchConfiguredShopifyStores, shopifyConfigured } from "./providers/shopify.mjs";
@@ -13,6 +16,47 @@ import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs"
 import { searchSharafDG } from "./providers/sharafdg.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
+const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const STATIC_FILES = new Map([
+  ["/", "index.html"],
+  ["/index.html", "index.html"],
+  ["/search.html", "search.html"],
+  ["/product.html", "product.html"],
+  ["/config.js", "config.js"],
+  ["/src/search-page.mjs", "src/search-page.mjs"],
+  ["/src/search-core.mjs", "src/search-core.mjs"],
+  ["/src/product-page.mjs", "src/product-page.mjs"],
+  ["/src/source-registry.mjs", "src/source-registry.mjs"],
+]);
+
+function contentTypeFor(filePath) {
+  if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
+  if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "text/javascript; charset=utf-8";
+  return "application/octet-stream";
+}
+
+async function serveStaticFile(req, res, pathname) {
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  const relative = STATIC_FILES.get(pathname);
+  if (!relative) return false;
+
+  const filePath = path.join(STATIC_ROOT, relative);
+  try {
+    const info = await stat(filePath);
+    if (!info.isFile()) return false;
+    res.writeHead(200, {
+      "content-type": contentTypeFor(filePath),
+      "content-length": String(info.size),
+      "cache-control": filePath.endsWith(".html") ? "no-cache" : "public, max-age=60",
+      "x-content-type-options": "nosniff",
+    });
+    if (req.method === "HEAD") return res.end(), true;
+    createReadStream(filePath).pipe(res);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function searchAll(query) {
   const tasks = [searchExtraUnbxd(query), searchJarir(query), searchSharafDG(query)];
@@ -160,6 +204,8 @@ const server = http.createServer(async (req, res) => {
       }, origin || "*");
     }
   }
+
+  if (await serveStaticFile(req, res, url.pathname)) return;
 
   return jsonResponse(res, 404, { error: "not_found" }, origin || "*");
 });
