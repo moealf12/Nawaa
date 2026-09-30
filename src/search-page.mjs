@@ -166,24 +166,84 @@ function countryFlag(code = "") {
   return String.fromCodePoint(...[...cc].map((char) => 127397 + char.charCodeAt(0)));
 }
 
+function specEntries(offer) {
+  const specs = offer.specs || {};
+  const items = [
+    ["اللون", specs.color],
+    ["السعة", specs.storage],
+    ["الذاكرة", specs.ram],
+    ["المعالج", specs.processor],
+    ["الشاشة", specs.screenSize],
+    ["الشبكة", specs.network],
+    ["النظام", specs.operatingSystem],
+    ["الكاميرا", specs.rearCamera],
+    ["البطارية", specs.battery],
+    ["مقاومة الماء", specs.waterproof],
+  ];
+  return items.filter(([, value]) => value !== null && value !== undefined && String(value).trim()).slice(0, 8);
+}
+
+function specsMarkup(offer) {
+  const items = specEntries(offer);
+  if (!items.length) return '<span class="spec-empty">المواصفات التفصيلية غير متاحة من هذا المصدر حاليًا</span>';
+  return items.map(([label, value]) =>
+    '<span class="spec-chip"><small>' + escapeHtml(label) + '</small><b>' + escapeHtml(value) + '</b></span>'
+  ).join("");
+}
+
+function availabilityMarkup(offer) {
+  const parts = [];
+  if (offer.sourceMeta?.jeddahInStock === true) parts.push('<span class="availability yes">● متوفر في جدة</span>');
+  else if (offer.sourceMeta?.jeddahInStock === false) parts.push('<span class="availability no">● غير متوفر حاليًا في جدة</span>');
+  if (offer.sourceMeta?.homeDeliveryEnabled === true) parts.push('<span class="availability">توصيل منزلي ✓</span>');
+  if (offer.sourceMeta?.collectFromStoreEnabled === true) parts.push('<span class="availability">استلام من المعرض ✓</span>');
+  return parts.join("");
+}
+
 function offerCard(offer, index) {
   const best = index === 0 && offer.bucket === "confirmed";
   const eta = Number.isFinite(offer.deliveryDays) ? offer.deliveryDays + " يوم" : "غير مؤكد";
+  const title = offer.sourceMeta?.nameAr || offer.title || offer.merchant;
+  const modelNumber = offer.specs?.modelNumber;
+  const media = offer.image
+    ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';"><span class="offer-image-fallback">لا توجد صورة</span>'
+    : '<span class="offer-image-fallback visible">لا توجد صورة</span>';
+
   return `
     <article class="offer-card ${best ? "is-best" : ""}">
       <div class="offer-rank">${best ? "BEST" : String(index + 1).padStart(2, "0")}</div>
-      <div class="offer-store">
-        <strong><span class="country-flag" title="${escapeHtml(offer.merchantCountryNameAr || "دولة المصدر")}">${countryFlag(offer.merchantCountryCode)}</span> ${escapeHtml(offer.merchant)}</strong>
-        <span>${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${offer.dataKind === "verified_source" ? "مصدر موثق" : offer.dataKind === "live" ? "بحث حي" : "بيانات اختبار"} · ${bucketLabel(offer.bucket)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
-        ${offer.sourceUrl ? '<a class="offer-source-link" href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">فتح المصدر ↗</a>' : ""}
+
+      <div class="offer-image">
+        ${media}
       </div>
-      <div class="offer-meta">
-        <small>الوصول</small>
-        <b>${eta}</b>
+
+      <div class="offer-product">
+        <div class="offer-product-top">
+          <div>
+            <h3>${escapeHtml(title)}</h3>
+            <p>${modelNumber ? "رقم الموديل " + escapeHtml(modelNumber) + " · " : ""}${escapeHtml(offer.condition === "new" ? "جديد" : offer.condition || "")}</p>
+          </div>
+          <div class="offer-store">
+            <strong><span class="country-flag" title="${escapeHtml(offer.merchantCountryNameAr || "دولة المصدر")}">${countryFlag(offer.merchantCountryCode)}</span> ${escapeHtml(offer.merchant)}</strong>
+            <span>${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${offer.dataKind === "verified_source" ? "مصدر موثق" : offer.dataKind === "live" ? "بحث حي" : "بيانات اختبار"} · ${bucketLabel(offer.bucket)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
+          </div>
+        </div>
+
+        <div class="spec-grid">${specsMarkup(offer)}</div>
+        <div class="availability-row">
+          ${availabilityMarkup(offer)}
+          <span class="availability">الوصول: ${eta}</span>
+        </div>
+
+        <div class="offer-links">
+          ${offer.sourceUrl ? '<a class="offer-source-link" href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">فتح صفحة المنتج ↗</a>' : ""}
+        </div>
       </div>
+
       <div class="offer-price">
         <small>${offer.totalSAR === null ? "السعر المعلن" : "الإجمالي المقارن"}</small>
         <strong>${offer.totalSAR === null ? fmt(offer.productPrice) + " +" : fmt(offer.totalSAR)}</strong>
+        <span>${offer.totalSAR === null ? "الشحن/الرسوم غير مكتملة" : "يشمل العناصر المؤكدة"}</span>
       </div>
     </article>
   `;
