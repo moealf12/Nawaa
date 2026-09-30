@@ -274,6 +274,23 @@
       .footer-inner{flex-direction:column}
     }
     @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+    /* Results start with the buying decision; supporting detail stays available. */
+    .hero{padding:40px 0 28px}.hero-grid{grid-template-columns:1fr}.hero-aside{display:none}
+    h1{font-size:clamp(38px,5vw,64px);line-height:1.08;margin:12px 0 16px}
+    .hero-copy p{font-size:15px;max-width:860px}.demo-banner{margin-top:20px}
+    .results-toolbar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:18px;margin-bottom:20px;border:1px solid var(--line);border-radius:18px;background:var(--ink-2)}
+    .results-toolbar label{display:flex;align-items:center;gap:10px;font-size:13px}
+    .results-toolbar select,.results-toolbar button{min-height:44px;border:1px solid var(--line);border-radius:12px;background:var(--ink);color:var(--text);padding:8px 12px;font:inherit}
+    .results-toolbar>span{color:var(--muted);font-size:12px;margin-inline-start:auto}
+    .result-details{border-top:1px solid var(--line);padding:18px 0;margin-top:18px}
+    .result-details summary{cursor:pointer;min-height:44px;display:list-item;font-weight:750;color:var(--sky);padding:10px 4px}
+    .result-details summary::marker{color:var(--sky)}
+    .search-notice{padding:18px;border:1px solid var(--amber);border-radius:16px;color:var(--amber);margin-bottom:18px}
+    .match-reason{font-size:12px;color:var(--muted);margin:6px 0}
+    button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--sky);outline-offset:4px}
+    .config-option{min-height:44px}.merchant-row .merchant-actions button,.merchant-row .merchant-actions a{min-height:44px}
+    @media(max-width:680px){.results-toolbar{gap:12px;padding:12px}.results-toolbar label{width:100%;justify-content:space-between}.results-toolbar select{width:68%}.results-toolbar>span{margin-inline-start:0}.identity-pill{white-space:normal}.result-head{align-items:start;flex-direction:column;gap:12px}.hero{padding-top:28px}}
   </style>
 </head>
 <body>

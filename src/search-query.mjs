@@ -9,6 +9,7 @@ const ALIASES = [
   ["اسود", "black"], ["ابيض", "white"], ["لافندر", "lavender"], ["ازرق", "blue"],
   ["اخضر", "green"], ["ذهبي", "gold"], ["فضي", "silver"],
   ["كفر", "case"], ["حافظه", "case"], ["شاحن", "charger"], ["كيبل", "cable"],
+  ["مجدد", "refurbished"], ["مستعمل", "used"], ["جديد", "new"],
 ];
 
 export function normalizeSearchQuery(value = "") {
@@ -19,14 +20,30 @@ export function normalizeSearchQuery(value = "") {
     .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
     .replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 
+  text = text.replace(/([ء-ي])(?=\d)/g, "$1 ").replace(/(\d)(?=جيجا|تيرا)/g, "$1 ");
   for (const [alias, canonical] of ALIASES) {
     text = text.replace(new RegExp("(^| )" + alias + "(?= |$)", "g"), "$1" + canonical);
   }
-  return text.replace(/\b(iphone|airpods|ps)\s*(\d+)/g, "$1 $2")
+  if (/\b(?:iphone|galaxy)\b/.test(text)) text = text.replace(/\b(64|128|256|512|1024)(?= |$)(?!\s+(?:gb|tb)\b)/g, "$1gb");
+  return text.replace(/(^| )(?:ابغي|ابي|اريد|ابحث|عن|لي|بافضل|افضل|ارخص|سعر|اشتري|please|find)(?= |$)/g, " ")
+    .replace(/\b(iphone|airpods|ps)\s*(\d+)/g, "$1 $2")
     .replace(/\bplaystation\s+(\d+)\b/g, "ps $1")
     .replace(/\bps\s+(\d+)\b/g, "ps$1")
     .replace(/\b(\d+)\s+(gb|tb|mb|mah|mp)\b/g, "$1$2")
     .replace(/\s+/g, " ").trim();
+}
+
+export function parseSearchIntent(value = "") {
+  const normalizedQuery = normalizeSearchQuery(value);
+  const condition = normalizedQuery.match(/\b(refurbished|used|new)\b/)?.[1] || null;
+  return {
+    normalizedQuery,
+    providerQuery: normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim(),
+    model: normalizedQuery.match(/\b(?:iphone (?:air|\d+)(?: pro(?: max)?| plus)?|galaxy s\d+(?: ultra| plus| fe)?|ps\d+(?: slim| pro)?|airpods(?: pro)?(?: \d+)?|dyson v\d+)\b/)?.[0] || null,
+    storage: normalizedQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
+    color: normalizedQuery.match(/\b(?:mist blue|desert titanium|natural titanium|black titanium|white titanium|cosmic orange|deep blue|black|white|lavender|sage|silver|gold|blue|green)\b/)?.[0] || null,
+    condition,
+  };
 }
 
 const ACCESSORY_TERMS = [
@@ -40,9 +57,10 @@ const UNREQUESTED_VARIANT_TERMS = [
 ];
 
 export function assessOfferMatch(query, offer) {
-  const normalizedQuery = normalizeSearchQuery(query);
+  const intent = parseSearchIntent(query);
+  const normalizedQuery = intent.providerQuery;
   const q = normalizedQuery.split(" ").filter(Boolean);
-  const title = normalizeSearchQuery(offer?.title || "");
+  const title = normalizeSearchQuery([offer?.title, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
   if (!q.length || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
@@ -60,14 +78,21 @@ export function assessOfferMatch(query, offer) {
   );
   if (hasUnrequestedVariant) confidence *= 0.82;
 
-  if (offer?.condition && offer.condition !== "new") confidence -= 0.15;
+  const conditionMismatch = intent.condition ? offer?.condition !== intent.condition : offer?.condition && offer.condition !== "new";
+  if (conditionMismatch) confidence -= 0.15;
   confidence = Math.max(0, Math.min(1, confidence));
 
-  return {
-    exactMatch: confidence >= 0.92 && hits === q.length &&
+  const missingTerms = q.filter((token) => !titleTokens.has(token));
+  const exactMatch = confidence >= 0.92 && hits === q.length &&
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
-      !hasUnrequestedVariant,
+      !hasUnrequestedVariant && !conditionMismatch;
+  return {
+    exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
+    missingTerms,
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
+      !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
+      hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
   };
 }
 

@@ -9,6 +9,28 @@ import * as queries from "../src/search-query.mjs";
 
 const iphone = { title: "Apple iPhone 17 Pro Max, 256 GB, Black", condition: "new" };
 
+test("natural Arabic search preserves model constraints and removes conversational filler", () => {
+  assert.equal(queries.normalizeSearchQuery("ابغى ايفون ١٧ برو ٢٥٦جيجا اسود بأفضل سعر"), "iphone 17 pro 256gb black");
+  assert.equal(queries.normalizeSearchQuery("ايفون١٧ ٢٥٦ اسود"), "iphone 17 256gb black");
+  assert.equal(queries.normalizeSearchQuery("ايربودز برو٢"), "airpods pro 2");
+});
+
+test("search intent retains requested capacity, color and refurbished condition", () => {
+  assert.equal(typeof queries.parseSearchIntent, "function");
+  const intent = queries.parseSearchIntent("ايفون 17 512 جيجا ابيض مجدد");
+  assert.equal(intent.storage, "512gb");
+  assert.equal(intent.color, "white");
+  assert.equal(intent.condition, "refurbished");
+  assert.equal(assessOfferMatch("ايفون 17 مجدد", {title:"Apple iPhone 17",condition:"refurbished"}).exactMatch,true);
+  assert.equal(assessOfferMatch("ايفون 17 مجدد", {title:"Apple iPhone 17",condition:"new"}).exactMatch,false);
+});
+
+test("match explanation identifies requested constraints missing from an offer", () => {
+  const result = assessOfferMatch("ايفون 17 512 اسود", {title:"Apple iPhone 17 256GB White",condition:"new"});
+  assert.ok(result.missingTerms.includes("black"));
+  assert.ok(result.matchReason);
+});
+
 test("related-only and single-offer groups render without a missing price baseline", () => {
   const offer = { productPrice: 3999, condition: "new", availability: "in_stock", canShipToSaudi: true,
     exactMatch: false, matchConfidence: 0.7 };

@@ -1,3 +1,4 @@
+import { parseSearchIntent, assessOfferMatch } from "./search-query.mjs";
 import {
   DEMO_CATALOG,
   findBestProduct,
@@ -32,6 +33,9 @@ const state = {
   query: "",
   variantSelections: {},
   selectorSelection: {},
+  availability: "all",
+  merchant: "all",
+  requestId: 0,
 };
 
 const nf = new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 2 });
@@ -341,7 +345,7 @@ function renderRecent() {
   });
 }
 
-async function renderUrlState(query) {
+async function renderUrlState(query, requestId) {
   const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
   if (!apiBase) {
     renderLiveSearchError(query, new Error("live_api_not_configured"));
@@ -356,6 +360,7 @@ async function renderUrlState(query) {
     if (!data.resolvedOffer || !Array.isArray(data.offers) || !data.offers.length) {
       throw new Error("product_identity_missing");
     }
+    if (requestId !== state.requestId) return;
     const source = data.resolvedOffer;
     const product = {
       id: null, brand: source.specs?.brand || "رابط مباشر", model: data.comparisonQuery || source.title,
@@ -371,6 +376,7 @@ async function renderUrlState(query) {
       els.urlHint.innerHTML += '<small>تعذر فحص بعض المصادر؛ المقارنة تعرض العروض المتاحة فقط.</small>';
     }
   } catch (error) {
+    if (requestId !== state.requestId) return;
     renderLiveSearchError(query, error);
   }
 }
@@ -502,7 +508,7 @@ function offerComparisonRow(offer, index, group, intelligence = null) {
       ? "غير متوفر حاليًا في جدة"
       : offer.availability === "in_stock"
         ? "متوفر لدى المتجر"
-        : "التوفر التفصيلي غير مؤكد";
+        : offer.availability === "out_of_stock" ? "غير متوفر لدى المتجر" : "التوفر التفصيلي غير مؤكد";
 
   const deltaMarkup = intel && Number.isFinite(intel.delta) && intel.delta > 0
     ? '<span class="price-delta">+' + fmt(intel.delta) + ' · ' + intel.deltaPercent + '%</span>'
@@ -525,6 +531,7 @@ function offerComparisonRow(offer, index, group, intelligence = null) {
       <div class="merchant-main">
         <strong><span class="country-flag">${countryFlag(offer.merchantCountryCode)}</span> ${escapeHtml(offer.merchant || "المصدر")}</strong>
         <span>${escapeHtml(availability)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
+        ${offer.matchReason ? '<span class="match-reason">'+escapeHtml(offer.matchReason)+'</span>' : ""}
         ${badges}
         ${warnings}
       </div>
@@ -650,6 +657,7 @@ function variantFamilyCard(family, index) {
         <div class="variant-copy">
           <span class="selected-variant-label">اللون المختار: <b>${escapeHtml(selectedColor)}</b></span>
           <h3>${escapeHtml([title, selectedColor].filter(Boolean).join(" · "))}</h3>
+          <p class="match-reason">${escapeHtml(offer.matchReason || "نسخة تختلف عن طلبك")}</p>
           <div class="variant-badges">
             <span>${selectedGroup.merchantCount} ${selectedGroup.merchantCount === 1 ? "متجر" : "متاجر"}</span>
             <span>${offer.condition === "new" ? "جديد" : escapeHtml(offer.condition || "")}</span>
@@ -825,22 +833,24 @@ function openProductDetails(product, offer, query) {
 }
 
 function renderProduct(product, query) {
-  const ranked = rankOffers(product.offers, state.mode);
+  const filteredOffers = product.offers.filter(offer =>
+    (state.merchant === "all" || offer.merchant === state.merchant) &&
+    (state.availability === "all" || offer.availability === "in_stock" || offer.sourceMeta?.jeddahInStock === true));
+  const ranked = rankOffers(filteredOffers, state.mode);
   const summary = summarizeOffers(product.offers);
-  const groups = groupComparableOffers(product.offers, state.mode);
+  const groups = groupComparableOffers(filteredOffers, state.mode);
 
+  const intent = parseSearchIntent(isLikelyUrl(query) ? product.model : query);
   const exactGroups = groups.filter((group) =>
     group.bestOffer?.exactMatch === true &&
     (group.bestOffer?.matchConfidence || 0) >= 0.9 &&
-    group.bestOffer?.condition === "new"
+    group.bestOffer?.condition === (intent.condition || "new")
   );
-  const selectorGroups = groups.filter((group) =>
-    (group.bestOffer?.matchConfidence || 0) >= 0.7
-  );
+  const selectorGroups = exactGroups;
   const selectorGroupKeys = new Set(selectorGroups.map((group) => group.key));
   const relatedGroups = groups.filter((group) => !selectorGroupKeys.has(group.key));
 
-  const selector = buildVariantSelectorState(selectorGroups.length ? selectorGroups : groups, state.selectorSelection);
+  const selector = buildVariantSelectorState(selectorGroups, state.selectorSelection);
   state.selectorSelection = { ...selector.selection };
 
   const selectedGroup = selector.selectedGroup;
@@ -871,13 +881,20 @@ function renderProduct(product, query) {
   els.results.innerHTML = `
     <section class="result-head">
       <div>
-        <span class="mini-kicker">PRODUCT INTELLIGENCE</span>
+        <span class="mini-kicker">نتائج البحث</span>
         <h2>${escapeHtml(product.nameAr)}</h2>
-        <p>اختر الموديل والسعة واللون والحالة؛ نواة يعيد بناء المقارنة والمواصفات فورًا.</p>
+        <p>قارن عروض النسخة نفسها، ثم استكشف النسخ البديلة إذا احتجت.</p>
       </div>
-      <div class="identity-pill">✓ مواصفات موحّدة + مقارنة نفس النسخة فقط</div>
+      <div class="identity-pill">${exactGroups.length} نسخ مطابقة · ${relatedGroups.length} بدائل</div>
     </section>
 
+    <div class="results-toolbar">
+      <label>التوفر <select id="availabilityFilter"><option value="all" ${state.availability === "all" ? "selected" : ""}>كل حالات التوفر</option><option value="in_stock" ${state.availability === "in_stock" ? "selected" : ""}>المتوفر فقط</option></select></label>
+      <label>المتجر <select id="merchantFilter"><option value="all">كل المتاجر</option>${[...new Set(product.offers.map(o => o.merchant).filter(Boolean))].map(merchant => '<option value="'+escapeHtml(merchant)+'" '+(state.merchant === merchant ? 'selected' : '')+'>'+escapeHtml(merchant)+'</option>').join("")}</select></label>
+      <span>${filteredOffers.length} من ${product.offers.length} عرضًا</span>
+      <button id="resetResultFilters" type="button">مسح الفلاتر</button>
+    </div>
+    ${!exactGroups.length ? '<div class="search-notice" role="status">'+(!filteredOffers.length ? 'لا توجد عروض ضمن الفلاتر الحالية. جرّب مسح الفلاتر.' : 'لم نجد النسخة المطلوبة مطابقةً بالكامل. البدائل أدناه تختلف عن طلبك؛ تحقق من الموديل والسعة واللون قبل الاختيار.')+'</div>' : ''}
     <section class="result-grid comparison-layout">
       <div class="offers-column">
         ${featuredOffer ? `
@@ -885,7 +902,7 @@ function renderProduct(product, query) {
             <div class="config-hero">
               <div class="config-image">${selectedProductMedia(featuredOffer)}</div>
               <div class="config-title">
-                <span class="mini-kicker">SELECTED CONFIGURATION</span>
+                <span class="mini-kicker">النسخة المختارة</span>
                 <h3>${escapeHtml(selectedTitle)}</h3>
                 <div class="config-summary">
                   <span>${selectedGroup.merchantCount} ${selectedGroup.merchantCount === 1 ? "متجر" : "متاجر"}</span>
@@ -912,31 +929,9 @@ function renderProduct(product, query) {
                 : ""}
             </div>
 
-            <div class="price-history-section">
-              <div class="price-history-head">
-                <div>
-                  <span class="mini-kicker">PRICE HISTORY / LOCAL</span>
-                  <h4>سجل السعر على هذا الجهاز</h4>
-                </div>
-                <p>يبدأ من أول بحث على هذا الجهاز، وليس تاريخًا شاملًا للسوق.</p>
-              </div>
-              ${priceHistoryMarkup(priceHistoryForGroup(selectedGroup))}
-            </div>
-
-            <div class="canonical-section">
-              <div class="canonical-head">
-                <div>
-                  <span class="mini-kicker">CANONICAL PRODUCT PROFILE</span>
-                  <h4>المواصفات الموحّدة</h4>
-                </div>
-                <p>نجمع معلومات المتاجر للنسخة المختارة، ونظهر أي اختلاف بدل إخفائه.</p>
-              </div>
-              <div class="canonical-grid">${canonicalProfileMarkup(canonicalProfile)}</div>
-            </div>
-
             <div class="comparison-head">
               <div>
-                <span class="mini-kicker">STORE COMPARISON</span>
+                <span class="mini-kicker">مقارنة المتاجر</span>
                 <h4>نفس النسخة، بين المتاجر</h4>
               </div>
               ${Number.isFinite(selectedGroup.savingsToNext)
@@ -947,6 +942,28 @@ function renderProduct(product, query) {
             <div class="merchant-comparison">
               ${selectedGroup.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, selectedGroup, selectedIntelligence)).join("")}
             </div>
+            <details class="price-history-section result-details"><summary>سجل السعر على هذا الجهاز</summary>
+              <div class="price-history-head">
+                <div>
+                  <span class="mini-kicker">PRICE HISTORY / LOCAL</span>
+                  <h4>سجل السعر على هذا الجهاز</h4>
+                </div>
+                <p>يبدأ من أول بحث على هذا الجهاز، وليس تاريخًا شاملًا للسوق.</p>
+              </div>
+              ${priceHistoryMarkup(priceHistoryForGroup(selectedGroup))}
+            </details>
+
+            <details class="canonical-section result-details"><summary>المواصفات الموحّدة ومصادرها</summary>
+              <div class="canonical-head">
+                <div>
+                  <span class="mini-kicker">CANONICAL PRODUCT PROFILE</span>
+                  <h4>المواصفات الموحّدة</h4>
+                </div>
+                <p>نجمع معلومات المتاجر للنسخة المختارة، ونظهر أي اختلاف بدل إخفائه.</p>
+              </div>
+              <div class="canonical-grid">${canonicalProfileMarkup(canonicalProfile)}</div>
+            </details>
+
           </article>
         ` : '<div class="empty-state">لا توجد نسخة قابلة للتكوين من النتائج الحالية.</div>'}
       </div>
@@ -969,7 +986,7 @@ function renderProduct(product, query) {
 
     <section class="match-results-section">
       <div class="section-label">
-        <span>كل المطابقات المباشرة</span>
+        <span>نسخ تطابق بحثك</span>
         <b>${exactGroups.length} نسخ · ${exactGroups.reduce((sum, group) => sum + (group.offers?.length || 0), 0)} عروض</b>
       </div>
       <div class="match-results-grid">
@@ -977,19 +994,19 @@ function renderProduct(product, query) {
           ? exactGroups.map((group) => exactMatchCard(group, selectedGroup)).join("")
           : '<div class="empty-state">لا توجد مطابقات مباشرة إضافية.</div>'}
       </div>
-      <p class="match-results-note">اختيار أي بطاقة يغيّر الـConfigurator لنفس الموديل والسعة واللون والـSKU بدون بحث جديد.</p>
+      <p class="match-results-note">اختر نسخة لعرض أسعارها ومقارنتها بين المتاجر.</p>
     </section>
 
-    <section class="uncertain-block">
+    <details class="uncertain-block result-details"><summary>بدائل ونسخ أخرى (${relatedGroups.length})</summary>
       <div class="section-label">
-        <span>نتائج أقل صلة — خارج الـConfigurator</span>
+        <span>بدائل تختلف عن طلبك</span>
         <b>${relatedGroups.length}</b>
       </div>
       ${relatedGroups.length
         ? relatedGroups.slice(0, 6).map(variantGroupCard).join("")
         : '<div class="empty-state">لا توجد نتائج أقل صلة.</div>'}
       ${relatedGroups.length > 6 ? '<div class="results-truncated">تم إخفاء ' + (relatedGroups.length - 6) + ' مجموعة أقل صلة.</div>' : ""}
-    </section>
+    </details>
 
     <div class="integrity-note">
       <strong>قاعدة نواة:</strong>
@@ -997,6 +1014,9 @@ function renderProduct(product, query) {
     </div>
   `;
 
+  $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.selectorSelection = {}; renderProduct(product, query); });
+  $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.selectorSelection = {}; renderProduct(product, query); });
+  $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.selectorSelection = {}; renderProduct(product, query); });
   els.results.querySelectorAll(".match-result-card").forEach((button) => {
     button.addEventListener("click", () => {
       const group = exactGroups.find((item) => item.key === button.dataset.groupKey);
@@ -1077,7 +1097,9 @@ async function runSearch(rawQuery) {
     return;
   }
 
+  const requestId = ++state.requestId;
   if (state.query !== query) {
+    state.availability = "all"; state.merchant = "all";
     state.variantSelections = {};
     state.selectorSelection = {};
   }
@@ -1086,7 +1108,7 @@ async function runSearch(rawQuery) {
 
   if (isLikelyUrl(query)) {
     state.product = null;
-    await renderUrlState(query);
+    await renderUrlState(query, requestId);
     return;
   }
 
@@ -1097,6 +1119,7 @@ async function runSearch(rawQuery) {
 
     try {
       await wakeSearchApi(apiBase);
+      if (requestId !== state.requestId) return;
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
       const data = await fetchJsonWithRetry(
@@ -1105,6 +1128,7 @@ async function runSearch(rawQuery) {
         3
       );
 
+      if (requestId !== state.requestId) return;
       if (Array.isArray(data.offers) && data.offers.length) {
         recordPriceHistory(data.offers);
         const liveProduct = {
@@ -1123,6 +1147,8 @@ async function runSearch(rawQuery) {
         const countries = new Set(data.offers.map((o) => o.merchantCountryCode).filter(Boolean)).size;
         const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);
         els.status.textContent = `بحث حي: ${data.offers.length} عرضًا · ${countries} دول · ${data.providersConfigured?.length || 0} موصلات · ${attempted} أسواق/متاجر تم فحصها`;
+        if (data.errors?.length) els.status.textContent += " · نتائج جزئية: تعذر فحص بعض المصادر";
+        else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";
         return;
       }
 
@@ -1140,6 +1166,7 @@ async function runSearch(rawQuery) {
       $("#retryLiveSearch")?.addEventListener("click", () => runSearch(query));
       return;
     } catch (error) {
+      if (requestId !== state.requestId) return;
       console.warn("NAWAA live search unavailable", error);
       renderLiveSearchError(query, error);
       return;

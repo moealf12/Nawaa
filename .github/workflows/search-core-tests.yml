@@ -7,6 +7,8 @@ on:
       - "src/search-query.mjs"
       - "tests/regressions.test.mjs"
       - "tests/ui-flow.test.mjs"
+      - "tests/search-cache.test.mjs"
+      - "server/search-cache.mjs"
       - "src/search-core.mjs"
       - "src/search-page.mjs"
       - "src/product-page.mjs"
@@ -35,6 +37,8 @@ on:
       - "src/search-query.mjs"
       - "tests/regressions.test.mjs"
       - "tests/ui-flow.test.mjs"
+      - "tests/search-cache.test.mjs"
+      - "server/search-cache.mjs"
       - "src/search-core.mjs"
       - "src/search-page.mjs"
       - "src/source-registry.mjs"
@@ -60,6 +64,7 @@ jobs:
           node --check src/search-page.mjs
           node --check src/product-page.mjs
           node --check server/server.mjs
+          node --check server/search-cache.mjs
           node --check server/providers/ebay.mjs
           node --check server/providers/shopify.mjs
           node --check server/providers/extra-unbxd.mjs

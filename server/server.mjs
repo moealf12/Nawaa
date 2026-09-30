@@ -14,7 +14,8 @@ import { searchJarir } from "./providers/jarir.mjs";
 import { noonConfigured, searchNoon } from "./providers/noon.mjs";
 import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs";
 import { searchSharafDG } from "./providers/sharafdg.mjs";
-import { normalizeSearchQuery, buildComparisonQuery, mergeComparisonOffers } from "../src/search-query.mjs";
+import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers } from "../src/search-query.mjs";
+import { createSearchCache } from "./search-cache.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,11 +63,12 @@ async function serveStaticFile(req, res, pathname) {
 
 async function searchAll(query) {
   query = normalizeSearchQuery(query);
-  const tasks = [searchExtraUnbxd(query), searchJarir(query), searchSharafDG(query)];
-  if (carrefourConfigured()) tasks.push(searchCarrefour(query));
-  if (noonConfigured()) tasks.push(searchNoon(query));
-  if (ebayConfigured()) tasks.push(searchEbayWorldwide(query));
-  if (shopifyConfigured()) tasks.push(searchConfiguredShopifyStores(query));
+  const providerQuery = parseSearchIntent(query).providerQuery;
+  const tasks = [searchExtraUnbxd(providerQuery), searchJarir(providerQuery), searchSharafDG(providerQuery)];
+  if (carrefourConfigured()) tasks.push(searchCarrefour(providerQuery));
+  if (noonConfigured()) tasks.push(searchNoon(providerQuery));
+  if (ebayConfigured()) tasks.push(searchEbayWorldwide(providerQuery));
+  if (shopifyConfigured()) tasks.push(searchConfiguredShopifyStores(providerQuery));
 
   if (!tasks.length) {
     return {
@@ -130,6 +132,7 @@ async function searchAll(query) {
   };
 }
 
+const cachedSearch = createSearchCache(searchAll);
 const server = http.createServer(async (req, res) => {
   const origin = allowedOrigin(req.headers.origin || "");
   if (req.method === "OPTIONS") {
@@ -151,7 +154,7 @@ const server = http.createServer(async (req, res) => {
     return jsonResponse(res, 200, {
       ok: true,
       service: "nawaa-search",
-      apiVersion: "0.3.0",
+      apiVersion: "0.4.0",
       revision: process.env.RENDER_GIT_COMMIT || null,
       liveProviders: {
         extra: true,
@@ -199,7 +202,7 @@ const server = http.createServer(async (req, res) => {
       const resolvedOffer = productUrl ? await resolveProductUrl(productUrl) : null;
       const comparisonQuery = resolvedOffer ? buildComparisonQuery(resolvedOffer) : q;
       if (comparisonQuery.length < 2) throw new Error("Product identity could not be extracted");
-      const result = await searchAll(comparisonQuery);
+      const result = await cachedSearch(normalizeSearchQuery(comparisonQuery));
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
       return jsonResponse(res, 200, {
         query: productUrl || q,

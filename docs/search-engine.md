@@ -149,3 +149,14 @@ On Render/GitHub, `/api/search?url=...` resolves the URL and searches a bounded 
 `productPrice` from retailer adapters is the current selling price. `advertisedDiscount` records the already-applied savings, while `discount` is reserved for an additional confirmed deduction. Shipping/tax remain unknown unless a provider confirms them.
 
 Quote actions open the private Site with a product prefill. A user must explicitly submit the form before a durable request is created.
+
+
+## Search results update (0.4.0)
+
+- Conversational Arabic filler is removed, joined Arabic model numbers and capacities are normalized, and explicit product condition is retained for matching.
+- Exact matches lead the selected-variant comparison; alternatives stay in a separate expandable section. No exact result means an explicit notice instead of silently choosing a different variant.
+- Merchant and availability filters apply locally. Store comparisons precede expandable specifications and device-local history.
+- Every normalized live offer carries a match reason and missing terms.
+- A 60-second, bounded in-memory cache coalesces identical provider queries. Partial failures and empty results are retried; cached snapshots retain each offer's observation time. URL comparison merges a cloned cached result to avoid cross-query mutation.
+- A request generation prevents older query responses or errors from replacing newer results.
+- Sources remain eXtra, Jarir and Sharaf DG; this update does not activate additional integrations.

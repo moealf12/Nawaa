@@ -37,6 +37,9 @@ test("query deep link starts exactly one live search and URL submission requests
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.filter((url) => url.includes("/api/search?")).length, 1);
   assert.equal((element("#results").innerHTML.match(/data-group-key=/g) || []).length, 2);
+  assert.ok(element("#results").innerHTML.indexOf("نفس النسخة، بين المتاجر") < element("#results").innerHTML.indexOf("المواصفات الموحّدة"), "merchant comparison should precede optional specifications");
+  assert.match(element("#results").innerHTML, /id="availabilityFilter"/);
+  assert.match(element("#results").innerHTML, /id="merchantFilter"/);
   element("#searchInput").value = "https://example.com/black";
   element("#searchForm").events.submit({ preventDefault() {} });
   await new Promise((resolve) => setImmediate(resolve));
@@ -47,4 +50,24 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.equal(new URL(location.href).origin, "https://nawaa.example");
   assert.match(new URL(location.href).searchParams.get("request"), /MG674AH\/A/);
   assert.equal(requests.filter((url) => url.includes("/api/requests")).length, 0, "prefill must not submit an order");
+  element("#merchantFilter").events.change({target:{value:"unavailable merchant"}});
+  assert.match(element("#results").innerHTML, /لا توجد عروض ضمن الفلاتر الحالية/);
+  element("#resetResultFilters").events.click();
+  assert.equal((element("#results").innerHTML.match(/data-group-key=/g) || []).length, 2);
+
+  let resolveOld;
+  globalThis.fetch = async url => {
+    if (String(url).includes("q=old")) return new Promise(resolve => { resolveOld = () => resolve({ok:true,text:async()=>JSON.stringify({offers,providers:[]})}); });
+    return {ok:true,text:async()=>JSON.stringify(String(url).includes("/health") ? {ok:true} : {offers,providers:[],errors:[{provider:"jarir"}]})};
+  };
+  element("#searchInput").value="old";
+  element("#searchForm").events.submit({preventDefault(){}});
+  await new Promise(resolve => setImmediate(resolve));
+  element("#searchInput").value="latest";
+  element("#searchForm").events.submit({preventDefault(){}});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(element("#searchStatus").textContent,/نتائج جزئية/);
+  resolveOld();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(element("#results").innerHTML, /<h2>latest<\/h2>/);
 });
