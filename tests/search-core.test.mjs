@@ -6,7 +6,9 @@ import {
   productMatchScore,
   rankOffers,
   offerVariantKey,
+  offerVariantFamilyKey,
   groupComparableOffers,
+  groupVariantFamilies,
   DEMO_CATALOG,
 } from "../src/search-core.mjs";
 import { WORLD_SOURCE_REGISTRY, sourceCoverageSummary } from "../src/source-registry.mjs";
@@ -90,4 +92,35 @@ assert.equal(groupedVariants[0].priceBasis, "advertised_price");
 assert.notEqual(
   offerVariantKey(groupedVariants[0].offers[0]),
   offerVariantKey(groupedVariants[1].offers[0])
+);
+
+
+const groupedWithSecondColor = groupComparableOffers([
+  ...groupedVariants.flatMap((group) => group.offers),
+  {
+    merchant:"eXtra",
+    title:"Apple iPhone 17, 5G, 6.3 inch 256GB, White",
+    specs:{brand:"APPLE",deviceType:"IPHONE 17",storage:"256 GB",color:"White"},
+    productPrice:3999,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"in_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    title:"Apple iPhone 17, 256 GB, White, 5G, Apple A19",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"White"},
+    productPrice:4299,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  }
+]);
+const variantFamilies = groupVariantFamilies(groupedWithSecondColor.filter((group) => group.bestOffer?.exactMatch));
+assert.equal(variantFamilies.length, 1);
+assert.equal(variantFamilies[0].variants.length, 2);
+assert.equal(variantFamilies[0].merchantCount, 2);
+assert.equal(
+  offerVariantFamilyKey(variantFamilies[0].variants[0].bestOffer),
+  offerVariantFamilyKey(variantFamilies[0].variants[1].bestOffer)
+);
+assert.notEqual(
+  offerVariantKey(variantFamilies[0].variants[0].bestOffer),
+  offerVariantKey(variantFamilies[0].variants[1].bestOffer)
 );
