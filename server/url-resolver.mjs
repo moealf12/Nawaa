@@ -3,7 +3,7 @@ import net from "node:net";
 import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, parseMoney } from "./provider-utils.mjs";
 
-const MAX_HTML_BYTES = 2500000;
+const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
 
 function isPrivateIpv4(ip) {
