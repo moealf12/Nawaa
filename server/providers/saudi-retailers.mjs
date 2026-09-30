@@ -1,5 +1,6 @@
 import { moneyToSAR } from "../fx.mjs";
 import { parseMoney } from "../provider-utils.mjs";
+import { resolveProductUrl } from "../url-resolver.mjs";
 
 const SOURCES = [
   {
@@ -81,6 +82,64 @@ function offerFromProduct(product) {
     }))
     .filter((x) => x.price !== null)
     .sort((a,b) => a.price - b.price)[0] || null;
+}
+
+function normalizeText(value = "") {
+  return String(value)
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/[^a-z0-9\u0600-\u06ff]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function queryTokens(query) {
+  return normalizeText(query).split(" ").filter((token) => token.length >= 2);
+}
+
+function scoreCandidate(candidate, query) {
+  const tokens = queryTokens(query);
+  if (!tokens.length) return 0;
+  const haystack = normalizeText(candidate.title + " " + candidate.url);
+  const hits = tokens.filter((token) => haystack.includes(token)).length;
+  const ratio = hits / tokens.length;
+  const productish = /iphone|ipad|macbook|galaxy|pixel|playstation|xbox|dyson|airpods|watch|phone|mobile|smartphone/i.test(candidate.title + " " + candidate.url);
+  const navPenalty = /login|account|cart|wishlist|store-locator|customer-service|support|category|brand\//i.test(candidate.url) ? 0.35 : 0;
+  return Math.max(0, ratio + (productish ? 0.15 : 0) - navPenalty);
+}
+
+async function resolveCandidateOffers(source, query, links) {
+  const ranked = links
+    .map((candidate) => ({ ...candidate, score: scoreCandidate(candidate, query) }))
+    .filter((candidate) => candidate.score >= 0.55)
+    .sort((a,b) => b.score - a.score)
+    .slice(0, 6);
+
+  const settled = await Promise.allSettled(ranked.map(async (candidate) => {
+    const offer = await resolveProductUrl(candidate.url);
+    return {
+      ...offer,
+      provider: source.id,
+      providerMarket: source.id,
+      merchant: source.name,
+      merchantCountryCode: source.countryCode,
+      merchantCountryNameAr: source.countryNameAr,
+      canShipToSaudi: true,
+      isLocal: true,
+      importCost: 0,
+      dataKind: "live",
+      sourceUrl: candidate.url,
+    };
+  }));
+
+  return {
+    offers: settled
+      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
+      .map((result) => result.value),
+    attempted: ranked.length,
+    failures: settled.filter((result) => result.status === "rejected").length,
+  };
 }
 
 function fallbackLinks(html, baseUrl) {
@@ -165,14 +224,24 @@ async function fetchSearch(source, query) {
     });
   }
 
-  // Search pages with no structured prices are reported, never fabricated.
+  let fallback = { offers: [], attempted: 0, failures: 0 };
+  let candidates = [];
+  if (!offers.length) {
+    candidates = fallbackLinks(html, url);
+    fallback = await resolveCandidateOffers(source, query, candidates);
+    offers.push(...fallback.offers);
+  }
+
+  // Never fabricate a price: only return offers resolved from structured data on a product page.
   return {
     provider: source.id,
     ok: offers.length > 0,
     offers,
     diagnostics: {
       structuredProducts: products.length,
-      candidateLinks: offers.length ? 0 : fallbackLinks(html, url).length,
+      candidateLinks: candidates.length,
+      resolvedCandidates: fallback.attempted,
+      candidateFailures: fallback.failures,
     },
   };
 }
