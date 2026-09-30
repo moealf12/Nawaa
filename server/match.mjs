@@ -8,6 +8,7 @@ export function normalizeSearchText(value = "") {
     .replace(/ة/g, "ه")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
+    .replace(/\b(\d+)\s+(gb|tb|mb|mah|mp)\b/g, "$1$2")
     .trim();
 }
 
