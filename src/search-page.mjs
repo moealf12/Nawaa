@@ -250,15 +250,23 @@ function offerCard(offer, index) {
   `;
 }
 
-function openProductDetails(offer, query) {
+function openProductDetails(product, offer, query) {
   const payload = {
     savedAt: new Date().toISOString(),
     query,
+    product: {
+      nameAr: product?.nameAr || offer?.sourceMeta?.nameAr || offer?.title || query,
+      nameEn: product?.nameEn || offer?.title || query,
+      brand: product?.brand || offer?.specs?.brand || null,
+      model: product?.model || offer?.specs?.deviceType || null,
+      variant: product?.variant || [offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" · "),
+    },
     offer,
   };
   sessionStorage.setItem("nawaa_product_detail", JSON.stringify(payload));
+  localStorage.setItem("nawaa_selected_offer", JSON.stringify(payload));
   const params = new URLSearchParams();
-  if (offer.sourceUrl) params.set("source", offer.sourceUrl);
+  if (offer?.sourceUrl) params.set("source", offer.sourceUrl);
   if (query) params.set("q", query);
   location.href = "./product.html?" + params.toString();
 }
@@ -320,34 +328,9 @@ function renderProduct(product, query) {
 
   els.results.querySelectorAll(".product-detail-btn").forEach((button) => {
     button.addEventListener("click", () => {
-      const sourceUrl = button.dataset.source || "";
-      const selected = ranked.find((offer) => (offer.sourceUrl || "") === sourceUrl) || ranked[0] || null;
-      if (!selected) return;
-      const snapshot = {
-        savedAt: new Date().toISOString(),
-        query,
-        product: {
-          nameAr: product.nameAr,
-          nameEn: product.nameEn,
-          brand: product.brand,
-          model: product.model,
-          variant: product.variant,
-        },
-        offer: selected,
-      };
-      localStorage.setItem("nawaa_selected_offer", JSON.stringify(snapshot));
-      const target = "./product.html" + (sourceUrl ? "?source=" + encodeURIComponent(sourceUrl) : "");
-      location.href = target;
-    });
-  });
-
-  $("#quoteBestBtn")?.addEventListener("click", () => openQuote(product, best, query));
-
-  document.querySelectorAll(".product-detail-btn").forEach((button) => {
-    button.addEventListener("click", () => {
       const source = button.dataset.source || "";
-      const offer = ranked.find((item) => (item.sourceUrl || "") === source);
-      if (offer) openProductDetails(offer, query);
+      const offer = ranked.find((item) => (item.sourceUrl || "") === source) || null;
+      if (offer) openProductDetails(product, offer, query);
     });
   });
 }
