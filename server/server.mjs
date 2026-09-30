@@ -10,11 +10,12 @@ import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
 import { searchJarir } from "./providers/jarir.mjs";
 import { noonConfigured, searchNoon } from "./providers/noon.mjs";
 import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs";
+import { searchSharafDG } from "./providers/sharafdg.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 
 async function searchAll(query) {
-  const tasks = [searchExtraUnbxd(query), searchJarir(query)];
+  const tasks = [searchExtraUnbxd(query), searchJarir(query), searchSharafDG(query)];
   if (carrefourConfigured()) tasks.push(searchCarrefour(query));
   if (noonConfigured()) tasks.push(searchNoon(query));
   if (ebayConfigured()) tasks.push(searchEbayWorldwide(query));
@@ -69,6 +70,7 @@ async function searchAll(query) {
     providersConfigured: [
       "extra-unbxd",
       "jarir-direct",
+      "sharafdg-algolia",
       ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
       ...(noonConfigured() ? ["noon-catalog"] : []),
       ...(ebayConfigured() ? ["ebay"] : []),
@@ -104,6 +106,7 @@ const server = http.createServer(async (req, res) => {
       liveProviders: {
         extra: true,
         jarir: true,
+        sharafdg: true,
         carrefour: carrefourConfigured(),
         noon: noonConfigured(),
         ebay: ebayConfigured(),
