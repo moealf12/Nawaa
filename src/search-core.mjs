@@ -135,7 +135,93 @@ export function rankOffers(offers = [], mode = "lowest") {
     const totalB = Number.isFinite(b.totalSAR) ? b.totalSAR : Infinity;
     if (totalA !== totalB) return totalA - totalB;
 
+    const advertisedA = Number.isFinite(a.productPrice) ? a.productPrice : Infinity;
+    const advertisedB = Number.isFinite(b.productPrice) ? b.productPrice : Infinity;
+    if (advertisedA !== advertisedB) return advertisedA - advertisedB;
+
     return (b.matchConfidence || 0) - (a.matchConfidence || 0);
+  });
+}
+
+function normalizeVariantPart(value = "") {
+  return normalizeText(value)
+    .replace(/\b(\d+)\s+(gb|tb|mb)\b/g, "$1$2")
+    .trim();
+}
+
+function normalizedBrand(value = "") {
+  return normalizeVariantPart(value).replace(/\s+/g, " ");
+}
+
+function normalizedModel(offer = {}) {
+  const specs = offer.specs || {};
+  let raw = specs.deviceType || specs.model || specs.series || offer.title || "";
+  let model = normalizeVariantPart(raw);
+
+  if (["smartphone", "phone", "mobile", "جوال", "هاتف"].includes(model)) {
+    model = normalizeVariantPart(specs.series || offer.title || "");
+  }
+
+  const brand = normalizedBrand(specs.brand || "");
+  if (brand && model.startsWith(brand + " ")) model = model.slice(brand.length + 1).trim();
+
+  return model || "unknown-model";
+}
+
+export function offerVariantKey(offer = {}) {
+  const specs = offer.specs || {};
+  return [
+    normalizedBrand(specs.brand || ""),
+    normalizedModel(offer),
+    normalizeVariantPart(specs.storage || ""),
+    normalizeVariantPart(specs.color || ""),
+    normalizeVariantPart(offer.condition || "unknown"),
+  ].join("|");
+}
+
+export function groupComparableOffers(offers = [], mode = "lowest") {
+  const ranked = rankOffers(offers, mode);
+  const groups = new Map();
+
+  for (const offer of ranked) {
+    const key = offerVariantKey(offer);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(offer);
+  }
+
+  return [...groups.entries()].map(([key, groupedOffers]) => {
+    const ordered = rankOffers(groupedOffers, mode);
+    const bestOffer = ordered[0] || null;
+    const secondOffer = ordered[1] || null;
+    const usesComparableTotal = Boolean(bestOffer && Number.isFinite(bestOffer.totalSAR));
+    const bestValue = bestOffer
+      ? (usesComparableTotal ? bestOffer.totalSAR : bestOffer.productPrice)
+      : null;
+    const secondValue = secondOffer
+      ? (Number.isFinite(secondOffer.totalSAR) ? secondOffer.totalSAR : secondOffer.productPrice)
+      : null;
+
+    return {
+      key,
+      offers: ordered,
+      bestOffer,
+      merchantCount: new Set(ordered.map((offer) => offer.merchant).filter(Boolean)).size,
+      priceBasis: usesComparableTotal ? "comparable_total" : "advertised_price",
+      bestValue: Number.isFinite(bestValue) ? bestValue : null,
+      savingsToNext: Number.isFinite(bestValue) && Number.isFinite(secondValue) && secondValue > bestValue
+        ? secondValue - bestValue
+        : null,
+    };
+  }).sort((a, b) => {
+    const aExact = a.bestOffer?.exactMatch === true ? 0 : 1;
+    const bExact = b.bestOffer?.exactMatch === true ? 0 : 1;
+    if (aExact !== bExact) return aExact - bExact;
+
+    const aValue = Number.isFinite(a.bestValue) ? a.bestValue : Infinity;
+    const bValue = Number.isFinite(b.bestValue) ? b.bestValue : Infinity;
+    if (aValue !== bValue) return aValue - bValue;
+
+    return (b.bestOffer?.matchConfidence || 0) - (a.bestOffer?.matchConfidence || 0);
   });
 }
 
