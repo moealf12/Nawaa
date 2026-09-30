@@ -3,6 +3,7 @@ import { assessOfferMatch, dedupeNormalizedOffers } from "../server/match.mjs";
 import { normalizeCondition, parseMoney } from "../server/provider-utils.mjs";
 import { parseJarirConstructorPayload, parseJarirSearchHtml } from "../server/providers/jarir.mjs";
 import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
+import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -146,5 +147,47 @@ assert.equal(noonOffers[0].sourceMeta.freeDelivery, true);
 assert.equal(noonOffers[0].sourceMeta.fulfilledByNoon, true);
 assert.equal(noonOffers[0].sourceMeta.lowStockCount, 6);
 assert.equal(noonOffers[0].seller.name, "Seller One");
+
+const carrefourFixture = {
+  sections: [{
+    uid: "master-product-card",
+    componentDTO: {
+      additionalAttributes: {
+        productCompositeId: "754835|offer_carrefour_|EXPRESS",
+        imageUrl: "https://example.com/754835.jpg",
+        intent: "EXPRESS",
+        offerId: "offer_carrefour_",
+        productId: "754835",
+        productName: "Apple iPhone 17 ,256 GB, Black, 5G",
+        shopName: "Carrefour",
+        shippingIndicator: "EXPRESS",
+        sellingPrice: 3999,
+        markedPrice: 4299,
+        currency: "SAR",
+        isExpress: true,
+        internationalShipping: false,
+        stock: { value: 1, stockLevelStatus: "lowStock" },
+        productUrl: "/mafsau/en/smartphones/apple-iphone-17-256gb-black/p/754835"
+      },
+      productCardComponents: [{
+        uid: "product-price",
+        componentDTO: { priceDTO: { finalPrice: "3999.00", currency: "SAR" } }
+      }]
+    }
+  }]
+};
+const carrefourOffers = parseCarrefourSearchPayload(carrefourFixture);
+assert.equal(carrefourOffers.length, 1);
+assert.equal(carrefourOffers[0].merchant, "Carrefour");
+assert.equal(carrefourOffers[0].productPrice, 3999);
+assert.equal(carrefourOffers[0].discount, 300);
+assert.equal(carrefourOffers[0].availability, "in_stock");
+assert.equal(carrefourOffers[0].specs.deviceType, "iPhone 17");
+assert.equal(carrefourOffers[0].specs.storage.replace(" ",""), "256GB");
+assert.equal(carrefourOffers[0].specs.color, "Black");
+assert.equal(carrefourOffers[0].specs.network, "5G");
+assert.equal(carrefourOffers[0].sourceMeta.stockValue, 1);
+assert.equal(carrefourOffers[0].seller.type, "retailer");
+assert.ok(carrefourOffers[0].sourceUrl.endsWith("/754835"));
 
 console.log("NAWAA provider tests passed");
