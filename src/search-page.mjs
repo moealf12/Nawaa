@@ -8,6 +8,7 @@ import {
   groupVariantFamilies,
   buildVariantSelectorState,
   buildCanonicalProductProfile,
+  buildOfferIntelligence,
 } from "./search-core.mjs";
 
 const $ = (selector) => document.querySelector(selector);
@@ -259,31 +260,67 @@ function offerCard(offer, index) {
   `;
 }
 
-function offerComparisonRow(offer, index, group) {
-  const isLowest = index === 0;
-  const price = Number.isFinite(offer.totalSAR) ? offer.totalSAR : offer.productPrice;
+function offerComparisonRow(offer, index, group, intelligence = null) {
+  const intel = intelligence?.rows?.find((row) => row.offer === offer) || null;
+  const isLowest = intel ? intel.offer === intelligence.baselineOffer : index === 0;
+  const price = intel?.value ?? (Number.isFinite(offer.totalSAR) ? offer.totalSAR : offer.productPrice);
   const priceLabel = Number.isFinite(offer.totalSAR) ? "الإجمالي المقارن" : "السعر المعلن";
   const availability = offer.sourceMeta?.jeddahInStock === true
     ? "متوفر في جدة"
-    : offer.availability === "in_stock"
-      ? "متوفر لدى المتجر"
-      : "التوفر التفصيلي غير مؤكد";
+    : offer.sourceMeta?.jeddahInStock === false
+      ? "غير متوفر حاليًا في جدة"
+      : offer.availability === "in_stock"
+        ? "متوفر لدى المتجر"
+        : "التوفر التفصيلي غير مؤكد";
+
+  const deltaMarkup = intel && Number.isFinite(intel.delta) && intel.delta > 0
+    ? '<span class="price-delta">+' + fmt(intel.delta) + ' · ' + intel.deltaPercent + '%</span>'
+    : "";
+
+  const badges = intel?.badges?.length
+    ? '<div class="merchant-badges">' + intel.badges.slice(0, 4).map((badge) =>
+        '<span>' + escapeHtml(badge) + '</span>'
+      ).join("") + '</div>'
+    : "";
+
+  const warnings = intel?.warnings?.length
+    ? '<div class="merchant-warnings">' + intel.warnings.slice(0, 3).map((warning) =>
+        '<span>⚠ ' + escapeHtml(warning) + '</span>'
+      ).join("") + '</div>'
+    : "";
 
   return `
     <div class="merchant-row ${isLowest ? "is-lowest" : ""}">
       <div class="merchant-main">
         <strong><span class="country-flag">${countryFlag(offer.merchantCountryCode)}</span> ${escapeHtml(offer.merchant || "المصدر")}</strong>
         <span>${escapeHtml(availability)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
+        ${badges}
+        ${warnings}
       </div>
       <div class="merchant-price">
         <small>${priceLabel}</small>
         <b>${fmt(price)}</b>
-        ${isLowest ? '<em>' + (group.priceBasis === "comparable_total" ? "أقل إجمالي مؤكد" : "أقل سعر معلن") + '</em>' : ""}
+        ${deltaMarkup}
+        ${isLowest ? '<em>' + (intelligence?.priceBasis === "comparable_total" || group.priceBasis === "comparable_total" ? "أقل إجمالي مؤكد" : "أقل سعر معلن") + '</em>' : ""}
       </div>
       <div class="merchant-actions">
         <button class="product-detail-btn" type="button" data-source="${escapeHtml(offer.sourceUrl || "")}">التفاصيل</button>
         ${offer.sourceUrl ? '<a href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">المصدر ↗</a>' : ""}
       </div>
+    </div>
+  `;
+}
+
+function comparisonIntelligenceMarkup(intelligence) {
+  if (!intelligence?.insights?.length) return "";
+  return `
+    <div class="comparison-intelligence">
+      ${intelligence.insights.map((insight) => `
+        <div class="intelligence-card tone-${escapeHtml(insight.tone || "neutral")}">
+          <small>${escapeHtml(insight.title)}</small>
+          <p>${escapeHtml(insight.text)}</p>
+        </div>
+      `).join("")}
     </div>
   `;
 }
@@ -396,8 +433,9 @@ function variantFamilyCard(family, index) {
         </div>
       </div>
 
+      ${comparisonIntelligenceMarkup(buildOfferIntelligence(selectedGroup))}
       <div class="merchant-comparison">
-        ${selectedGroup.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, selectedGroup)).join("")}
+        ${selectedGroup.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, selectedGroup, buildOfferIntelligence(selectedGroup))).join("")}
       </div>
     </article>
   `;
@@ -540,8 +578,9 @@ function renderProduct(product, query) {
   state.selectorSelection = { ...selector.selection };
 
   const selectedGroup = selector.selectedGroup;
-  const featuredOffer = selectedGroup?.bestOffer || null;
-  const featuredValue = selectedGroup?.bestValue ?? null;
+  const selectedIntelligence = selectedGroup ? buildOfferIntelligence(selectedGroup) : null;
+  const featuredOffer = selectedIntelligence?.baselineOffer || selectedGroup?.bestPriceOffer || selectedGroup?.bestOffer || null;
+  const featuredValue = selectedIntelligence?.baselineValue ?? selectedGroup?.bestValue ?? null;
   const featuredConfirmed = Boolean(featuredOffer && Number.isFinite(featuredOffer.totalSAR));
   const canonicalProfile = buildCanonicalProductProfile(selectedGroup?.offers || []);
 
@@ -622,8 +661,9 @@ function renderProduct(product, query) {
                 ? '<span class="saving-pill">فرق ' + fmt(selectedGroup.savingsToNext) + ' عن العرض التالي</span>'
                 : ""}
             </div>
+            ${comparisonIntelligenceMarkup(selectedIntelligence)}
             <div class="merchant-comparison">
-              ${selectedGroup.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, selectedGroup)).join("")}
+              ${selectedGroup.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, selectedGroup, selectedIntelligence)).join("")}
             </div>
           </article>
         ` : '<div class="empty-state">لا توجد نسخة قابلة للتكوين من النتائج الحالية.</div>'}
