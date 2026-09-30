@@ -114,7 +114,7 @@ async function resolveCandidateOffers(source, query, links) {
     .map((candidate) => ({ ...candidate, score: scoreCandidate(candidate, query) }))
     .filter((candidate) => candidate.score >= 0.55)
     .sort((a,b) => b.score - a.score)
-    .slice(0, 6);
+    .slice(0, 4);
 
   const settled = await Promise.allSettled(ranked.map(async (candidate) => {
     const offer = await resolveProductUrl(candidate.url);
@@ -147,7 +147,7 @@ function fallbackLinks(html, baseUrl) {
   const seen = new Set();
   const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
-  while ((m = re.exec(html)) && out.length < 80) {
+  while ((m = re.exec(html))) {
     const label = decode(m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
     if (label.length < 8) continue;
     let url;
@@ -155,6 +155,7 @@ function fallbackLinks(html, baseUrl) {
     if (seen.has(url)) continue;
     seen.add(url);
     out.push({ title: label, url });
+    if (out.length >= 1200) break;
   }
   return out;
 }
