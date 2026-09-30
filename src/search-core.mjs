@@ -261,7 +261,15 @@ function missingCostComponents(offer = {}) {
 
 export function buildOfferIntelligence(group = {}) {
   const offers = Array.isArray(group.offers) ? group.offers : [];
-  const priceOrdered = [...offers].sort((a, b) => {
+  const eligibleForPriceLead = offers.filter((offer) =>
+    offer?.canShipToSaudi !== false &&
+    offer?.availability !== "out_of_stock" &&
+    offer?.condition === "new" &&
+    offer?.exactMatch === true &&
+    (offer?.matchConfidence || 0) >= 0.9
+  );
+
+  const priceOrdered = [...eligibleForPriceLead].sort((a, b) => {
     const aTotal = Number.isFinite(a.totalSAR) ? a.totalSAR : Infinity;
     const bTotal = Number.isFinite(b.totalSAR) ? b.totalSAR : Infinity;
     if (aTotal !== bTotal) return aTotal - bTotal;
@@ -270,7 +278,7 @@ export function buildOfferIntelligence(group = {}) {
     return aPrice - bPrice;
   });
 
-  // Use the price-sorted object from this same offers array so per-row identity checks stay stable.
+  // Only an eligible, exact, available offer may lead the price comparison.
   const baselineOffer = priceOrdered[0] || null;
   const baselineValue = offerDisplayValue(baselineOffer);
   const priceBasis = baselineOffer && Number.isFinite(baselineOffer.totalSAR)
@@ -301,6 +309,16 @@ export function buildOfferIntelligence(group = {}) {
     if (offer.canShipToSaudi == null) warnings.push("الشحن إلى السعودية غير مؤكد");
     if (missingCosts.length) warnings.push("تكلفة غير مكتملة: " + missingCosts.join("، "));
     if (offer.exactMatch !== true || (offer.matchConfidence || 0) < 0.9) warnings.push("مطابقة المنتج تحتاج تحقق");
+    if (
+      baselineOffer &&
+      offer !== baselineOffer &&
+      (offer.availability === "out_of_stock" || offer.canShipToSaudi === false) &&
+      Number.isFinite(value) &&
+      Number.isFinite(baselineValue) &&
+      value < baselineValue
+    ) {
+      warnings.push("سعر أقل رقميًا لكنه غير مؤهل للمقارنة بسبب التوفر أو الشحن");
+    }
 
     return {
       offer,
@@ -365,6 +383,42 @@ export function buildOfferIntelligence(group = {}) {
       tone: "positive",
       title: "خيارات الاستلام",
       text: parts.join(" · "),
+    });
+  }
+
+  const explicitRegions = [...new Set(offers.map((offer) => String(offer?.specs?.regionVersion || "").trim()).filter(Boolean))];
+  const unknownRegionCount = offers.filter((offer) => !String(offer?.specs?.regionVersion || "").trim()).length;
+  if (explicitRegions.length > 1) {
+    insights.push({
+      type: "compatibility",
+      tone: "warning",
+      title: "نسخ منطقة مختلفة",
+      text: "المصادر تذكر أكثر من نسخة منطقة: " + explicitRegions.join("، ") + ". لا تعتبرها متطابقة قبل التحقق.",
+    });
+  } else if (explicitRegions.length === 1 && unknownRegionCount > 0) {
+    insights.push({
+      type: "compatibility",
+      tone: "warning",
+      title: "نسخة المنطقة غير مؤكدة بالكامل",
+      text: "المذكور صراحةً: " + explicitRegions[0] + "، بينما " + unknownRegionCount + " عرض/عروض لا يحدد نسخة المنطقة.",
+    });
+  }
+
+  const explicitSims = [...new Set(offers.map((offer) => String(offer?.specs?.sim || "").trim()).filter(Boolean))];
+  const unknownSimCount = offers.filter((offer) => !String(offer?.specs?.sim || "").trim()).length;
+  if (explicitSims.length > 1) {
+    insights.push({
+      type: "compatibility",
+      tone: "warning",
+      title: "تكوينات SIM مختلفة",
+      text: "المصادر تذكر تكوينات SIM مختلفة: " + explicitSims.join("، ") + ".",
+    });
+  } else if (explicitSims.length === 1 && unknownSimCount > 0) {
+    insights.push({
+      type: "compatibility",
+      tone: "warning",
+      title: "نوع SIM غير مؤكد بالكامل",
+      text: "المذكور صراحةً: " + explicitSims[0] + "، بينما " + unknownSimCount + " عرض/عروض لا يحدد نوع SIM.",
     });
   }
 
@@ -516,7 +570,7 @@ function canonicalSpecNorm(value = "") {
 export function buildCanonicalProductProfile(offers = []) {
   const fields = [
     "brand","series","deviceType","storage","color","ram","processor","screenSize","screenType",
-    "network","sim","operatingSystem","rearCamera","frontCamera","battery","waterproof","modelNumber","barcode"
+    "network","sim","regionVersion","operatingSystem","rearCamera","frontCamera","battery","waterproof","modelNumber","barcode"
   ];
   const profile = {};
 
