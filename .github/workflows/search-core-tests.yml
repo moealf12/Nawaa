@@ -15,7 +15,8 @@ on:
       - "server/fx.mjs"
       - "server/provider-utils.mjs"
       - "server/providers/ebay.mjs"
-      - "server/providers/shopify.mjs"\n      - "server/providers/saudi-retailers.mjs"
+      - "server/providers/shopify.mjs"
+      - "server/providers/saudi-retailers.mjs"
       - "server/url-resolver.mjs"
       - "tests/providers.test.mjs"
       - ".github/workflows/search-core-tests.yml"
@@ -45,5 +46,6 @@ jobs:
           node --check src/search-page.mjs
           node --check server/server.mjs
           node --check server/providers/ebay.mjs
-          node --check server/providers/shopify.mjs\n          node --check server/providers/saudi-retailers.mjs
+          node --check server/providers/shopify.mjs
+          node --check server/providers/saudi-retailers.mjs
           node --check server/url-resolver.mjs
