@@ -310,11 +310,11 @@ async function runSearch(rawQuery) {
         state.product = liveProduct;
         renderProduct(liveProduct, query);
         const countries = new Set(data.offers.map((o) => o.merchantCountryCode).filter(Boolean)).size;
-        els.status.textContent = `بحث حي: ${data.offers.length} عرضًا · ${countries} دول · ${data.providersConfigured?.length || 0} موصلات`;
+        const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);\n        els.status.textContent = `بحث حي: ${data.offers.length} عرضًا · ${countries} دول · ${data.providersConfigured?.length || 0} موصلات · ${attempted} أسواق/متاجر تم فحصها`;
         return;
       }
 
-      els.status.textContent = "البحث الحي لم يُرجع عروضًا مطابقة";
+      const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);\n      els.status.textContent = `لم نجد عرضًا حيًا موثوقًا · تم فحص ${attempted} أسواق/متاجر`;
     } catch (error) {
       console.warn("NAWAA live search unavailable; using local catalog", error);
       els.status.textContent = "تعذر الوصول للمصادر الحية — نعرض الكتالوج المحلي مؤقتًا";
