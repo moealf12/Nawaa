@@ -113,7 +113,7 @@ function normalizeJarirConstructorResult(result) {
     specs: {
       brand: meta.brand || null,
       series: meta.seri || meta.model || null,
-      deviceType: meta.ptyp || meta.model || null,
+      deviceType: meta.model || meta.ptyp || null,
       color,
       storage,
       ram: null,
