@@ -106,15 +106,16 @@ function scoreCandidate(candidate, query) {
   const ratio = hits / tokens.length;
   const productish = /iphone|ipad|macbook|galaxy|pixel|playstation|xbox|dyson|airpods|watch|phone|mobile|smartphone/i.test(candidate.title + " " + candidate.url);
   const navPenalty = /login|account|cart|wishlist|store-locator|customer-service|support|category|brand\//i.test(candidate.url) ? 0.35 : 0;
-  return Math.max(0, ratio + (productish ? 0.15 : 0) - navPenalty);
+  const productBonus = candidate.productUrl ? 0.45 : 0;
+  return Math.max(0, ratio + (productish ? 0.15 : 0) + productBonus - navPenalty);
 }
 
 async function resolveCandidateOffers(source, query, links) {
   const ranked = links
     .map((candidate) => ({ ...candidate, score: scoreCandidate(candidate, query) }))
-    .filter((candidate) => candidate.score >= 0.55)
+    .filter((candidate) => candidate.productUrl && candidate.score >= 0.55)
     .sort((a,b) => b.score - a.score)
-    .slice(0, 4);
+    .slice(0, 8);
 
   const settled = await Promise.allSettled(ranked.map(async (candidate) => {
     const offer = await resolveProductUrl(candidate.url);
@@ -148,13 +149,23 @@ function fallbackLinks(html, baseUrl) {
   const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = re.exec(html))) {
-    const label = decode(m[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
-    if (label.length < 8) continue;
+    const inner = m[2] || "";
+    const textLabel = decode(inner.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+    const altMatch = inner.match(/<img\b[^>]*alt=["']([^"']+)["'][^>]*>/i);
+    const altLabel = altMatch ? decode(altMatch[1]).trim() : "";
+    const label = (altLabel.length > textLabel.length ? altLabel : textLabel).trim();
+
     let url;
     try { url = new URL(decode(m[1]), baseUrl).href; } catch { continue; }
+
+    const productUrl =
+      /\/p\/\d+(?:[/?#]|$)/i.test(url) ||
+      /-smartphones-\d+\.html(?:[?#]|$)/i.test(url);
+
+    if (!productUrl && label.length < 8) continue;
     if (seen.has(url)) continue;
     seen.add(url);
-    out.push({ title: label, url });
+    out.push({ title: label || url, url, productUrl });
     if (out.length >= 1200) break;
   }
   return out;
