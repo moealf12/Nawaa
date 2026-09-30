@@ -1,22 +1,41 @@
 # NAWAA Search & Price Comparison Engine
 
-## Sprint 01 — Product identity, landed cost, ranking, and UI
+## Current implementation snapshot — 2026-10-01
 
-This sprint deliberately separates **product matching** from **price ranking**.
+NAWAA is now beyond the original Sprint 01 demo. The current implementation has a live Saudi search backend, product identity logic, SKU-aware comparison, an interactive configurator, explainable offer intelligence, and a local price-history layer.
 
-### Search flow
+## Search flow
 
-1. Query / URL input
+1. Query or product URL
 2. Query normalization
-3. Product identity resolution
-4. Offer normalization
-5. Match confidence
-6. Saudi landed-cost calculation
-7. Eligibility / trust filtering
-8. Ranking
-9. Quote-request handoff
+3. Live provider aggregation
+4. Product / variant identity assessment
+5. Offer normalization and deduplication
+6. SKU-aware grouping
+7. Configurator selection: model → storage → color → condition → SKU
+8. Canonical product-profile merge
+9. Saudi landed-cost eligibility
+10. Explainable offer comparison
+11. Exact-match result grid
+12. Product-detail handoff
+13. Local price-history observation
 
-### Comparable total
+## Live provider status
+
+### Active
+- eXtra Saudi — Unbxd site-search adapter
+- Jarir Saudi — Constructor search with HTML fallback
+- Sharaf DG Saudi — Algolia catalog adapter
+
+### Implemented but gated
+- Noon Saudi — disabled until reliable Saudi-safe egress is available
+- Carrefour KSA — disabled until reliable free egress is available
+
+### Implemented but awaiting configuration
+- eBay official Browse API — requires approved client credentials
+- Shopify predictive-search adapter — requires configured store list
+
+## Comparable total
 
 ```
 comparableTotal =
@@ -28,72 +47,95 @@ comparableTotal =
   - confirmedDiscount
 ```
 
-An offer is **not** eligible for the "cheapest confirmed" position when:
-- the exact product / variant is uncertain;
-- condition is not new;
-- it cannot ship to Saudi Arabia;
-- it is out of stock;
-- any mandatory landed-cost component is unknown.
+NAWAA must not describe an offer as the final cheapest delivered option while any mandatory component is unknown.
 
-### Ranking buckets
+## Ranking buckets
 
-1. `confirmed` — exact match + complete confirmed landed cost
-2. `estimated` — exact match + complete estimated landed cost
-3. `probable` — match confidence below the exact-match threshold
-4. `incomplete` — exact identity but incomplete mandatory cost components
+1. `confirmed` — exact product + complete confirmed landed cost
+2. `estimated` — exact product + complete estimated landed cost
+3. `probable` — lower match confidence / variant uncertainty
+4. `incomplete` — identity is acceptable but cost components are missing
 5. `ineligible` — wrong condition, unavailable, or cannot ship to Saudi Arabia
 
-A cheaper probable/incomplete result must never outrank a confirmed exact match.
+## Product identity
 
-### Normalized offer shape
+The comparison layer distinguishes:
+- brand
+- model
+- storage
+- color
+- condition
+- model number / SKU when available
 
-```js
-{
-  merchant,
-  productPrice,
-  shipping,
-  importCost,
-  tax,
-  mandatoryFees,
-  discount,
-  currency,
-  condition,
-  availability,
-  canShipToSaudi,
-  deliveryDays,
-  exactMatch,
-  matchConfidence,
-  priceConfidence,
-  isLocal,
-  observedAt
-}
-```
+Equivalent formatting differences such as `MG674AH/A` and `MG674AHA` normalize together. Materially different SKUs remain separate even when title, storage, and color look similar.
 
-### Current state
+## Canonical product profile
 
-- `search.html` is a development preview.
-- `src/search-core.mjs` contains deterministic product matching and ranking logic.
-- `src/search-page.mjs` handles the browser UI and quote-draft handoff.
-- `tests/search-core.test.mjs` covers ranking guardrails.
-- Demo prices are intentionally labelled as non-live data.
-- No payment or purchase action is triggered.
-- Quote drafts are local-only until the real quote workflow endpoint is connected.
+For the selected configuration, NAWAA merges specifications from matching merchant offers. A value keeps its source merchant(s). Conflicting values are surfaced rather than silently overwritten.
 
-## Sprint 02
+Examples:
+- RAM
+- processor
+- screen size/type
+- network
+- SIM configuration
+- regional version
+- OS
+- rear/front cameras
+- battery
+- water resistance
+- model number
+- barcode
 
-Add real source adapters behind one provider contract:
+## Offer Intelligence
 
-```ts
-interface OfferProvider {
-  id: string;
-  search(query: NormalizedQuery): Promise<NormalizedOffer[]>;
-}
-```
+The UI explains:
+- lowest advertised price or confirmed comparable total
+- price delta to another merchant
+- confirmed Jeddah stock when a provider supplies it
+- home-delivery and store-pickup signals
+- unknown availability
+- missing shipping/tax/mandatory-cost components
+- match-confidence warnings
 
-Initial target set: 3–5 sources that can be accessed legally and reliably without paid API commitments. Provider claims must be verified before activation.
+## Price history
 
-## Sprint 03
+The public frontend currently stores live/verified price observations in local browser storage.
 
-Connect the selected offer to NAWAA's existing quotation lifecycle:
+It is explicitly:
+- device-local
+- started from the user's first observation
+- not a market-wide historical database
 
-Search → Compare → Request Quote → Admin Pricing → Customer Offer → Accept/Reject → Order
+A shared server-side price-history store is not implemented yet.
+
+## Frontend reliability paths
+
+Primary frontend:
+- GitHub Pages: `https://moealf12.github.io/Nawaa/search.html`
+
+Backend:
+- Render: `https://nawaa-search-api.onrender.com`
+
+Same-origin mobile fallback:
+- `https://nawaa-search-api.onrender.com/search.html`
+
+The same-origin route exists because some embedded mobile browsers can interrupt cross-origin requests before they reach Render. If live search fails, the UI must show a failure state and never silently replace the result with Demo catalog data.
+
+## Current public implementation does not yet include
+
+- real payment / checkout
+- persistent server-side order lifecycle
+- persistent public quote workflow
+- shared multi-user price history
+- complete shipping/tax/duty confirmation for every source
+- universal worldwide live coverage
+- active eBay traffic until credentials are configured
+
+## Test / CI contract
+
+`npm test` executes:
+- deterministic search-core tests
+- provider parser and normalization tests
+
+GitHub Actions also syntax-checks browser and server modules. Provider changes are included in the workflow path filters.
