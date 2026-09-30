@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07111d" />
+  <meta name="description" content="تفاصيل المنتج والمواصفات والسعر من نواة." />
+  <title>تفاصيل المنتج — نواة</title>
+  <style>
+    :root{
+      --ink:#07111d;--ink2:#0b1b2c;--paper:#f3efe9;--ice:#eaf4ff;--coral:#ff7584;--sky:#77b9ff;
+      --green:#7dffb0;--amber:#f4cb6b;--text:#f7fbff;--muted:#9db0c3;--line:rgba(255,255,255,.13);
+      --radius:26px;--sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Arabic","Segoe UI","Noto Sans Arabic",Arial,sans-serif;
+      --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box}html{background:var(--ink)}body{margin:0;background:
+      radial-gradient(circle at 72% 0%,rgba(58,97,210,.16),transparent 28%),
+      radial-gradient(circle at 10% 18%,rgba(255,117,132,.08),transparent 26%),
+      var(--ink);color:var(--text);font-family:var(--sans);min-height:100svh;-webkit-font-smoothing:antialiased}
+    a{text-decoration:none;color:inherit}button{font:inherit;cursor:pointer}.shell{width:min(1180px,calc(100% - 32px));margin:auto}
+    .nav{height:72px;border-bottom:1px solid var(--line);background:rgba(7,17,29,.78);backdrop-filter:blur(20px);position:sticky;top:0;z-index:20}
+    .nav-inner{height:100%;display:flex;align-items:center;justify-content:space-between;gap:20px}
+    .logo{font-size:27px;font-weight:850;letter-spacing:-.07em}.logo i{font-style:normal;color:var(--coral)}
+    .back{border:1px solid var(--line);border-radius:999px;padding:9px 13px;color:#c7d4e1;font-size:11px}
+    main{padding:54px 0 100px}.eyebrow{font:10px var(--mono);letter-spacing:.13em;color:var(--sky);direction:ltr;text-transform:uppercase}
+    .product-hero{display:grid;grid-template-columns:.82fr 1.18fr;gap:44px;align-items:center}
+    .product-media{background:#fff;border-radius:30px;min-height:460px;display:grid;place-items:center;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.25)}
+    .product-media img{width:100%;height:100%;max-height:520px;object-fit:contain;padding:24px}.media-fallback{color:#617181;font-size:12px}
+    .product-copy{min-width:0}.source-line{display:flex;align-items:center;gap:8px;color:#9db0c3;font-size:11px;margin-bottom:16px;flex-wrap:wrap}
+    .source-line b{color:var(--green);font-size:10px;border:1px solid rgba(125,255,176,.25);padding:4px 7px;border-radius:999px;background:rgba(125,255,176,.05)}
+    .flag{font-size:18px}.product-copy h1{font-size:clamp(36px,5.7vw,74px);line-height:.98;letter-spacing:-.055em;margin:10px 0 14px}
+    .model-line{color:var(--muted);font-size:12px;margin:0 0 26px}.price-block{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:22px 0;margin:0 0 18px}
+    .price-block span,.price-block small{display:block;color:#7f94a8;font-size:10px}.price-block strong{display:block;font-size:clamp(38px,5vw,64px);letter-spacing:-.055em;margin:2px 0}
+    .availability-grid{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 22px}.availability-grid span{border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:#a9b9c7;font-size:10px}
+    .availability-grid .yes{color:var(--green);border-color:rgba(125,255,176,.25);background:rgba(125,255,176,.04)}.availability-grid .no{color:var(--amber)}
+    .actions{display:flex;gap:10px;flex-wrap:wrap}.primary,.secondary{border:0;border-radius:15px;padding:14px 18px;font-weight:850}
+    .primary{background:var(--coral);color:var(--ink)}.primary:disabled{opacity:.65;cursor:default}.secondary{background:var(--ice);color:var(--ink)}
+    .detail-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px;margin-top:44px}.panel{border:1px solid var(--line);background:rgba(11,27,44,.78);border-radius:26px;padding:24px}
+    .panel-head{margin-bottom:18px}.panel h2{font-size:30px;margin:7px 0 0;letter-spacing:-.035em}.spec-table,.pricing-table{display:grid}
+    .spec-table div,.pricing-table div{display:grid;grid-template-columns:1fr auto;gap:16px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.07);align-items:center}
+    .spec-table div:last-child,.pricing-table div:last-child{border-bottom:0}.spec-table span,.pricing-table span{color:#8498aa;font-size:11px}.spec-table b,.pricing-table b{font-size:12px;text-align:left}
+    .integrity{margin-top:18px;border-top:1px solid var(--line);padding-top:16px}.integrity b{font-size:11px}.integrity p{color:#7f93a5;font-size:10px;line-height:1.7;margin:5px 0 0}
+    .source-card{margin-top:18px;border:1px solid var(--line);border-radius:24px;padding:22px;display:flex;justify-content:space-between;gap:24px;align-items:center;background:rgba(255,255,255,.025)}
+    .source-card h3{margin:6px 0 3px;font-size:22px}.source-card p{margin:0;color:#8094a7;font-size:10px}.source-meta{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .source-meta span{font-size:9px;border:1px solid var(--line);padding:7px 9px;border-radius:999px;color:#a8b8c6}.loading,.missing{border:1px dashed var(--line);border-radius:26px;padding:38px;color:#91a4b5}
+    .missing h1{font-size:38px;color:#fff;margin:8px 0}.missing p{margin:0 0 20px}.link-button{display:inline-block}.empty{color:#8ba0b2;font-size:11px}
+    @media(max-width:900px){.product-hero,.detail-grid{grid-template-columns:1fr}.product-media{min-height:360px}.product-copy h1{font-size:clamp(36px,8vw,64px)}}
+    @media(max-width:600px){.shell{width:min(100% - 20px,1180px)}main{padding-top:28px}.product-media{min-height:300px;border-radius:22px}.product-media img{padding:14px}.actions{display:grid}.actions>*{width:100%;text-align:center}
+      .panel{padding:18px}.source-card{align-items:flex-start;flex-direction:column}.source-meta{justify-content:flex-start}.spec-table div,.pricing-table div{grid-template-columns:1fr}.spec-table b,.pricing-table b{text-align:right}}
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="shell nav-inner">
+      <a class="logo" href="./">نواة<i>.</i></a>
+      <a class="back" href="./search.html">العودة للبحث ←</a>
+    </div>
+  </header>
+  <main>
+    <div class="shell" id="productApp">
+      <div class="loading">جاري تحميل تفاصيل المنتج…</div>
+    </div>
+  </main>
+  <script src="./config.js"></script>
+  <script type="module" src="./src/product-page.mjs"></script>
+</body>
+</html>
