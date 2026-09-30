@@ -2,6 +2,10 @@ import https from "node:https";
 
 const NOON_SEARCH_BASE = "https://www.noon.com/_vs/nc/mp-customer-catalog-api/api/v3/u/search/";
 
+export function noonConfigured() {
+  return String(process.env.NOON_ENABLED || "").toLowerCase() === "true";
+}
+
 function getJsonHttp1(url, headers = {}, redirects = 0) {
   return new Promise((resolve, reject) => {
     const target = url instanceof URL ? url : new URL(url);
