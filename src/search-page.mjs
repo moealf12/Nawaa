@@ -250,6 +250,19 @@ function offerCard(offer, index) {
   `;
 }
 
+function openProductDetails(offer, query) {
+  const payload = {
+    savedAt: new Date().toISOString(),
+    query,
+    offer,
+  };
+  sessionStorage.setItem("nawaa_product_detail", JSON.stringify(payload));
+  const params = new URLSearchParams();
+  if (offer.sourceUrl) params.set("source", offer.sourceUrl);
+  if (query) params.set("q", query);
+  location.href = "./product.html?" + params.toString();
+}
+
 function renderProduct(product, query) {
   const ranked = rankOffers(product.offers, state.mode);
   const summary = summarizeOffers(product.offers);
@@ -329,6 +342,14 @@ function renderProduct(product, query) {
   });
 
   $("#quoteBestBtn")?.addEventListener("click", () => openQuote(product, best, query));
+
+  document.querySelectorAll(".product-detail-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const source = button.dataset.source || "";
+      const offer = ranked.find((item) => (item.sourceUrl || "") === source);
+      if (offer) openProductDetails(offer, query);
+    });
+  });
 }
 
 function renderNoMatch(query) {
