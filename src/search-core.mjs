@@ -250,6 +250,7 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
 }
 
 function offerDisplayValue(offer = {}) {
+  if (!offer) return null;
   if (Number.isFinite(offer.totalSAR)) return offer.totalSAR;
   if (Number.isFinite(offer.productPrice)) return offer.productPrice;
   return null;

@@ -1,13 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assessOfferMatch } from "../server/match.mjs";
-import { calculateComparableTotal, classifyOffer } from "../src/search-core.mjs";
+import { calculateComparableTotal, classifyOffer, buildOfferIntelligence } from "../src/search-core.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
 import * as queries from "../src/search-query.mjs";
 
 const iphone = { title: "Apple iPhone 17 Pro Max, 256 GB, Black", condition: "new" };
+
+test("related-only and single-offer groups render without a missing price baseline", () => {
+  const offer = { productPrice: 3999, condition: "new", availability: "in_stock", canShipToSaudi: true,
+    exactMatch: false, matchConfidence: 0.7 };
+  assert.doesNotThrow(() => buildOfferIntelligence({ offers: [offer] }));
+  assert.doesNotThrow(() => buildOfferIntelligence({ offers: [{ ...offer, exactMatch: true, matchConfidence: 1 }] }));
+});
 
 test("Arabic model, variant, color and storage match an English merchant title", () => {
   assert.equal(assessOfferMatch("آيفون ١٧ برو ماكس ٢٥٦ جيجا أسود", iphone).exactMatch, true);
