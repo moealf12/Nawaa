@@ -1,6 +1,10 @@
 import https from "node:https";
 
 const CARREFOUR_SEARCH_URL = "https://www.carrefourksa.com/mafrp/api/v1/search/listing/keyword";
+export function carrefourConfigured() {
+  return String(process.env.CARREFOUR_ENABLED || "").toLowerCase() === "true";
+}
+
 const DEFAULT_SA_LOCATION = {
   latitude: "24.7136",
   longitude: "46.6753",
