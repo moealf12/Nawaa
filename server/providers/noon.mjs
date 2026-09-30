@@ -183,21 +183,33 @@ export async function searchNoon(query, limit = 32) {
   url.searchParams.set("sort[by]", "popularity");
   url.searchParams.set("sort[dir]", "desc");
 
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "accept-language": "en-SA,en;q=0.9",
-      "content-type": "application/json",
-      "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.5; +https://moealf12.github.io/Nawaa/)",
-      "x-platform": "web",
-      "x-cms": "v2",
-      "x-content": "desktop",
-      "x-locale": "en-sa",
-      referer: "https://www.noon.com/saudi-en/search/?q=" + encodeURIComponent(query),
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(12000),
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        accept: "application/json",
+        "accept-language": "en-SA,en;q=0.9",
+        "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.5; +https://moealf12.github.io/Nawaa/)",
+        "x-platform": "web",
+        "x-cms": "v2",
+        "x-content": "desktop",
+        "x-locale": "en-sa",
+        referer: "https://www.noon.com/saudi-en/search/?q=" + encodeURIComponent(query),
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(12000),
+    });
+  } catch (error) {
+    const cause = error?.cause;
+    const detail = [
+      error?.message,
+      cause?.code,
+      cause?.errno,
+      cause?.syscall,
+      cause?.hostname,
+    ].filter(Boolean).join(" | ");
+    throw new Error("noon-catalog fetch: " + (detail || String(error)));
+  }
 
   if (!response.ok) throw new Error("noon-catalog: HTTP " + response.status);
 
