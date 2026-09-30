@@ -190,6 +190,17 @@
     .merchant-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}.merchant-actions a{font-size:8px;color:var(--sky);border-bottom:1px solid rgba(119,185,255,.28)}
     .best-merchant{font-size:12px;font-weight:800;margin:-7px 0 5px;color:#33465a}
     .best-selected-variant{font-size:9px;color:#647482;margin-bottom:13px}
+    .match-results-section{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+    .match-results-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .match-result-card{width:100%;display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.025);color:var(--text);border-radius:18px;padding:11px;text-align:right;transition:.18s ease}
+    .match-result-card:hover{transform:translateY(-1px);border-color:rgba(119,185,255,.44);background:rgba(119,185,255,.045)}
+    .match-result-card.active{border-color:rgba(119,185,255,.65);background:linear-gradient(90deg,rgba(119,185,255,.09),rgba(255,255,255,.025));box-shadow:inset 0 0 0 1px rgba(119,185,255,.08)}
+    .match-card-image{width:72px;height:72px;border-radius:13px;background:#fff;overflow:hidden;display:grid;place-items:center;border:1px solid rgba(255,255,255,.08)}
+    .match-card-image img{width:100%;height:100%;object-fit:contain;padding:5px;display:block}
+    .match-card-fallback{display:none;place-items:center;width:100%;height:100%;font-size:7px;color:#75899b;background:rgba(7,17,29,.04)}.match-card-fallback.visible{display:grid}
+    .match-card-copy{min-width:0;display:grid;gap:2px}.match-card-copy strong{font-size:11px;line-height:1.35;overflow-wrap:anywhere}.match-card-copy small{font-size:7px;color:#71869a}
+    .match-card-price{display:grid;justify-items:start;direction:rtl}.match-card-price small{font-size:7px;color:#71869a}.match-card-price b{font-size:15px;white-space:nowrap}
+    .match-results-note{margin:9px 0 0;color:#657a8e;font-size:8px}
     .results-truncated{border:1px dashed var(--line);border-radius:16px;padding:13px;color:#71869a;font-size:9px;text-align:center}
     .best-panel{background:var(--ice);color:var(--ink);border-radius:24px;padding:24px;position:sticky;top:98px}
     .best-panel .mini-kicker{color:#315cff}.best-panel>small{display:block;color:#607080;margin-top:26px}
@@ -248,6 +259,7 @@
       .availability-row{gap:7px}
       .offer-price{grid-column:2/-1;text-align:right;justify-items:start;border-top:1px solid var(--line);padding-top:9px}.offer-price strong{font-size:19px}
       .comparison-layout{display:block}.best-panel{margin-top:16px}
+      .match-results-grid{grid-template-columns:1fr}.match-result-card{grid-template-columns:64px minmax(0,1fr) auto;gap:9px}.match-card-image{width:64px;height:64px}.match-card-price b{font-size:14px}
       .config-hero{grid-template-columns:86px minmax(0,1fr);gap:11px;padding:13px}.config-image{width:86px;height:86px;border-radius:15px}.config-title h3{font-size:15px}.config-price{grid-column:1/-1;text-align:right;justify-items:start;border-top:1px solid var(--line);padding-top:10px}
       .config-row{grid-template-columns:1fr;padding:10px 12px}.config-row-label{display:flex;align-items:center;justify-content:space-between;padding-top:0}.config-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.config-option{width:100%;min-width:0}
       .price-history-section{padding:14px 12px}.price-history-head{align-items:flex-start;flex-direction:column;gap:7px}.price-history-stats{grid-template-columns:1fr 1fr;gap:6px}.history-merchant{grid-template-columns:1fr}.history-merchant b,.history-move{text-align:right}
