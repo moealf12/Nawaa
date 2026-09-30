@@ -20,7 +20,8 @@ export function normalizeSearchQuery(value = "") {
     .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
     .replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
 
-  text = text.replace(/([ء-ي])(?=\d)/g, "$1 ").replace(/(\d)(?=جيجا|تيرا)/g, "$1 ");
+  text = text.replace(/\b(\d+)(?:st|nd|rd|th)\b/g, "$1")
+    .replace(/([ء-ي])(?=\d)/g, "$1 ").replace(/(\d)(?=جيجا|تيرا)/g, "$1 ");
   for (const [alias, canonical] of ALIASES) {
     text = text.replace(new RegExp("(^| )" + alias + "(?= |$)", "g"), "$1" + canonical);
   }

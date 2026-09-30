@@ -31,6 +31,12 @@ test("match explanation identifies requested constraints missing from an offer",
   assert.ok(result.matchReason);
 });
 
+test("merchant ordinal generations match AirPods 2 without accepting generation 3 or a case", () => {
+  assert.equal(assessOfferMatch("ايربودز برو٢", {title:"Apple AirPods Pro 2nd gen with MagSafe Charging, White",condition:"new"}).exactMatch,true);
+  assert.equal(assessOfferMatch("airpods pro 2", {title:"Apple AirPods Pro 3rd gen",condition:"new"}).exactMatch,false);
+  assert.equal(assessOfferMatch("airpods pro 2", {title:"Earbuds Case for Apple AirPods Pro 2nd Gen",condition:"new"}).exactMatch,false);
+});
+
 test("related-only and single-offer groups render without a missing price baseline", () => {
   const offer = { productPrice: 3999, condition: "new", availability: "in_stock", canShipToSaudi: true,
     exactMatch: false, matchConfidence: 0.7 };
