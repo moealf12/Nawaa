@@ -19,14 +19,6 @@ const SOURCES = [
     currency: "SAR",
     searchUrl: (q) => "https://www.jarir.com/sa-en/catalogsearch/result/?q=" + encodeURIComponent(q),
   },
-  {
-    id: "extra-sa",
-    name: "eXtra",
-    countryCode: "SA",
-    countryNameAr: "السعودية",
-    currency: "SAR",
-    searchUrl: (q) => "https://www.extra.com/en-sa/search/?text=" + encodeURIComponent(q),
-  },
 ];
 
 function decode(value = "") {
