@@ -153,6 +153,10 @@ function normalizedBrand(value = "") {
   return normalizeVariantPart(value).replace(/\s+/g, " ");
 }
 
+function normalizedModelIdentifier(value = "") {
+  return normalizeText(value).replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
 function normalizedModel(offer = {}) {
   const specs = offer.specs || {};
   let raw = specs.deviceType || specs.model || specs.series || offer.title || "";
@@ -170,12 +174,14 @@ function normalizedModel(offer = {}) {
 
 export function offerVariantKey(offer = {}) {
   const specs = offer.specs || {};
+  const modelIdentifier = normalizedModelIdentifier(specs.modelNumber || "");
   return [
     normalizedBrand(specs.brand || ""),
     normalizedModel(offer),
     normalizeVariantPart(specs.storage || ""),
     normalizeVariantPart(specs.color || ""),
     normalizeVariantPart(offer.condition || "unknown"),
+    modelIdentifier ? "sku:" + modelIdentifier : "sku:unknown",
   ].join("|");
 }
 
