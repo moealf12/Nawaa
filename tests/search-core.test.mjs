@@ -5,6 +5,8 @@ import {
   findBestProduct,
   productMatchScore,
   rankOffers,
+  offerVariantKey,
+  groupComparableOffers,
   DEMO_CATALOG,
 } from "../src/search-core.mjs";
 import { WORLD_SOURCE_REGISTRY, sourceCoverageSummary } from "../src/source-registry.mjs";
@@ -54,3 +56,38 @@ assert.equal(new Set(WORLD_SOURCE_REGISTRY.map((source) => source.id)).size, WOR
 
 assert.equal(findBestProduct("iPhone 17", DEMO_CATALOG)?.product.id, "iphone-17");
 assert.equal(findBestProduct("ايفون 17", DEMO_CATALOG)?.product.id, "iphone-17");
+
+
+const groupedVariants = groupComparableOffers([
+  {
+    merchant:"eXtra",
+    title:"Apple iPhone 17, 5G, 6.3 inch 256GB, Black",
+    specs:{brand:"APPLE",deviceType:"IPHONE 17",storage:"256 GB",color:"Black"},
+    productPrice:3999,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"in_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    title:"Apple iPhone 17, 256 GB, Black, 5G, Apple A19",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256GB",color:"Black"},
+    productPrice:4299,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    title:"Apple iPhone 17 Pro, 256 GB, Black, 5G",
+    specs:{brand:"Apple",deviceType:"iPhone 17 Pro",storage:"256 GB",color:"Black"},
+    productPrice:4999,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:false,matchConfidence:.82,priceConfidence:"incomplete"
+  }
+]);
+assert.equal(groupedVariants.length, 2);
+assert.equal(groupedVariants[0].offers.length, 2);
+assert.equal(groupedVariants[0].bestOffer.merchant, "eXtra");
+assert.equal(groupedVariants[0].bestValue, 3999);
+assert.equal(groupedVariants[0].savingsToNext, 300);
+assert.equal(groupedVariants[0].priceBasis, "advertised_price");
+assert.notEqual(
+  offerVariantKey(groupedVariants[0].offers[0]),
+  offerVariantKey(groupedVariants[1].offers[0])
+);
