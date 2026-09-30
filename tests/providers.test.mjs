@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { assessOfferMatch, dedupeNormalizedOffers } from "../server/match.mjs";
 import { normalizeCondition, parseMoney } from "../server/provider-utils.mjs";
 import { parseJarirConstructorPayload, parseJarirSearchHtml } from "../server/providers/jarir.mjs";
+import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -95,5 +96,55 @@ assert.equal(jarirConstructorOffers[0].specs.screenSize, '6.3"');
 assert.equal(jarirConstructorOffers[0].specs.rearCamera, "48 MP + 48 MP");
 assert.equal(jarirConstructorOffers[0].specs.frontCamera, "18 MP");
 assert.equal(jarirConstructorOffers[0].specs.modelNumber, "MG674AHA");
+
+const noonFixture = {
+  type: "catalog",
+  nbHits: 1,
+  hits: [{
+    offer_code: "de2e8df30cb20f7e",
+    catalog_sku: "N70211553V-1",
+    sku: "N70211553V",
+    brand: "Apple",
+    name: "iPhone 17 256GB (Nano SIM + eSIM) Black 5G With FaceTime - International Version",
+    plp_specifications: {
+      "Screen Size": "6.3 in",
+      "RAM Size": "8 GB",
+      "Battery Size": "3692 mAh",
+      "Secondary Camera Resolution": "18 MP"
+    },
+    price: 3798,
+    sale_price: null,
+    image_url: "https://example.com/noon.jpg",
+    is_buyable: true,
+    flags: ["fbn","free_delivery_eligible"],
+    nudges: [{ text: "Free Delivery" }, { text: "Only 6 left in stock" }],
+    low_stock_nudge_value: 6,
+    pdp_url: "/iphone-17-256gb-nano-sim-esim-black-5g-with-facetime-international-version/N70211553V/p/?o=abc",
+    store_name: "Seller One",
+    partner_ratings_sellerlab: {
+      positive_seller_rating: 97,
+      partner_rating: 4.8
+    },
+    product_rating: { value: 4.6, count: 6419 }
+  }]
+};
+const noonOffers = parseNoonCatalogPayload(noonFixture);
+assert.equal(noonOffers.length, 1);
+assert.equal(noonOffers[0].merchant, "noon");
+assert.equal(noonOffers[0].productPrice, 3798);
+assert.equal(noonOffers[0].shipping, 0);
+assert.equal(noonOffers[0].availability, "in_stock");
+assert.equal(noonOffers[0].specs.deviceType, "iPhone 17");
+assert.equal(noonOffers[0].specs.storage.replace(" ",""), "256GB");
+assert.equal(noonOffers[0].specs.color, "Black");
+assert.equal(noonOffers[0].specs.sim, "Nano SIM + eSIM");
+assert.equal(noonOffers[0].specs.network, "5G");
+assert.equal(noonOffers[0].specs.ram, "8 GB");
+assert.equal(noonOffers[0].specs.battery, "3692 mAh");
+assert.equal(noonOffers[0].specs.regionVersion, "International Version");
+assert.equal(noonOffers[0].sourceMeta.freeDelivery, true);
+assert.equal(noonOffers[0].sourceMeta.fulfilledByNoon, true);
+assert.equal(noonOffers[0].sourceMeta.lowStockCount, 6);
+assert.equal(noonOffers[0].seller.name, "Seller One");
 
 console.log("NAWAA provider tests passed");
