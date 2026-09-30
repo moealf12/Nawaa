@@ -201,20 +201,28 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
 
   return [...groups.entries()].map(([key, groupedOffers]) => {
     const ordered = rankOffers(groupedOffers, mode);
+    const priceOrdered = rankOffers(groupedOffers, "lowest");
     const bestOffer = ordered[0] || null;
-    const secondOffer = ordered[1] || null;
-    const usesComparableTotal = Boolean(bestOffer && Number.isFinite(bestOffer.totalSAR));
-    const bestValue = bestOffer
-      ? (usesComparableTotal ? bestOffer.totalSAR : bestOffer.productPrice)
+    const bestPriceOffer = priceOrdered[0] || null;
+    const secondPriceOffer = priceOrdered[1] || null;
+    const usesComparableTotal = Boolean(bestPriceOffer && Number.isFinite(bestPriceOffer.totalSAR));
+    const bestValue = bestPriceOffer
+      ? (usesComparableTotal ? bestPriceOffer.totalSAR : bestPriceOffer.productPrice)
       : null;
-    const secondValue = secondOffer
-      ? (Number.isFinite(secondOffer.totalSAR) ? secondOffer.totalSAR : secondOffer.productPrice)
+    const secondValue = secondPriceOffer
+      ? (Number.isFinite(secondPriceOffer.totalSAR) ? secondPriceOffer.totalSAR : secondPriceOffer.productPrice)
       : null;
+
+    const fastestOffer = [...ordered]
+      .filter((offer) => Number.isFinite(offer.deliveryDays))
+      .sort((a, b) => a.deliveryDays - b.deliveryDays)[0] || null;
 
     return {
       key,
       offers: ordered,
       bestOffer,
+      bestPriceOffer,
+      fastestOffer,
       merchantCount: new Set(ordered.map((offer) => offer.merchant).filter(Boolean)).size,
       priceBasis: usesComparableTotal ? "comparable_total" : "advertised_price",
       bestValue: Number.isFinite(bestValue) ? bestValue : null,
@@ -233,6 +241,151 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
 
     return (b.bestOffer?.matchConfidence || 0) - (a.bestOffer?.matchConfidence || 0);
   });
+}
+
+function offerDisplayValue(offer = {}) {
+  if (Number.isFinite(offer.totalSAR)) return offer.totalSAR;
+  if (Number.isFinite(offer.productPrice)) return offer.productPrice;
+  return null;
+}
+
+function missingCostComponents(offer = {}) {
+  const fields = [
+    ["shipping", "الشحن"],
+    ["importCost", "الاستيراد"],
+    ["tax", "الضريبة"],
+    ["mandatoryFees", "الرسوم الإلزامية"],
+  ];
+  return fields.filter(([key]) => !Number.isFinite(offer[key])).map(([, label]) => label);
+}
+
+export function buildOfferIntelligence(group = {}) {
+  const offers = Array.isArray(group.offers) ? group.offers : [];
+  const priceOrdered = [...offers].sort((a, b) => {
+    const aTotal = Number.isFinite(a.totalSAR) ? a.totalSAR : Infinity;
+    const bTotal = Number.isFinite(b.totalSAR) ? b.totalSAR : Infinity;
+    if (aTotal !== bTotal) return aTotal - bTotal;
+    const aPrice = Number.isFinite(a.productPrice) ? a.productPrice : Infinity;
+    const bPrice = Number.isFinite(b.productPrice) ? b.productPrice : Infinity;
+    return aPrice - bPrice;
+  });
+
+  const baselineOffer = group.bestPriceOffer || priceOrdered[0] || null;
+  const baselineValue = offerDisplayValue(baselineOffer);
+  const priceBasis = baselineOffer && Number.isFinite(baselineOffer.totalSAR)
+    ? "comparable_total"
+    : "advertised_price";
+
+  const rows = offers.map((offer) => {
+    const value = offerDisplayValue(offer);
+    const delta = Number.isFinite(value) && Number.isFinite(baselineValue) ? value - baselineValue : null;
+    const deltaPercent = Number.isFinite(delta) && delta > 0 && baselineValue > 0
+      ? (delta / baselineValue) * 100
+      : 0;
+    const missingCosts = missingCostComponents(offer);
+    const badges = [];
+    const warnings = [];
+
+    if (offer === baselineOffer) badges.push(priceBasis === "comparable_total" ? "أقل إجمالي مؤكد" : "أقل سعر معلن");
+    if (offer.sourceMeta?.jeddahInStock === true) badges.push("متوفر في جدة");
+    if (offer.sourceMeta?.homeDeliveryEnabled === true) badges.push("توصيل منزلي");
+    if (offer.sourceMeta?.collectFromStoreEnabled === true) badges.push("استلام من المعرض");
+    if (offer.exactMatch === true && (offer.matchConfidence || 0) >= 0.92) badges.push("مطابقة عالية");
+    if (Number.isFinite(offer.deliveryDays)) badges.push(offer.deliveryDays + " يوم");
+
+    if (offer.sourceMeta?.jeddahInStock === false) warnings.push("غير متوفر حاليًا في جدة");
+    if (offer.availability === "out_of_stock") warnings.push("غير متوفر لدى المتجر");
+    if (offer.availability === "unknown" && offer.sourceMeta?.jeddahInStock !== true) warnings.push("التوفر التفصيلي غير مؤكد");
+    if (offer.canShipToSaudi === false) warnings.push("لا يشحن إلى السعودية");
+    if (offer.canShipToSaudi == null) warnings.push("الشحن إلى السعودية غير مؤكد");
+    if (missingCosts.length) warnings.push("تكلفة غير مكتملة: " + missingCosts.join("، "));
+    if (offer.exactMatch !== true || (offer.matchConfidence || 0) < 0.9) warnings.push("مطابقة المنتج تحتاج تحقق");
+
+    return {
+      offer,
+      value,
+      delta: Number.isFinite(delta) ? delta : null,
+      deltaPercent: Math.round(deltaPercent * 10) / 10,
+      priceBasis: Number.isFinite(offer.totalSAR) ? "comparable_total" : "advertised_price",
+      missingCosts,
+      badges,
+      warnings,
+    };
+  });
+
+  const insights = [];
+  const secondPriced = priceOrdered.find((offer) => offer !== baselineOffer && Number.isFinite(offerDisplayValue(offer)));
+  const secondValue = offerDisplayValue(secondPriced);
+  if (baselineOffer && Number.isFinite(baselineValue)) {
+    if (secondPriced && Number.isFinite(secondValue) && secondValue > baselineValue) {
+      const diff = secondValue - baselineValue;
+      const pct = baselineValue > 0 ? Math.round((diff / baselineValue) * 1000) / 10 : 0;
+      insights.push({
+        type: "price",
+        tone: "positive",
+        title: priceBasis === "comparable_total" ? "أقل إجمالي مؤكد" : "أقل سعر معلن",
+        text: String(baselineOffer.merchant || "العرض الأول") + " أقل بـ " + diff.toFixed(2) + " ر.س (" + pct + "%) من " + String(secondPriced.merchant || "العرض التالي"),
+      });
+    } else {
+      insights.push({
+        type: "price",
+        tone: "neutral",
+        title: priceBasis === "comparable_total" ? "إجمالي قابل للمقارنة" : "السعر المعلن",
+        text: "لا يوجد عرض ثانٍ بسعر صالح لقياس الفرق حاليًا.",
+      });
+    }
+  }
+
+  const jeddah = offers.filter((offer) => offer.sourceMeta?.jeddahInStock === true);
+  if (jeddah.length) {
+    insights.push({
+      type: "availability",
+      tone: "positive",
+      title: "توفر مؤكد في جدة",
+      text: [...new Set(jeddah.map((offer) => offer.merchant).filter(Boolean))].join("، "),
+    });
+  } else {
+    insights.push({
+      type: "availability",
+      tone: "warning",
+      title: "توفر جدة غير محسوم",
+      text: "لا يوجد مصدر في هذه المقارنة يؤكد مخزون جدة حاليًا.",
+    });
+  }
+
+  const delivery = offers.filter((offer) => offer.sourceMeta?.homeDeliveryEnabled === true);
+  const pickup = offers.filter((offer) => offer.sourceMeta?.collectFromStoreEnabled === true);
+  if (delivery.length || pickup.length) {
+    const parts = [];
+    if (delivery.length) parts.push("توصيل منزلي: " + [...new Set(delivery.map((offer) => offer.merchant).filter(Boolean))].join("، "));
+    if (pickup.length) parts.push("استلام من المعرض: " + [...new Set(pickup.map((offer) => offer.merchant).filter(Boolean))].join("، "));
+    insights.push({
+      type: "delivery",
+      tone: "positive",
+      title: "خيارات الاستلام",
+      text: parts.join(" · "),
+    });
+  }
+
+  const incompleteCount = rows.filter((row) => row.missingCosts.length).length;
+  if (incompleteCount) {
+    insights.push({
+      type: "cost",
+      tone: "warning",
+      title: "التكلفة النهائية غير مكتملة",
+      text: incompleteCount === offers.length
+        ? "كل العروض تحتاج تأكيد بعض مكونات الشحن أو الرسوم قبل وصف أحدها بأنه الأرخص نهائيًا."
+        : incompleteCount + " من " + offers.length + " عروض تحتاج استكمال بعض مكونات التكلفة.",
+    });
+  }
+
+  return {
+    baselineOffer,
+    baselineValue,
+    priceBasis,
+    rows,
+    insights,
+  };
 }
 
 export function offerVariantDimensions(offer = {}) {
