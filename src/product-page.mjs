@@ -163,6 +163,12 @@ function render(snapshot) {
   `;
 
   $("#quoteBtn")?.addEventListener("click", () => {
+    if (window.NAWAA_QUOTE_URL) {
+      const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
+      destination.searchParams.set("request", [offer.title || title, offer.specs?.modelNumber || "", offer.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
+      location.href = destination.href;
+      return;
+    }
     const draft = {
       createdAt: new Date().toISOString(),
       productName: title,

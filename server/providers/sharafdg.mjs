@@ -277,7 +277,9 @@ export function parseSharafAlgoliaPayload(payload, limit = 32) {
       importCost: 0,
       tax: null,
       mandatoryFees: 0,
-      discount: regularPrice !== null && regularPrice > price ? regularPrice - price : 0,
+      // productPrice already includes the advertised sale reduction.
+      advertisedDiscount: regularPrice !== null && regularPrice > price ? regularPrice - price : 0,
+      discount: 0,
       currency: "SAR",
       originalCurrency: "SAR",
       exactMatch: false,

@@ -259,6 +259,13 @@ export async function resolveProductUrl(url) {
     sourceUrl: offer && offer.url ? new URL(offer.url, finalUrl).href : finalUrl,
     image: image ? new URL(image, finalUrl).href : null,
     title: title || "منتج من رابط خارجي",
+    specs: {
+      brand: typeof product?.brand === "string" ? product.brand : product?.brand?.name || null,
+      deviceType: typeof product?.model === "string" ? product.model : product?.model?.name || null,
+      color: product?.color || null,
+      modelNumber: product?.mpn || null,
+      barcode: product?.gtin13 || product?.gtin14 || product?.gtin || null,
+    },
     condition: condition === "unknown" ? "new" : condition,
     availability: offer && offer.availability.includes("instock") ? "in_stock" : "unknown",
     canShipToSaudi: country.countryCode === "SA" ? true : null,

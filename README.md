@@ -85,3 +85,15 @@ GitHub Actions also syntax-checks browser modules and all active/gated provider 
 3. Improve merchant availability/shipping confirmation.
 4. Move price history from local device storage to shared persistence when a zero-cost durable option is selected.
 5. Keep SKU/product identity stricter than price ranking.
+
+## Stabilization update — 2026-10-01
+
+- Arabic product aliases, Arabic/Persian digits, colors and capacities are normalized before provider calls and identity checks.
+- Identity matching uses whole tokens; `iPhone 170` is not a match for `iPhone 17`.
+- `/api/search?url=...` resolves a product URL, searches the available retailers, retains the source offer and demotes conflicting SKUs or conditions.
+- `discount` is an additional confirmed deduction. Already-applied sale savings are stored as `advertisedDiscount`, avoiding double subtraction.
+- Unknown shipping eligibility or stock cannot earn a confirmed-total badge.
+- Homepage search and deep links open the same live comparison UI. The original private Site serves this UI with a fixed same-origin proxy and retains its existing request/admin database.
+- Quote buttons prefill the original Site's request form. They never submit an order automatically.
+- Search history storage is optional; blocked browser storage does not prevent search.
+- `npm test` includes regression and UI-controller integration checks.

@@ -180,9 +180,9 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
   <div class="eyebrow">NAWAA / DISCOVERY ENGINE</div>
   <h2>ابحث. قارن. ثم قرر.</h2>
   <p class="lead">نواة لا ترتب النتائج بالسعر الإعلاني فقط. نتحقق من مطابقة المنتج، حالته، إمكانية وصوله للسعودية، ثم نقارن التكلفة المكتملة.</p>
-  <div class="nawaa-search"><input id="nawaaSearchInput" placeholder="مثال: AirPods Pro 2 USB-C أو الصق رابط المنتج" aria-label="ابحث عن منتج"><button id="nawaaSearchBtn">ابحث لي</button></div>
-  <div class="search-meta">بحث المنتج أو الموديل أو الرابط • النتائج الحالية Demo لاختبار المحرك والواجهة قبل ربط المصادر الحية</div>
-  <div id="nawaaSearchResults" class="search-results"><div class="search-empty">ابدأ بكتابة اسم منتج لنختبر طريقة المقارنة.</div></div>
+  <form class="nawaa-search" id="nawaaSearchForm" action="./search.html" method="get"><input name="q" minlength="2" required id="nawaaSearchInput" placeholder="مثال: AirPods Pro 2 USB-C أو الصق رابط المنتج" aria-label="ابحث عن منتج"><button id="nawaaSearchBtn" type="submit">ابحث لي</button></form>
+  <div class="search-meta">بحث حي بالاسم أو الموديل أو الرابط • صور ومواصفات ومقارنة النسخة نفسها بين المتاجر</div>
+  <div id="nawaaSearchResults" class="search-results"><div class="search-empty">اكتب اسم المنتج أو الصق رابطه لفتح المقارنة الحية.</div></div>
  </div>
 </section>
 <section class="section dark section-pad" id="faq">
@@ -199,6 +199,7 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
  <footer><div class="shell footer-grid"><div><div class="footer-brand">نواة<i>.</i></div><div class="footer-note">متجر سعودي قيد التأسيس. هذه المعاينة لا تستقبل طلبات أو مدفوعات. سيُستكمل قسم السياسات والبيانات النظامية قبل الإطلاق التجاري.</div><div class="copyright">© 2026 NAWAA — PRE-LAUNCH EDITION</div></div><nav class="footer-links"><a href="#about">الفكرة</a><a href="#selection">الاختيارات</a><a href="#price">السعر</a><a href="#process">العملية</a><a href="#faq">الأسئلة</a></nav></div></footer>
 
  <div class="drawer" id="drawer" aria-hidden="true"><div class="drawer-panel"><div class="drawer-top"><b>نواة.</b><button class="drawer-close" id="drawerClose" type="button" aria-label="إغلاق">×</button></div><h3 id="drawerTitle">التفاصيل</h3><p id="drawerBody"></p><nav class="drawer-nav" id="drawerNav"><a href="#about">الفكرة</a><a href="#selection">قيد المراجعة</a><a href="#price">منطق السعر</a><a href="#process">كيف نختار</a><a href="#faq">الأسئلة</a></nav><ul id="drawerFacts"><li><span>الحالة</span><b>قيد التقييم</b></li><li><span>البيع</span><b>غير مفعّل</b></li><li><span>المعيار</span><b>فائدة + مواصفة + تكلفة</b></li></ul></div></div>
+<script src="./config.js"></script>
 <script>
 const nav=document.getElementById('nav'), progress=document.getElementById('progress'), sculpture=document.getElementById('sculpture');
 let latestY=0, ticking=false;
@@ -217,15 +218,13 @@ document.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>ope
 document.getElementById('drawerClose').addEventListener('click',closeDrawer);drawer.addEventListener('click',e=>{if(e.target===drawer)closeDrawer()});addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
 const menuBtn=document.getElementById('menuBtn');menuBtn.addEventListener('click',()=>openDrawer('التنقل','انتقل مباشرة إلى الجزء الذي تريد مراجعته.','menu'));drawerNav.querySelectorAll('a').forEach(a=>a.addEventListener('click',closeDrawer));
 
-const nawaaDemoOffers=[
- {store:'متجر سعودي أ',price:899,shipping:0,fees:0,confidence:.99,exact:true,ship:true,condition:'جديد'},
- {store:'متجر عالمي ب',price:805,shipping:96,fees:0,confidence:.96,exact:true,ship:true,condition:'جديد'},
- {store:'متجر محلي ج',price:925,shipping:0,fees:0,confidence:.98,exact:true,ship:true,condition:'جديد'},
- {store:'مصدر يحتاج تحقق',price:769,shipping:null,fees:null,confidence:.78,exact:false,ship:true,condition:'جديد'}
-];
-function nawaaRank(offers){return offers.map(o=>({...o,total:o.shipping===null||o.fees===null?null:o.price+o.shipping+o.fees,eligible:o.exact&&o.ship&&o.condition==='جديد'&&o.shipping!==null&&o.fees!==null})).sort((a,b)=>(b.eligible-a.eligible)||((a.total??Infinity)-(b.total??Infinity))||(b.confidence-a.confidence));}
-function renderNawaaSearch(){const input=document.getElementById('nawaaSearchInput');const root=document.getElementById('nawaaSearchResults');const q=input.value.trim();if(q.length<2){root.innerHTML='<div class="search-empty">اكتب حرفين على الأقل للبحث.</div>';return}const ranked=nawaaRank(nawaaDemoOffers),confirmed=ranked.filter(x=>x.eligible),uncertain=ranked.filter(x=>!x.eligible);root.innerHTML='<div class="search-meta">نتائج لـ <b>'+q.replace(/[<>]/g,'')+'</b> • أقل سعر مؤكد ضمن المصادر التي تم فحصها</div>'+confirmed.map((o,i)=>'<div class="offer-row '+(i===0?'best':'')+'"><div class="offer-rank">'+(i===0?'BEST':'0'+(i+1))+'</div><div class="offer-store"><b>'+o.store+'</b><small>مطابقة '+Math.round(o.confidence*100)+'% • '+o.condition+'</small></div><div class="offer-delivery">'+(o.ship?'✓ يصل للسعودية':'غير متاح')+'</div><div class="offer-cost"><small>الإجمالي المقارن</small><strong>'+o.total.toLocaleString('ar-SA')+' ر.س</strong></div></div>').join('')+'<div class="uncertain-box"><b>نتائج لا تدخل في ترتيب الأرخص</b>'+uncertain.map(o=>'<div class="uncertain-row"><span>'+o.store+' — مطابقة '+Math.round(o.confidence*100)+'%</span><strong>'+o.price+' ر.س + تكلفة غير مؤكدة</strong></div>').join('')+'</div><div class="engine-note">لن نسمّي عرضًا «الأرخص» إذا كان الشحن أو الرسوم أو مطابقة الموديل غير مؤكدة.</div>';}
-document.getElementById('nawaaSearchBtn')?.addEventListener('click',renderNawaaSearch);document.getElementById('nawaaSearchInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')renderNawaaSearch()});
+const searchForm=document.getElementById('nawaaSearchForm');
+searchForm.addEventListener('submit',e=>{
+ const input=document.getElementById('nawaaSearchInput');
+ input.value=input.value.trim();
+ if(input.value.length<2){e.preventDefault();input.focus();return}
+ searchForm.action=window.NAWAA_SEARCH_URL||'./search.html';
+});
 
 </script>
 </body>

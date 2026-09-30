@@ -14,6 +14,7 @@ import { searchJarir } from "./providers/jarir.mjs";
 import { noonConfigured, searchNoon } from "./providers/noon.mjs";
 import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs";
 import { searchSharafDG } from "./providers/sharafdg.mjs";
+import { normalizeSearchQuery, buildComparisonQuery, mergeComparisonOffers } from "../src/search-query.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,6 +26,7 @@ const STATIC_FILES = new Map([
   ["/config.js", "config.js"],
   ["/src/search-page.mjs", "src/search-page.mjs"],
   ["/src/search-core.mjs", "src/search-core.mjs"],
+  ["/src/search-query.mjs", "src/search-query.mjs"],
   ["/src/product-page.mjs", "src/product-page.mjs"],
   ["/src/source-registry.mjs", "src/source-registry.mjs"],
 ]);
@@ -59,6 +61,7 @@ async function serveStaticFile(req, res, pathname) {
 }
 
 async function searchAll(query) {
+  query = normalizeSearchQuery(query);
   const tasks = [searchExtraUnbxd(query), searchJarir(query), searchSharafDG(query)];
   if (carrefourConfigured()) tasks.push(searchCarrefour(query));
   if (noonConfigured()) tasks.push(searchNoon(query));
@@ -121,6 +124,7 @@ async function searchAll(query) {
       ...(shopifyConfigured() ? ["shopify"] : []),
     ],
     providers,
+    normalizedQuery: query,
     offers: offers.slice(0, 120),
     errors,
   };
@@ -133,7 +137,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       "access-control-allow-origin": origin,
       "access-control-allow-methods": "GET,OPTIONS",
-      "access-control-allow-headers": "content-type",
+      "access-control-allow-headers": "accept,content-type",
       "access-control-max-age": "86400",
     });
     return res.end();
@@ -147,6 +151,8 @@ const server = http.createServer(async (req, res) => {
     return jsonResponse(res, 200, {
       ok: true,
       service: "nawaa-search",
+      apiVersion: "0.3.0",
+      revision: process.env.RENDER_GIT_COMMIT || null,
       liveProviders: {
         extra: true,
         jarir: true,
@@ -183,15 +189,22 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/search") {
     const q = String(url.searchParams.get("q") || "").trim();
-    if (q.length < 2 || q.length > 180) {
+    const productUrl = String(url.searchParams.get("url") || "").trim();
+    if (productUrl ? productUrl.length > 2000 : q.length < 2 || q.length > 180) {
       return jsonResponse(res, 400, { error: "invalid_query" }, origin || "*");
     }
 
     try {
       const started = Date.now();
-      const result = await searchAll(q);
+      const resolvedOffer = productUrl ? await resolveProductUrl(productUrl) : null;
+      const comparisonQuery = resolvedOffer ? buildComparisonQuery(resolvedOffer) : q;
+      if (comparisonQuery.length < 2) throw new Error("Product identity could not be extracted");
+      const result = await searchAll(comparisonQuery);
+      if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
       return jsonResponse(res, 200, {
-        query: q,
+        query: productUrl || q,
+        comparisonQuery: resolvedOffer ? comparisonQuery : null,
+        resolvedOffer,
         destinationCountry: "SA",
         observedAt: new Date().toISOString(),
         durationMs: Date.now() - started,

@@ -226,10 +226,11 @@ async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let timeout;
     try {
       const controller = new AbortController();
       const timeoutMs = attempt === 1 ? 25000 : 45000;
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      timeout = setTimeout(() => controller.abort(), timeoutMs);
 
       const response = await fetch(url, {
         ...options,
@@ -256,6 +257,8 @@ async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
     } catch (error) {
       lastError = error;
       if (attempt < attempts) await sleep(attempt * 1200);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -317,14 +320,8 @@ function readRecent() {
 function saveRecent(query) {
   if (!query || isLikelyUrl(query)) return;
   const next = [query, ...readRecent().filter((item) => item !== query)].slice(0, 5);
-  localStorage.setItem("nawaa_recent_searches", JSON.stringify(next));
+  try { localStorage.setItem("nawaa_recent_searches", JSON.stringify(next)); } catch {}
   renderRecent();
-
-const initialQuery = new URLSearchParams(location.search).get("q");
-if (initialQuery && initialQuery.trim().length >= 2) {
-  els.input.value = initialQuery.trim();
-  runSearch(initialQuery.trim());
-}
 }
 
 function renderRecent() {
@@ -345,70 +342,37 @@ function renderRecent() {
 }
 
 async function renderUrlState(query) {
-  els.urlHint.hidden = false;
-  els.results.innerHTML = "";
-  els.status.textContent = "تم اكتشاف رابط منتج";
-
   const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
-  if (apiBase) {
-    els.urlHint.innerHTML = `
-      <div>
-        <span class="mini-kicker">PRODUCT URL DETECTED</span>
-        <strong>نستخرج بيانات المنتج من الرابط…</strong>
-        <p>نحاول قراءة هوية المنتج والسعر والعملة من البيانات المنظمة في الصفحة، ثم نحول السعر إلى الريال بدون تخمين الشحن أو الرسوم.</p>
-      </div>
-    `;
-    try {
-      const response = await fetch(apiBase + "/api/resolve-url?url=" + encodeURIComponent(query), {
-        headers: { accept: "application/json" },
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.message || data?.error || "url_resolution_failed");
-
-      const offer = data.offer;
-      const liveProduct = {
-        id: null,
-        brand: "رابط مباشر",
-        model: offer.title || "منتج خارجي",
-        variant: offer.originalCurrency || "",
-        nameAr: offer.title || "منتج من رابط خارجي",
-        nameEn: offer.title || "External product",
-        aliases: [],
-        identifiers: [],
-        offers: [offer],
-      };
-
-      state.product = liveProduct;
-      renderProduct(liveProduct, query);
-      els.urlHint.innerHTML = `
-        <div>
-          <span class="mini-kicker">URL RESOLVED</span>
-          <strong>${escapeHtml(offer.title || "تم استخراج المنتج")}</strong>
-          <p>${countryFlag(offer.merchantCountryCode)} ${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${offer.originalProductPrice ?? "—"} ${escapeHtml(offer.originalCurrency || "")} · السعر المحول للريال يظهر ضمن النتيجة إن توفرت العملة.</p>
-        </div>
-        <a class="secondary-action" href="${escapeHtml(offer.sourceUrl || query)}" target="_blank" rel="noopener">فتح المصدر ↗</a>
-      `;
-      els.status.textContent = "تم استخراج بيانات المنتج من الرابط";
-      return;
-    } catch (error) {
-      console.warn("NAWAA URL resolver failed", error);
-    }
+  if (!apiBase) {
+    renderLiveSearchError(query, new Error("live_api_not_configured"));
+    return;
   }
-
-  els.urlHint.innerHTML = `
-    <div>
-      <span class="mini-kicker">PRODUCT URL DETECTED</span>
-      <strong>اكتشفنا الرابط، لكن تعذر استخراج بياناته تلقائيًا.</strong>
-      <p>نقدر نحفظه كمسودة طلب تسعيرة بدون ادعاء وجود سعر أو تكلفة شحن مؤكدة.</p>
-    </div>
-    <button class="secondary-action" id="urlQuoteBtn">احفظ كطلب تسعيرة</button>
-  `;
-  $("#urlQuoteBtn").addEventListener("click", () => openQuote({
-    nameAr: "منتج من رابط خارجي",
-    nameEn: query,
-    model: "بانتظار الاستخراج",
-    variant: "",
-  }, null, query));
+  els.urlHint.hidden = true;
+  els.status.textContent = "نستخرج المنتج ونقارن عروضه…";
+  els.results.innerHTML = '<div class="empty-state live-loading">جاري قراءة رابط المنتج والبحث عن عروضه في المتاجر…</div>';
+  try {
+    await wakeSearchApi(apiBase);
+    const data = await fetchJsonWithRetry(apiBase + "/api/search?url=" + encodeURIComponent(query));
+    if (!data.resolvedOffer || !Array.isArray(data.offers) || !data.offers.length) {
+      throw new Error("product_identity_missing");
+    }
+    const source = data.resolvedOffer;
+    const product = {
+      id: null, brand: source.specs?.brand || "رابط مباشر", model: data.comparisonQuery || source.title,
+      variant: "", nameAr: source.title, nameEn: source.title, offers: data.offers,
+    };
+    recordPriceHistory(data.offers);
+    state.product = product;
+    renderProduct(product, query);
+    els.status.textContent = `مقارنة الرابط: ${data.offers.length} عروض · ${data.providersConfigured?.length || 0} مصادر بحث`;
+    els.urlHint.hidden = false;
+    els.urlHint.innerHTML = '<div><strong>تم استخراج المنتج والبحث عن عروضه</strong><p>المصدر الأصلي محفوظ. أي اختلاف في النسخة أو رقم الموديل يبقى خارج المطابقات المباشرة.</p></div>';
+    if (data.errors?.length) {
+      els.urlHint.innerHTML += '<small>تعذر فحص بعض المصادر؛ المقارنة تعرض العروض المتاحة فقط.</small>';
+    }
+  } catch (error) {
+    renderLiveSearchError(query, error);
+  }
 }
 
 function priceBreakdown(offer) {
@@ -883,7 +847,7 @@ function renderProduct(product, query) {
   const selectedIntelligence = selectedGroup ? buildOfferIntelligence(selectedGroup) : null;
   const featuredOffer = selectedIntelligence?.baselineOffer || selectedGroup?.bestPriceOffer || selectedGroup?.bestOffer || null;
   const featuredValue = selectedIntelligence?.baselineValue ?? selectedGroup?.bestValue ?? null;
-  const featuredConfirmed = Boolean(featuredOffer && Number.isFinite(featuredOffer.totalSAR));
+  const featuredConfirmed = featuredOffer?.bucket === "confirmed";
   const canonicalProfile = buildCanonicalProductProfile(selectedGroup?.offers || []);
 
   const modelCount = selector.options.models.length;
@@ -1195,6 +1159,13 @@ async function runSearch(rawQuery) {
 }
 
 function openQuote(product, offer, sourceQuery) {
+  if (window.NAWAA_QUOTE_URL) {
+    const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
+    destination.searchParams.set("request", [offer?.title || product.nameAr || sourceQuery,
+      offer?.specs?.modelNumber ? "SKU: " + offer.specs.modelNumber : "", offer?.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
+    location.href = destination.href;
+    return;
+  }
   const draft = {
     createdAt: new Date().toISOString(),
     productId: product.id || null,
@@ -1249,3 +1220,9 @@ addEventListener("keydown", (event) => {
 });
 
 renderRecent();
+
+const initialQuery = new URLSearchParams(location.search).get("q");
+if (initialQuery && initialQuery.trim().length >= 2) {
+  els.input.value = initialQuery.trim();
+  runSearch(initialQuery.trim());
+}

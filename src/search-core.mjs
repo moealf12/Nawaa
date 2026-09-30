@@ -99,7 +99,7 @@ export function classifyOffer(offer) {
   }
 
   const total = calculateComparableTotal(offer);
-  if (total === null) return "incomplete";
+  if (total === null || offer.canShipToSaudi !== true || offer.availability !== "in_stock") return "incomplete";
 
   if (offer.priceConfidence === "estimated") return "estimated";
   return "confirmed";

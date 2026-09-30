@@ -139,3 +139,13 @@ The same-origin route exists because some embedded mobile browsers can interrupt
 - provider parser and normalization tests
 
 GitHub Actions also syntax-checks browser and server modules. Provider changes are included in the workflow path filters.
+
+## Stabilized entrypoints and URL comparison
+
+The original private Site now hosts the shared comparison UI at `/search.html`. Its authenticated `/live/` proxy accepts only GET health/search/resolve requests to the fixed Render origin. It does not forward user authentication headers or private order records. Existing catalog and request APIs remain separate.
+
+On Render/GitHub, `/api/search?url=...` resolves the URL and searches a bounded product query; the API returns `resolvedOffer`, `comparisonQuery` and the combined `offers`. Conflicting model numbers and conditions cannot become exact matches. Query deep links run once at page initialization.
+
+`productPrice` from retailer adapters is the current selling price. `advertisedDiscount` records the already-applied savings, while `discount` is reserved for an additional confirmed deduction. Shipping/tax remain unknown unless a provider confirms them.
+
+Quote actions open the private Site with a product prefill. A user must explicitly submit the form before a durable request is created.
