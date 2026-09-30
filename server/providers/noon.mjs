@@ -1,4 +1,63 @@
+import https from "node:https";
+
 const NOON_SEARCH_BASE = "https://www.noon.com/_vs/nc/mp-customer-catalog-api/api/v3/u/search/";
+
+function getJsonHttp1(url, headers = {}, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    const target = url instanceof URL ? url : new URL(url);
+    const request = https.get(target, {
+      headers,
+      ALPNProtocols: ["http/1.1"],
+      timeout: 12000,
+    }, (response) => {
+      const status = Number(response.statusCode || 0);
+      const location = response.headers.location;
+
+      if (status >= 300 && status < 400 && location) {
+        response.resume();
+        if (redirects >= 3) return reject(new Error("noon-catalog: too many redirects"));
+        const next = new URL(location, target);
+        return resolve(getJsonHttp1(next, headers, redirects + 1));
+      }
+
+      if (status < 200 || status >= 300) {
+        response.resume();
+        return reject(new Error("noon-catalog: HTTP " + status));
+      }
+
+      let size = 0;
+      const chunks = [];
+      response.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > 8_000_000) {
+          request.destroy(new Error("noon-catalog: response too large"));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on("end", () => {
+        try {
+          const body = Buffer.concat(chunks).toString("utf8");
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(new Error("noon-catalog: invalid JSON | " + (error?.message || String(error))));
+        }
+      });
+    });
+
+    request.on("timeout", () => request.destroy(new Error("noon-catalog: timeout")));
+    request.on("error", (error) => {
+      const detail = [
+        error?.message,
+        error?.code,
+        error?.errno,
+        error?.syscall,
+        error?.hostname,
+      ].filter(Boolean).join(" | ");
+      reject(new Error("noon-catalog http1: " + (detail || String(error))));
+    });
+  });
+}
 
 function text(value) {
   return value === null || value === undefined ? "" : String(value).trim();
@@ -183,37 +242,19 @@ export async function searchNoon(query, limit = 32) {
   url.searchParams.set("sort[by]", "popularity");
   url.searchParams.set("sort[dir]", "desc");
 
-  let response;
-  try {
-    response = await fetch(url, {
-      headers: {
-        accept: "application/json",
-        "accept-language": "en-SA,en;q=0.9",
-        "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.5; +https://moealf12.github.io/Nawaa/)",
-        "x-platform": "web",
-        "x-cms": "v2",
-        "x-content": "desktop",
-        "x-locale": "en-sa",
-        referer: "https://www.noon.com/saudi-en/search/?q=" + encodeURIComponent(query),
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(12000),
-    });
-  } catch (error) {
-    const cause = error?.cause;
-    const detail = [
-      error?.message,
-      cause?.code,
-      cause?.errno,
-      cause?.syscall,
-      cause?.hostname,
-    ].filter(Boolean).join(" | ");
-    throw new Error("noon-catalog fetch: " + (detail || String(error)));
-  }
+  const requestHeaders = {
+    accept: "application/json",
+    "accept-language": "en-SA,en;q=0.9",
+    "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.5; +https://moealf12.github.io/Nawaa/)",
+    "x-platform": "web",
+    "x-cms": "v2",
+    "x-content": "desktop",
+    "x-locale": "en-sa",
+    referer: "https://www.noon.com/saudi-en/search/?q=" + encodeURIComponent(query),
+  };
 
-  if (!response.ok) throw new Error("noon-catalog: HTTP " + response.status);
+  const payload = await getJsonHttp1(url, requestHeaders);
 
-  const payload = await response.json();
   const offers = parseNoonCatalogPayload(payload, limit);
 
   return {
