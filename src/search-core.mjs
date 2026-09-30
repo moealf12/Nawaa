@@ -179,6 +179,16 @@ export function offerVariantKey(offer = {}) {
   ].join("|");
 }
 
+export function offerVariantFamilyKey(offer = {}) {
+  const specs = offer.specs || {};
+  return [
+    normalizedBrand(specs.brand || ""),
+    normalizedModel(offer),
+    normalizeVariantPart(specs.storage || ""),
+    normalizeVariantPart(offer.condition || "unknown"),
+  ].join("|");
+}
+
 export function groupComparableOffers(offers = [], mode = "lowest") {
   const ranked = rankOffers(offers, mode);
   const groups = new Map();
@@ -222,6 +232,51 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
     if (aValue !== bValue) return aValue - bValue;
 
     return (b.bestOffer?.matchConfidence || 0) - (a.bestOffer?.matchConfidence || 0);
+  });
+}
+
+export function groupVariantFamilies(variantGroups = []) {
+  const families = new Map();
+
+  for (const group of variantGroups) {
+    const offer = group?.bestOffer || group?.offers?.[0];
+    if (!offer) continue;
+    const key = offerVariantFamilyKey(offer);
+    if (!families.has(key)) families.set(key, []);
+    families.get(key).push(group);
+  }
+
+  return [...families.entries()].map(([key, variants]) => {
+    const ordered = [...variants].sort((a, b) => {
+      const aValue = Number.isFinite(a.bestValue) ? a.bestValue : Infinity;
+      const bValue = Number.isFinite(b.bestValue) ? b.bestValue : Infinity;
+      if (aValue !== bValue) return aValue - bValue;
+      const aColor = normalizeVariantPart(a.bestOffer?.specs?.color || "");
+      const bColor = normalizeVariantPart(b.bestOffer?.specs?.color || "");
+      return aColor.localeCompare(bColor);
+    });
+
+    const allOffers = ordered.flatMap((variant) => variant.offers || []);
+    const representative = ordered[0]?.bestOffer || null;
+
+    return {
+      key,
+      variants: ordered,
+      defaultVariantKey: ordered[0]?.key || null,
+      representative,
+      merchantCount: new Set(allOffers.map((offer) => offer.merchant).filter(Boolean)).size,
+      offerCount: allOffers.length,
+    };
+  }).sort((a, b) => {
+    const aOffer = a.representative;
+    const bOffer = b.representative;
+    const aExact = aOffer?.exactMatch === true ? 0 : 1;
+    const bExact = bOffer?.exactMatch === true ? 0 : 1;
+    if (aExact !== bExact) return aExact - bExact;
+
+    const aValue = Number.isFinite(a.variants[0]?.bestValue) ? a.variants[0].bestValue : Infinity;
+    const bValue = Number.isFinite(b.variants[0]?.bestValue) ? b.variants[0].bestValue : Infinity;
+    return aValue - bValue;
   });
 }
 
