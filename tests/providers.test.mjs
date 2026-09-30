@@ -14,6 +14,13 @@ const iphone = assessOfferMatch("iPhone 17 256GB", {
 assert.equal(iphone.exactMatch, true);
 assert.ok(iphone.matchConfidence >= 0.92);
 
+const jarirExact = assessOfferMatch("iPhone 17 256GB", {
+  title: "Apple iPhone 17, 256 GB, Black, 5G, Apple A19",
+  condition: "new",
+});
+assert.equal(jarirExact.exactMatch, true);
+assert.equal(jarirExact.matchConfidence, 1);
+
 const accessory = assessOfferMatch("iPhone 17", {
   title: "Protective Case Cover for iPhone 17",
   condition: "new",
