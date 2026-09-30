@@ -5,11 +5,12 @@ import { ebayConfigured, searchEbayWorldwide } from "./providers/ebay.mjs";
 import { searchConfiguredShopifyStores, shopifyConfigured } from "./providers/shopify.mjs";
 import { assessOfferMatch, dedupeNormalizedOffers } from "./match.mjs";
 import { resolveProductUrl } from "./url-resolver.mjs";
+import { searchSaudiRetailers } from "./providers/saudi-retailers.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 
 async function searchAll(query) {
-  const tasks = [];
+  const tasks = [searchSaudiRetailers(query)];
   if (ebayConfigured()) tasks.push(searchEbayWorldwide(query));
   if (shopifyConfigured()) tasks.push(searchConfiguredShopifyStores(query));
 
@@ -60,6 +61,7 @@ async function searchAll(query) {
 
   return {
     providersConfigured: [
+      "saudi-retailers",
       ...(ebayConfigured() ? ["ebay"] : []),
       ...(shopifyConfigured() ? ["shopify"] : []),
     ],
