@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { assessOfferMatch, dedupeNormalizedOffers } from "../server/match.mjs";
 import { normalizeCondition, parseMoney } from "../server/provider-utils.mjs";
-import { parseJarirSearchHtml } from "../server/providers/jarir.mjs";
+import { parseJarirConstructorPayload, parseJarirSearchHtml } from "../server/providers/jarir.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -48,5 +48,45 @@ assert.equal(jarirOffers[0].specs.color, "Lavender");
 assert.equal(jarirOffers[0].specs.network, "5G");
 assert.equal(jarirOffers[0].specs.processor, "Apple A19");
 assert.equal(jarirOffers[1].condition, "renewed");
+
+const jarirConstructorFixture = {
+  response: {
+    results: [{
+      value: "Apple iPhone 17, 256 GB, Black, 5G, Apple A19",
+      data: {
+        id: "666784",
+        url: "apple-iphone-17-smartphones-666784.html",
+        price: 4299,
+        image_url: "https://example.com/666784.jpg",
+        metadata: {
+          name: "Apple iPhone 17, 256 GB, Black, 5G, Apple A19",
+          brand: "Apple",
+          seri: "Apple iPhone 17",
+          model: "iPhone 17",
+          ptyp: "Smartphone",
+          tsca: "256 GB",
+          colo: "Black",
+          scsz: "6.3\"",
+          scty: "Super Retina XDR Display",
+          opsy: "iOS 26",
+          nsim: "Dual eSIM (eSIM/eSIM)",
+          cars: "Rear: 48 MP + 48 MP/Front: 18 MP",
+          mpn: "MG674AHA",
+          bar_code1: "195950643008",
+          productcode_description: "Smartphones"
+        }
+      }
+    }]
+  }
+};
+const jarirConstructorOffers = parseJarirConstructorPayload(jarirConstructorFixture);
+assert.equal(jarirConstructorOffers.length, 1);
+assert.equal(jarirConstructorOffers[0].productPrice, 4299);
+assert.equal(jarirConstructorOffers[0].specs.color, "Black");
+assert.equal(jarirConstructorOffers[0].specs.storage, "256 GB");
+assert.equal(jarirConstructorOffers[0].specs.screenSize, '6.3"');
+assert.equal(jarirConstructorOffers[0].specs.rearCamera, "48 MP + 48 MP");
+assert.equal(jarirConstructorOffers[0].specs.frontCamera, "18 MP");
+assert.equal(jarirConstructorOffers[0].specs.modelNumber, "MG674AHA");
 
 console.log("NAWAA provider tests passed");
