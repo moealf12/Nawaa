@@ -288,3 +288,44 @@ const conflictingSkuGroups = groupComparableOffers([
 ]);
 assert.equal(conflictingSkuGroups.length, 2);
 assert.ok(conflictingSkuGroups.some((group) => group.bestOffer?.specs?.modelNumber === "3P181AH/A"));
+
+
+const skuSelectorGroups = groupComparableOffers([
+  {
+    merchant:"Sharaf DG",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256GB",color:"Mist Blue",modelNumber:"3P181AH/A"},
+    productPrice:2998.95,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"eXtra",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256 GB",color:"Mist Blue",modelNumber:"MG694AH/A"},
+    productPrice:3999,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"in_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  },
+  {
+    merchant:"Jarir",
+    specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256GB",color:"Mist Blue",modelNumber:"MG694AHA"},
+    productPrice:4299,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
+    condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
+  }
+]);
+const skuSelector = buildVariantSelectorState(skuSelectorGroups, {
+  modelKey:"iphone 17",
+  storageKey:"256gb",
+  colorKey:"mist blue",
+  conditionKey:"new",
+});
+assert.equal(skuSelector.options.skus.length, 2);
+assert.ok(skuSelector.options.skus.some((option) => option.key === "3p181aha"));
+assert.ok(skuSelector.options.skus.some((option) => option.key === "mg694aha"));
+
+const standardSkuSelector = buildVariantSelectorState(skuSelectorGroups, {
+  modelKey:"iphone 17",
+  storageKey:"256gb",
+  colorKey:"mist blue",
+  conditionKey:"new",
+  skuKey:"mg694aha",
+});
+assert.equal(standardSkuSelector.labels.skuKey, "mg694aha");
+assert.equal(standardSkuSelector.selectedGroup.offers.length, 2);
