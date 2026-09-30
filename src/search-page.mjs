@@ -4,6 +4,7 @@ import {
   isLikelyUrl,
   rankOffers,
   summarizeOffers,
+  groupComparableOffers,
 } from "./search-core.mjs";
 
 const $ = (selector) => document.querySelector(selector);
@@ -253,6 +254,78 @@ function offerCard(offer, index) {
   `;
 }
 
+function offerComparisonRow(offer, index, group) {
+  const isLowest = index === 0;
+  const price = Number.isFinite(offer.totalSAR) ? offer.totalSAR : offer.productPrice;
+  const priceLabel = Number.isFinite(offer.totalSAR) ? "الإجمالي المقارن" : "السعر المعلن";
+  const availability = offer.sourceMeta?.jeddahInStock === true
+    ? "متوفر في جدة"
+    : offer.availability === "in_stock"
+      ? "متوفر لدى المتجر"
+      : "التوفر التفصيلي غير مؤكد";
+
+  return `
+    <div class="merchant-row ${isLowest ? "is-lowest" : ""}">
+      <div class="merchant-main">
+        <strong><span class="country-flag">${countryFlag(offer.merchantCountryCode)}</span> ${escapeHtml(offer.merchant || "المصدر")}</strong>
+        <span>${escapeHtml(availability)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
+      </div>
+      <div class="merchant-price">
+        <small>${priceLabel}</small>
+        <b>${fmt(price)}</b>
+        ${isLowest ? '<em>' + (group.priceBasis === "comparable_total" ? "أقل إجمالي مؤكد" : "أقل سعر معلن") + '</em>' : ""}
+      </div>
+      <div class="merchant-actions">
+        <button class="product-detail-btn" type="button" data-source="${escapeHtml(offer.sourceUrl || "")}">التفاصيل</button>
+        ${offer.sourceUrl ? '<a href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">المصدر ↗</a>' : ""}
+      </div>
+    </div>
+  `;
+}
+
+function variantGroupCard(group, index) {
+  const offer = group.bestOffer || group.offers[0];
+  if (!offer) return "";
+  const specs = offer.specs || {};
+  const title = [specs.deviceType || specs.series || offer.title, specs.storage, specs.color]
+    .filter(Boolean)
+    .join(" · ");
+  const imageTitle = offer.sourceMeta?.nameAr || offer.title || title;
+  const media = offer.image
+    ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(imageTitle) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';"><span class="variant-image-fallback">لا توجد صورة</span>'
+    : '<span class="variant-image-fallback visible">لا توجد صورة</span>';
+
+  const savings = Number.isFinite(group.savingsToNext)
+    ? '<span class="saving-pill">فرق ' + fmt(group.savingsToNext) + ' عن العرض التالي</span>'
+    : "";
+
+  return `
+    <article class="variant-card">
+      <div class="variant-head">
+        <div class="variant-image">${media}</div>
+        <div class="variant-copy">
+          <span class="mini-kicker">MATCHED VARIANT / ${String(index + 1).padStart(2, "0")}</span>
+          <h3>${escapeHtml(title || offer.title)}</h3>
+          <div class="variant-badges">
+            <span>${group.merchantCount} ${group.merchantCount === 1 ? "متجر" : "متاجر"}</span>
+            <span>${offer.condition === "new" ? "جديد" : escapeHtml(offer.condition || "")}</span>
+            ${savings}
+          </div>
+          <div class="spec-grid">${specsMarkup(offer)}</div>
+        </div>
+        <div class="variant-best">
+          <small>${group.priceBasis === "comparable_total" ? "أفضل إجمالي مؤكد" : "أقل سعر معلن"}</small>
+          <strong>${fmt(group.bestValue)}</strong>
+          <span>${group.priceBasis === "comparable_total" ? "التكلفة المقارنة مكتملة" : "قبل أي شحن/رسوم غير مؤكدة"}</span>
+        </div>
+      </div>
+      <div class="merchant-comparison">
+        ${group.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, group)).join("")}
+      </div>
+    </article>
+  `;
+}
+
 function openProductDetails(product, offer, query) {
   const payload = {
     savedAt: new Date().toISOString(),
@@ -277,14 +350,21 @@ function openProductDetails(product, offer, query) {
 function renderProduct(product, query) {
   const ranked = rankOffers(product.offers, state.mode);
   const summary = summarizeOffers(product.offers);
-  const comparable = ranked.filter((o) => ["confirmed", "estimated"].includes(o.bucket));
-  const uncertain = ranked.filter((o) => !["confirmed", "estimated"].includes(o.bucket));
-  const best = summary.bestConfirmed;
+  const groups = groupComparableOffers(product.offers, state.mode);
+  const directGroups = groups.filter((group) =>
+    group.bestOffer?.exactMatch === true &&
+    group.bestOffer?.condition === "new"
+  );
+  const otherGroups = groups.filter((group) => !directGroups.includes(group));
+  const bestConfirmed = summary.bestConfirmed;
+  const featuredGroup = directGroups[0] || null;
+  const featuredOffer = bestConfirmed || featuredGroup?.bestOffer || null;
+  const featuredValue = bestConfirmed?.totalSAR ?? featuredGroup?.bestValue ?? null;
 
   const hasLive = product.offers.some((offer) => offer.dataKind === "live");
   els.status.textContent = hasLive
-    ? `وجدنا ${summary.count} عرضًا حيًا من ${summary.sources} مصادر/بائعين`
-    : `وجدنا ${summary.count} عروض تجريبية من ${summary.sources} مصادر`;
+    ? `وجدنا ${summary.count} عرضًا حيًا · ${groups.length} نسخ/ألوان · ${summary.sources} متاجر/بائعين`
+    : `وجدنا ${summary.count} عروض · ${groups.length} نسخ/ألوان · ${summary.sources} مصادر`;
   els.urlHint.hidden = true;
 
   els.results.innerHTML = `
@@ -294,38 +374,49 @@ function renderProduct(product, query) {
         <h2>${escapeHtml(product.nameAr)}</h2>
         <p>${escapeHtml(product.brand)} · ${escapeHtml(product.model)} · ${escapeHtml(product.variant || "")}</p>
       </div>
-      <div class="identity-pill">✓ هوية المنتج عالية الثقة</div>
+      <div class="identity-pill">✓ التجميع حسب الموديل + السعة + اللون + الحالة</div>
     </section>
 
-    <section class="result-grid">
+    <section class="result-grid comparison-layout">
       <div class="offers-column">
-        <div class="section-label"><span>العروض القابلة للمقارنة</span><b>${comparable.length}</b></div>
-        ${comparable.length ? comparable.map(offerCard).join("") : '<div class="empty-state">لا يوجد عرض بإجمالي مكتمل حاليًا.</div>'}
+        <div class="section-label">
+          <span>مطابقات مباشرة — مقارنة نفس النسخة بين المتاجر</span>
+          <b>${directGroups.length}</b>
+        </div>
+        ${directGroups.length
+          ? directGroups.map(variantGroupCard).join("")
+          : '<div class="empty-state">لا توجد نسخ مطابقة مباشرة يمكن تجميعها حاليًا.</div>'}
       </div>
 
       <aside class="best-panel">
-        <span class="mini-kicker">BEST CONFIRMED TOTAL</span>
-        ${best ? `
-          <small>أقل إجمالي مؤكد في بيانات الاختبار</small>
-          <div class="best-price">${fmt(best.totalSAR)}</div>
-          <div class="breakdown">${priceBreakdown(best)}</div>
-          <button class="primary-action" id="quoteBestBtn">اطلب تسعيرة لهذا المنتج</button>
-          <p>الضغط لا ينفذ شراءً أو دفعًا. يحفظ مسودة طلب فقط في هذه النسخة.</p>
-        ` : `
-          <div class="empty-state compact">لا يوجد عرض مؤكد بالكامل حتى الآن.</div>
-          <button class="primary-action" id="quoteBestBtn">اطلب تسعيرة لهذا المنتج</button>
-        `}
+        <span class="mini-kicker">${bestConfirmed ? "BEST CONFIRMED TOTAL" : "LOWEST ADVERTISED PRICE"}</span>
+        ${featuredOffer ? `
+          <small>${bestConfirmed ? "أقل إجمالي مؤكد" : "أقل سعر معلن بين المطابقات المباشرة"}</small>
+          <div class="best-price">${fmt(featuredValue)}</div>
+          <div class="best-merchant">${countryFlag(featuredOffer.merchantCountryCode)} ${escapeHtml(featuredOffer.merchant || "")}</div>
+          <div class="breakdown">${priceBreakdown(featuredOffer)}</div>
+          <button class="primary-action" id="quoteBestBtn">اطلب تسعيرة لهذا العرض</button>
+          <p>${bestConfirmed
+            ? "الإجمالي مبني على عناصر تكلفة مكتملة."
+            : "هذا أقل سعر معلن فقط؛ لا نصفه بالأرخص نهائيًا قبل تأكيد الشحن والرسوم."}</p>
+        ` : '<div class="empty-state compact">لا يوجد عرض مطابق مباشر حاليًا.</div>'}
       </aside>
     </section>
 
     <section class="uncertain-block">
-      <div class="section-label"><span>نتائج تحتاج تحقق — لا تدخل في ترتيب الأرخص</span><b>${uncertain.length}</b></div>
-      ${uncertain.length ? uncertain.map(offerCard).join("") : '<div class="empty-state">لا توجد نتائج غير مؤكدة.</div>'}
+      <div class="section-label">
+        <span>نسخ أو نتائج أخرى — لا تختلط بالموديل المطلوب</span>
+        <b>${otherGroups.length}</b>
+      </div>
+      ${otherGroups.length
+        ? otherGroups.slice(0, 14).map(variantGroupCard).join("")
+        : '<div class="empty-state">لا توجد نتائج أخرى.</div>'}
+      ${otherGroups.length > 14 ? '<div class="results-truncated">تم إخفاء ' + (otherGroups.length - 14) + ' مجموعة أقل صلة لتقليل التشويش.</div>' : ""}
     </section>
 
     <div class="integrity-note">
       <strong>قاعدة نواة:</strong>
-      لا نسمّي عرضًا «الأرخص» إذا كانت مطابقة الموديل، حالة المنتج، الشحن، أو التكلفة النهائية غير مؤكدة.
+      نجمع فقط نفس الموديل والسعة واللون والحالة في مقارنة واحدة. وإذا كانت الشحن أو الرسوم غير مؤكدة، نعرض «أقل سعر معلن» بدل ادعاء «الأرخص نهائيًا».
     </div>
   `;
 
@@ -335,6 +426,10 @@ function renderProduct(product, query) {
       const offer = ranked.find((item) => (item.sourceUrl || "") === source) || null;
       if (offer) openProductDetails(product, offer, query);
     });
+  });
+
+  $("#quoteBestBtn")?.addEventListener("click", () => {
+    if (featuredOffer) openQuote(product, featuredOffer, query);
   });
 }
 
