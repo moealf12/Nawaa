@@ -21,6 +21,7 @@ on:
       - "server/providers/extra-unbxd.mjs"
       - "server/providers/jarir.mjs"
       - "server/providers/noon.mjs"
+      - "server/providers/carrefour.mjs"
       - "server/providers/saudi-retailers.mjs"
       - "server/url-resolver.mjs"
       - "tests/providers.test.mjs"
@@ -56,5 +57,6 @@ jobs:
           node --check server/providers/extra-unbxd.mjs
           node --check server/providers/jarir.mjs
           node --check server/providers/noon.mjs
+          node --check server/providers/carrefour.mjs
           node --check server/providers/saudi-retailers.mjs
           node --check server/url-resolver.mjs
