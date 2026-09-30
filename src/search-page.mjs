@@ -280,13 +280,15 @@ function renderLiveSearchError(query, error) {
     : "تعذر الاتصال بمحرك البحث الحي.";
 
   els.status.textContent = "البحث الحي غير متاح مؤقتًا";
+  const directSearchUrl = "https://nawaa-search-api.onrender.com/search.html?q=" + encodeURIComponent(query);
   els.results.innerHTML = `
     <section class="live-search-error">
       <span class="mini-kicker">LIVE SEARCH INTERRUPTED</span>
       <h2>${escapeHtml(message)}</h2>
-      <p>لن نعرض بيانات Demo بدل نتائج السوق. أعد المحاولة وسيحاول نواة إيقاظ خادم البحث والاتصال بالمصادر من جديد.</p>
+      <p>لن نعرض بيانات Demo بدل نتائج السوق. أعد المحاولة، أو افتح نسخة البحث المباشرة التي تعمل من نفس دومين محرك البحث لتجاوز قيود المتصفحات المضمنة.</p>
       <div class="live-error-actions">
         <button type="button" class="primary-action" id="retryLiveSearch">إعادة البحث الحي</button>
+        <a class="secondary-action" href="${escapeHtml(directSearchUrl)}">فتح البحث المباشر</a>
       </div>
       <small>الاستعلام: ${escapeHtml(query)}</small>
     </section>
@@ -317,6 +319,12 @@ function saveRecent(query) {
   const next = [query, ...readRecent().filter((item) => item !== query)].slice(0, 5);
   localStorage.setItem("nawaa_recent_searches", JSON.stringify(next));
   renderRecent();
+
+const initialQuery = new URLSearchParams(location.search).get("q");
+if (initialQuery && initialQuery.trim().length >= 2) {
+  els.input.value = initialQuery.trim();
+  runSearch(initialQuery.trim());
+}
 }
 
 function renderRecent() {
