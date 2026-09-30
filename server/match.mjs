@@ -16,6 +16,11 @@ const ACCESSORY_TERMS = [
   "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه"
 ];
 
+const UNREQUESTED_VARIANT_TERMS = [
+  "pro","max","plus","ultra","air","fold","flip","fe",
+  "برو","ماكس","بلس","الترا","اير"
+];
+
 export function assessOfferMatch(query, offer) {
   const normalizedQuery = normalizeSearchText(query);
   const q = normalizedQuery.split(" ").filter(Boolean);
@@ -29,11 +34,20 @@ export function assessOfferMatch(query, offer) {
   const titleHasAccessory = ACCESSORY_TERMS.some((term) => title.includes(term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.35;
 
+  const titleTokens = new Set(title.split(" ").filter(Boolean));
+  const queryTokens = new Set(q);
+  const hasUnrequestedVariant = UNREQUESTED_VARIANT_TERMS.some(
+    (term) => titleTokens.has(term) && !queryTokens.has(term)
+  );
+  if (hasUnrequestedVariant) confidence *= 0.82;
+
   if (offer?.condition && offer.condition !== "new") confidence -= 0.15;
   confidence = Math.max(0, Math.min(1, confidence));
 
   return {
-    exactMatch: confidence >= 0.92 && hits === q.length && !(!queryHasAccessoryIntent && titleHasAccessory),
+    exactMatch: confidence >= 0.92 && hits === q.length &&
+      !(!queryHasAccessoryIntent && titleHasAccessory) &&
+      !hasUnrequestedVariant,
     matchConfidence: Math.round(confidence * 100) / 100,
   };
 }
