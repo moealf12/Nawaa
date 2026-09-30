@@ -1,8 +1,67 @@
+import https from "node:https";
+
 const CARREFOUR_SEARCH_URL = "https://www.carrefourksa.com/mafrp/api/v1/search/listing/keyword";
 const DEFAULT_SA_LOCATION = {
   latitude: "24.7136",
   longitude: "46.6753",
 };
+
+function postJsonHttp1(url, payload, headers = {}, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    const target = url instanceof URL ? url : new URL(url);
+    const body = JSON.stringify(payload);
+    const request = https.request(target, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "content-length": Buffer.byteLength(body),
+      },
+      ALPNProtocols: ["http/1.1"],
+      timeout: 12000,
+    }, (response) => {
+      const status = Number(response.statusCode || 0);
+      const location = response.headers.location;
+
+      if (status >= 300 && status < 400 && location) {
+        response.resume();
+        if (redirects >= 3) return reject(new Error("carrefour-ksa: too many redirects"));
+        const next = new URL(location, target);
+        return resolve(postJsonHttp1(next, payload, headers, redirects + 1));
+      }
+
+      let size = 0;
+      const chunks = [];
+      response.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > 12_000_000) {
+          request.destroy(new Error("carrefour-ksa: response too large"));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on("end", () => {
+        const responseBody = Buffer.concat(chunks).toString("utf8");
+        if (status < 200 || status >= 300) {
+          return reject(new Error("carrefour-ksa: HTTP " + status + (responseBody ? " | " + responseBody.slice(0, 300) : "")));
+        }
+        try {
+          resolve(JSON.parse(responseBody));
+        } catch (error) {
+          reject(new Error("carrefour-ksa: invalid JSON | " + (error?.message || String(error))));
+        }
+      });
+    });
+
+    request.on("timeout", () => request.destroy(new Error("carrefour-ksa: timeout")));
+    request.on("error", (error) => {
+      const detail = [error?.message, error?.code, error?.errno, error?.syscall, error?.hostname]
+        .filter(Boolean).join(" | ");
+      reject(new Error("carrefour-ksa http1: " + (detail || String(error))));
+    });
+    request.write(body);
+    request.end();
+  });
+}
 
 function txt(value) {
   return value === null || value === undefined ? "" : String(value).trim();
@@ -218,44 +277,26 @@ export async function searchCarrefour(query, limit = 32) {
     requireSponsProducts: false,
   };
 
-  let response;
-  try {
-    response = await fetch(CARREFOUR_SEARCH_URL, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json; charset=utf-8",
-        "accept-language": "en-SA,en;q=0.9",
-        appId: "Reactweb",
-        storeId: "mafsau",
-        langCode: "en",
-        lat: DEFAULT_SA_LOCATION.latitude,
-        long: DEFAULT_SA_LOCATION.longitude,
-        "x-maf-tenant": "mafsau",
-        "x-maf-account": "carrefour",
-        "x-maf-env": "prod",
-        "web-view-type": "desktop-web",
-        origin: "https://www.carrefourksa.com",
-        referer: "https://www.carrefourksa.com/mafsau/en/",
-        "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.6; +https://moealf12.github.io/Nawaa/)",
-      },
-      body: JSON.stringify(body),
-      redirect: "follow",
-      signal: AbortSignal.timeout(12000),
-    });
-  } catch (error) {
-    const cause = error?.cause;
-    const detail = [error?.message, cause?.code, cause?.errno, cause?.syscall, cause?.hostname]
-      .filter(Boolean).join(" | ");
-    throw new Error("carrefour-ksa fetch: " + (detail || String(error)));
-  }
+  const headers = {
+    accept: "application/json",
+    "content-type": "application/json; charset=utf-8",
+    "accept-language": "en-SA,en;q=0.9",
+    appId: "Reactweb",
+    storeId: "mafsau",
+    langCode: "en",
+    lat: DEFAULT_SA_LOCATION.latitude,
+    long: DEFAULT_SA_LOCATION.longitude,
+    "x-maf-tenant": "mafsau",
+    "x-maf-account": "carrefour",
+    "x-maf-env": "prod",
+    "web-view-type": "desktop-web",
+    origin: "https://www.carrefourksa.com",
+    referer: "https://www.carrefourksa.com/mafsau/en/",
+    "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.6; +https://moealf12.github.io/Nawaa/)",
+  };
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error("carrefour-ksa: HTTP " + response.status + (text ? " | " + text.slice(0, 300) : ""));
-  }
+  const payload = await postJsonHttp1(CARREFOUR_SEARCH_URL, body, headers);
 
-  const payload = await response.json();
   const offers = parseCarrefourSearchPayload(payload, limit);
 
   if (!offers.length) {
