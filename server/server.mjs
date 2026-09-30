@@ -9,12 +9,13 @@ import { searchSaudiRetailers } from "./providers/saudi-retailers.mjs";
 import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
 import { searchJarir } from "./providers/jarir.mjs";
 import { noonConfigured, searchNoon } from "./providers/noon.mjs";
-import { searchCarrefour } from "./providers/carrefour.mjs";
+import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 
 async function searchAll(query) {
-  const tasks = [searchExtraUnbxd(query), searchJarir(query), searchCarrefour(query)];
+  const tasks = [searchExtraUnbxd(query), searchJarir(query)];
+  if (carrefourConfigured()) tasks.push(searchCarrefour(query));
   if (noonConfigured()) tasks.push(searchNoon(query));
   if (ebayConfigured()) tasks.push(searchEbayWorldwide(query));
   if (shopifyConfigured()) tasks.push(searchConfiguredShopifyStores(query));
@@ -68,7 +69,7 @@ async function searchAll(query) {
     providersConfigured: [
       "extra-unbxd",
       "jarir-direct",
-      "carrefour-ksa",
+      ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
       ...(noonConfigured() ? ["noon-catalog"] : []),
       ...(ebayConfigured() ? ["ebay"] : []),
       ...(shopifyConfigured() ? ["shopify"] : []),
@@ -103,7 +104,7 @@ const server = http.createServer(async (req, res) => {
       liveProviders: {
         extra: true,
         jarir: true,
-        carrefour: true,
+        carrefour: carrefourConfigured(),
         noon: noonConfigured(),
         ebay: ebayConfigured(),
         shopify: shopifyConfigured(),
