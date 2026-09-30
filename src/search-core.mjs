@@ -456,6 +456,7 @@ export function offerVariantDimensions(offer = {}) {
   const colorLabel = String(specs.color || "غير محدد").trim();
   const conditionLabel = String(offer.condition || "unknown").trim();
 
+  const skuLabel = String(specs.modelNumber || "غير محدد").trim();
   return {
     modelKey: normalizedModel(offer),
     modelLabel,
@@ -465,6 +466,8 @@ export function offerVariantDimensions(offer = {}) {
     colorLabel,
     conditionKey: normalizeVariantPart(conditionLabel),
     conditionLabel,
+    skuKey: normalizedModelIdentifier(specs.modelNumber || "") || "unknown",
+    skuLabel,
   };
 }
 
@@ -522,7 +525,7 @@ export function buildVariantSelectorState(variantGroups = [], requested = {}) {
   if (!entries.length) {
     return {
       selection: {},
-      options: { models: [], storages: [], colors: [], conditions: [] },
+      options: { models: [], storages: [], colors: [], conditions: [], skus: [] },
       selectedGroup: null,
     };
   }
@@ -545,9 +548,14 @@ export function buildVariantSelectorState(variantGroups = [], requested = {}) {
 
   const colors = facetOptions(conditionEntries, "colorKey", "colorLabel");
   const colorKey = pickFacetKey(requested.colorKey, colors, fallbackEntry.dimensions.colorKey);
+  const colorEntries = conditionEntries.filter((entry) => entry.dimensions.colorKey === colorKey);
+
+  const skus = facetOptions(colorEntries, "skuKey", "skuLabel");
+  const skuKey = pickFacetKey(requested.skuKey, skus, fallbackEntry.dimensions.skuKey);
 
   const selectedEntry =
-    conditionEntries.find((entry) => entry.dimensions.colorKey === colorKey)
+    colorEntries.find((entry) => entry.dimensions.skuKey === skuKey)
+    || colorEntries[0]
     || conditionEntries[0]
     || storageEntries[0]
     || modelEntries[0]
@@ -559,9 +567,10 @@ export function buildVariantSelectorState(variantGroups = [], requested = {}) {
       storageKey: selectedEntry?.dimensions.storageKey || storageKey,
       colorKey: selectedEntry?.dimensions.colorKey || colorKey,
       conditionKey: selectedEntry?.dimensions.conditionKey || conditionKey,
+      skuKey: selectedEntry?.dimensions.skuKey || skuKey,
     },
     labels: selectedEntry?.dimensions || {},
-    options: { models, storages, colors, conditions },
+    options: { models, storages, colors, conditions, skus },
     selectedGroup: selectedEntry?.group || null,
   };
 }
