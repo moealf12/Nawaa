@@ -125,10 +125,7 @@ export function parseSearchIntent(value = "") {
 }
 
 function escapeRegex(value = "") {
-  return String(value).replace(/[.*+?^$()|[\]{}\\]/g, "\\  };
-}
-
-const GAMING_PLATFORM =");
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function buildProviderFallbackQueries(value = "") {
