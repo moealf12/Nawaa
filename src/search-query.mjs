@@ -5,6 +5,9 @@ const ALIASES = [
   ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"],
   ["سامسونج", "samsung"], ["جالاكسي", "galaxy"], ["جالكسي", "galaxy"],
   ["ابل", "apple"], ["دايسون", "dyson"], ["سوني", "sony"],
+  ["سواروفسكي", "swarovski"], ["سوارفسكي", "swarovski"],
+  ["قلاده", "necklace"], ["سلسال", "necklace"], ["عقد", "necklace"], ["تعليقه", "pendant"],
+  ["اسوره", "bracelet"], ["سوار", "bracelet"], ["خاتم", "ring"], ["اقراط", "earrings"], ["قرط", "earrings"], ["مجوهرات", "jewelry"],
   ["برو", "pro"], ["ماكس", "max"], ["بلس", "plus"], ["الترا", "ultra"], ["اير", "air"],
   ["جيجابايت", "gb"], ["جيجا بايت", "gb"], ["جيجا", "gb"], ["تيرابايت", "tb"],
   ["اسود", "black"], ["ابيض", "white"], ["لافندر", "lavender"], ["ازرق", "blue"],
@@ -55,6 +58,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   epson: ['printer','projector'], brother: ['printer'], dyson: ['vacuum','beauty','appliance'],
   lg: ['tv','appliance','monitor','audio'], bosch: ['appliance','tool'],
   logitech: ['accessory','audio'], jbl: ['audio'], bose: ['audio'],
+  swarovski: ['jewelry','watch','accessory'],
 };
 export const PRODUCT_CATEGORIES = [
   ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|case|cover|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card)\b/],
@@ -66,6 +70,7 @@ export const PRODUCT_CATEGORIES = [
   ['tv','تلفزيونات', /\b(?:tv|television|bravia|oled tv|qled tv)\b/],
   ['monitor','شاشات', /\b(?:monitors?|display screen)\b/],
   ['audio','سماعات وصوتيات', /\b(?:headphones?|earphones?|earbuds?|airpods|headset|speaker|soundbar|walkman)\b/],
+  ['jewelry','مجوهرات', /\b(?:jewelry|jewellery|necklaces?|pendants?|bracelets?|bangles?|earrings?|rings?|brooch(?:es)?|charms?)\b/],
   ['watch','ساعات', /\b(?:watch|smartwatch)\b/],
   ['camera','كاميرات', /\b(?:camera|dslr|mirrorless|eos)\b/],
   ['vacuum','مكانس', /\b(?:vacuum|hoover|dyson v\d+)\b/],

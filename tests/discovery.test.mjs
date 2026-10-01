@@ -53,3 +53,29 @@ test('coffee product types and Arabic queries produce coffee results without unr
  assert.equal(query.productCategory(coffee),'coffee');
  assert.equal(query.assessOfferMatch('قهوة',{title:'USB Cable',productType:'Accessories',condition:'new'}).exactMatch,false);
 });
+
+test('Arabic Swarovski brand discovery canonicalizes to English merchant data',()=>{
+  assert.equal(query.normalizeSearchQuery('سواروفسكي'),'swarovski');
+  const intent=query.parseSearchIntent('سواروفسكي');
+  assert.equal(intent.brand,'swarovski');
+  assert.equal(intent.discoveryMode,'brand');
+
+  const necklace=offer('Swarovski Matrix Tennis Necklace',699,'Swarovski');
+  const watch=offer('Swarovski Octea Nova Watch',1299,'Swarovski');
+  const figurine=offer('Swarovski Crystal Figurine',499,'Swarovski');
+
+  assert.equal(query.assessOfferMatch('سواروفسكي',necklace).exactMatch,true);
+  assert.equal(query.productCategory(necklace),'jewelry');
+  assert.deepEqual(sections('سواروفسكي',[figurine,watch,necklace]).map(s=>s.key),['jewelry','watch','other']);
+});
+
+test('Arabic jewelry terms constrain Swarovski discovery without requiring a SKU',()=>{
+  assert.equal(query.normalizeSearchQuery('قلادة سواروفسكي'),'necklace swarovski');
+  assert.equal(query.parseSearchIntent('قلادة سواروفسكي').category,'jewelry');
+  const result=sections('قلادة سواروفسكي',[
+    offer('Swarovski Matrix Tennis Necklace',699,'Swarovski'),
+    offer('Swarovski Octea Nova Watch',1299,'Swarovski'),
+  ]);
+  assert.deepEqual(result.map(s=>s.key),['jewelry']);
+});
+
