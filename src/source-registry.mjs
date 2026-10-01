@@ -91,6 +91,13 @@ export function sourceCoverageSummary(registry = WORLD_SOURCE_REGISTRY) {
 const SOURCE_ADAPTERS = {
   extra: "extra-unbxd", jarir: "jarir-direct", "sharafdg-sa": "sharafdg-algolia", "swarovski-sa": "swarovski-direct",
   "carrefour-sa": "carrefour-ksa", "noon-sa": "noon-catalog", ebay: "ebay",
+  "amazon-sa": "amazon-creators:amazon-sa", "amazon-ae": "amazon-creators:amazon-ae",
+  "amazon-us": "amazon-creators:amazon-us", "amazon-ca": "amazon-creators:amazon-ca",
+  "amazon-uk": "amazon-creators:amazon-uk", "amazon-de": "amazon-creators:amazon-de",
+  "amazon-fr": "amazon-creators:amazon-fr", "amazon-it": "amazon-creators:amazon-it",
+  "amazon-es": "amazon-creators:amazon-es", "amazon-jp": "amazon-creators:amazon-jp",
+  "amazon-in": "amazon-creators:amazon-in", "amazon-sg": "amazon-creators:amazon-sg",
+  "amazon-au": "amazon-creators:amazon-au", "amazon-eg": "amazon-creators:amazon-eg",
 };
 
 // Configured means enabled in the running service, not guaranteed live results.
