@@ -123,5 +123,10 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(element('#results').innerHTML, /المنتج المختار[\s\S]*HP Pavilion Laptop/);
   assert.doesNotMatch(element('#results').innerHTML, /data-dimension="modelKey"/, 'selected product comparison must not offer unrelated HP products as model variants');
 
+  element(".selected-comparison").events.toggle({target:{open:false,isConnected:false}});
+  assert.match(element("#results").innerHTML,/<details class="selected-comparison" open>/,"a detached comparison toggle must not collapse the newly selected product");
+  assert.doesNotMatch(element("#results").innerHTML, /المصدر ↗/);
+  element(".selected-comparison").events.toggle({target:{open:false,isConnected:true}});
+  assert.match(element("#results").innerHTML,/<details class="selected-comparison" hidden>/,"closing the comparison clears its expanded card state");
 
 });

@@ -489,7 +489,6 @@ function offerCard(offer, index) {
 
         <div class="offer-links">
           <button class="product-detail-btn" type="button" data-source="${escapeHtml(offer.sourceUrl || "")}">عرض التفاصيل</button>
-          ${offer.sourceUrl ? '<a class="offer-source-link" href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">فتح المصدر ↗</a>' : ""}
         </div>
       </div>
 
@@ -549,7 +548,6 @@ function offerComparisonRow(offer, index, group, intelligence = null) {
       </div>
       <div class="merchant-actions">
         <button class="product-detail-btn" type="button" data-source="${escapeHtml(offer.sourceUrl || "")}">التفاصيل</button>
-        ${offer.sourceUrl ? '<a href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">المصدر ↗</a>' : ""}
       </div>
     </div>
   `;
@@ -1064,7 +1062,7 @@ function renderProduct(product, query) {
     const sameCategory = state.category === button.dataset.showCategory;
     state.category=button.dataset.showCategory; state.visibleCount=sameCategory ? state.visibleCount+12 : 12; renderProduct(product,query);
   }));
-  document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
+  document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (event.target.isConnected === false) return; if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
   $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
