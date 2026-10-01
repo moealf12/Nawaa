@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { assessOfferMatch } from "../src/search-query.mjs";
 
 test("query deep link starts exactly one live search and URL submission requests comparison", async () => {
   const elements = new Map();
@@ -70,4 +71,19 @@ test("query deep link starts exactly one live search and URL submission requests
   resolveOld();
   await new Promise(resolve => setImmediate(resolve));
   assert.match(element("#results").innerHTML, /<h2>latest<\/h2>/);
+
+  const consoleOffers = [
+    { ...offer, title:"Sony PlayStation 5 Slim Digital Console White", specs:{brand:"Sony",color:"White",modelNumber:"CFI-2016B01Y",storage:"825GB"} },
+    { ...offer, title:"Sony PS5 Console 1TB Blu-ray Disc", specs:{brand:"Sony",color:"Black/White",modelNumber:"CFI2116A01Y",storage:"1TB"} },
+    { ...offer, title:"PS5 EA SPORTS FC 25", specs:{brand:"EA"} },
+  ].map(item=>({...item,...assessOfferMatch("ps5",item)}));
+  globalThis.fetch=async url=>({ok:true,text:async()=>JSON.stringify(String(url).includes("/health")?{ok:true}:{offers:consoleOffers,providers:[]})});
+  element("#searchInput").value="ps5";
+  element("#searchForm").events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  const html=element("#results").innerHTML;
+  assert.doesNotMatch(html,/data-dimension="colorKey"/,"PS5 casing colors must not become a device selector");
+  assert.match(html,/data-dimension="editionKey"/);
+  assert.ok(html.indexOf('class="match-results-section"')<html.indexOf('class="product-configurator"'),"product cards should lead comparison details");
+  assert.match(html,/ألعاب للجهاز/);
 });

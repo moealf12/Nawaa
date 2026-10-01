@@ -1,4 +1,4 @@
-import { parseSearchIntent, assessOfferMatch } from "./search-query.mjs";
+import { parseSearchIntent, assessOfferMatch, describeProduct } from "./search-query.mjs";
 import {
   DEMO_CATALOG,
   findBestProduct,
@@ -717,7 +717,8 @@ function selectorOptionMarkup(dimension, option, selectedKey) {
 }
 
 function selectorRow(label, dimension, options, selectedKey) {
-  if (!options?.length) return "";
+  options = (options || []).filter(option => option.label && !["غير محدد", "unknown", "unknown-model"].includes(option.label));
+  if (options.length < 2) return "";
   return `
     <div class="config-row">
       <div class="config-row-label">
@@ -775,12 +776,36 @@ function canonicalProfileMarkup(profile = {}) {
     : '<div class="spec-empty">لا توجد مواصفات موحّدة كافية لهذه النسخة حتى الآن.</div>';
 }
 
+function productDisplayTitle(offer) {
+  const description = describeProduct(offer);
+  const specs = offer.specs || {};
+  if (description.kind === "console") return [description.platform.toUpperCase(), description.form,
+    description.edition === "digital" ? "نسخة رقمية" : description.edition === "disc" ? "نسخة الأقراص" : "",
+    description.storage?.toUpperCase(), description.isBundle ? "حزمة مع إضافات" : ""].filter(Boolean).join(" · ");
+  return [specs.deviceType || specs.series || offer.title, specs.storage, specs.color].filter(Boolean).join(" · ");
+}
+
+function additionalResultsSection(label, groups) {
+  if (!groups.length) return "";
+  return `<details class="additional-results result-details"><summary>${label} <span>${groups.length}</span></summary>
+    <div class="additional-grid">${groups.map(group => {
+      const offer = group.bestOffer || group.offers[0];
+      return `<article class="additional-card">
+        <div class="additional-image">${selectedProductMedia(offer)}</div>
+        <div><h4>${escapeHtml(offer.title)}</h4><p>${escapeHtml(offer.matchReason || "يختلف عن المنتج المطلوب")}</p>
+        <span>${escapeHtml(offer.merchant || "")}</span><strong>${fmt(offer.productPrice)}</strong>
+        <small>السعر المعلن قبل الشحن والرسوم</small>
+        <button class="product-detail-btn" type="button" data-source="${escapeHtml(offer.sourceUrl || "")}">عرض التفاصيل</button></div>
+      </article>`;
+    }).join("")}</div></details>`;
+}
+
 function exactMatchCard(group, selectedGroup) {
-  const offer = group.bestPriceOffer || group.bestOffer || group.offers?.[0];
+  const intelligence = buildOfferIntelligence(group);
+  const offer = intelligence.baselineOffer || group.bestPriceOffer || group.bestOffer || group.offers?.[0];
   if (!offer) return "";
   const specs = offer.specs || {};
-  const title = [specs.deviceType || specs.series || offer.title, specs.storage, specs.color]
-    .filter(Boolean).join(" · ");
+  const title = productDisplayTitle(offer);
   const modelNumber = specs.modelNumber || null;
   const uniqueMerchants = new Set((group.offers || []).map((item) => item.merchant).filter(Boolean)).size;
   const selected = selectedGroup?.key === group.key;
@@ -792,13 +817,13 @@ function exactMatchCard(group, selectedGroup) {
     <button type="button" class="match-result-card ${selected ? "active" : ""}" data-group-key="${escapeHtml(group.key)}">
       <div class="match-card-image">${image}</div>
       <div class="match-card-copy">
-        <span class="mini-kicker">EXACT MATCH</span>
+        <span class="mini-kicker">${describeProduct(offer).kind === "console" ? "جهاز ألعاب" : "يطابق بحثك"}</span>
         <strong>${escapeHtml(title)}</strong>
-        <small>${modelNumber ? "SKU " + escapeHtml(modelNumber) + " · " : ""}${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
+        <small>${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
       </div>
       <div class="match-card-price">
-        <small>${group.priceBasis === "comparable_total" ? "أفضل إجمالي" : "من"}</small>
-        <b>${fmt(group.bestValue)}</b>
+        <small>${intelligence.priceBasis === "comparable_total" ? "إجمالي مقارن" : "السعر المعلن من"}</small>
+        <b>${fmt(intelligence.baselineValue ?? group.bestValue)}</b>
       </div>
     </button>
   `;
@@ -872,11 +897,7 @@ function renderProduct(product, query) {
   els.urlHint.hidden = true;
 
   const selectedSpecs = featuredOffer?.specs || {};
-  const selectedTitle = [
-    selectedSpecs.deviceType || selectedSpecs.series || featuredOffer?.title || product.model,
-    selectedSpecs.storage,
-    selectedSpecs.color,
-  ].filter(Boolean).join(" · ");
+  const selectedTitle = featuredOffer ? productDisplayTitle(featuredOffer) : product.model;
 
   els.results.innerHTML = `
     <section class="result-head">
@@ -895,6 +916,19 @@ function renderProduct(product, query) {
       <button id="resetResultFilters" type="button">مسح الفلاتر</button>
     </div>
     ${!exactGroups.length ? '<div class="search-notice" role="status">'+(!filteredOffers.length ? 'لا توجد عروض ضمن الفلاتر الحالية. جرّب مسح الفلاتر.' : 'لم نجد النسخة المطلوبة مطابقةً بالكامل. البدائل أدناه تختلف عن طلبك؛ تحقق من الموديل والسعة واللون قبل الاختيار.')+'</div>' : ''}
+    <section class="match-results-section">
+      <div class="section-label">
+        <span>المنتجات المطابقة</span>
+        <b>${exactGroups.length} نسخ · ${exactGroups.reduce((sum, group) => sum + (group.offers?.length || 0), 0)} عروض</b>
+      </div>
+      <div class="match-results-grid">
+        ${exactGroups.length
+          ? exactGroups.map((group) => exactMatchCard(group, selectedGroup)).join("")
+          : '<div class="empty-state">لا توجد مطابقات مباشرة إضافية.</div>'}
+      </div>
+      <p class="match-results-note">اختر بطاقة للمقارنة بين المتاجر على نفس المنتج.</p>
+    </section>
+
     <section class="result-grid comparison-layout">
       <div class="offers-column">
         ${featuredOffer ? `
@@ -902,7 +936,7 @@ function renderProduct(product, query) {
             <div class="config-hero">
               <div class="config-image">${selectedProductMedia(featuredOffer)}</div>
               <div class="config-title">
-                <span class="mini-kicker">النسخة المختارة</span>
+                <span class="mini-kicker">المنتج المختار</span>
                 <h3>${escapeHtml(selectedTitle)}</h3>
                 <div class="config-summary">
                   <span>${selectedGroup.merchantCount} ${selectedGroup.merchantCount === 1 ? "متجر" : "متاجر"}</span>
@@ -921,8 +955,9 @@ function renderProduct(product, query) {
 
             <div class="configurator-controls">
               ${selectorRow("الموديل", "modelKey", selector.options.models, selector.selection.modelKey)}
+              ${selectorRow("النسخة", "editionKey", selector.options.editions, selector.selection.editionKey)}
               ${selectorRow("السعة", "storageKey", selector.options.storages, selector.selection.storageKey)}
-              ${selectorRow("اللون", "colorKey", selector.options.colors, selector.selection.colorKey)}
+              ${describeProduct(featuredOffer).kind !== "console" ? selectorRow("اللون", "colorKey", selector.options.colors, selector.selection.colorKey) : ""}
               ${selectorRow("الحالة", "conditionKey", selector.options.conditions, selector.selection.conditionKey)}
               ${selector.options.skus?.length > 1
                 ? selectorRow("رقم الموديل", "skuKey", selector.options.skus, selector.selection.skuKey)
@@ -938,10 +973,10 @@ function renderProduct(product, query) {
                 ? '<span class="saving-pill">فرق ' + fmt(selectedGroup.savingsToNext) + ' عن العرض التالي</span>'
                 : ""}
             </div>
-            ${comparisonIntelligenceMarkup(selectedIntelligence)}
             <div class="merchant-comparison">
               ${selectedGroup.offers.map((item, offerIndex) => offerComparisonRow(item, offerIndex, selectedGroup, selectedIntelligence)).join("")}
             </div>
+            <details class="result-details"><summary>ملخص التوفر والتكلفة والفروقات</summary>${comparisonIntelligenceMarkup(selectedIntelligence)}</details>
             <details class="price-history-section result-details"><summary>سجل السعر على هذا الجهاز</summary>
               <div class="price-history-head">
                 <div>
@@ -965,7 +1000,7 @@ function renderProduct(product, query) {
             </details>
 
           </article>
-        ` : '<div class="empty-state">لا توجد نسخة قابلة للتكوين من النتائج الحالية.</div>'}
+        ` : '<div class="empty-state">اختر منتجًا مطابقًا للمقارنة، أو استكشف الأقسام الإضافية أدناه.</div>'}
       </div>
 
       <aside class="best-panel">
@@ -984,29 +1019,9 @@ function renderProduct(product, query) {
       </aside>
     </section>
 
-    <section class="match-results-section">
-      <div class="section-label">
-        <span>نسخ تطابق بحثك</span>
-        <b>${exactGroups.length} نسخ · ${exactGroups.reduce((sum, group) => sum + (group.offers?.length || 0), 0)} عروض</b>
-      </div>
-      <div class="match-results-grid">
-        ${exactGroups.length
-          ? exactGroups.map((group) => exactMatchCard(group, selectedGroup)).join("")
-          : '<div class="empty-state">لا توجد مطابقات مباشرة إضافية.</div>'}
-      </div>
-      <p class="match-results-note">اختر نسخة لعرض أسعارها ومقارنتها بين المتاجر.</p>
-    </section>
-
-    <details class="uncertain-block result-details"><summary>بدائل ونسخ أخرى (${relatedGroups.length})</summary>
-      <div class="section-label">
-        <span>بدائل تختلف عن طلبك</span>
-        <b>${relatedGroups.length}</b>
-      </div>
-      ${relatedGroups.length
-        ? relatedGroups.slice(0, 6).map(variantGroupCard).join("")
-        : '<div class="empty-state">لا توجد نتائج أقل صلة.</div>'}
-      ${relatedGroups.length > 6 ? '<div class="results-truncated">تم إخفاء ' + (relatedGroups.length - 6) + ' مجموعة أقل صلة.</div>' : ""}
-    </details>
+    ${additionalResultsSection("نسخ ومنتجات أخرى", relatedGroups.filter(group => !["game","accessory"].includes(describeProduct(group.bestOffer).kind)))}
+    ${additionalResultsSection("ألعاب للجهاز", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "game"))}
+    ${additionalResultsSection("ملحقات وإكسسوارات", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "accessory"))}
 
     <div class="integrity-note">
       <strong>قاعدة نواة:</strong>
@@ -1025,6 +1040,7 @@ function renderProduct(product, query) {
       const dimensions = offerVariantDimensions(offer);
       state.selectorSelection = {
         modelKey: dimensions.modelKey,
+        editionKey: dimensions.editionKey,
         storageKey: dimensions.storageKey,
         colorKey: dimensions.colorKey,
         conditionKey: dimensions.conditionKey,

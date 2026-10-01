@@ -160,3 +160,12 @@ Quote actions open the private Site with a product prefill. A user must explicit
 - A 60-second, bounded in-memory cache coalesces identical provider queries. Partial failures and empty results are retried; cached snapshots retain each offer's observation time. URL comparison merges a cloned cached result to avoid cross-query mutation.
 - A request generation prevents older query responses or errors from replacing newer results.
 - Sources remain eXtra, Jarir and Sharaf DG; this update does not activate additional integrations.
+
+
+## Product-aware search presentation (0.5.0)
+
+- A bare PS5 query means console discovery. Platform mentions on games, controllers, cameras, remotes and charging stations do not qualify as console matches. Explicit game/controller intent is retained. Classification uses merchant titles, product metadata and hardware identifiers; ambiguous data still requires inspection.
+- Console identity groups the same normalized model number across merchant wording and casing-color differences. Different SKUs and explicitly labeled bundles remain separate.
+- Cards for matching products precede the selected product's store comparison. Games and accessories are in separate expandable sections.
+- Facets require at least two named, meaningful options. Console choices use digital/disc editions rather than casing colors. Phone and other product colors appear only when multiple options exist.
+- Store prices, availability and cost gaps remain visible; secondary intelligence, specifications and history are expandable.

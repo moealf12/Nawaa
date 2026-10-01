@@ -10,6 +10,9 @@ const ALIASES = [
   ["اخضر", "green"], ["ذهبي", "gold"], ["فضي", "silver"],
   ["كفر", "case"], ["حافظه", "case"], ["شاحن", "charger"], ["كيبل", "cable"],
   ["مجدد", "refurbished"], ["مستعمل", "used"], ["جديد", "new"],
+  ["اشرطه", "games"], ["العاب", "games"], ["لعبه", "game"],
+  ["جهاز", "console"], ["رقمي", "digital"], ["ديجيتال", "digital"], ["اقراص", "disc"], ["سليم", "slim"],
+  ["يد", "controller"], ["يد تحكم", "controller"],
 ];
 
 export function normalizeSearchQuery(value = "") {
@@ -44,7 +47,41 @@ export function parseSearchIntent(value = "") {
     storage: normalizedQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
     color: normalizedQuery.match(/\b(?:mist blue|desert titanium|natural titanium|black titanium|white titanium|cosmic orange|deep blue|black|white|lavender|sage|silver|gold|blue|green)\b/)?.[0] || null,
     condition,
+    kind: queryProductKind(normalizedQuery),
   };
+}
+
+const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)?)\b/;
+const GAMING_ACCESSORY = /\b(?:controller|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|cover|case|accessory|accessories|gift card|recharge card)\b/;
+
+function queryProductKind(query) {
+  if (GAMING_PLATFORM.test(query)) {
+    if (GAMING_ACCESSORY.test(query)) return "accessory";
+    if (/\b(?:game|games)\b/.test(query)) return "game";
+    const remainder = query.replace(GAMING_PLATFORM, "").replace(/\b(?:sony|microsoft|nintendo|console|slim|pro|digital|disc|edition|bundle|new|used|refurbished|black|white|\d+(?:gb|tb))\b/g, "").trim();
+    return remainder ? "game" : "console";
+  }
+  return null;
+}
+
+export function describeProduct(offer = {}) {
+  const title = normalizeSearchQuery(offer.title || "");
+  const metadata = normalizeSearchQuery([offer.specs?.deviceType, offer.specs?.series].filter(Boolean).join(" "));
+  const platform = title.match(GAMING_PLATFORM)?.[0] || metadata.match(GAMING_PLATFORM)?.[0] || null;
+  const sku = String(offer.specs?.modelNumber || "").replace(/[^a-z0-9]/gi, "");
+  const isBundle = /\bbundle\b/.test(title);
+  let kind = "product";
+  if (platform) {
+    if (/\b(?:cover|case|accessory|accessories|gift card|recharge card)\b/.test(title + " " + metadata)) kind = "accessory";
+    else if (GAMING_ACCESSORY.test(title) && !(isBundle && /\bconsole\b/.test(title))) kind = "accessory";
+    else if (/\bconsole\b/.test(title) || /^CFI[127]\d/i.test(sku) || /\b(?:digital|disc) edition\b/.test(title) || /\b(?:825gb|1tb|2tb)\b/.test(title)) kind = "console";
+    else if (/^(?:sony )?ps[45](?: slim| pro)?$/.test(title)) kind = "console";
+    else kind = "game";
+  }
+  const edition = /\b(?:digital|dig)\b/.test(title + " " + metadata) ? "digital" : /\b(?:disc|blu ray)\b/.test(title) ? "disc" : null;
+  const storage = normalizeSearchQuery(offer.specs?.storage || "").match(/\b\d+(?:gb|tb)\b/)?.[0] || title.match(/\b\d+(?:gb|tb)\b/)?.[0] || null;
+  const form = /\bpro\b/.test(title) ? "Pro" : /\bslim\b/.test(title + " " + metadata) ? "Slim" : "";
+  return {kind, platform, edition, storage, form, isBundle};
 }
 
 const ACCESSORY_TERMS = [
@@ -60,13 +97,16 @@ const UNREQUESTED_VARIANT_TERMS = [
 export function assessOfferMatch(query, offer) {
   const intent = parseSearchIntent(query);
   const normalizedQuery = intent.providerQuery;
-  const q = normalizedQuery.split(" ").filter(Boolean);
+  const q = normalizedQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
   const title = normalizeSearchQuery([offer?.title, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
   if (!q.length || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
   const hits = q.filter((token) => titleTokens.has(token)).length;
   let confidence = hits / q.length;
+  const description = describeProduct(offer);
+  const kindMismatch = Boolean(intent.kind && intent.kind !== description.kind);
+  if (kindMismatch) confidence *= 0.2;
 
   const hasPhrase = (text, term) => (" " + text + " ").includes(" " + normalizeSearchQuery(term) + " ");
   const queryHasAccessoryIntent = ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term));
@@ -86,12 +126,14 @@ export function assessOfferMatch(query, offer) {
   const missingTerms = q.filter((token) => !titleTokens.has(token));
   const exactMatch = confidence >= 0.92 && hits === q.length &&
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
-      !hasUnrequestedVariant && !conditionMismatch;
+      !hasUnrequestedVariant && !conditionMismatch && !kindMismatch;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
+    productKind: description.kind,
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : kindMismatch ?
+      (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
       hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
   };

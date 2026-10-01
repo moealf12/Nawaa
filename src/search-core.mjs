@@ -1,3 +1,5 @@
+import { describeProduct, normalizeSearchQuery } from "./search-query.mjs";
+
 const BUCKET_ORDER = {
   confirmed: 0,
   estimated: 1,
@@ -158,6 +160,8 @@ function normalizedModelIdentifier(value = "") {
 }
 
 function normalizedModel(offer = {}) {
+  const description = describeProduct(offer);
+  if (description.kind === "console") return description.platform + (description.form === "Pro" ? " pro" : "");
   const specs = offer.specs || {};
   let raw = specs.deviceType || specs.model || specs.series || offer.title || "";
   let model = normalizeVariantPart(raw);
@@ -175,6 +179,10 @@ function normalizedModel(offer = {}) {
 export function offerVariantKey(offer = {}) {
   const specs = offer.specs || {};
   const modelIdentifier = normalizedModelIdentifier(specs.modelNumber || "");
+  const description = describeProduct(offer);
+  if (description.kind === "console") return [normalizedBrand(specs.brand || ""), normalizedModel(offer),
+    modelIdentifier ? "sku:" + modelIdentifier : [description.form,description.edition,description.storage].join(":"),
+    offer.condition || "unknown", description.isBundle ? normalizeSearchQuery(offer.title) : "standalone"].join("|");
   return [
     normalizedBrand(specs.brand || ""),
     normalizedModel(offer),
@@ -452,13 +460,17 @@ export function buildOfferIntelligence(group = {}) {
 
 export function offerVariantDimensions(offer = {}) {
   const specs = offer.specs || {};
-  const modelLabel = String(specs.deviceType || specs.model || specs.series || offer.title || "غير محدد").trim();
-  const storageLabel = String(specs.storage || "غير محدد").trim();
+  const description = describeProduct(offer);
+  const modelLabel = description.kind === "console" ? description.platform.toUpperCase() + (description.form === "Pro" ? " Pro" : "") : String(specs.deviceType || specs.model || specs.series || offer.title || "غير محدد").trim();
+  const storageLabel = String((description.kind === "console" ? description.storage?.toUpperCase() : specs.storage) || "غير محدد").trim();
   const colorLabel = String(specs.color || "غير محدد").trim();
   const conditionLabel = String(offer.condition || "unknown").trim();
 
   const skuLabel = String(specs.modelNumber || "غير محدد").trim();
   return {
+    kind: description.kind,
+    editionKey: description.kind === "console" ? description.edition || "unknown" : "unknown",
+    editionLabel: description.edition === "digital" ? "نسخة رقمية" : description.edition === "disc" ? "نسخة الأقراص" : "غير محدد",
     modelKey: normalizedModel(offer),
     modelLabel,
     storageKey: normalizeVariantPart(storageLabel),
@@ -526,7 +538,7 @@ export function buildVariantSelectorState(variantGroups = [], requested = {}) {
   if (!entries.length) {
     return {
       selection: {},
-      options: { models: [], storages: [], colors: [], conditions: [], skus: [] },
+      options: { models: [], editions: [], storages: [], colors: [], conditions: [], skus: [] },
       selectedGroup: null,
     };
   }
@@ -539,9 +551,13 @@ export function buildVariantSelectorState(variantGroups = [], requested = {}) {
   const modelKey = pickFacetKey(requested.modelKey, models, fallbackEntry.dimensions.modelKey);
   const modelEntries = entries.filter((entry) => entry.dimensions.modelKey === modelKey);
 
-  const storages = facetOptions(modelEntries, "storageKey", "storageLabel");
+  const editions = facetOptions(modelEntries, "editionKey", "editionLabel");
+  const editionKey = pickFacetKey(requested.editionKey, editions, fallbackEntry.dimensions.editionKey);
+  const editionEntries = modelEntries.filter(entry => entry.dimensions.editionKey === editionKey);
+
+  const storages = facetOptions(editionEntries, "storageKey", "storageLabel");
   const storageKey = pickFacetKey(requested.storageKey, storages, fallbackEntry.dimensions.storageKey);
-  const storageEntries = modelEntries.filter((entry) => entry.dimensions.storageKey === storageKey);
+  const storageEntries = editionEntries.filter((entry) => entry.dimensions.storageKey === storageKey);
 
   const conditions = facetOptions(storageEntries, "conditionKey", "conditionLabel");
   const conditionKey = pickFacetKey(requested.conditionKey, conditions, fallbackEntry.dimensions.conditionKey);
@@ -565,13 +581,14 @@ export function buildVariantSelectorState(variantGroups = [], requested = {}) {
   return {
     selection: {
       modelKey: selectedEntry?.dimensions.modelKey || modelKey,
+      editionKey: selectedEntry?.dimensions.editionKey || editionKey,
       storageKey: selectedEntry?.dimensions.storageKey || storageKey,
       colorKey: selectedEntry?.dimensions.colorKey || colorKey,
       conditionKey: selectedEntry?.dimensions.conditionKey || conditionKey,
       skuKey: selectedEntry?.dimensions.skuKey || skuKey,
     },
     labels: selectedEntry?.dimensions || {},
-    options: { models, storages, colors, conditions, skus },
+    options: { models, editions, storages, colors, conditions, skus },
     selectedGroup: selectedEntry?.group || null,
   };
 }

@@ -154,7 +154,7 @@ const server = http.createServer(async (req, res) => {
     return jsonResponse(res, 200, {
       ok: true,
       service: "nawaa-search",
-      apiVersion: "0.4.0",
+      apiVersion: "0.5.0",
       revision: process.env.RENDER_GIT_COMMIT || null,
       liveProviders: {
         extra: true,

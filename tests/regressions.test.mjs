@@ -1,13 +1,47 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assessOfferMatch } from "../server/match.mjs";
-import { calculateComparableTotal, classifyOffer, buildOfferIntelligence } from "../src/search-core.mjs";
+import { calculateComparableTotal, classifyOffer, buildOfferIntelligence, groupComparableOffers } from "../src/search-core.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
 import * as queries from "../src/search-query.mjs";
 
 const iphone = { title: "Apple iPhone 17 Pro Max, 256 GB, Black", condition: "new" };
+
+test("PS5 device search rejects games, controllers and accessories despite platform keywords", () => {
+  for (const title of ["PS5 EA SPORTS FC 25", "Sony PS5 Dual Sense Edge Stick Module Black", "Grand Theft Auto V, PlayStation 5 (Games)", "Sony DualSense Charging Station for PlayStation 5", "Sony PS5 Media Remote", "Sony PS5 HD Camera", "PS5, Ghost of Yotei", "Sony Console Slim Cover PlayStation 5"])
+    assert.equal(assessOfferMatch("ps5", {title,condition:"new"}).exactMatch,false,title);
+  assert.equal(assessOfferMatch("ps5", {title:"Sony PlayStation 5 Slim Digital Console + Fortnite Game Bundle",condition:"new"}).exactMatch,true);
+  assert.equal(assessOfferMatch("ps5", {title:"PS5, Console 1TB, Blu-Ray Disc",condition:"new"}).exactMatch,true);
+});
+
+test("explicit game and controller searches retain their intended product type", () => {
+  assert.equal(assessOfferMatch("ps5 العاب", {title:"PS5 EA SPORTS FC 25",condition:"new"}).exactMatch,true);
+  assert.equal(assessOfferMatch("ps5 العاب", {title:"Sony PS5 Slim Console",condition:"new"}).exactMatch,false);
+  assert.equal(assessOfferMatch("يد ps5", {title:"Sony DualSense Controller for PlayStation 5",condition:"new"}).exactMatch,true);
+});
+
+test("console display offers meaningful choices without treating casing colors as device variants", () => {
+  assert.equal(typeof queries.describeProduct, "function");
+  const description = queries.describeProduct({title:"Sony PlayStation 5 Console (Disc Version) 1TB White",specs:{color:"White",storage:"1TB"}});
+  assert.equal(description.kind,"console");
+  assert.equal(description.edition,"disc");
+  assert.equal(description.storage,"1tb");
+});
+
+test("same console SKU groups across merchant wording without mixing digital, disc or bundles", () => {
+  const base = {condition:"new",exactMatch:true,matchConfidence:1,productPrice:2000,availability:"in_stock",canShipToSaudi:true};
+  const offers = [
+    {...base,merchant:"A",title:"PS5, Digital Edition 825GB",specs:{brand:"Sony",modelNumber:"CFI-2116B01Y"}},
+    {...base,merchant:"B",title:"Sony PlayStation 5 Slim (DIG) 825 GB SSD, White",specs:{brand:"Sony",modelNumber:"CFI2116B01Y",color:"White",storage:"Sony PlayStation 5 Slim (DIG) 825 GB SSD",deviceType:"PlayStation 5 Slim (DIG)"}},
+    {...base,merchant:"C",title:"PS5 Console 1TB Blu-Ray Disc",specs:{brand:"Sony",modelNumber:"CFI2116A01Y"}},
+    {...base,merchant:"D",title:"PS5 Digital Console Fortnite Game Bundle",specs:{brand:"Sony",modelNumber:"CFI2116B01Y"}},
+  ];
+  const groups=groupComparableOffers(offers);
+  assert.equal(groups.length,3);
+  assert.equal(groups.find(group=>group.offers.some(o=>o.merchant==="A")).merchantCount,2);
+});
 
 test("natural Arabic search preserves model constraints and removes conversational filler", () => {
   assert.equal(queries.normalizeSearchQuery("ابغى ايفون ١٧ برو ٢٥٦جيجا اسود بأفضل سعر"), "iphone 17 pro 256gb black");
