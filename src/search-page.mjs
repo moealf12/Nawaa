@@ -244,7 +244,7 @@ async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
       const response = await fetch(url, {
         ...options,
         mode: "cors",
-        credentials: "omit",
+        credentials: "same-origin",
         cache: "no-store",
         signal: controller.signal,
       });

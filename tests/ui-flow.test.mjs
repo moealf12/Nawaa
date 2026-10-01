@@ -28,7 +28,8 @@ test("query deep link starts exactly one live search and URL submission requests
   const offers = [offer, { ...offer, title: "Apple iPhone 17 256GB White", sourceUrl: "https://example.com/white",
     specs: { ...offer.specs, color: "White", modelNumber: "MG684AH/A" } }];
   const requests = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
+    assert.equal(options.credentials, "same-origin", "same-origin search must preserve the private Site session without sharing it with external origins");
     requests.push(String(url));
     const data = String(url).includes("/health") ? { ok: true } : { offers, providers: [], providersConfigured: ["extra"],
       resolvedOffer: new URL(url).searchParams.has("url") ? offer : null, comparisonQuery: "iphone 17 256gb black" };
