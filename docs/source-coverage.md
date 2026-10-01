@@ -6,8 +6,8 @@ adapter exists but is off, and `candidate` means no adapter has been integrated.
 These labels do not assert successful live requests. Per-search `providers` and
 `errors` remain the evidence of success for that particular query.
 
-The registry contains 56 targets across 28 countries. Four configured sources
-at rollout: eXtra, Jarir, Sharaf DG Saudi and eBay. Carrefour and Noon adapters
+The registry contains 57 targets across 28 countries. Five configured sources
+at rollout: eXtra, Jarir, Sharaf DG Saudi, Swarovski Saudi and eBay. Carrefour and Noon adapters
 remain disabled. Dynamic Shopify entries describe individual configured stores,
 not all merchants on Shopify. Runtime records expose no credentials or base URL
 configuration. Counts describe sources, not the number of independent sellers
@@ -20,6 +20,22 @@ matches always consume capacity before related items. Selected results keep the
 existing confidence/price ordering. eBay markets share one merchant allocation;
 configured Shopify merchants each receive their own allocation. This avoids
 adding market connections simply to dominate the response budget.
+
+## Direct brand-store coverage
+
+Swarovski Saudi is integrated through its public Saudi storefront search. The adapter
+returns the official product URL, listed SAR price, image, product identifiers and stock
+only when the storefront exposes them. Arabic brand/category aliases are canonicalized
+before provider lookup. Shipping, tax and final landed cost remain unconfirmed until
+those components are explicitly available.
+
+## Zero-result recovery
+
+When a specific provider query returns no products, NAWAA performs one bounded retry
+with a relaxed query derived from the same intent (for example, dropping storage/color
+before falling back to model, brand/category, or category). Candidate offers are still
+scored against the original query, so relaxation cannot turn a mismatched variant into
+an exact match.
 
 ## Read-only connection probes, 2026-10-01
 
