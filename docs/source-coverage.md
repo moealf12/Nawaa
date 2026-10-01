@@ -42,3 +42,29 @@ currency units, stock, product URLs, images and shipping before runtime enableme
 Affiliate feeds: ingest only the merchants/catalogs actually granted to the
 account. Each integration must pass live-query validation before being reported
 as returning products. Do not invent prices, shipping, availability or total costs.
+
+## Added Shopify stores, 2026-10-01
+
+Native Union (Hong Kong), Spigen (US), Death Wish Coffee (US), tentree (Canada):
+verified public predictive search and cart endpoints. US storefront probes presented USD; Native Union varies presentment currency by region and reads it dynamically from cart.js.
+The adapter now retrieves product Ajax details and emits up to three available
+variants per product with exact variant IDs and prices. Integer minor-unit prices
+are divided by 100 only for explicitly supported two-decimal currencies. A failed
+variant lookup cannot fall back to an ambiguous predictive starting price. Currency
+changes reject the source instead of silently assigning the configured currency.
+Each store has a 15-second network deadline and a bounded product/variant count.
+
+Countries describe the merchant, not manufacturing origin or guaranteed dispatch
+country. Original currency and converted SAR prices remain separate. Missing FX
+keeps the original price and leaves SAR unknown. Stock is based on the variant's
+available field. Delivery charges, import costs and delivery dates remain unknown.
+Spigen's May 23, 2026 policy requires a valid US address, including eligible US
+forwarders: record forwarding_required and directShippingToSaudi=false. Other
+stores' Saudi delivery remains unconfirmed per offer.
+
+References:
+- https://shopify.dev/docs/api/ajax/reference/product
+- https://www.spigen.com/pages/notice-to-customers
+- https://www.nativeunion.com/pages/terms-of-sale
+- https://www.deathwishcoffee.com/pages/help-shipping-delivery
+- https://www.tentree.com/pages/contact
