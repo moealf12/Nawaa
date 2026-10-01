@@ -106,7 +106,7 @@ export const PRODUCT_CATEGORIES = [
   ['network','شبكات', /\b(?:router|modem|wifi|wi fi|network switch)\b/],
   ['projector','بروجكترات', /\bprojector\b/],
   ['coffee','قهوة', /\b(?:coffee|ground coffee|coffee beans)\b/],
-  ['clothing','ملابس وأزياء', /\b(?:clothing|fashion|dresses?|abaya|shirts?|tees?|t shirts?|hoodies?|pants?|jeans|jackets?|coats?|sweaters?|skirts?|blouses?)\b/],
+  ['clothing','ملابس وأزياء', /\b(?:clothing|fashion|dress(?:es)?|abaya|shirts?|tees?|t shirts?|hoodies?|pants?|jeans|jackets?|coats?|sweaters?|skirts?|blouses?)\b/],
   ['shoes','أحذية', /\b(?:shoes?|sneakers?|boots?|sandals?|heels?|slippers?|loafers?)\b/],
   ['bag','حقائب', /\b(?:bags?|handbags?|backpacks?|luggage|wallets?|purses?|totes?)\b/],
   ['beauty','تجميل وعناية', /\b(?:makeup|cosmetics?|skincare|skin care|lipstick|mascara|foundation|serum|moisturizer|hair care)\b/],
