@@ -80,6 +80,31 @@ const STORES = [
     search:(q)=>"https://www.sephora.me/sa-en/search?q="+encodeURIComponent(q),
     productPath:/\/p\/[^?#]+(?:[?#]|$)/i,
   },
+  {
+    id:"namshi-sa", name:"Namshi", countryCode:"SA", countryNameAr:"السعودية", brands:["namshi"], categories:["clothing","shoes","bag","beauty","jewelry","sports","baby"],
+    search:(q)=>"https://www.namshi.com/saudi-en/search?q="+encodeURIComponent(q),
+    productPath:/\/saudi-en\/buy-[^?#]+\/[^/?#]+\/p\/?(?:[?#]|$)/i,
+  },
+  {
+    id:"centrepoint-sa", name:"Centrepoint", countryCode:"SA", countryNameAr:"السعودية", brands:["centrepoint"], categories:["clothing","shoes","bag","beauty","home","furniture","toy","baby","sports"],
+    search:(q)=>"https://www.centrepointstores.com/sa/en/search?q="+encodeURIComponent(q),
+    productPath:/\/sa\/en\/(?:buy-[^?#]+\/p\/[^/?#]+|p\/[^/?#]+)(?:[/?#]|$)/i,
+  },
+  {
+    id:"maxfashion-sa", name:"Max Fashion", countryCode:"SA", countryNameAr:"السعودية", brands:["maxfashion"], categories:["clothing","shoes","bag","baby","home"],
+    search:(q)=>"https://www.maxfashion.com/sa/en/search?q="+encodeURIComponent(q),
+    productPath:/\/sa\/en\/buy-[^?#]+\/p\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"decathlon-sa", name:"Decathlon Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["decathlon"], categories:["sports","shoes","clothing","bag","toy","baby"],
+    search:(q)=>"https://decathlon.com.sa/search?q="+encodeURIComponent(q),
+    productPath:/\/products\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"niceone-sa", name:"Nice One", countryCode:"SA", countryNameAr:"السعودية", brands:["niceone"], categories:["beauty","perfume","grocery","sports","baby","other"],
+    search:(q)=>"https://niceonesa.com/en/search?q="+encodeURIComponent(q),
+    productPath:/\/en\/[^?#]+-n\d+(?:[/?#]|$)/i,
+  },
 ];
 
 function decodeHtml(value = "") {
