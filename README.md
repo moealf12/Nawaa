@@ -25,7 +25,7 @@ These adapters are currently enabled without extra paid APIs:
 
 ### Implemented but gated / not active
 - Amazon Creators API — official catalog adapter supports SA, AE, US, CA, UK, DE, FR, IT, ES, JP, IN, SG, AU and EG; requires Creators API credentials plus a Partner Tag for each enabled marketplace
-- Brave Web Discovery — global product-page discovery layer; discovered pages become offers only after NAWAA verifies structured product/price data on the product page
+- Zero-cost storefront discovery — public search pages from supported stores are queried directly; discovered pages become offers only after NAWAA verifies structured product/price data on the product page
 - Noon Saudi — adapter exists; disabled until reliable Saudi-safe egress is available
 - Carrefour KSA — adapter exists; disabled until reliable free egress is available
 - eBay — official API adapter exists; requires approved credentials
@@ -35,10 +35,11 @@ These adapters are currently enabled without extra paid APIs:
 NAWAA does not trust search-engine snippets as prices. Search is layered:
 
 1. Direct merchant/marketplace APIs and catalog adapters.
-2. Official Amazon Creators API when credentials are configured.
-3. Global web discovery to find additional product pages across stores such as SHEIN, AliExpress, Temu, iHerb, fashion retailers and specialist stores.
+2. Official Amazon Creators API when eligible credentials are configured; no paid search provider is required.
+3. Zero-cost direct storefront discovery across supported public store search pages such as SHEIN, AliExpress, Temu, iHerb, IKEA, ASOS, Farfetch, Etsy, Newegg, B&H, Walmart, Best Buy, adidas, Nike and Sephora.
 4. Every discovered URL must pass the product-page resolver and expose structured price data before it becomes a comparable offer.
 5. All candidates are scored against the original customer query even when a broader fallback query was needed to discover them.
+6. If a public storefront blocks automated access or exposes no verifiable product price, NAWAA skips it rather than inventing or trusting a search snippet.
 
 This keeps broad coverage separate from product identity and price integrity.
 
@@ -116,7 +117,7 @@ GitHub Actions also syntax-checks browser modules and all active/gated provider 
 ### Optional production environment variables
 
 Global discovery:
-- `BRAVE_SEARCH_API_KEY`
+- No paid search API key is required. Direct public storefront adapters are the default discovery layer.
 
 Amazon Creators API:
 - `AMAZON_CREATORS_CLIENT_ID`
@@ -125,3 +126,8 @@ Amazon Creators API:
 - Marketplace Partner Tags as needed: `AMAZON_PARTNER_TAG_SA`, `AMAZON_PARTNER_TAG_AE`, `AMAZON_PARTNER_TAG_US`, `AMAZON_PARTNER_TAG_CA`, `AMAZON_PARTNER_TAG_UK`, `AMAZON_PARTNER_TAG_DE`, `AMAZON_PARTNER_TAG_FR`, `AMAZON_PARTNER_TAG_IT`, `AMAZON_PARTNER_TAG_ES`, `AMAZON_PARTNER_TAG_JP`, `AMAZON_PARTNER_TAG_IN`, `AMAZON_PARTNER_TAG_SG`, `AMAZON_PARTNER_TAG_AU`, `AMAZON_PARTNER_TAG_EG`.
 
 No credential is ever exposed to the browser.
+
+
+### Zero-cost constraint
+
+NAWAA's default search stack is designed to run without paid search/data APIs. Direct merchant adapters, public storefront discovery, structured product-page verification, configured Shopify storefronts, and approved free-access marketplace APIs are preferred. A source that requires a paid subscription is not part of the default search path.
