@@ -74,7 +74,7 @@ export function parseSwarovskiSearchHtml(html, limit = 32) {
     const subtitle = textFromTag(chunk, /<div\b[^>]*class=["'][^"']*\bsubtitle\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
     const priceTag = firstTag(chunk, /<span\b[^>]*class=["'][^"']*\bvalue\b[^"']*["'][^>]*>/i);
     const price = Number(String(attr(priceTag, "content") || "").replace(/,/g, ""));
-    const inStock = /["']?item_in_stock["']?\s*:\s*true/i.test(chunk);
+    const inStock = /(?:(?:&quot;)|["'])?item_in_stock(?:(?:&quot;)|["'])?\s*:\s*true/i.test(chunk);
 
     if (!productId || !title || !Number.isFinite(price) || price <= 0 || !sourceUrl) continue;
     if (seen.has(sourceUrl)) continue;
