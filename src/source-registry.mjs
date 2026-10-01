@@ -12,6 +12,7 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "noon-ae", name: "Noon UAE", countryCode: "AE", region: "MENA", status: "candidate", saudiDelivery: "offer_dependent" },
 
   { id: "sharafdg-sa", name: "Sharaf DG Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "swarovski-sa", name: "Swarovski Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
   { id: "carrefour-sa", name: "Carrefour Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
 
   // North America
@@ -88,7 +89,7 @@ export function sourceCoverageSummary(registry = WORLD_SOURCE_REGISTRY) {
 
 
 const SOURCE_ADAPTERS = {
-  extra: "extra-unbxd", jarir: "jarir-direct", "sharafdg-sa": "sharafdg-algolia",
+  extra: "extra-unbxd", jarir: "jarir-direct", "sharafdg-sa": "sharafdg-algolia", "swarovski-sa": "swarovski-direct",
   "carrefour-sa": "carrefour-ksa", "noon-sa": "noon-catalog", ebay: "ebay",
 };
 
