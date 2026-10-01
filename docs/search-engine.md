@@ -169,3 +169,10 @@ Quote actions open the private Site with a product prefill. A user must explicit
 - Cards for matching products precede the selected product's store comparison. Games and accessories are in separate expandable sections.
 - Facets require at least two named, meaningful options. Console choices use digital/disc editions rather than casing colors. Phone and other product colors appear only when multiple options exist.
 - Store prices, availability and cost gaps remain visible; secondary intelligence, specifications and history are expandable.
+
+
+## Category discovery
+
+Brand-only searches use editable editorial category priorities, not a measured popularity claim. HP starts with laptops, then printers, desktops and monitors when offers exist. Explicit category requests override the brand default. Category-only queries include matching products across brands; unknown brands retain relevant results without inventing a brand priority. Categories are inferred from titles and merchant product metadata. Ambiguous records remain in other products. Source model identifiers are used for safe same-product comparison, not required for discovery.
+
+The interface presents category tabs, six preview cards per category, and increments of twelve when expanded. Merchant comparison starts collapsed and opens on selecting a product card; only that product's identity group enters the selected comparison. Existing source coverage limits which categories/products can be shown. No sales, click or popularity measurements are currently collected for ranking.

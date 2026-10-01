@@ -1,4 +1,4 @@
-import { parseSearchIntent, assessOfferMatch, describeProduct } from "./search-query.mjs";
+import { parseSearchIntent, assessOfferMatch, describeProduct, productCategory, categoryLabel } from "./search-query.mjs";
 import {
   DEMO_CATALOG,
   findBestProduct,
@@ -6,6 +6,7 @@ import {
   rankOffers,
   summarizeOffers,
   groupComparableOffers,
+  buildDiscoverySections,
   groupVariantFamilies,
   buildVariantSelectorState,
   buildCanonicalProductProfile,
@@ -35,6 +36,10 @@ const state = {
   selectorSelection: {},
   availability: "all",
   merchant: "all",
+  category: "all",
+  visibleCount: 12,
+  comparisonOpen: false,
+  selectedGroupKey: null,
   requestId: 0,
 };
 
@@ -822,7 +827,7 @@ function exactMatchCard(group, selectedGroup) {
     <button type="button" class="match-result-card ${selected ? "active" : ""}" data-group-key="${escapeHtml(group.key)}">
       <div class="match-card-image">${image}</div>
       <div class="match-card-copy">
-        <span class="mini-kicker">${describeProduct(offer).kind === "console" ? "جهاز ألعاب" : "يطابق بحثك"}</span>
+        <span class="mini-kicker">${escapeHtml(categoryLabel(productCategory(offer)))}</span>
         <strong>${escapeHtml(title)}</strong>
         <small>${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
       </div>
@@ -874,8 +879,10 @@ function renderProduct(product, query) {
     (group.bestOffer?.matchConfidence || 0) >= 0.9 &&
     group.bestOffer?.condition === (intent.condition || "new")
   );
-  const selectorGroups = exactGroups;
-  const selectorGroupKeys = new Set(selectorGroups.map((group) => group.key));
+  const discoverySections = buildDiscoverySections(query, exactGroups);
+  const displayedSections = state.category === 'all' ? discoverySections : discoverySections.filter(section => section.key === state.category);
+  const selectorGroups = state.selectedGroupKey ? exactGroups.filter(group => group.key === state.selectedGroupKey) : discoverySections.flatMap(section=>section.groups);
+  const selectorGroupKeys = new Set(exactGroups.map((group) => group.key));
   const relatedGroups = groups.filter((group) => !selectorGroupKeys.has(group.key));
 
   const selector = buildVariantSelectorState(selectorGroups, state.selectorSelection);
@@ -907,9 +914,9 @@ function renderProduct(product, query) {
       <div>
         <span class="mini-kicker">نتائج البحث</span>
         <h2>${escapeHtml(product.nameAr)}</h2>
-        <p>قارن عروض النسخة نفسها، ثم استكشف النسخ البديلة إذا احتجت.</p>
+        <p>${intent.discoveryMode === "brand" ? "منتجات الشركة حسب الفئة. اختر منتجًا لمقارنة عروض المتاجر." : "اختر الفئة والمنتج، ثم قارن عروض المتاجر للنسخة نفسها."}</p>
       </div>
-      <div class="identity-pill">${exactGroups.length} نسخ مطابقة · ${relatedGroups.length} بدائل</div>
+      <div class="identity-pill">${exactGroups.length} منتجات مطابقة · ${relatedGroups.length} بدائل</div>
     </section>
 
     <div class="results-toolbar">
@@ -919,19 +926,22 @@ function renderProduct(product, query) {
       <button id="resetResultFilters" type="button">مسح الفلاتر</button>
     </div>
     ${!exactGroups.length ? '<div class="search-notice" role="status">'+(!filteredOffers.length ? 'لا توجد عروض ضمن الفلاتر الحالية. جرّب مسح الفلاتر.' : 'لم نجد النسخة المطلوبة مطابقةً بالكامل. البدائل أدناه تختلف عن طلبك؛ تحقق من الموديل والسعة واللون قبل الاختيار.')+'</div>' : ''}
-    <section class="match-results-section">
-      <div class="section-label">
-        <span>المنتجات المطابقة</span>
-        <b>${exactGroups.length} نسخ · ${exactGroups.reduce((sum, group) => sum + (group.offers?.length || 0), 0)} عروض</b>
-      </div>
-      <div class="match-results-grid">
-        ${exactGroups.length
-          ? exactGroups.map((group) => exactMatchCard(group, selectedGroup)).join("")
-          : '<div class="empty-state">لا توجد مطابقات مباشرة إضافية.</div>'}
-      </div>
-      <p class="match-results-note">اختر بطاقة للمقارنة بين المتاجر على نفس المنتج.</p>
-    </section>
+    ${discoverySections.length > 1 ? `<nav class="category-tabs" aria-label="فئات النتائج">
+      <button type="button" class="category-tab ${state.category === 'all' ? 'active' : ''}" aria-pressed="${state.category === 'all'}" data-category="all">الكل <span>${exactGroups.length}</span></button>
+      ${discoverySections.map(section=>`<button type="button" class="category-tab ${state.category === section.key ? 'active' : ''}" aria-pressed="${state.category === section.key}" data-category="${escapeHtml(section.key)}">${escapeHtml(section.label)} <span>${section.groups.length}</span></button>`).join('')}
+    </nav>` : ''}
+    ${displayedSections.map(section=>{
+      const limit = state.category === 'all' ? 6 : state.visibleCount;
+      return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
+        <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
+        <div class="match-results-grid">${section.groups.slice(0,limit).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null)).join('')}</div>
+        ${section.groups.length > limit ? `<button type="button" class="show-category" data-show-category="${escapeHtml(section.key)}">عرض المزيد من ${escapeHtml(section.label)} (${section.groups.length-limit})</button>` : ''}
+      </section>`;
+    }).join('')}
+    ${!displayedSections.length ? '<div class="empty-state">لا توجد منتجات مطابقة ضمن الفلاتر الحالية.</div>' : ''}
 
+    <details class="selected-comparison" ${state.comparisonOpen ? 'open' : 'hidden'}>
+    <summary>مقارنة عروض المنتج المختار${state.comparisonOpen && featuredOffer ? ' · '+escapeHtml(selectedTitle) : ''}</summary>
     <section class="result-grid comparison-layout">
       <div class="offers-column">
         ${featuredOffer ? `
@@ -1022,6 +1032,8 @@ function renderProduct(product, query) {
       </aside>
     </section>
 
+    </details>
+
     ${additionalResultsSection("نسخ ومنتجات أخرى", relatedGroups.filter(group => !["game","accessory"].includes(describeProduct(group.bestOffer).kind)))}
     ${additionalResultsSection("ألعاب للجهاز", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "game"))}
     ${additionalResultsSection("ملحقات وإكسسوارات", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "accessory"))}
@@ -1032,14 +1044,24 @@ function renderProduct(product, query) {
     </div>
   `;
 
-  $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.selectorSelection = {}; renderProduct(product, query); });
-  $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.selectorSelection = {}; renderProduct(product, query); });
-  $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.selectorSelection = {}; renderProduct(product, query); });
+  els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
+    state.category=button.dataset.category; state.visibleCount=12; state.comparisonOpen=false; renderProduct(product,query);
+  }));
+  els.results.querySelectorAll('.show-category').forEach(button=>button.addEventListener('click',()=>{
+    const sameCategory = state.category === button.dataset.showCategory;
+    state.category=button.dataset.showCategory; state.visibleCount=sameCategory ? state.visibleCount+12 : 12; renderProduct(product,query);
+  }));
+  document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ state.comparisonOpen=event.target.open; });
+  $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
+  $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
+  $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   els.results.querySelectorAll(".match-result-card").forEach((button) => {
     button.addEventListener("click", () => {
       const group = exactGroups.find((item) => item.key === button.dataset.groupKey);
       const offer = group?.bestPriceOffer || group?.bestOffer;
       if (!offer) return;
+      state.comparisonOpen = true;
+      state.selectedGroupKey = group.key;
       const dimensions = offerVariantDimensions(offer);
       state.selectorSelection = {
         modelKey: dimensions.modelKey,
@@ -1121,6 +1143,7 @@ async function runSearch(rawQuery) {
     state.availability = "all"; state.merchant = "all";
     state.variantSelections = {};
     state.selectorSelection = {};
+    state.category = "all"; state.visibleCount = 12; state.comparisonOpen = false; state.selectedGroupKey = null;
   }
   state.query = query;
   saveRecent(query);

@@ -1,4 +1,4 @@
-import { describeProduct, normalizeSearchQuery } from "./search-query.mjs";
+import { describeProduct, normalizeSearchQuery, parseSearchIntent, productCategory, categoryLabel, BRAND_CATEGORY_PRIORITIES } from "./search-query.mjs";
 
 const BUCKET_ORDER = {
   confirmed: 0,
@@ -973,3 +973,20 @@ export const DEMO_CATALOG = [
     ],
   },
 ];
+
+// Keep product identity grouping separate from discovery ordering.
+export function buildDiscoverySections(query, groups = []) {
+  const intent = parseSearchIntent(query);
+  const sections = new Map();
+  for (const group of groups) {
+    const offer = group.bestOffer;
+    if (!offer || (offer.matchConfidence || 0) < .9 || offer.exactMatch !== true) continue;
+    const key = productCategory(offer);
+    if (intent.category && key !== intent.category) continue;
+    if (!sections.has(key)) sections.set(key,{key,label:categoryLabel(key),groups:[]});
+    sections.get(key).groups.push(group);
+  }
+  const priority = intent.discoveryMode === 'brand' ? BRAND_CATEGORY_PRIORITIES[intent.brand] || [] : [];
+  const order = key => priority.includes(key) ? priority.indexOf(key) : key === 'accessory' ? 100 : key === 'other' ? 101 : 50;
+  return [...sections.values()].sort((a,b)=>order(a.key)-order(b.key));
+}

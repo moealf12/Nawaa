@@ -12,7 +12,12 @@ const ALIASES = [
   ["مجدد", "refurbished"], ["مستعمل", "used"], ["جديد", "new"],
   ["اشرطه", "games"], ["العاب", "games"], ["لعبه", "game"],
   ["جهاز", "console"], ["رقمي", "digital"], ["ديجيتال", "digital"], ["اقراص", "disc"], ["سليم", "slim"],
-  ["يد", "controller"], ["يد تحكم", "controller"],
+  ["يد تحكم", "controller"], ["يد", "controller"],
+  ["اتش بي", "hp"], ["ديل", "dell"], ["لينوفو", "lenovo"], ["اسوس", "asus"],
+  ["لابتوب", "laptop"], ["لابتوبات", "laptop"], ["لاب توب", "laptop"], ["حاسوب محمول", "laptop"],
+  ["طابعه", "printer"], ["طابعات", "printer"], ["جوال", "phone"], ["جوالات", "phone"],
+  ["تلفزيون", "tv"], ["تلفزيونات", "tv"], ["شاشه", "monitor"], ["شاشات", "monitor"],
+  ["سماعات", "headphones"], ["سماعه", "headphones"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
 
 export function normalizeSearchQuery(value = "") {
@@ -37,8 +42,57 @@ export function normalizeSearchQuery(value = "") {
     .replace(/\s+/g, " ").trim();
 }
 
+// Editorial category priorities, not measured popularity. Unknown brands use relevance.
+export const BRAND_CATEGORY_PRIORITIES = {
+  hp: ['laptop','printer','desktop','monitor'], dell: ['laptop','desktop','monitor'],
+  lenovo: ['laptop','desktop','tablet','monitor'], asus: ['laptop','desktop','monitor','network'],
+  acer: ['laptop','monitor','desktop'], msi: ['laptop','desktop','monitor'],
+  apple: ['phone','laptop','tablet','watch','audio','desktop'],
+  samsung: ['phone','tv','tablet','monitor','appliance','audio'],
+  sony: ['tv','console','audio','camera','game'], microsoft: ['laptop','console','accessory'],
+  nintendo: ['console','game','accessory'], canon: ['camera','printer'], nikon: ['camera'],
+  epson: ['printer','projector'], brother: ['printer'], dyson: ['vacuum','beauty','appliance'],
+  lg: ['tv','appliance','monitor','audio'], bosch: ['appliance','tool'],
+  logitech: ['accessory','audio'], jbl: ['audio'], bose: ['audio'],
+};
+export const PRODUCT_CATEGORIES = [
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|case|cover|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card)\b/],
+  ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
+  ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
+  ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
+  ['phone','جوالات', /\b(?:phones?|smartphone|iphone|galaxy s\d+|galaxy a\d+|galaxy z|pixel \d+)\b/],
+  ['tablet','أجهزة لوحية', /\b(?:tablets?|ipad|galaxy tab|surface pro)\b/],
+  ['tv','تلفزيونات', /\b(?:tv|television|bravia|oled tv|qled tv)\b/],
+  ['monitor','شاشات', /\b(?:monitors?|display screen)\b/],
+  ['audio','سماعات وصوتيات', /\b(?:headphones?|earphones?|earbuds?|airpods|headset|speaker|soundbar|walkman)\b/],
+  ['watch','ساعات', /\b(?:watch|smartwatch)\b/],
+  ['camera','كاميرات', /\b(?:camera|dslr|mirrorless|eos)\b/],
+  ['vacuum','مكانس', /\b(?:vacuum|hoover|dyson v\d+)\b/],
+  ['beauty','عناية شخصية', /\b(?:airwrap|supersonic|hair dryer|straightener|shaver|trimmer)\b/],
+  ['appliance','أجهزة منزلية', /\b(?:refrigerator|fridge|washer|washing machine|dryer|dishwasher|oven|microwave|air conditioner|purifier|blender|kettle|coffee maker)\b/],
+  ['network','شبكات', /\b(?:router|modem|wifi|wi fi|network switch)\b/],
+  ['projector','بروجكترات', /\bprojector\b/],
+  ['tool','أدوات', /\b(?:drill|saw|screwdriver|power tool)\b/],
+];
+export function productCategory(offer = {}) {
+  const gaming = describeProduct(offer);
+  if (gaming.kind !== 'product') return gaming.kind;
+  const text = normalizeSearchQuery([offer.title,offer.specs?.deviceType,offer.specs?.series].filter(Boolean).join(' ')).replace(/\b(?:backlit|integrated|built in) keyboard\b/g, '');
+  const explicitTypes = ['accessory','printer','desktop'].map(key=>PRODUCT_CATEGORIES.find(([id])=>id===key));
+  return explicitTypes.find(([, , pattern])=>pattern.test(text))?.[0] || PRODUCT_CATEGORIES.find(([, , pattern])=>pattern.test(text))?.[0] || 'other';
+}
+export function categoryLabel(key) {
+  return PRODUCT_CATEGORIES.find(([id])=>id===key)?.[1] || ({console:'أجهزة ألعاب',game:'ألعاب',accessory:'ملحقات وإكسسوارات',other:'منتجات أخرى'})[key] || 'منتجات أخرى';
+}
+
 export function parseSearchIntent(value = "") {
   const normalizedQuery = normalizeSearchQuery(value);
+  const brand = Object.keys(BRAND_CATEGORY_PRIORITIES).find(name => (' '+normalizedQuery+' ').includes(' '+name+' ')) || null;
+  const categoryDefinition = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
+  const kind = queryProductKind(normalizedQuery);
+  const category = kind === 'console' || kind === 'game' ? kind : categoryDefinition?.[0] || (kind === 'accessory' ? 'accessory' : null);
+  const residual = normalizedQuery.replace(categoryDefinition?.[2] || /$^/, ' ').split(' ').filter(token => token && token !== brand);
+  const discoveryMode = !kind && !/\b\d+(?:gb|tb)\b/.test(normalizedQuery) && (residual.length === 0 || (!brand && !category && residual.length === 1)) ? (brand ? 'brand' : category ? 'category' : 'general') : 'specific';
   const condition = normalizedQuery.match(/\b(refurbished|used|new)\b/)?.[1] || null;
   return {
     normalizedQuery,
@@ -47,7 +101,7 @@ export function parseSearchIntent(value = "") {
     storage: normalizedQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
     color: normalizedQuery.match(/\b(?:mist blue|desert titanium|natural titanium|black titanium|white titanium|cosmic orange|deep blue|black|white|lavender|sage|silver|gold|blue|green)\b/)?.[0] || null,
     condition,
-    kind: queryProductKind(normalizedQuery),
+    kind, brand, category, discoveryMode,
   };
 }
 
@@ -97,24 +151,25 @@ const UNREQUESTED_VARIANT_TERMS = [
 export function assessOfferMatch(query, offer) {
   const intent = parseSearchIntent(query);
   const normalizedQuery = intent.providerQuery;
-  const q = normalizedQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
-  const title = normalizeSearchQuery([offer?.title, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
-  if (!q.length || !title) return { exactMatch: false, matchConfidence: 0 };
+  const semanticQuery = normalizedQuery.replace(PRODUCT_CATEGORIES.find(([key]) => key === intent.category)?.[2] || /$^/, " ");
+  const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
+  const title = normalizeSearchQuery([offer?.title, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
+  if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
   const hits = q.filter((token) => titleTokens.has(token)).length;
-  let confidence = hits / q.length;
+  let confidence = q.length ? hits / q.length : 1;
   const description = describeProduct(offer);
-  const kindMismatch = Boolean(intent.kind && intent.kind !== description.kind);
+  const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (intent.category && intent.category !== productCategory(offer)));
   if (kindMismatch) confidence *= 0.2;
 
   const hasPhrase = (text, term) => (" " + text + " ").includes(" " + normalizeSearchQuery(term) + " ");
-  const queryHasAccessoryIntent = ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term));
+  const queryHasAccessoryIntent = intent.category === "accessory" || intent.discoveryMode !== "specific" || ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term));
   const titleHasAccessory = ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.35;
 
   const queryTokens = new Set(q);
-  const hasUnrequestedVariant = UNREQUESTED_VARIANT_TERMS.some(
+  const hasUnrequestedVariant = intent.discoveryMode === "specific" && UNREQUESTED_VARIANT_TERMS.some(
     (term) => titleTokens.has(term) && !queryTokens.has(term)
   );
   if (hasUnrequestedVariant) confidence *= 0.82;

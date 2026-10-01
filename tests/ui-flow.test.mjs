@@ -7,7 +7,7 @@ test("query deep link starts exactly one live search and URL submission requests
   function element(id) {
     if (!elements.has(id)) elements.set(id, { innerHTML: "", textContent: "", value: "", hidden: false,
       events: {}, addEventListener(name, handler) { this.events[name] = handler; }, querySelectorAll() { return []; },
-      classList: { add() {}, remove() {}, toggle() {} }, setAttribute() {}, focus() {},
+      classList: { add() {}, remove() {}, toggle() {} }, setAttribute() {}, focus() {}, scrollIntoView() {},
     });
     return elements.get(id);
   }
@@ -89,4 +89,31 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(html,/ألعاب للجهاز/);
   assert.match(html,/data-image-options=/);
   assert.match(html,/https:\/\/img.example\/digital-2.jpg/);
+  let renderedCards = [];
+  element('#results').querySelectorAll = selector => {
+    if (selector !== '.match-result-card') return [];
+    renderedCards = [...element('#results').innerHTML.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;}}));
+    return renderedCards;
+  };
+  globalThis.requestAnimationFrame = callback => callback();
+  const hpOffers = [
+    {...offer,title:'HP USB Mouse',productPrice:20,specs:{brand:'HP'}},
+    {...offer,title:'HP LaserJet Printer',productPrice:700,specs:{brand:'HP'}},
+    {...offer,title:'HP Pavilion Laptop',productPrice:3000,specs:{brand:'HP'}},
+  ].map(item=>({...item,...assessOfferMatch('hp',item)}));
+  globalThis.fetch=async url=>({ok:true,text:async()=>JSON.stringify(String(url).includes('/health')?{ok:true}:{offers:hpOffers,providers:[]})});
+  element('#searchInput').value='hp';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  const hpHtml=element('#results').innerHTML;
+  assert.match(hpHtml,/data-category="laptop"/);
+  assert.ok(hpHtml.indexOf('HP Pavilion Laptop') < hpHtml.indexOf('HP USB Mouse'),'brand discovery must not lead with a cheap mouse');
+  assert.match(hpHtml,/<details class="selected-comparison" hidden>/, 'comparison is closed until the customer selects a card');
+  assert.doesNotMatch(hpHtml,/نسخة مختلفة عن الموديل المطلوب/);
+  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click();
+  assert.match(element('#results').innerHTML,/<details class="selected-comparison" open>/);
+  assert.match(element('#results').innerHTML, /المنتج المختار[\s\S]*HP Pavilion Laptop/);
+  assert.doesNotMatch(element('#results').innerHTML, /data-dimension="modelKey"/, 'selected product comparison must not offer unrelated HP products as model variants');
+
+
 });
