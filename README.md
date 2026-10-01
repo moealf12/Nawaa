@@ -21,12 +21,26 @@ These adapters are currently enabled without extra paid APIs:
 - eXtra Saudi — Unbxd site-search adapter
 - Jarir Saudi — Constructor site-search adapter with HTML fallback
 - Sharaf DG Saudi — Algolia catalog adapter
+- Swarovski Saudi — direct official storefront search adapter
 
 ### Implemented but gated / not active
+- Amazon Creators API — official catalog adapter supports SA, AE, US, CA, UK, DE, FR, IT, ES, JP, IN, SG, AU and EG; requires Creators API credentials plus a Partner Tag for each enabled marketplace
+- Brave Web Discovery — global product-page discovery layer; discovered pages become offers only after NAWAA verifies structured product/price data on the product page
 - Noon Saudi — adapter exists; disabled until reliable Saudi-safe egress is available
 - Carrefour KSA — adapter exists; disabled until reliable free egress is available
 - eBay — official API adapter exists; requires approved credentials
 - Shopify — adapter exists; requires configured store list
+
+### Federated universal search
+NAWAA does not trust search-engine snippets as prices. Search is layered:
+
+1. Direct merchant/marketplace APIs and catalog adapters.
+2. Official Amazon Creators API when credentials are configured.
+3. Global web discovery to find additional product pages across stores such as SHEIN, AliExpress, Temu, iHerb, fashion retailers and specialist stores.
+4. Every discovered URL must pass the product-page resolver and expose structured price data before it becomes a comparable offer.
+5. All candidates are scored against the original customer query even when a broader fallback query was needed to discover them.
+
+This keeps broad coverage separate from product identity and price integrity.
 
 ### Search intelligence implemented
 - Query normalization and exact/probable match confidence
@@ -97,3 +111,17 @@ GitHub Actions also syntax-checks browser modules and all active/gated provider 
 - Quote buttons prefill the original Site's request form. They never submit an order automatically.
 - Search history storage is optional; blocked browser storage does not prevent search.
 - `npm test` includes regression and UI-controller integration checks.
+
+
+### Optional production environment variables
+
+Global discovery:
+- `BRAVE_SEARCH_API_KEY`
+
+Amazon Creators API:
+- `AMAZON_CREATORS_CLIENT_ID`
+- `AMAZON_CREATORS_CLIENT_SECRET`
+- `AMAZON_CREATORS_VERSION` (3.1, 3.2 or 3.3 according to the issued credential)
+- Marketplace Partner Tags as needed: `AMAZON_PARTNER_TAG_SA`, `AMAZON_PARTNER_TAG_AE`, `AMAZON_PARTNER_TAG_US`, `AMAZON_PARTNER_TAG_CA`, `AMAZON_PARTNER_TAG_UK`, `AMAZON_PARTNER_TAG_DE`, `AMAZON_PARTNER_TAG_FR`, `AMAZON_PARTNER_TAG_IT`, `AMAZON_PARTNER_TAG_ES`, `AMAZON_PARTNER_TAG_JP`, `AMAZON_PARTNER_TAG_IN`, `AMAZON_PARTNER_TAG_SG`, `AMAZON_PARTNER_TAG_AU`, `AMAZON_PARTNER_TAG_EG`.
+
+No credential is ever exposed to the browser.
