@@ -17,6 +17,7 @@ import { searchJarir } from "./providers/jarir.mjs";
 import { noonConfigured, searchNoon } from "./providers/noon.mjs";
 import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs";
 import { searchSharafDG } from "./providers/sharafdg.mjs";
+import { searchSwarovskiSaudi } from "./providers/swarovski.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers } from "../src/search-query.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 
@@ -65,7 +66,7 @@ async function serveStaticFile(req, res, pathname) {
 }
 
 function configuredProviders() {
-  return ["extra-unbxd", "jarir-direct", "sharafdg-algolia",
+  return ["extra-unbxd", "jarir-direct", "sharafdg-algolia", "swarovski-direct",
     ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
     ...(noonConfigured() ? ["noon-catalog"] : []),
     ...(ebayConfigured() ? ["ebay"] : []),
@@ -78,7 +79,7 @@ function currentSources() {
 async function searchAll(query) {
   query = normalizeSearchQuery(query);
   const providerQuery = parseSearchIntent(query).providerQuery;
-  const tasks = [searchExtraUnbxd(providerQuery), searchJarir(providerQuery), searchSharafDG(providerQuery)];
+  const tasks = [searchExtraUnbxd(providerQuery), searchJarir(providerQuery), searchSharafDG(providerQuery), searchSwarovskiSaudi(providerQuery)];
   if (carrefourConfigured()) tasks.push(searchCarrefour(providerQuery));
   if (noonConfigured()) tasks.push(searchNoon(providerQuery));
   if (ebayConfigured()) tasks.push(searchEbayWorldwide(providerQuery));
@@ -183,6 +184,7 @@ const server = http.createServer(async (req, res) => {
         extra: true,
         jarir: true,
         sharafdg: true,
+        swarovski: true,
         carrefour: carrefourConfigured(),
         noon: noonConfigured(),
         ebay: ebayConfigured(),
