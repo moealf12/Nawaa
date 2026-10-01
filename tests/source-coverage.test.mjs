@@ -7,7 +7,6 @@ test('registry separates configured connectors, disabled adapters and discovery 
  const registry=buildSourceRegistry({configuredProviders:['extra-unbxd','jarir-direct','sharafdg-algolia','swarovski-direct','amazon-creators:amazon-sa','ebay']});
  assert.equal(registry.find(s=>s.id==='ebay').status,'configured');
  assert.equal(registry.find(s=>s.id==='noon-sa').status,'disabled');
- assert.equal(registry.find(s=>s.id==='amazon-sa').status,'candidate');
  assert.equal(registry.find(s=>s.id==='sharafdg-sa').countryCode,'SA');
  assert.equal(registry.find(s=>s.id==='swarovski-sa').status,'configured');
  assert.equal(registry.find(s=>s.id==='amazon-sa').status,'configured');
