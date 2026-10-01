@@ -5,7 +5,7 @@ const USER_AGENT = "Mozilla/5.0 (compatible; NAWAA-Free-Discovery/1.0; +https://
 
 const STORES = [
   {
-    id:"shein-sa", name:"SHEIN", countryCode:"SA", countryNameAr:"السعودية", categories:["clothing","shoes","bag","beauty","jewelry","home","toy"],
+    id:"shein-sa", name:"SHEIN", countryCode:"SA", countryNameAr:"السعودية", brands:["shein"], categories:["clothing","shoes","bag","beauty","jewelry","home","toy"],
     search:(q)=>"https://ar.shein.com/pdsearch/"+encodeURIComponent(q).replace(/%20/g,"-")+"/",
     productPath:/-p-\d+\.html(?:[?#]|$)/i,
   },
@@ -25,22 +25,22 @@ const STORES = [
     productPath:/\/pr\/[^?#]+\/\d+(?:[/?#]|$)/i,
   },
   {
-    id:"ikea-sa", name:"IKEA Saudi", countryCode:"SA", countryNameAr:"السعودية", categories:["furniture","home","kitchen"],
+    id:"ikea-sa", name:"IKEA Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["ikea"], categories:["furniture","home","kitchen","office"],
     search:(q)=>"https://www.ikea.com/sa/en/search/?q="+encodeURIComponent(q),
     productPath:/\/p\/[^?#]+-\d+(?:[/?#]|$)/i,
   },
   {
-    id:"asos-global", name:"ASOS", countryCode:"GB", countryNameAr:"بريطانيا", categories:["clothing","shoes","bag","beauty"],
+    id:"asos-global", name:"ASOS", countryCode:"GB", countryNameAr:"بريطانيا", brands:["asos"], categories:["clothing","shoes","bag","beauty"],
     search:(q)=>"https://www.asos.com/search/?q="+encodeURIComponent(q),
     productPath:/\/prd\/\d+(?:[/?#]|$)/i,
   },
   {
-    id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", categories:["clothing","shoes","bag","jewelry","watch"],
+    id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", brands:["farfetch"], categories:["clothing","shoes","bag","jewelry","watch"],
     search:(q)=>"https://www.farfetch.com/sa/shopping/items.aspx?q="+encodeURIComponent(q),
     productPath:/\/shopping\/[^?#]+\/item-\d+\.aspx(?:[?#]|$)/i,
   },
   {
-    id:"etsy-global", name:"Etsy", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["jewelry","clothing","bag","home","toy","other"],
+    id:"etsy-global", name:"Etsy", countryCode:"US", countryNameAr:"الولايات المتحدة", brands:["etsy"], categories:["jewelry","clothing","bag","home","furniture","toy","office","other"],
     search:(q)=>"https://www.etsy.com/search?q="+encodeURIComponent(q),
     productPath:/\/listing\/\d+(?:[/?#]|$)/i,
   },
@@ -65,17 +65,17 @@ const STORES = [
     productPath:/\/site\/[^?#]+\/\d+\.p(?:[?#]|$)/i,
   },
   {
-    id:"adidas-sa", name:"adidas Saudi", countryCode:"SA", countryNameAr:"السعودية", categories:["clothing","shoes","sports","bag"],
+    id:"adidas-sa", name:"adidas Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["adidas"], categories:["clothing","shoes","sports","bag"],
     search:(q)=>"https://www.adidas.sa/en/search?q="+encodeURIComponent(q),
     productPath:/\/[A-Z0-9_-]+\.html(?:[?#]|$)/i,
   },
   {
-    id:"nike-sa", name:"Nike Saudi", countryCode:"SA", countryNameAr:"السعودية", categories:["clothing","shoes","sports","bag"],
+    id:"nike-sa", name:"Nike Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["nike"], categories:["clothing","shoes","sports","bag"],
     search:(q)=>"https://www.nike.sa/en/search?q="+encodeURIComponent(q),
     productPath:/\/[^?#]+(?:[?#].*)?$/i,
   },
   {
-    id:"sephora-sa", name:"Sephora Saudi", countryCode:"SA", countryNameAr:"السعودية", categories:["beauty","perfume"],
+    id:"sephora-sa", name:"Sephora Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["sephora"], categories:["beauty","perfume"],
     search:(q)=>"https://www.sephora.me/sa-en/search?q="+encodeURIComponent(q),
     productPath:/\/p\/[^?#]+(?:[?#]|$)/i,
   },
@@ -145,13 +145,76 @@ async function fetchText(url) {
   return text;
 }
 
-export function selectedStores(query, maxStores = 8) {
-  const intent = parseSearchIntent(query);
+const GENERAL_STORE_IDS = new Set(["aliexpress-cn","temu-global","walmart-us"]);
+const CATEGORY_NEIGHBORS = {
+  phone:["tablet","accessory"], tablet:["phone","laptop","accessory"], laptop:["desktop","monitor","accessory"],
+  desktop:["laptop","monitor","accessory"], monitor:["desktop","laptop","accessory"], audio:["accessory","phone"],
+  camera:["accessory"], tv:["appliance","audio"], console:["game","accessory"], game:["console","accessory"],
+  clothing:["shoes","bag"], shoes:["clothing","sports","bag"], bag:["clothing","shoes"],
+  beauty:["perfume"], perfume:["beauty"], jewelry:["watch"], watch:["jewelry"],
+  furniture:["home","kitchen","office"], home:["furniture","kitchen"], kitchen:["home","furniture"],
+  sports:["shoes","clothing"], toy:["baby","home"], baby:["toy"], office:["home","furniture"],
+  grocery:["beauty","baby"], pet:["grocery"], appliance:["home","kitchen"], other:[],
+};
+
+function routeScore(store, intent, normalizedQuery) {
+  const reasons = [];
+  let score = 0;
   const category = intent.category || "other";
-  const primary = STORES.filter((store) => store.categories.includes(category));
-  const broad = STORES.filter((store) => store.categories.includes("*"));
-  const fallback = STORES.filter((store) => !primary.includes(store) && !broad.includes(store));
-  return [...primary, ...broad, ...fallback].slice(0, Math.max(1, Math.min(STORES.length, maxStores)));
+  const exactCategory = store.categories.includes(category);
+  const neighbors = new Set(CATEGORY_NEIGHBORS[category] || []);
+  const adjacentCategory = store.categories.some((item) => neighbors.has(item));
+  const broad = store.categories.includes("*");
+  const explicitBrand = (store.brands || []).some((brand) => (" " + normalizedQuery + " ").includes(" " + brand + " "));
+
+  if (explicitBrand) { score += 120; reasons.push("brand"); }
+  if (exactCategory) { score += 65; reasons.push("category"); }
+  else if (adjacentCategory) { score += 24; reasons.push("adjacent_category"); }
+  if (broad) { score += 32; reasons.push("general_marketplace"); }
+  if (store.countryCode === "SA") { score += 18; reasons.push("saudi_first"); }
+  if (GENERAL_STORE_IDS.has(store.id)) score += 8;
+
+  // Unknown/general queries should still have useful broad-market coverage,
+  // but specialist stores are not queried just to fill a quota.
+  if (category === "other" && !explicitBrand) {
+    if (broad) score += 30;
+    else if (store.categories.includes("other")) { score += 12; reasons.push("general_specialist"); }
+  }
+
+  return { score, reasons, exactCategory, explicitBrand, broad };
+}
+
+export function routeFreeStorefronts(query, maxStores = 8) {
+  const normalizedQuery = normalizeSearchQuery(query);
+  const intent = parseSearchIntent(normalizedQuery);
+  const cap = Math.max(1, Math.min(10, Number(maxStores) || 8));
+  const routed = STORES
+    .map((store) => ({ store, ...routeScore(store, intent, normalizedQuery) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a,b) =>
+      b.score - a.score ||
+      Number(b.store.countryCode === "SA") - Number(a.store.countryCode === "SA") ||
+      a.store.id.localeCompare(b.store.id)
+    );
+
+  // For a recognized category, require specialist/broad relevance. For an unknown
+  // category, keep only general stores and stores explicitly named by the shopper.
+  const relevant = routed.filter((entry) =>
+    intent.category
+      ? (entry.exactCategory || entry.broad || entry.explicitBrand || entry.reasons.includes("adjacent_category"))
+      : (entry.broad || entry.explicitBrand || entry.reasons.includes("general_specialist"))
+  );
+
+  return relevant.slice(0, cap).map((entry, index) => ({
+    ...entry,
+    rank:index + 1,
+    category:intent.category || null,
+    brand:intent.brand || null,
+  }));
+}
+
+export function selectedStores(query, maxStores = 8) {
+  return routeFreeStorefronts(query, maxStores).map((entry) => entry.store);
 }
 
 async function searchStore(store, query, perStore = 3) {
@@ -193,7 +256,8 @@ export function configuredFreeStorefronts() {
 }
 
 export async function searchFreeStorefronts(query, options = {}) {
-  const stores = selectedStores(query, Number(options.maxStores || 8));
+  const routes = routeFreeStorefronts(query, Number(options.maxStores || 8));
+  const stores = routes.map((entry) => entry.store);
   const perStore = Math.max(1, Math.min(5, Number(options.perStore || 3)));
   const settled = await Promise.allSettled(stores.map((store) => searchStore(store, query, perStore)));
   const offers = [];
@@ -204,11 +268,11 @@ export async function searchFreeStorefronts(query, options = {}) {
     const store = stores[index];
     if (result.status === "fulfilled") {
       offers.push(...result.value.offers);
-      diagnostics.push({ store:store.id, candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
+      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
       if (!result.value.offers.length) errors.push({ market:store.id, error:"No verified structured-price product pages found" });
     } else {
       errors.push({ market:store.id, error:result.reason?.message || String(result.reason) });
-      diagnostics.push({ store:store.id, candidates:0, verifiedOffers:0, failures:1 });
+      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], candidates:0, verifiedOffers:0, failures:1 });
     }
   });
 
