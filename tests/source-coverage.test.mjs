@@ -4,13 +4,15 @@ import {buildSourceRegistry,sourceCoverageSummary} from '../src/source-registry.
 import {selectDiverseOffers} from '../server/offer-selection.mjs';
 
 test('registry separates configured connectors, disabled adapters and discovery targets',()=>{
- const registry=buildSourceRegistry({configuredProviders:['extra-unbxd','jarir-direct','sharafdg-algolia','swarovski-direct','ebay']});
+ const registry=buildSourceRegistry({configuredProviders:['extra-unbxd','jarir-direct','sharafdg-algolia','swarovski-direct','amazon-creators:amazon-sa','ebay']});
  assert.equal(registry.find(s=>s.id==='ebay').status,'configured');
  assert.equal(registry.find(s=>s.id==='noon-sa').status,'disabled');
  assert.equal(registry.find(s=>s.id==='amazon-sa').status,'candidate');
  assert.equal(registry.find(s=>s.id==='sharafdg-sa').countryCode,'SA');
  assert.equal(registry.find(s=>s.id==='swarovski-sa').status,'configured');
- const summary=sourceCoverageSummary(registry);assert.equal(summary.configuredSources,5);assert.equal(summary.disabledSources,2);
+ assert.equal(registry.find(s=>s.id==='amazon-sa').status,'configured');
+ assert.equal(registry.find(s=>s.id==='amazon-us').status,'disabled');
+ const summary=sourceCoverageSummary(registry);assert.equal(summary.configuredSources,6);assert.equal(summary.disabledSources,15);
 });
 test('configured Shopify merchants appear independently without exposing settings',()=>{
  const registry=buildSourceRegistry({configuredProviders:['shopify'],shopifyStores:[{id:'fixture',name:'Fixture',countryCode:'GB',currency:'GBP',baseUrl:'https://fixture.example',secret:'never-expose'}]});
