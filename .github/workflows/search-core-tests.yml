@@ -29,6 +29,8 @@ on:
       - "server/providers/carrefour.mjs"
       - "server/providers/sharafdg.mjs"
       - "server/providers/swarovski.mjs"
+      - "server/providers/amazon-creators.mjs"
+      - "server/providers/brave-discovery.mjs"
       - "server/providers/saudi-retailers.mjs"
       - "server/url-resolver.mjs"
       - "tests/providers.test.mjs"
@@ -74,5 +76,7 @@ jobs:
           node --check server/providers/carrefour.mjs
           node --check server/providers/sharafdg.mjs
           node --check server/providers/swarovski.mjs
+          node --check server/providers/amazon-creators.mjs
+          node --check server/providers/brave-discovery.mjs
           node --check server/providers/saudi-retailers.mjs
           node --check server/url-resolver.mjs
