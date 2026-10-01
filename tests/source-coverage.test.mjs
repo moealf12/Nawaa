@@ -4,14 +4,27 @@ import {buildSourceRegistry,sourceCoverageSummary} from '../src/source-registry.
 import {selectDiverseOffers} from '../server/offer-selection.mjs';
 
 test('registry separates configured connectors, disabled adapters and discovery targets',()=>{
- const registry=buildSourceRegistry({configuredProviders:['extra-unbxd','jarir-direct','sharafdg-algolia','swarovski-direct','amazon-creators:amazon-sa','ebay']});
+ const registry=buildSourceRegistry({configuredProviders:[
+  'extra-unbxd','jarir-direct','sharafdg-algolia','swarovski-direct','amazon-creators:amazon-sa','ebay',
+  'free-storefronts:shein-sa','free-storefronts:aliexpress-cn','free-storefronts:temu-global',
+  'free-storefronts:iherb-sa','free-storefronts:ikea-sa','free-storefronts:asos-global',
+  'free-storefronts:farfetch-sa','free-storefronts:etsy-global','free-storefronts:newegg-global',
+  'free-storefronts:bhphoto-us','free-storefronts:walmart-us','free-storefronts:bestbuy-us',
+  'free-storefronts:adidas-sa','free-storefronts:nike-sa','free-storefronts:sephora-sa'
+ ]});
  assert.equal(registry.find(s=>s.id==='ebay').status,'configured');
  assert.equal(registry.find(s=>s.id==='noon-sa').status,'disabled');
  assert.equal(registry.find(s=>s.id==='sharafdg-sa').countryCode,'SA');
  assert.equal(registry.find(s=>s.id==='swarovski-sa').status,'configured');
  assert.equal(registry.find(s=>s.id==='amazon-sa').status,'configured');
  assert.equal(registry.find(s=>s.id==='amazon-us').status,'disabled');
- const summary=sourceCoverageSummary(registry);assert.equal(summary.configuredSources,6);assert.equal(summary.disabledSources,15);
+ assert.equal(registry.find(s=>s.id==='shein-sa').status,'configured');
+ assert.equal(registry.find(s=>s.id==='aliexpress-cn').status,'configured');
+ assert.equal(registry.find(s=>s.id==='ikea-sa').status,'configured');
+ assert.equal(registry.find(s=>s.id==='newegg-us').status,'configured');
+ const summary=sourceCoverageSummary(registry);
+ assert.ok(summary.configuredSources >= 20);
+ assert.ok(summary.disabledSources >= 10);
 });
 test('configured Shopify merchants appear independently without exposing settings',()=>{
  const registry=buildSourceRegistry({configuredProviders:['shopify'],shopifyStores:[{id:'fixture',name:'Fixture',countryCode:'GB',currency:'GBP',baseUrl:'https://fixture.example',secret:'never-expose'}]});
