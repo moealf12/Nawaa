@@ -19,6 +19,11 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "adidas-sa", name: "adidas Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
   { id: "nike-sa", name: "Nike Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
   { id: "sephora-sa", name: "Sephora Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "namshi-sa", name: "Namshi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "centrepoint-sa", name: "Centrepoint", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "maxfashion-sa", name: "Max Fashion", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "decathlon-sa", name: "Decathlon Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "niceone-sa", name: "Nice One", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
 
   // North America
   { id: "amazon-us", name: "Amazon.com", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "offer_dependent" },
@@ -116,6 +121,9 @@ const SOURCE_ADAPTERS = {
   "walmart-us": "free-storefronts:walmart-us", "bestbuy-us": "free-storefronts:bestbuy-us",
   "adidas-sa": "free-storefronts:adidas-sa", "nike-sa": "free-storefronts:nike-sa",
   "sephora-sa": "free-storefronts:sephora-sa",
+  "namshi-sa": "free-storefronts:namshi-sa", "centrepoint-sa": "free-storefronts:centrepoint-sa",
+  "maxfashion-sa": "free-storefronts:maxfashion-sa", "decathlon-sa": "free-storefronts:decathlon-sa",
+  "niceone-sa": "free-storefronts:niceone-sa",
 };
 
 // Configured means enabled in the running service, not guaranteed live results.
