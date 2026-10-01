@@ -28,6 +28,7 @@ on:
       - "server/providers/noon.mjs"
       - "server/providers/carrefour.mjs"
       - "server/providers/sharafdg.mjs"
+      - "server/providers/swarovski.mjs"
       - "server/providers/saudi-retailers.mjs"
       - "server/url-resolver.mjs"
       - "tests/providers.test.mjs"
@@ -72,5 +73,6 @@ jobs:
           node --check server/providers/noon.mjs
           node --check server/providers/carrefour.mjs
           node --check server/providers/sharafdg.mjs
+          node --check server/providers/swarovski.mjs
           node --check server/providers/saudi-retailers.mjs
           node --check server/url-resolver.mjs
