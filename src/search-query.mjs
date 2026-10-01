@@ -8,6 +8,8 @@ const ALIASES = [
   ["سواروفسكي", "swarovski"], ["سوارفسكي", "swarovski"],
   ["شي ان", "shein"], ["شيين", "shein"], ["نايك", "nike"], ["اديداس", "adidas"],
   ["زارا", "zara"], ["اتش اند ام", "hm"], ["ايكيا", "ikea"], ["سيفورا", "sephora"],
+  ["نمشي", "namshi"], ["سنتر بوينت", "centrepoint"], ["سنتر بوينتس", "centrepoint"],
+  ["ماكس فاشن", "maxfashion"], ["ديكاتلون", "decathlon"], ["نايس ون", "niceone"],
   ["ايسر", "acer"], ["ايسير", "acer"], ["ام اس اي", "msi"],
   ["مايكروسوفت", "microsoft"], ["نينتندو", "nintendo"],
   ["كانون", "canon"], ["نيكون", "nikon"], ["ابسون", "epson"], ["براذر", "brother"],
@@ -86,6 +88,11 @@ export const BRAND_CATEGORY_PRIORITIES = {
   nike: ['shoes','clothing','sports'], adidas: ['shoes','clothing','sports'],
   zara: ['clothing','shoes','bag'], hm: ['clothing','home'], ikea: ['furniture','home','kitchen'],
   sephora: ['beauty','perfume'],
+  namshi: ['clothing','shoes','bag','beauty','sports'],
+  centrepoint: ['clothing','shoes','bag','home','toy','baby'],
+  maxfashion: ['clothing','shoes','bag','baby','home'],
+  decathlon: ['sports','shoes','clothing','bag'],
+  niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
   ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|case|cover|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card)\b/],
