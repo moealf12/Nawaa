@@ -98,7 +98,7 @@ test("query deep link starts exactly one live search and URL submission requests
   globalThis.requestAnimationFrame = callback => callback();
   const hpOffers = [
     {...offer,title:'HP USB Mouse',productPrice:20,specs:{brand:'HP'}},
-    {...offer,title:'HP LaserJet Printer',productPrice:700,specs:{brand:'HP'}},
+    {...offer,title:'HP SmartTank 580 Printer',productPrice:700,specs:{brand:'HP',deviceType:'SmartTank'}},
     {...offer,title:'HP Pavilion Laptop',productPrice:3000,specs:{brand:'HP'}},
   ].map(item=>({...item,...assessOfferMatch('hp',item)}));
   globalThis.fetch=async url=>({ok:true,text:async()=>JSON.stringify(String(url).includes('/health')?{ok:true}:{offers:hpOffers,providers:[]})});
@@ -107,6 +107,7 @@ test("query deep link starts exactly one live search and URL submission requests
   await new Promise(resolve=>setImmediate(resolve));
   const hpHtml=element('#results').innerHTML;
   assert.match(hpHtml,/data-category="laptop"/);
+  assert.match(hpHtml.split('<details class="selected-comparison"')[0], /<strong>HP SmartTank 580 Printer<\/strong>/, 'cards must retain the product name when merchant metadata only contains a generic family');
   assert.ok(hpHtml.indexOf('HP Pavilion Laptop') < hpHtml.indexOf('HP USB Mouse'),'brand discovery must not lead with a cheap mouse');
   assert.match(hpHtml,/<details class="selected-comparison" hidden>/, 'comparison is closed until the customer selects a card');
   assert.doesNotMatch(hpHtml,/نسخة مختلفة عن الموديل المطلوب/);

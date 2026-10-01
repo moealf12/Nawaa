@@ -787,6 +787,7 @@ function productDisplayTitle(offer) {
   if (description.kind === "console") return [description.platform.toUpperCase(), description.form,
     description.edition === "digital" ? "نسخة رقمية" : description.edition === "disc" ? "نسخة الأقراص" : "",
     description.storage?.toUpperCase(), description.isBundle ? "حزمة مع إضافات" : ""].filter(Boolean).join(" · ");
+  if (productCategory(offer) !== "phone") return offer.title || specs.series || specs.deviceType || "المنتج";
   return [specs.deviceType || specs.series || offer.title, specs.storage, specs.color].filter(Boolean).join(" · ");
 }
 
