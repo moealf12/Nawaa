@@ -105,3 +105,14 @@ test('broad retail Arabic queries map to universal commerce categories',()=>{
   assert.equal(query.parseSearchIntent('مواد غذائية').category,'grocery');
 });
 
+test('Saudi retail aliases route to canonical brands',()=>{
+  assert.equal(query.normalizeSearchQuery('نمشي'),'namshi');
+  assert.equal(query.normalizeSearchQuery('سنتر بوينت'),'centrepoint');
+  assert.equal(query.normalizeSearchQuery('ماكس فاشن'),'maxfashion');
+  assert.equal(query.normalizeSearchQuery('ديكاتلون'),'decathlon');
+  assert.equal(query.normalizeSearchQuery('نايس ون'),'niceone');
+  assert.equal(query.parseSearchIntent('نمشي فستان').brand,'namshi');
+  assert.equal(query.parseSearchIntent('ديكاتلون احذية').brand,'decathlon');
+  assert.equal(query.parseSearchIntent('نايس ون عطر').brand,'niceone');
+});
+
