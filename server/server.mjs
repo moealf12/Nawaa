@@ -17,8 +17,8 @@ import { searchJarir } from "./providers/jarir.mjs";
 import { noonConfigured, searchNoon } from "./providers/noon.mjs";
 import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs";
 import { searchSharafDG } from "./providers/sharafdg.mjs";
-import { searchSwarovskiSaudi } from "./providers/swarovski.mjs";
-import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers } from "../src/search-query.mjs";
+import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarovski.mjs";
+import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
@@ -76,43 +76,58 @@ function currentSources() {
   return buildSourceRegistry({configuredProviders:configuredProviders(),shopifyStores:configuredShopifyStores()});
 }
 
-async function searchAll(query) {
-  query = normalizeSearchQuery(query);
-  const providerQuery = parseSearchIntent(query).providerQuery;
-  const tasks = [searchExtraUnbxd(providerQuery), searchJarir(providerQuery), searchSharafDG(providerQuery), searchSwarovskiSaudi(providerQuery)];
+function providerTasks(providerQuery) {
+  const tasks = [searchExtraUnbxd(providerQuery), searchJarir(providerQuery), searchSharafDG(providerQuery)];
+  if (swarovskiSaudiEligible(providerQuery)) tasks.push(searchSwarovskiSaudi(providerQuery));
   if (carrefourConfigured()) tasks.push(searchCarrefour(providerQuery));
   if (noonConfigured()) tasks.push(searchNoon(providerQuery));
   if (ebayConfigured()) tasks.push(searchEbayWorldwide(providerQuery));
   if (shopifyConfigured()) tasks.push(searchConfiguredShopifyStores(providerQuery));
+  return tasks;
+}
 
-  if (!tasks.length) {
-    return {
-      providersConfigured: [],
-      providers: [],
-      offers: [],
-      errors: [{
-        provider: "system",
-        error: "No live providers configured yet. Configure eBay credentials and/or Shopify stores.",
-      }],
-    };
-  }
-
-  const settled = await Promise.allSettled(tasks);
+async function runProviderPass(providerQuery, pass = "primary") {
+  const settled = await Promise.allSettled(providerTasks(providerQuery));
   const providers = [];
   const errors = [];
-  let offers = [];
+  const offers = [];
 
   for (const result of settled) {
     if (result.status === "fulfilled") {
       providers.push({
         provider: result.value.provider,
         ok: result.value.ok,
+        pass,
+        query: providerQuery,
         searchedMarkets: result.value.searchedMarkets || result.value.searchedStores || [],
       });
       offers.push(...(result.value.offers || []));
-      errors.push(...(result.value.errors || []).map((e) => ({ provider: result.value.provider, ...e })));
+      errors.push(...(result.value.errors || []).map((e) => ({ provider: result.value.provider, pass, ...e })));
     } else {
-      errors.push({ provider: "unknown", error: result.reason?.message || String(result.reason) });
+      errors.push({ provider: "unknown", pass, error: result.reason?.message || String(result.reason) });
+    }
+  }
+
+  return { providers, errors, offers };
+}
+
+async function searchAll(query) {
+  query = normalizeSearchQuery(query);
+  const providerQuery = parseSearchIntent(query).providerQuery;
+
+  const primary = await runProviderPass(providerQuery, "primary");
+  let providers = primary.providers;
+  let errors = primary.errors;
+  let offers = primary.offers;
+  let fallbackQuery = null;
+
+  if (!offers.length) {
+    fallbackQuery = buildProviderFallbackQueries(query)[0] || null;
+    if (fallbackQuery) {
+      const fallback = await runProviderPass(fallbackQuery, "fallback");
+      providers = providers.concat(fallback.providers);
+      errors = errors.concat(fallback.errors);
+      offers = offers.concat(fallback.offers);
     }
   }
 
@@ -132,9 +147,11 @@ async function searchAll(query) {
       availableOffers: offers.length,
       returnedMerchants: new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated: selectedOffers.length < offers.length,
+      fallbackUsed: Boolean(fallbackQuery),
     },
     providers,
     normalizedQuery: query,
+    fallbackQuery,
     offers: selectedOffers,
     errors,
   };
