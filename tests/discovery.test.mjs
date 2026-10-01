@@ -93,3 +93,15 @@ test('zero-result fallback broadens provider queries while preserving the origin
   assert.deepEqual(query.buildProviderFallbackQueries('سواروفسكي'),[]);
 });
 
+test('broad retail Arabic queries map to universal commerce categories',()=>{
+  assert.equal(query.normalizeSearchQuery('فستان شي ان'),'dress shein');
+  assert.equal(query.parseSearchIntent('فستان شي ان').brand,'shein');
+  assert.equal(query.parseSearchIntent('فستان شي ان').category,'clothing');
+  assert.equal(query.normalizeSearchQuery('العاب اطفال'),'toys');
+  assert.equal(query.parseSearchIntent('العاب اطفال').category,'toy');
+  assert.equal(query.parseSearchIntent('عطر').category,'perfume');
+  assert.equal(query.parseSearchIntent('شنطة').category,'bag');
+  assert.equal(query.parseSearchIntent('اثاث').category,'furniture');
+  assert.equal(query.parseSearchIntent('مواد غذائية').category,'grocery');
+});
+
