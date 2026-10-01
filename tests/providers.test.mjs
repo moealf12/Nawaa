@@ -333,7 +333,9 @@ assert.ok(!laptopRoutes.some((route) => route.store.id === "sephora-sa"));
 assert.ok(laptopRoutes.length <= 8);
 
 const perfumeRoutes = routeFreeStorefronts("عطر", 8);
-assert.equal(perfumeRoutes[0].store.id, "sephora-sa");
+assert.ok(["sephora-sa","niceone-sa"].includes(perfumeRoutes[0].store.id));
+assert.ok(perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
+assert.ok(perfumeRoutes.some((route) => route.store.id === "niceone-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "aliexpress-cn"));
 assert.ok(!perfumeRoutes.some((route) => route.store.id === "newegg-global"));
 
@@ -342,5 +344,47 @@ assert.ok(unknownRoutes.length >= 3);
 assert.ok(unknownRoutes.every((route) =>
   route.store.categories.includes("*") || route.store.categories.includes("other")
 ));
+
+const namshiRoute = routeFreeStorefronts("نمشي فستان", 8);
+assert.equal(namshiRoute[0].store.id, "namshi-sa");
+assert.ok(namshiRoute[0].reasons.includes("brand"));
+
+const decathlonRoute = routeFreeStorefronts("ديكاتلون running shoes", 8);
+assert.equal(decathlonRoute[0].store.id, "decathlon-sa");
+assert.ok(decathlonRoute[0].reasons.includes("brand"));
+
+const niceOneRoute = routeFreeStorefronts("نايس ون عطر", 8);
+assert.equal(niceOneRoute[0].store.id, "niceone-sa");
+assert.ok(niceOneRoute[0].reasons.includes("brand"));
+
+const centrepointLinks = extractProductLinks(
+  '<a href="/sa/en/buy-nike-mens-running-shoes/p/NKHJ9198-004">Nike Running Shoes</a>',
+  "https://www.centrepointstores.com/sa/en/search?q=nike",
+  { productPath:/\/sa\/en\/(?:buy-[^?#]+\/p\/[^/?#]+|p\/[^/?#]+)(?:[/?#]|$)/i },
+  "nike running shoes", 5
+);
+assert.equal(centrepointLinks.length, 1);
+
+const decathlonLinks = extractProductLinks(
+  '<a href="/products/men-s-jogflow-100-1-running-shoes?variant=123">Running Shoes</a>',
+  "https://decathlon.com.sa/search?q=running",
+  { productPath:/\/products\/[^/?#]+(?:[/?#]|$)/i },
+  "running shoes", 5
+);
+assert.equal(decathlonLinks.length, 1);
+
+const niceOneLinks = extractProductLinks(
+  '<a href="/en/chanel-n-5-for-women-eau-de-parfum-n11807">Chanel N5 perfume</a>',
+  "https://niceonesa.com/en/search?q=perfume",
+  { productPath:/\/en\/[^?#]+-n\d+(?:[/?#]|$)/i },
+  "chanel perfume", 5
+);
+assert.equal(niceOneLinks.length, 1);
+
+assert.ok(configuredFreeStorefronts().some((store) => store.id === "namshi-sa"));
+assert.ok(configuredFreeStorefronts().some((store) => store.id === "centrepoint-sa"));
+assert.ok(configuredFreeStorefronts().some((store) => store.id === "maxfashion-sa"));
+assert.ok(configuredFreeStorefronts().some((store) => store.id === "decathlon-sa"));
+assert.ok(configuredFreeStorefronts().some((store) => store.id === "niceone-sa"));
 
 console.log("NAWAA provider tests passed");
