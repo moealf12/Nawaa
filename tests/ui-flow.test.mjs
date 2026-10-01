@@ -112,6 +112,8 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(hpHtml,/<details class="selected-comparison" hidden>/, 'comparison is closed until the customer selects a card');
   assert.doesNotMatch(hpHtml,/نسخة مختلفة عن الموديل المطلوب/);
   renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click();
+  assert.doesNotMatch(element('#searchStatus').textContent,/ألوان|سعات/, 'general discovery status must describe categories rather than phone variant counts');
+
   assert.match(element('#results').innerHTML,/<details class="selected-comparison" open>/);
   assert.match(element('#results').innerHTML, /المنتج المختار[\s\S]*HP Pavilion Laptop/);
   assert.doesNotMatch(element('#results').innerHTML, /data-dimension="modelKey"/, 'selected product comparison must not offer unrelated HP products as model variants');

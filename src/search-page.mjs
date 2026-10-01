@@ -903,8 +903,8 @@ function renderProduct(product, query) {
   const hasLive = product.offers.some((offer) => offer.dataKind === "live");
 
   els.status.textContent = hasLive
-    ? `بحث حي: ${summary.count} عرضًا · ${modelCount} موديلات · ${storageCount} سعات · ${colorCount} ألوان · ${summary.sources} متاجر/بائعين`
-    : `وجدنا ${summary.count} عروض · ${modelCount} موديلات · ${summary.sources} مصادر`;
+    ? `بحث حي: ${summary.count} عرضًا · ${discoverySections.length} فئات · ${summary.sources} متاجر/بائعين`
+    : `وجدنا ${summary.count} عروض · ${discoverySections.length} فئات · ${summary.sources} مصادر`;
   els.urlHint.hidden = true;
 
   const selectedSpecs = featuredOffer?.specs || {};
