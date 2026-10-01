@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { rankDiscoveryCandidates } from "../server/providers/brave-discovery.mjs";
+import { extractProductLinks, selectedStores, configuredFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -301,13 +301,19 @@ assert.equal(amazonOffers[0].specs.modelNumber, "B0TEST1234");
 assert.equal(amazonOffers[0].specs.barcode, "1234567890123");
 assert.equal(amazonOffers[0].canShipToSaudi, true);
 
-const discoveryCandidates = rankDiscoveryCandidates([
-  { title:"iPhone 17 - Amazon.sa", url:"https://www.amazon.sa/dp/B0TEST1234", description:"Apple iPhone 17 256GB" },
-  { title:"iPhone 17 review", url:"https://example.com/blog/iphone-17-review", description:"review" },
-  { title:"SHEIN phone case", url:"https://ar.shein.com/product/phone-case-p-123.html", description:"iPhone 17 case" },
-], "iphone 17", 10);
-assert.equal(discoveryCandidates.length, 2);
-assert.equal(discoveryCandidates[0].host, "amazon.sa");
-assert.ok(discoveryCandidates.some((item) => item.host === "ar.shein.com"));
+const sheinStore = {
+  id:"shein-sa",
+  productPath:/-p-\d+\.html(?:[?#]|$)/i,
+};
+const freeLinks = extractProductLinks(`
+  <a href="/Women-Dresses/Summer-Dress-p-123456.html">Summer Dress</a>
+  <a href="/pdsearch/dress/">Search results</a>
+  <a href="https://example.com/Women-Dresses/Fake-p-999.html">External</a>
+`, "https://ar.shein.com/pdsearch/dress/", sheinStore, "dress", 5);
+assert.equal(freeLinks.length, 1);
+assert.ok(freeLinks[0].url.includes("p-123456.html"));
+assert.ok(selectedStores("فستان شي ان", 8).some((store) => store.id === "shein-sa"));
+assert.ok(selectedStores("لابتوب", 8).some((store) => store.id === "newegg-global"));
+assert.ok(configuredFreeStorefronts().length >= 15);
 
 console.log("NAWAA provider tests passed");
