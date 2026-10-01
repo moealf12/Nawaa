@@ -800,6 +800,13 @@ function additionalResultsSection(label, groups) {
     }).join("")}</div></details>`;
 }
 
+function productImageMarkup(offer, group, title, fallbackClass) {
+  const images = [...new Set([offer, ...(group?.offers || [])].map(item => item?.image).filter(url => /^https?:\/\//i.test(url || "")))];
+  const fallback = '<span class="' + fallbackClass + '" style="display:' + (images.length ? 'none' : 'grid') + '">صورة غير متاحة</span>';
+  if (!images.length) return fallback;
+  return '<img src="' + escapeHtml(images[0]) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" data-image-options="' + escapeHtml(JSON.stringify(images)) + '" data-image-index="0" onerror="const urls=JSON.parse(this.dataset.imageOptions);const next=Number(this.dataset.imageIndex)+1;this.dataset.imageIndex=next;if(next &lt; urls.length){this.src=urls[next]}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';}">' + fallback;
+}
+
 function exactMatchCard(group, selectedGroup) {
   const intelligence = buildOfferIntelligence(group);
   const offer = intelligence.baselineOffer || group.bestPriceOffer || group.bestOffer || group.offers?.[0];
@@ -809,9 +816,7 @@ function exactMatchCard(group, selectedGroup) {
   const modelNumber = specs.modelNumber || null;
   const uniqueMerchants = new Set((group.offers || []).map((item) => item.merchant).filter(Boolean)).size;
   const selected = selectedGroup?.key === group.key;
-  const image = offer.image
-    ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';"><span class="match-card-fallback">لا توجد صورة</span>'
-    : '<span class="match-card-fallback visible">لا توجد صورة</span>';
+  const image = productImageMarkup(offer, group, title, "match-card-fallback");
 
   return `
     <button type="button" class="match-result-card ${selected ? "active" : ""}" data-group-key="${escapeHtml(group.key)}">
@@ -829,11 +834,9 @@ function exactMatchCard(group, selectedGroup) {
   `;
 }
 
-function selectedProductMedia(offer) {
+function selectedProductMedia(offer, group = null) {
   const title = offer?.sourceMeta?.nameAr || offer?.title || "المنتج";
-  return offer?.image
-    ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';"><span class="config-image-fallback">لا توجد صورة</span>'
-    : '<span class="config-image-fallback visible">لا توجد صورة</span>';
+  return productImageMarkup(offer, group, title, "config-image-fallback");
 }
 
 function openProductDetails(product, offer, query) {
@@ -934,7 +937,7 @@ function renderProduct(product, query) {
         ${featuredOffer ? `
           <article class="product-configurator">
             <div class="config-hero">
-              <div class="config-image">${selectedProductMedia(featuredOffer)}</div>
+              <div class="config-image">${selectedProductMedia(featuredOffer, selectedGroup)}</div>
               <div class="config-title">
                 <span class="mini-kicker">المنتج المختار</span>
                 <h3>${escapeHtml(selectedTitle)}</h3>

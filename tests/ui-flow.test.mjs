@@ -73,7 +73,8 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(element("#results").innerHTML, /<h2>latest<\/h2>/);
 
   const consoleOffers = [
-    { ...offer, title:"Sony PlayStation 5 Slim Digital Console White", specs:{brand:"Sony",color:"White",modelNumber:"CFI-2016B01Y",storage:"825GB"} },
+    { ...offer, title:"Sony PlayStation 5 Slim Digital Console White",image:"https://img.example/digital-1.jpg", specs:{brand:"Sony",color:"White",modelNumber:"CFI-2016B01Y",storage:"825GB"} },
+    { ...offer,merchant:"Jarir", title:"PS5 Digital Console",image:"https://img.example/digital-2.jpg",specs:{brand:"Sony",modelNumber:"CFI2016B01Y",storage:"825GB"}},
     { ...offer, title:"Sony PS5 Console 1TB Blu-ray Disc", specs:{brand:"Sony",color:"Black/White",modelNumber:"CFI2116A01Y",storage:"1TB"} },
     { ...offer, title:"PS5 EA SPORTS FC 25", specs:{brand:"EA"} },
   ].map(item=>({...item,...assessOfferMatch("ps5",item)}));
@@ -86,4 +87,6 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(html,/data-dimension="editionKey"/);
   assert.ok(html.indexOf('class="match-results-section"')<html.indexOf('class="product-configurator"'),"product cards should lead comparison details");
   assert.match(html,/ألعاب للجهاز/);
+  assert.match(html,/data-image-options=/);
+  assert.match(html,/https:\/\/img.example\/digital-2.jpg/);
 });
