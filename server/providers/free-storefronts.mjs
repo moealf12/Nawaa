@@ -103,7 +103,7 @@ function sameHost(candidate, base) {
   } catch { return false; }
 }
 
-function extractProductLinks(html, searchUrl, store, query, limit = 5) {
+export function extractProductLinks(html, searchUrl, store, query, limit = 5) {
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
   const out = [];
   const seen = new Set();
@@ -145,7 +145,7 @@ async function fetchText(url) {
   return text;
 }
 
-function selectedStores(query, maxStores = 8) {
+export function selectedStores(query, maxStores = 8) {
   const intent = parseSearchIntent(query);
   const category = intent.category || "other";
   const primary = STORES.filter((store) => store.categories.includes(category));
