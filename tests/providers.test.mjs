@@ -6,6 +6,8 @@ import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
 import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
+import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
+import { rankDiscoveryCandidates } from "../server/providers/brave-discovery.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -265,5 +267,47 @@ assert.equal(swarovskiSaudiEligible("necklace swarovski"), true);
 assert.equal(swarovskiSaudiEligible("iphone 17"), false);
 assert.equal(swarovskiSaudiProviderQuery("necklace swarovski"), "necklace");
 assert.equal(swarovskiSaudiProviderQuery("swarovski"), "swarovski");
+
+const amazonFixture = {
+  searchResult: {
+    items: [{
+      asin: "B0TEST1234",
+      detailPageURL: "https://www.amazon.sa/dp/B0TEST1234",
+      images: { primary: { medium: { url: "https://images.example/amazon.jpg" } } },
+      itemInfo: {
+        title: { displayValue: "Apple iPhone 17 256GB Black" },
+        byLineInfo: { brand: { displayValue: "Apple" } },
+        externalIds: { eaNs: { displayValues: ["1234567890123"] } },
+        productInfo: { color: { displayValue: "Black" } },
+      },
+      offersV2: { listings: [{
+        isBuyBoxWinner: true,
+        availability: { type: "IN_STOCK" },
+        condition: { value: "New" },
+        merchantInfo: { name: "Amazon.sa" },
+        price: { money: { amount: 3999, currency: "SAR" } },
+      }] },
+    }],
+  },
+};
+const amazonOffers = await parseAmazonCreatorsPayload(amazonFixture, {
+  id:"amazon-sa", marketplace:"www.amazon.sa", countryCode:"SA", countryNameAr:"السعودية"
+});
+assert.equal(amazonOffers.length, 1);
+assert.equal(amazonOffers[0].merchant, "Amazon.sa");
+assert.equal(amazonOffers[0].productPrice, 3999);
+assert.equal(amazonOffers[0].availability, "in_stock");
+assert.equal(amazonOffers[0].specs.modelNumber, "B0TEST1234");
+assert.equal(amazonOffers[0].specs.barcode, "1234567890123");
+assert.equal(amazonOffers[0].canShipToSaudi, true);
+
+const discoveryCandidates = rankDiscoveryCandidates([
+  { title:"iPhone 17 - Amazon.sa", url:"https://www.amazon.sa/dp/B0TEST1234", description:"Apple iPhone 17 256GB" },
+  { title:"iPhone 17 review", url:"https://example.com/blog/iphone-17-review", description:"review" },
+  { title:"SHEIN phone case", url:"https://ar.shein.com/product/phone-case-p-123.html", description:"iPhone 17 case" },
+], "iphone 17", 10);
+assert.equal(discoveryCandidates.length, 2);
+assert.equal(discoveryCandidates[0].host, "amazon.sa");
+assert.ok(discoveryCandidates.some((item) => item.host === "ar.shein.com"));
 
 console.log("NAWAA provider tests passed");
