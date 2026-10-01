@@ -5,6 +5,7 @@ import { parseJarirConstructorPayload, parseJarirSearchHtml } from "../server/pr
 import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
 import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
+import { parseSwarovskiSearchHtml } from "../server/providers/swarovski.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -227,5 +228,37 @@ assert.equal(sharafOffers[0].specs.ram, "8GB");
 assert.equal(sharafOffers[0].specs.screenSize, "6.3 inch");
 assert.equal(sharafOffers[0].specs.operatingSystem, "iOS 26");
 assert.equal(sharafOffers[0].sourceMeta.productId, "S500943806");
+
+
+const swarovskiFixture = `
+<div class="js-product-tile-container product bg-white" data-pid="030715671675" data-sku="9009656364451">
+  <a class="product-tile" href="https://ar.swarovski.sa/fw19/lovely-necklace/M5636449.html" data-gtm="&quot;item_in_stock&quot;:true">
+    <img class="tile-image" src="https://ar.swarovski.sa/dw/image/example.png?sw=340&amp;sh=340" alt="سواروفسكي عقد Lovely">
+    <div class="name-container"><h2 class="pdp-link">عقد Lovely</h2>
+      <div class="subtitle">شكل قلب، لون أبيض</div>
+    </div>
+    <div class="price"><span class="sales"><span class="value" content="700.00" itemprop="price"></span></span></div>
+  </a>
+</div>
+<div class="js-product-tile-container product bg-white" data-pid="030715671672" data-sku="9009656364437">
+  <a class="product-tile" href="/fw19/lovely-bracelet/M5636964.html">
+    <img class="tile-image" src="/dw/image/bracelet.png">
+    <h2 class="pdp-link">سوار Lovely</h2>
+    <span class="value" itemprop="price" content="800.00"></span>
+  </a>
+</div>`;
+const swarovskiOffers = parseSwarovskiSearchHtml(swarovskiFixture);
+assert.equal(swarovskiOffers.length, 2);
+assert.equal(swarovskiOffers[0].merchant, "Swarovski Saudi");
+assert.equal(swarovskiOffers[0].productPrice, 700);
+assert.equal(swarovskiOffers[0].specs.brand, "Swarovski");
+assert.equal(swarovskiOffers[0].specs.deviceType, "Necklace");
+assert.equal(swarovskiOffers[0].specs.modelNumber, "030715671675");
+assert.equal(swarovskiOffers[0].specs.barcode, "9009656364451");
+assert.equal(swarovskiOffers[0].availability, "in_stock");
+assert.ok(swarovskiOffers[0].image.includes("&sh=340"));
+assert.equal(assessOfferMatch("سواروفسكي", swarovskiOffers[0]).exactMatch, true);
+assert.equal(assessOfferMatch("قلادة سواروفسكي", swarovskiOffers[0]).exactMatch, true);
+assert.equal(swarovskiOffers[1].sourceUrl, "https://ar.swarovski.sa/fw19/lovely-bracelet/M5636964.html");
 
 console.log("NAWAA provider tests passed");
