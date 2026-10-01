@@ -6,6 +6,12 @@ const ALIASES = [
   ["سامسونج", "samsung"], ["جالاكسي", "galaxy"], ["جالكسي", "galaxy"],
   ["ابل", "apple"], ["دايسون", "dyson"], ["سوني", "sony"],
   ["سواروفسكي", "swarovski"], ["سوارفسكي", "swarovski"],
+  ["ايسر", "acer"], ["ايسير", "acer"], ["ام اس اي", "msi"],
+  ["مايكروسوفت", "microsoft"], ["نينتندو", "nintendo"],
+  ["كانون", "canon"], ["نيكون", "nikon"], ["ابسون", "epson"], ["براذر", "brother"],
+  ["ال جي", "lg"], ["بوش", "bosch"], ["لوجيتك", "logitech"], ["جي بي ال", "jbl"], ["بوز", "bose"],
+  ["هواوي", "huawei"], ["شاومي", "xiaomi"], ["هونر", "honor"], ["ون بلس", "oneplus"],
+  ["اوبو", "oppo"], ["ريلمي", "realme"], ["نوكيا", "nokia"],
   ["قلاده", "necklace"], ["سلسال", "necklace"], ["عقد", "necklace"], ["تعليقه", "pendant"],
   ["اسوره", "bracelet"], ["سوار", "bracelet"], ["خاتم", "ring"], ["اقراط", "earrings"], ["قرط", "earrings"], ["مجوهرات", "jewelry"],
   ["برو", "pro"], ["ماكس", "max"], ["بلس", "plus"], ["الترا", "ultra"], ["اير", "air"],
@@ -58,6 +64,11 @@ export const BRAND_CATEGORY_PRIORITIES = {
   epson: ['printer','projector'], brother: ['printer'], dyson: ['vacuum','beauty','appliance'],
   lg: ['tv','appliance','monitor','audio'], bosch: ['appliance','tool'],
   logitech: ['accessory','audio'], jbl: ['audio'], bose: ['audio'],
+  huawei: ['phone','tablet','watch','audio','laptop'],
+  xiaomi: ['phone','tablet','watch','appliance','audio'],
+  honor: ['phone','tablet','laptop','watch','audio'],
+  oneplus: ['phone','tablet','audio'], oppo: ['phone','tablet','audio'],
+  realme: ['phone','tablet','audio'], nokia: ['phone','tablet'],
   swarovski: ['jewelry','watch','accessory'],
 };
 export const PRODUCT_CATEGORIES = [
@@ -111,6 +122,36 @@ export function parseSearchIntent(value = "") {
     condition,
     kind, brand, category, discoveryMode,
   };
+}
+
+function escapeRegex(value = "") {
+  return String(value).replace(/[.*+?^$()|[\]{}\\]/g, "\\  };
+}
+
+const GAMING_PLATFORM =");
+}
+
+export function buildProviderFallbackQueries(value = "") {
+  const intent = parseSearchIntent(value);
+  const primary = intent.providerQuery;
+  const candidates = [];
+  const push = (candidate) => {
+    candidate = normalizeSearchQuery(candidate);
+    if (candidate.length >= 2 && candidate !== primary && !candidates.includes(candidate)) candidates.push(candidate);
+  };
+
+  if (intent.model) push(intent.model);
+
+  let relaxed = primary;
+  for (const phrase of [intent.storage, intent.color, intent.condition].filter(Boolean)) {
+    relaxed = relaxed.replace(new RegExp("(^| )" + escapeRegex(phrase) + "(?= |$)", "g"), " ");
+  }
+  push(relaxed.replace(/\s+/g, " ").trim());
+
+  if (intent.brand && intent.category) push(intent.brand + " " + intent.category);
+  if (intent.brand) push(intent.brand);
+  if (intent.category) push(intent.category);
+  return candidates;
 }
 
 const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)?)\b/;
