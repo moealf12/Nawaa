@@ -27,7 +27,6 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "bhphoto", name: "B&H Photo", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "verified_market" },
   { id: "walmart-us", name: "Walmart", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "unknown" },
   { id: "bestbuy-us", name: "Best Buy", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "unknown" },
-  { id: "walmart-us", name: "Walmart", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "unknown" },
   { id: "etsy-global", name: "Etsy", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "seller_dependent" },
   { id: "iherb-sa", name: "iHerb", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "verified_market" },
   { id: "amazon-ca", name: "Amazon.ca", countryCode: "CA", region: "North America", status: "candidate", saudiDelivery: "offer_dependent" },
