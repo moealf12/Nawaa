@@ -22,6 +22,7 @@ import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonC
 import { configuredFreeStorefronts, searchFreeStorefronts } from "./providers/free-storefronts.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
 import { createSearchCache } from "./search-cache.mjs";
+import { sourceReliability } from "./source-reliability.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -81,38 +82,78 @@ function currentSources() {
 }
 
 function providerTasks(providerQuery) {
-  const tasks = [searchExtraUnbxd(providerQuery), searchJarir(providerQuery), searchSharafDG(providerQuery)];
-  if (swarovskiSaudiEligible(providerQuery)) tasks.push(searchSwarovskiSaudi(providerQuery));
-  if (amazonCreatorsConfigured()) tasks.push(searchAmazonCreators(providerQuery));
-  tasks.push(searchFreeStorefronts(providerQuery));
-  if (carrefourConfigured()) tasks.push(searchCarrefour(providerQuery));
-  if (noonConfigured()) tasks.push(searchNoon(providerQuery));
-  if (ebayConfigured()) tasks.push(searchEbayWorldwide(providerQuery));
-  if (shopifyConfigured()) tasks.push(searchConfiguredShopifyStores(providerQuery));
+  const tasks = [];
+  const add = (id, run, { explicit = false } = {}) => {
+    if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run });
+  };
+
+  add("extra-unbxd", () => searchExtraUnbxd(providerQuery));
+  add("jarir-direct", () => searchJarir(providerQuery));
+  add("sharafdg-algolia", () => searchSharafDG(providerQuery));
+  if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
+  if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
+  add("free-storefronts", () => searchFreeStorefronts(providerQuery));
+  if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
+  if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
+  if (ebayConfigured()) add("ebay", () => searchEbayWorldwide(providerQuery));
+  if (shopifyConfigured()) add("shopify", () => searchConfiguredShopifyStores(providerQuery));
   return tasks;
 }
 
 async function runProviderPass(providerQuery, pass = "primary") {
-  const settled = await Promise.allSettled(providerTasks(providerQuery));
+  const tasks = providerTasks(providerQuery);
+  const settled = await Promise.allSettled(tasks.map(async (task) => {
+    const started = Date.now();
+    try {
+      const value = await task.run();
+      sourceReliability.record(task.id, {
+        transportOk:true,
+        offers:value.offers?.length || 0,
+        latencyMs:Date.now() - started,
+        relevant:true,
+      });
+      return { task, value };
+    } catch (error) {
+      sourceReliability.record(task.id, {
+        transportOk:false,
+        offers:0,
+        latencyMs:Date.now() - started,
+        relevant:true,
+      });
+      const wrapped = new Error(error instanceof Error ? error.message : String(error));
+      wrapped.sourceId = task.id;
+      throw wrapped;
+    }
+  }));
   const providers = [];
   const errors = [];
   const offers = [];
 
-  for (const result of settled) {
+  settled.forEach((result, index) => {
+    const sourceId = tasks[index]?.id || "unknown";
     if (result.status === "fulfilled") {
+      const value = result.value.value;
       providers.push({
-        provider: result.value.provider,
-        ok: result.value.ok,
+        provider: value.provider,
+        sourceId,
+        ok: value.ok,
         pass,
         query: providerQuery,
-        searchedMarkets: result.value.searchedMarkets || result.value.searchedStores || [],
+        reliability: sourceReliability.view(sourceId),
+        searchedMarkets: value.searchedMarkets || value.searchedStores || [],
       });
-      offers.push(...(result.value.offers || []));
-      errors.push(...(result.value.errors || []).map((e) => ({ provider: result.value.provider, pass, ...e })));
+      offers.push(...(value.offers || []));
+      errors.push(...(value.errors || []).map((e) => ({ provider: value.provider, sourceId, pass, ...e })));
     } else {
-      errors.push({ provider: "unknown", pass, error: result.reason?.message || String(result.reason) });
+      errors.push({
+        provider: sourceId,
+        sourceId,
+        pass,
+        error: result.reason?.message || String(result.reason),
+        reliability: sourceReliability.view(sourceId),
+      });
     }
-  }
+  });
 
   return { providers, errors, offers };
 }
@@ -194,7 +235,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/sources") {
     const sources = currentSources();
-    return jsonResponse(res, 200, { sources, coverage: sourceCoverageSummary(sources) }, origin);
+    return jsonResponse(res, 200, {
+      sources,
+      coverage: sourceCoverageSummary(sources),
+      runtimeReliability: sourceReliability.snapshot(),
+    }, origin);
   }
 
   if (req.method === "GET" && url.pathname === "/health") {
@@ -215,6 +260,7 @@ const server = http.createServer(async (req, res) => {
         ebay: ebayConfigured(),
         shopify: shopifyConfigured(),
       },
+      sourceReliability: sourceReliability.snapshot(),
       now: new Date().toISOString(),
     }, origin || "*");
   }
