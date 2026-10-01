@@ -130,10 +130,24 @@ export function parseSwarovskiSearchHtml(html, limit = 32) {
   return offers;
 }
 
+export function swarovskiSaudiEligible(query = "") {
+  return /(^|\s)swarovski(?=\s|$)/i.test(String(query));
+}
+
+export function swarovskiSaudiProviderQuery(query = "") {
+  const tokens = String(query).trim().split(/\s+/).filter(Boolean);
+  const withoutBrand = tokens.filter((token) => token.toLowerCase() !== "swarovski").join(" ").trim();
+  return withoutBrand || "swarovski";
+}
+
 export async function searchSwarovskiSaudi(query, limit = 32) {
+  if (!swarovskiSaudiEligible(query)) {
+    return { provider: "swarovski-direct", ok: true, searchedMarkets: [], offers: [], errors: [] };
+  }
+
   const boundedLimit = Math.max(1, Math.min(40, Number(limit) || 32));
   const url = new URL(SWAROVSKI_SEARCH_BASE);
-  url.searchParams.set("q", String(query || "").trim());
+  url.searchParams.set("q", swarovskiSaudiProviderQuery(query));
   url.searchParams.set("start", "0");
   url.searchParams.set("sz", String(Math.max(boundedLimit, 24)));
 
