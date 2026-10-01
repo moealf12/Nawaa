@@ -1,7 +1,7 @@
 import { moneyToSAR } from "../fx.mjs";
 import { parseMoney } from "../provider-utils.mjs";
 
-function parseStores() {
+export function configuredShopifyStores() {
   const raw = process.env.SHOPIFY_STORES_JSON || "[]";
   let parsed = [];
   try { parsed = JSON.parse(raw); } catch { parsed = []; }
@@ -82,7 +82,7 @@ async function searchStore(query, store, limit = 6) {
 }
 
 export async function searchConfiguredShopifyStores(query, options = {}) {
-  const stores = parseStores();
+  const stores = configuredShopifyStores();
   if (!stores.length) {
     return { provider: "shopify", ok: false, offers: [], errors: [], searchedStores: [] };
   }
@@ -115,5 +115,5 @@ export async function searchConfiguredShopifyStores(query, options = {}) {
 }
 
 export function shopifyConfigured() {
-  return parseStores().length > 0;
+  return configuredShopifyStores().length > 0;
 }

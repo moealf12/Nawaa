@@ -1,4 +1,6 @@
 import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
+import { buildSourceRegistry, sourceCoverageSummary } from "../src/source-registry.mjs";
+import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import http from "node:http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -6,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import { allowedOrigin, jsonResponse } from "./provider-utils.mjs";
 import { ebayConfigured, searchEbayWorldwide } from "./providers/ebay.mjs";
-import { searchConfiguredShopifyStores, shopifyConfigured } from "./providers/shopify.mjs";
+import { searchConfiguredShopifyStores, shopifyConfigured, configuredShopifyStores } from "./providers/shopify.mjs";
 import { assessOfferMatch, dedupeNormalizedOffers } from "./match.mjs";
 import { resolveProductUrl } from "./url-resolver.mjs";
 import { searchSaudiRetailers } from "./providers/saudi-retailers.mjs";
@@ -62,6 +64,17 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
+function configuredProviders() {
+  return ["extra-unbxd", "jarir-direct", "sharafdg-algolia",
+    ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
+    ...(noonConfigured() ? ["noon-catalog"] : []),
+    ...(ebayConfigured() ? ["ebay"] : []),
+    ...(shopifyConfigured() ? ["shopify"] : [])];
+}
+function currentSources() {
+  return buildSourceRegistry({configuredProviders:configuredProviders(),shopifyStores:configuredShopifyStores()});
+}
+
 async function searchAll(query) {
   query = normalizeSearchQuery(query);
   const providerQuery = parseSearchIntent(query).providerQuery;
@@ -108,27 +121,20 @@ async function searchAll(query) {
     dataKind: "live",
   }));
 
-  offers.sort((a, b) => {
-    const match = (b.matchConfidence || 0) - (a.matchConfidence || 0);
-    if (match !== 0) return match;
-    const pa = Number.isFinite(a.productPrice) ? a.productPrice : Infinity;
-    const pb = Number.isFinite(b.productPrice) ? b.productPrice : Infinity;
-    return pa - pb;
-  });
-
+  const sources = currentSources();
+  const selectedOffers = selectDiverseOffers(offers, 120);
   return {
-    providersConfigured: [
-      "extra-unbxd",
-      "jarir-direct",
-      "sharafdg-algolia",
-      ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
-      ...(noonConfigured() ? ["noon-catalog"] : []),
-      ...(ebayConfigured() ? ["ebay"] : []),
-      ...(shopifyConfigured() ? ["shopify"] : []),
-    ],
+    providersConfigured: configuredProviders(),
+    coverage: {
+      ...sourceCoverageSummary(sources),
+      returnedOffers: selectedOffers.length,
+      availableOffers: offers.length,
+      returnedMerchants: new Set(selectedOffers.map(offerMerchantKey)).size,
+      truncated: selectedOffers.length < offers.length,
+    },
     providers,
     normalizedQuery: query,
-    offers: offers.slice(0, 120),
+    offers: selectedOffers,
     errors,
   };
 }
@@ -161,6 +167,11 @@ const server = http.createServer(async (req, res) => {
   if (!origin && req.headers.origin) return jsonResponse(res, 403, { error: "origin_not_allowed" }, "null");
 
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  if (req.method === "GET" && url.pathname === "/api/sources") {
+    const sources = currentSources();
+    return jsonResponse(res, 200, { sources, coverage: sourceCoverageSummary(sources) }, origin);
+  }
 
   if (req.method === "GET" && url.pathname === "/health") {
     return jsonResponse(res, 200, {

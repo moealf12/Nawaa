@@ -11,6 +11,9 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "amazon-ae", name: "Amazon.ae", countryCode: "AE", region: "MENA", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "noon-ae", name: "Noon UAE", countryCode: "AE", region: "MENA", status: "candidate", saudiDelivery: "offer_dependent" },
 
+  { id: "sharafdg-sa", name: "Sharaf DG Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "carrefour-sa", name: "Carrefour Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+
   // North America
   { id: "amazon-us", name: "Amazon.com", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "ebay", name: "eBay", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "seller_dependent" },
@@ -75,7 +78,33 @@ export const WORLD_SOURCE_REGISTRY = [
 export function sourceCoverageSummary(registry = WORLD_SOURCE_REGISTRY) {
   return {
     sources: registry.length,
+    configuredSources: registry.filter(source => source.status === "configured").length,
+    disabledSources: registry.filter(source => source.status === "disabled").length,
+    candidateSources: registry.filter(source => source.status === "candidate").length,
     countries: new Set(registry.map((source) => source.countryCode)).size,
     regions: new Set(registry.map((source) => source.region)).size,
   };
+}
+
+
+const SOURCE_ADAPTERS = {
+  extra: "extra-unbxd", jarir: "jarir-direct", "sharafdg-sa": "sharafdg-algolia",
+  "carrefour-sa": "carrefour-ksa", "noon-sa": "noon-catalog", ebay: "ebay",
+};
+
+// Configured means enabled in the running service, not guaranteed live results.
+export function buildSourceRegistry({configuredProviders = [], shopifyStores = []} = {}) {
+  const configured = new Set(configuredProviders);
+  const sources = WORLD_SOURCE_REGISTRY.map(source => {
+    const adapter = SOURCE_ADAPTERS[source.id] || null;
+    return {...source, adapter, status: adapter ? (configured.has(adapter) ? "configured" : "disabled") : "candidate"};
+  });
+  const seen = new Set(sources.map(source => source.id));
+  for(const store of shopifyStores) {
+    const id = `shopify:${store.id || store.name}`;
+    if(seen.has(id) || !/^[A-Z]{2}$/.test(String(store.countryCode).toUpperCase())) continue;
+    seen.add(id);
+    sources.push({id,name:store.name,countryCode:String(store.countryCode).toUpperCase(),region:"merchant_network",adapter:"shopify",status:configured.has("shopify") ? "configured" : "disabled",saudiDelivery:store.saudiDelivery || "unknown"});
+  }
+  return sources;
 }
