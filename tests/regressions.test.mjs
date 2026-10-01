@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { assessOfferMatch } from "../server/match.mjs";
-import { calculateComparableTotal, classifyOffer, buildOfferIntelligence, groupComparableOffers } from "../src/search-core.mjs";
+import { calculateComparableTotal, classifyOffer, buildOfferIntelligence, groupComparableOffers, buildVariantSelectorState } from "../src/search-core.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
@@ -41,6 +41,21 @@ test("same console SKU groups across merchant wording without mixing digital, di
   const groups=groupComparableOffers(offers);
   assert.equal(groups.length,3);
   assert.equal(groups.find(group=>group.offers.some(o=>o.merchant==="A")).merchantCount,2);
+});
+
+test("available console variants precede cheaper unavailable variants in cards and default selection", () => {
+  const base={condition:"new",exactMatch:true,matchConfidence:1,canShipToSaudi:true};
+  const groups=groupComparableOffers([
+    {...base,merchant:"A",title:"PS5 Slim Digital Console",productPrice:1500,availability:"out_of_stock",specs:{modelNumber:"CFI2016B01Y"}},
+    {...base,merchant:"B",title:"PS5 Slim Disc Console",productPrice:2000,availability:"in_stock",specs:{modelNumber:"CFI2016A01Y"}},
+  ]);
+  assert.equal(groups[0].bestOffer.merchant,"B");
+  assert.equal(buildVariantSelectorState(groups).selectedGroup.bestOffer.merchant,"B");
+});
+
+test("Sharaf product images supplied as a string remain a complete image URL", () => {
+  const result = parseSharafAlgoliaPayload({hits:[{sku:"CFI2016B01Y",post_title:"Sony PS5 Slim Console",price:2000,url:"/product/ps5/",images:"https://cdn.example.com/ps5.jpg"}]});
+  assert.equal(result[0].image,"https://cdn.example.com/ps5.jpg");
 });
 
 test("natural Arabic search preserves model constraints and removes conversational filler", () => {

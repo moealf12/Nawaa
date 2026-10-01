@@ -180,7 +180,7 @@ function urlFromHit(hit) {
 
 function imageFromHit(hit) {
   const direct = firstString(hit, [
-    "image","image_url","imageUrl","thumbnail","thumbnail_url","featured_image","featuredImage","images.0"
+    "image","image_url","imageUrl","thumbnail","thumbnail_url","featured_image","featuredImage","images"
   ]);
   if (direct) return normalizeImage(direct);
 

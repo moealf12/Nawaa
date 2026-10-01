@@ -248,6 +248,9 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
     const aExact = a.bestOffer?.exactMatch === true ? 0 : 1;
     const bExact = b.bestOffer?.exactMatch === true ? 0 : 1;
     if (aExact !== bExact) return aExact - bExact;
+    const aUnavailable = a.bestOffer?.availability === "out_of_stock" || a.bestOffer?.canShipToSaudi === false ? 1 : 0;
+    const bUnavailable = b.bestOffer?.availability === "out_of_stock" || b.bestOffer?.canShipToSaudi === false ? 1 : 0;
+    if (aUnavailable !== bUnavailable) return aUnavailable - bUnavailable;
 
     const aValue = Number.isFinite(a.bestValue) ? a.bestValue : Infinity;
     const bValue = Number.isFinite(b.bestValue) ? b.bestValue : Infinity;
