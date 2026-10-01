@@ -39,3 +39,12 @@ test('stores with regional currency use the currency actually returned by the ca
  const result=await searchShopifyStore('shirt',dynamic,{fetchImpl:api({currency:'SAR'}),convertMoney:async(value,currency)=>{assert.equal(currency,'SAR');return {value,rate:1,source:'identity'};}});
  assert.equal(result.offers[0].originalCurrency,'SAR');assert.equal(result.offers[0].productPrice,24.99);
 });
+
+test('unrelated predictive suggestions are excluded from offers',async()=>{
+ const result=await searchShopifyStore('coffee',store,{fetchImpl:api()});
+ assert.deepEqual(result.offers,[]);assert.deepEqual(result.errors,[]);
+});
+test('a full brand query can match products whose titles omit the brand',async()=>{
+ const result=await searchShopifyStore('brand',store,{fetchImpl:api(),convertMoney:async value=>({value})});
+ assert.equal(result.offers.length,2);
+});

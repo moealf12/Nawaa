@@ -1,4 +1,12 @@
 import { moneyToSAR } from "../fx.mjs";
+import { normalizeSearchQuery } from "../../src/search-query.mjs";
+
+function relevantProduct(query, product) {
+  const normalized = normalizeSearchQuery(query);
+  if (normalized === normalizeSearchQuery(product.vendor || "")) return true;
+  const words = normalizeSearchQuery([product.title, product.type, ...(product.variants || []).map(v => v.title)].filter(Boolean).join(" ")).split(" ");
+  return normalized.split(" ").some(token => token && words.some(word => word === token || word === `${token}s` || `${word}s` === token));
+}
 
 export function configuredShopifyStores() {
   const raw = process.env.SHOPIFY_STORES_JSON || "[]";
@@ -28,7 +36,7 @@ export async function searchShopifyStore(query, store, {limit = 5, fetchImpl = f
   const [cart, data] = await Promise.all([get(`${baseUrl}/cart.js`),get(`${baseUrl}/search/suggest.json?${params}`)]);
   const currency = cart?.currency;
   if(!/^[A-Z]{3}$/.test(currency || "") || (store.currency && currency !== store.currency)) throw new Error(`${store.name}: currency changed or is unavailable`);
-  // Currently verified stores present USD (two decimal places). Reject unverified
+  // Supported currencies use two decimal places. Reject unverified
   // currency precision instead of interpreting integer prices incorrectly.
   if(!["USD","SAR","EUR","GBP","CAD","AUD","HKD","AED"].includes(currency)) throw new Error(`${store.name}: unsupported currency precision`);
   const products = (data?.resources?.results?.products || []).slice(0,Math.max(1,Math.min(10,limit)));
@@ -36,6 +44,7 @@ export async function searchShopifyStore(query, store, {limit = 5, fetchImpl = f
     const handle = suggestion.handle;
     if(typeof handle !== "string" || !/^[a-zA-Z0-9_-]{1,250}$/.test(handle)) throw new Error("Invalid product handle");
     const product = await get(`${baseUrl}/products/${encodeURIComponent(handle)}.js`);
+    if (!relevantProduct(query, product)) return [];
     const variants = (product.variants || []).filter(v => v.available === true && Number.isSafeInteger(v.price) && v.price >= 0 && v.id != null).slice(0,3);
     return Promise.all(variants.map(async variant => {
       const rawPrice = variant.price / 100;
