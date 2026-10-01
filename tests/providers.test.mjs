@@ -5,7 +5,7 @@ import { parseJarirConstructorPayload, parseJarirSearchHtml } from "../server/pr
 import { parseNoonCatalogPayload } from "../server/providers/noon.mjs";
 import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
-import { parseSwarovskiSearchHtml } from "../server/providers/swarovski.mjs";
+import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -260,5 +260,10 @@ assert.ok(swarovskiOffers[0].image.includes("&sh=340"));
 assert.equal(assessOfferMatch("سواروفسكي", swarovskiOffers[0]).exactMatch, true);
 assert.equal(assessOfferMatch("قلادة سواروفسكي", swarovskiOffers[0]).exactMatch, true);
 assert.equal(swarovskiOffers[1].sourceUrl, "https://ar.swarovski.sa/fw19/lovely-bracelet/M5636964.html");
+assert.equal(swarovskiSaudiEligible("swarovski"), true);
+assert.equal(swarovskiSaudiEligible("necklace swarovski"), true);
+assert.equal(swarovskiSaudiEligible("iphone 17"), false);
+assert.equal(swarovskiSaudiProviderQuery("necklace swarovski"), "necklace");
+assert.equal(swarovskiSaudiProviderQuery("swarovski"), "swarovski");
 
 console.log("NAWAA provider tests passed");
