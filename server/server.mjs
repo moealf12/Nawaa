@@ -19,7 +19,7 @@ import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs"
 import { searchSharafDG } from "./providers/sharafdg.mjs";
 import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarovski.mjs";
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonCreators } from "./providers/amazon-creators.mjs";
-import { braveDiscoveryConfigured, searchBraveDiscovery } from "./providers/brave-discovery.mjs";
+import { configuredFreeStorefronts, searchFreeStorefronts } from "./providers/free-storefronts.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 
@@ -70,6 +70,7 @@ async function serveStaticFile(req, res, pathname) {
 function configuredProviders() {
   return ["extra-unbxd", "jarir-direct", "sharafdg-algolia", "swarovski-direct",
     ...(amazonCreatorsConfigured() ? configuredAmazonCreatorMarkets().map((market) => "amazon-creators:" + market.id) : []),
+    ...configuredFreeStorefronts().map((store) => "free-storefronts:" + store.id),
     ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
     ...(noonConfigured() ? ["noon-catalog"] : []),
     ...(ebayConfigured() ? ["ebay"] : []),
@@ -83,7 +84,7 @@ function providerTasks(providerQuery) {
   const tasks = [searchExtraUnbxd(providerQuery), searchJarir(providerQuery), searchSharafDG(providerQuery)];
   if (swarovskiSaudiEligible(providerQuery)) tasks.push(searchSwarovskiSaudi(providerQuery));
   if (amazonCreatorsConfigured()) tasks.push(searchAmazonCreators(providerQuery));
-  if (braveDiscoveryConfigured()) tasks.push(searchBraveDiscovery(providerQuery));
+  tasks.push(searchFreeStorefronts(providerQuery));
   if (carrefourConfigured()) tasks.push(searchCarrefour(providerQuery));
   if (noonConfigured()) tasks.push(searchNoon(providerQuery));
   if (ebayConfigured()) tasks.push(searchEbayWorldwide(providerQuery));
@@ -208,7 +209,7 @@ const server = http.createServer(async (req, res) => {
         sharafdg: true,
         swarovski: true,
         amazonCreators: amazonCreatorsConfigured() ? configuredAmazonCreatorMarkets().map((market) => market.id) : [],
-        braveDiscovery: braveDiscoveryConfigured(),
+        freeStorefronts: configuredFreeStorefronts().map((store) => store.id),
         carrefour: carrefourConfigured(),
         noon: noonConfigured(),
         ebay: ebayConfigured(),
