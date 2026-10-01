@@ -1,5 +1,6 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
 import { normalizeSearchQuery, parseSearchIntent } from "../../src/search-query.mjs";
+import { sourceReliability } from "../source-reliability.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (compatible; NAWAA-Free-Discovery/1.0; +https://moealf12.github.io/Nawaa/)";
 
@@ -189,10 +190,22 @@ export function routeFreeStorefronts(query, maxStores = 8) {
   const intent = parseSearchIntent(normalizedQuery);
   const cap = Math.max(1, Math.min(10, Number(maxStores) || 8));
   const routed = STORES
-    .map((store) => ({ store, ...routeScore(store, intent, normalizedQuery) }))
-    .filter((entry) => entry.score > 0)
+    .map((store) => {
+      const base = routeScore(store, intent, normalizedQuery);
+      const health = sourceReliability.view(store.id);
+      const skippedForCooldown = sourceReliability.shouldSkip(store.id, { explicit: base.explicitBrand });
+      return {
+        store,
+        ...base,
+        score: base.score + health.adjustment,
+        reliability: health,
+        skippedForCooldown,
+      };
+    })
+    .filter((entry) => entry.score > 0 && !entry.skippedForCooldown)
     .sort((a,b) =>
       b.score - a.score ||
+      b.reliability.reliability - a.reliability.reliability ||
       Number(b.store.countryCode === "SA") - Number(a.store.countryCode === "SA") ||
       a.store.id.localeCompare(b.store.id)
     );
@@ -218,37 +231,56 @@ export function selectedStores(query, maxStores = 8) {
 }
 
 async function searchStore(store, query, perStore = 3) {
+  const started = Date.now();
   const searchUrl = store.search(query);
-  const html = await fetchText(searchUrl);
-  const links = extractProductLinks(html, searchUrl, store, query, perStore);
-  const settled = await Promise.allSettled(links.map((candidate) => resolveProductUrl(candidate.url)));
-  const offers = settled
-    .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
-    .map((result) => ({
-      ...result.value,
-      provider:"free-storefronts",
-      providerMarket:store.id,
-      merchant:result.value.merchant || store.name,
-      merchantCountryCode:store.countryCode,
-      merchantCountryNameAr:store.countryNameAr,
-      canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
-      isLocal:store.countryCode === "SA",
-      exactMatch:false,
-      matchConfidence:0,
-      sourceMeta:{
-        ...(result.value.sourceMeta || {}),
-        storefrontSearch:store.name,
-        freeDiscovery:true,
-        searchUrl,
-      },
-    }));
-  return {
-    store,
-    searchUrl,
-    candidates:links.length,
-    offers,
-    failures:settled.filter((result) => result.status === "rejected").length,
-  };
+  try {
+    const html = await fetchText(searchUrl);
+    const links = extractProductLinks(html, searchUrl, store, query, perStore);
+    const settled = await Promise.allSettled(links.map((candidate) => resolveProductUrl(candidate.url)));
+    const offers = settled
+      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
+      .map((result) => ({
+        ...result.value,
+        provider:"free-storefronts",
+        providerMarket:store.id,
+        merchant:result.value.merchant || store.name,
+        merchantCountryCode:store.countryCode,
+        merchantCountryNameAr:store.countryNameAr,
+        canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
+        isLocal:store.countryCode === "SA",
+        exactMatch:false,
+        matchConfidence:0,
+        sourceMeta:{
+          ...(result.value.sourceMeta || {}),
+          storefrontSearch:store.name,
+          freeDiscovery:true,
+          searchUrl,
+        },
+      }));
+    const failures = settled.filter((result) => result.status === "rejected").length;
+    const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
+    sourceReliability.record(store.id, {
+      transportOk: !verificationBlocked,
+      offers: offers.length,
+      latencyMs: Date.now() - started,
+      relevant: true,
+    });
+    return {
+      store,
+      searchUrl,
+      candidates:links.length,
+      offers,
+      failures,
+    };
+  } catch (error) {
+    sourceReliability.record(store.id, {
+      transportOk:false,
+      offers:0,
+      latencyMs:Date.now() - started,
+      relevant:true,
+    });
+    throw error;
+  }
 }
 
 export function configuredFreeStorefronts() {
@@ -268,11 +300,11 @@ export async function searchFreeStorefronts(query, options = {}) {
     const store = stores[index];
     if (result.status === "fulfilled") {
       offers.push(...result.value.offers);
-      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
+      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
       if (!result.value.offers.length) errors.push({ market:store.id, error:"No verified structured-price product pages found" });
     } else {
       errors.push({ market:store.id, error:result.reason?.message || String(result.reason) });
-      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], candidates:0, verifiedOffers:0, failures:1 });
+      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:0, verifiedOffers:0, failures:1 });
     }
   });
 
