@@ -14,6 +14,11 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "sharafdg-sa", name: "Sharaf DG Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
   { id: "swarovski-sa", name: "Swarovski Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
   { id: "carrefour-sa", name: "Carrefour Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "shein-sa", name: "SHEIN", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "offer_dependent" },
+  { id: "ikea-sa", name: "IKEA Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "adidas-sa", name: "adidas Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "nike-sa", name: "Nike Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
+  { id: "sephora-sa", name: "Sephora Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
 
   // North America
   { id: "amazon-us", name: "Amazon.com", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "offer_dependent" },
@@ -22,11 +27,16 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "bhphoto", name: "B&H Photo", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "verified_market" },
   { id: "walmart-us", name: "Walmart", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "unknown" },
   { id: "bestbuy-us", name: "Best Buy", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "unknown" },
+  { id: "walmart-us", name: "Walmart", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "unknown" },
+  { id: "etsy-global", name: "Etsy", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "seller_dependent" },
+  { id: "iherb-sa", name: "iHerb", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "verified_market" },
   { id: "amazon-ca", name: "Amazon.ca", countryCode: "CA", region: "North America", status: "candidate", saudiDelivery: "offer_dependent" },
 
   // United Kingdom / Europe
   { id: "amazon-uk", name: "Amazon.co.uk", countryCode: "GB", region: "Europe", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "currys", name: "Currys", countryCode: "GB", region: "Europe", status: "candidate", saudiDelivery: "unknown" },
+  { id: "asos-global", name: "ASOS", countryCode: "GB", region: "Europe", status: "candidate", saudiDelivery: "offer_dependent" },
+  { id: "farfetch-sa", name: "Farfetch", countryCode: "GB", region: "Europe", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "argos", name: "Argos", countryCode: "GB", region: "Europe", status: "candidate", saudiDelivery: "unknown" },
   { id: "amazon-de", name: "Amazon.de", countryCode: "DE", region: "Europe", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "mediamarkt-de", name: "MediaMarkt", countryCode: "DE", region: "Europe", status: "candidate", saudiDelivery: "unknown" },
@@ -52,6 +62,7 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "gmarket-kr", name: "Gmarket", countryCode: "KR", region: "Asia", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "coupang-kr", name: "Coupang", countryCode: "KR", region: "Asia", status: "candidate", saudiDelivery: "unknown" },
   { id: "aliexpress-cn", name: "AliExpress", countryCode: "CN", region: "Asia", status: "candidate", saudiDelivery: "offer_dependent" },
+  { id: "temu-global", name: "Temu", countryCode: "CN", region: "Asia", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "jd-cn", name: "JD", countryCode: "CN", region: "Asia", status: "candidate", saudiDelivery: "unknown" },
   { id: "tmall-cn", name: "Tmall", countryCode: "CN", region: "Asia", status: "candidate", saudiDelivery: "unknown" },
   { id: "amazon-in", name: "Amazon.in", countryCode: "IN", region: "Asia", status: "candidate", saudiDelivery: "offer_dependent" },
@@ -98,6 +109,14 @@ const SOURCE_ADAPTERS = {
   "amazon-es": "amazon-creators:amazon-es", "amazon-jp": "amazon-creators:amazon-jp",
   "amazon-in": "amazon-creators:amazon-in", "amazon-sg": "amazon-creators:amazon-sg",
   "amazon-au": "amazon-creators:amazon-au", "amazon-eg": "amazon-creators:amazon-eg",
+  "shein-sa": "free-storefronts:shein-sa", "aliexpress-cn": "free-storefronts:aliexpress-cn",
+  "temu-global": "free-storefronts:temu-global", "iherb-sa": "free-storefronts:iherb-sa",
+  "ikea-sa": "free-storefronts:ikea-sa", "asos-global": "free-storefronts:asos-global",
+  "farfetch-sa": "free-storefronts:farfetch-sa", "etsy-global": "free-storefronts:etsy-global",
+  "newegg-us": "free-storefronts:newegg-global", "bhphoto": "free-storefronts:bhphoto-us",
+  "walmart-us": "free-storefronts:walmart-us", "bestbuy-us": "free-storefronts:bestbuy-us",
+  "adidas-sa": "free-storefronts:adidas-sa", "nike-sa": "free-storefronts:nike-sa",
+  "sephora-sa": "free-storefronts:sephora-sa",
 };
 
 // Configured means enabled in the running service, not guaranteed live results.
