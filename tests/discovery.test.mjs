@@ -79,3 +79,17 @@ test('Arabic jewelry terms constrain Swarovski discovery without requiring a SKU
   assert.deepEqual(result.map(s=>s.key),['jewelry']);
 });
 
+test('common Arabic brand spellings canonicalize before provider search',()=>{
+  assert.equal(query.normalizeSearchQuery('مايكروسوفت'),'microsoft');
+  assert.equal(query.normalizeSearchQuery('هواوي'),'huawei');
+  assert.equal(query.normalizeSearchQuery('شاومي'),'xiaomi');
+  assert.equal(query.normalizeSearchQuery('إل جي'),'lg');
+  assert.equal(query.parseSearchIntent('هواوي').discoveryMode,'brand');
+});
+
+test('zero-result fallback broadens provider queries while preserving the original match intent',()=>{
+  assert.deepEqual(query.buildProviderFallbackQueries('ايفون 17 512 جيجا اسود').slice(0,2),['iphone 17','phone']);
+  assert.ok(query.buildProviderFallbackQueries('hp elitebook 840 g11').includes('hp laptop'));
+  assert.deepEqual(query.buildProviderFallbackQueries('سواروفسكي'),[]);
+});
+
