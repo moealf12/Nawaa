@@ -163,6 +163,10 @@ function normalizedModel(offer = {}) {
   const description = describeProduct(offer);
   if (description.kind === "console") return description.platform + (description.form === "Pro" ? " pro" : "");
   const specs = offer.specs || {};
+  const namedModel = parseSearchIntent(offer.title || specs.deviceType || specs.model || specs.series || "").model;
+  if (namedModel && description.kind === "product") return normalizeVariantPart(namedModel);
+  // A generic merchant family (e.g. SmartTank) does not identify one product.
+  if (offer.title && productCategory(offer) !== "phone") return normalizeVariantPart(offer.title);
   let raw = specs.deviceType || specs.model || specs.series || offer.title || "";
   let model = normalizeVariantPart(raw);
 
@@ -176,6 +180,52 @@ function normalizedModel(offer = {}) {
   return model || "unknown-model";
 }
 
+function comparableIdentity(offer = {}) {
+  const specs = offer.specs || {};
+  const description = describeProduct(offer);
+  const category = productCategory(offer);
+  const titleIntent = parseSearchIntent(offer.title || "");
+  const rawStorage = normalizeVariantPart(specs.storage || titleIntent.storage || description.storage || "");
+  const brand = normalizedBrand(specs.brand || offer.brand || titleIntent.brand || (description.platform === "ps5" || description.platform === "ps4" ? "Sony" : ""));
+  const attributes = {
+    storage: rawStorage.match(/\b\d+(?:gb|tb)\b/)?.[0] || rawStorage,
+    color: description.kind === "console" ? "" : normalizeVariantPart(specs.color || titleIntent.color || ""),
+    ram: normalizeVariantPart(specs.ram || ""),
+    region: normalizeVariantPart(specs.regionVersion || ""),
+    sim: normalizeVariantPart(specs.sim || ""),
+    edition: description.edition || "",
+    form: description.form || "",
+    bundle: description.isBundle ? normalizeSearchQuery(offer.title) : "standalone",
+  };
+  for (const [key,value] of Object.entries(specs)) {
+    if (category === "phone" && key.toLowerCase() === "processor") continue;
+    if (/^(size|weight|capacity|pack|pack size|quantity|material|style|flavor|grind|processor|gpu|screenSize|network)$/i.test(key) && value != null) attributes[normalizeText(key)] = normalizeVariantPart(value);
+  }
+  return {brand, category, model:normalizedModel(offer), sku:normalizedModelIdentifier(specs.modelNumber || ""), condition:normalizeVariantPart(offer.condition || "unknown"), attributes};
+}
+
+function comparablePair(a, b) {
+  if (a.category !== b.category || a.brand !== b.brand || a.condition !== b.condition) return false;
+  if (a.sku && b.sku && a.sku !== b.sku) return false;
+  const sameSku = Boolean(a.sku && a.sku === b.sku);
+  for (const key of new Set([...Object.keys(a.attributes), ...Object.keys(b.attributes)])) {
+    // Console SKUs can identify the same chassis when one title omits Slim.
+    if (sameSku && key === "form") continue;
+    const x = a.attributes[key] || "", y = b.attributes[key] || "";
+    const coreVariant = ["storage","color","edition","form","bundle"].includes(key);
+    if (x !== y && ((coreVariant && !sameSku) || (x && y))) return false;
+  }
+  if (sameSku) {
+    if (a.category === "phone" && a.model !== b.model) return false;
+    return true;
+  }
+  if (!a.model || a.model === "unknown-model" || a.model !== b.model) return false;
+  if (["laptop","printer","desktop","monitor","tv","tablet","camera","watch"].includes(a.category) && !/\d/.test(a.model)) return false;
+  // A named phone without a capacity/color cannot safely absorb a known variant.
+  if (a.category === "phone" && (!a.attributes.storage || !a.attributes.color)) return false;
+  return true;
+}
+
 export function offerVariantKey(offer = {}) {
   const specs = offer.specs || {};
   const modelIdentifier = normalizedModelIdentifier(specs.modelNumber || "");
@@ -183,13 +233,15 @@ export function offerVariantKey(offer = {}) {
   if (description.kind === "console") return [normalizedBrand(specs.brand || ""), normalizedModel(offer),
     modelIdentifier ? "sku:" + modelIdentifier : [description.form,description.edition,description.storage].join(":"),
     offer.condition || "unknown", description.isBundle ? normalizeSearchQuery(offer.title) : "standalone"].join("|");
+  const identity = comparableIdentity(offer);
   return [
-    normalizedBrand(specs.brand || ""),
+    identity.brand,
     normalizedModel(offer),
-    normalizeVariantPart(specs.storage || ""),
-    normalizeVariantPart(specs.color || ""),
+    identity.attributes.storage,
+    identity.attributes.color,
     normalizeVariantPart(offer.condition || "unknown"),
     modelIdentifier ? "sku:" + modelIdentifier : "sku:unknown",
+    Object.entries(identity.attributes).filter(([key]) => !["storage","color","form","edition","bundle"].includes(key)).sort().map(([key,value])=>key+":"+value).join(";"),
   ].join("|");
 }
 
@@ -205,26 +257,34 @@ export function offerVariantFamilyKey(offer = {}) {
 
 export function groupComparableOffers(offers = [], mode = "lowest") {
   const ranked = rankOffers(offers, mode);
-  const groups = new Map();
-
-  for (const offer of ranked) {
-    const key = offerVariantKey(offer);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(offer);
+  const groups = [];
+  // Establish identified groups first; an unidentified offer must never bridge
+  // conflicting manufacturer models. Check every member to avoid transitive merges.
+  const stable = ranked.map(offer => ({offer, identity:comparableIdentity(offer), key:offerVariantKey(offer)})).sort((a,b) => Number(Boolean(b.identity.sku)) - Number(Boolean(a.identity.sku)) || a.key.localeCompare(b.key));
+  for (const entry of stable) {
+    const candidates = groups.filter(items => items.every(item => comparablePair(item.identity,entry.identity)));
+    if (candidates.length === 1) candidates[0].push(entry);
+    else groups.push([entry]);
   }
 
-  return [...groups.entries()].map(([key, groupedOffers]) => {
+  const usedKeys = new Map();
+  return groups.map(entries => {
+    const baseKey = entries[0].key;
+    const count = usedKeys.get(baseKey) || 0;
+    usedKeys.set(baseKey, count + 1);
+    const key = count ? baseKey + "|distinct:" + count : baseKey;
+    const groupedOffers = entries.map(entry=>entry.offer);
     const ordered = rankOffers(groupedOffers, mode);
     const priceOrdered = rankOffers(groupedOffers, "lowest");
     const bestOffer = ordered[0] || null;
     const bestPriceOffer = priceOrdered[0] || null;
     const secondPriceOffer = priceOrdered[1] || null;
-    const usesComparableTotal = Boolean(bestPriceOffer && Number.isFinite(bestPriceOffer.totalSAR));
+    const usesComparableTotal = Boolean(bestPriceOffer?.bucket === "confirmed" && Number.isFinite(bestPriceOffer.totalSAR));
     const bestValue = bestPriceOffer
       ? (usesComparableTotal ? bestPriceOffer.totalSAR : bestPriceOffer.productPrice)
       : null;
     const secondValue = secondPriceOffer
-      ? (Number.isFinite(secondPriceOffer.totalSAR) ? secondPriceOffer.totalSAR : secondPriceOffer.productPrice)
+      ? (secondPriceOffer.bucket === "confirmed" && Number.isFinite(secondPriceOffer.totalSAR) ? secondPriceOffer.totalSAR : secondPriceOffer.productPrice)
       : null;
 
     const fastestOffer = [...ordered]
@@ -240,7 +300,7 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
       merchantCount: new Set(ordered.map((offer) => offer.merchant).filter(Boolean)).size,
       priceBasis: usesComparableTotal ? "comparable_total" : "advertised_price",
       bestValue: Number.isFinite(bestValue) ? bestValue : null,
-      savingsToNext: Number.isFinite(bestValue) && Number.isFinite(secondValue) && secondValue > bestValue
+      savingsToNext: usesComparableTotal === (secondPriceOffer?.bucket === "confirmed" && Number.isFinite(secondPriceOffer?.totalSAR)) && Number.isFinite(bestValue) && Number.isFinite(secondValue) && secondValue > bestValue
         ? secondValue - bestValue
         : null,
     };
@@ -287,9 +347,11 @@ export function buildOfferIntelligence(group = {}) {
     (offer?.matchConfidence || 0) >= 0.9
   );
 
-  const priceOrdered = [...eligibleForPriceLead].sort((a, b) => {
-    const aTotal = Number.isFinite(a.totalSAR) ? a.totalSAR : Infinity;
-    const bTotal = Number.isFinite(b.totalSAR) ? b.totalSAR : Infinity;
+  const confirmedOffers = eligibleForPriceLead.filter(offer => offer.bucket === "confirmed" && Number.isFinite(offer.totalSAR));
+  const compareTotals = confirmedOffers.length > 0;
+  const priceOrdered = [...(compareTotals ? confirmedOffers : eligibleForPriceLead)].sort((a, b) => {
+    const aTotal = compareTotals ? a.totalSAR : Infinity;
+    const bTotal = compareTotals ? b.totalSAR : Infinity;
     if (aTotal !== bTotal) return aTotal - bTotal;
     const aPrice = Number.isFinite(a.productPrice) ? a.productPrice : Infinity;
     const bPrice = Number.isFinite(b.productPrice) ? b.productPrice : Infinity;
@@ -298,14 +360,16 @@ export function buildOfferIntelligence(group = {}) {
 
   // Only an eligible, exact, available offer may lead the price comparison.
   const baselineOffer = priceOrdered[0] || null;
-  const baselineValue = offerDisplayValue(baselineOffer);
-  const priceBasis = baselineOffer && Number.isFinite(baselineOffer.totalSAR)
+  const baselineValue = baselineOffer ? (compareTotals ? baselineOffer.totalSAR : baselineOffer.productPrice) : null;
+  const priceBasis = baselineOffer && compareTotals
     ? "comparable_total"
     : "advertised_price";
 
   const rows = offers.map((offer) => {
-    const value = offerDisplayValue(offer);
-    const delta = Number.isFinite(value) && Number.isFinite(baselineValue) ? value - baselineValue : null;
+    const rowUsesTotal = compareTotals && offer.bucket === "confirmed" && Number.isFinite(offer.totalSAR);
+    const value = rowUsesTotal ? offer.totalSAR : offer.productPrice;
+    const sameBasis = !compareTotals || rowUsesTotal;
+    const delta = sameBasis && Number.isFinite(value) && Number.isFinite(baselineValue) ? value - baselineValue : null;
     const deltaPercent = Number.isFinite(delta) && delta > 0 && baselineValue > 0
       ? (delta / baselineValue) * 100
       : 0;
@@ -343,7 +407,7 @@ export function buildOfferIntelligence(group = {}) {
       value,
       delta: Number.isFinite(delta) ? delta : null,
       deltaPercent: Math.round(deltaPercent * 10) / 10,
-      priceBasis: Number.isFinite(offer.totalSAR) ? "comparable_total" : "advertised_price",
+      priceBasis: rowUsesTotal ? "comparable_total" : "advertised_price",
       missingCosts,
       badges,
       warnings,
@@ -352,7 +416,7 @@ export function buildOfferIntelligence(group = {}) {
 
   const insights = [];
   const secondPriced = priceOrdered.find((offer) => offer !== baselineOffer && Number.isFinite(offerDisplayValue(offer)));
-  const secondValue = offerDisplayValue(secondPriced);
+  const secondValue = secondPriced ? (compareTotals ? secondPriced.totalSAR : secondPriced.productPrice) : null;
   if (baselineOffer && Number.isFinite(baselineValue)) {
     if (secondPriced && Number.isFinite(secondValue) && secondValue > baselineValue) {
       const diff = secondValue - baselineValue;

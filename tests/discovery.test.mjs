@@ -46,3 +46,10 @@ test('built-in keyboard specifications do not turn a laptop into an accessory',(
  assert.equal(query.productCategory?.({title:'HP Pavilion Laptop with Backlit Keyboard'}),'laptop');
  assert.equal(query.productCategory?.({title:'HP Laptop Charger Adapter'}),'accessory');
 });
+
+test('coffee product types and Arabic queries produce coffee results without unrelated accessories',()=>{
+ const coffee={title:'Valhalla Java Odinforce Blend',productType:'Coffee',brand:'Death Wish Coffee Company',condition:'new'};
+ assert.equal(query.assessOfferMatch('قهوة',coffee).exactMatch,true);
+ assert.equal(query.productCategory(coffee),'coffee');
+ assert.equal(query.assessOfferMatch('قهوة',{title:'USB Cable',productType:'Accessories',condition:'new'}).exactMatch,false);
+});

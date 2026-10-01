@@ -315,6 +315,25 @@
     .selected-comparison>summary{padding:18px 22px;min-height:56px;cursor:pointer;font-weight:600;background:var(--ink-2)}
     .selected-comparison[open]>.comparison-layout{padding:20px;margin:0}.match-card-copy strong{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;line-height:1.55}
     @media(max-width:600px){.selected-comparison[open]>.comparison-layout{padding:10px}.category-tab{font-size:13px}.section-label h3{font-size:17px}}
+    .product-summary-card{min-width:0;border:1px solid var(--line);border-radius:22px;background:var(--ink-2);overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+    .product-summary-card .match-result-card{width:100%;height:100%;border:0;border-radius:0;min-height:340px;gap:12px;background:transparent;box-shadow:none}
+    .product-summary-card .match-result-card:hover{transform:none;background:rgba(119,185,255,.035)}
+    .product-summary-card .match-result-card:focus-visible{outline:3px solid var(--sky);outline-offset:-3px}
+    .product-summary-card .match-card-copy strong{font-size:16px;min-height:50px}
+    .card-specs{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}.card-specs>span{font-size:11px;line-height:1.7;color:#b5c7d7;border:1px solid var(--line);border-radius:7px;padding:2px 6px;overflow-wrap:anywhere}
+    .card-coverage{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}.card-coverage>small{font-size:12px;margin:0}.card-countries{display:flex;gap:5px;align-items:center;font-size:18px}.card-countries small{font-size:11px}
+    .product-summary-card .match-card-price{align-items:center;border-top:1px solid var(--line);padding-top:12px;margin-top:auto}.match-card-price>div{display:grid;gap:4px}.card-expand-label{color:var(--sky);font-size:12px;font-weight:600;white-space:nowrap}
+    .card-delivery{color:#91a5b9;font-size:11px;text-align:right;line-height:1.6}
+    .product-summary-card.is-expanded{grid-column:1/-1;display:grid;grid-template-columns:minmax(220px,.65fr) minmax(0,1.8fr);border-color:var(--sky)}
+    .product-summary-card.is-expanded>.match-result-card{justify-content:flex-start;height:auto}.product-summary-card.is-expanded .match-card-image{height:190px}
+    .product-summary-card>.selected-comparison{margin:0;border:0;border-radius:0;border-inline-start:1px solid var(--line)}
+    .product-summary-card .selected-comparison[open]>.comparison-layout{padding:12px;display:block}.product-summary-card .best-panel{margin-top:12px;padding:20px}
+    .product-summary-card .config-hero{grid-template-columns:72px minmax(0,1fr);gap:12px;padding:16px}.product-summary-card .config-image{width:72px;height:72px}.product-summary-card .config-price{grid-column:1/-1}.product-summary-card .config-title h3{font-size:18px}
+    .product-summary-card .merchant-row{padding:16px;gap:12px}.product-summary-card .merchant-warnings{font-size:12px}.product-summary-card .merchant-price b{font-size:21px}
+    @media(max-width:800px){.product-summary-card.is-expanded{display:block}.product-summary-card>.selected-comparison{border-inline-start:0;border-top:1px solid var(--line)}.product-summary-card.is-expanded>.match-result-card{min-height:0;display:grid;grid-template-columns:100px minmax(0,1fr)}.product-summary-card.is-expanded .match-card-image{height:100px}.product-summary-card.is-expanded .match-card-price,.product-summary-card.is-expanded .card-delivery{grid-column:1/-1}.product-summary-card.is-expanded .match-card-copy strong{min-height:0}}
+    @media(max-width:600px){.product-summary-card{border-radius:16px}.product-summary-card .match-result-card{min-height:330px;padding:12px}.product-summary-card .match-card-copy strong{font-size:14px;min-height:62px}.product-summary-card .match-card-price{display:grid;gap:8px}.card-specs>span{font-size:10px}.card-coverage{align-items:flex-start;flex-direction:column}.card-delivery{font-size:10px}.product-summary-card .config-title h3{font-size:16px}.product-summary-card .merchant-row{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.product-summary-card .merchant-price{justify-items:start;text-align:right}.product-summary-card .merchant-actions{display:flex;gap:12px;flex-wrap:wrap}.product-summary-card .merchant-actions button{min-height:44px}.product-summary-card .selected-comparison>summary{font-size:13px;padding:14px}}
+    @media(prefers-reduced-motion:reduce){.product-summary-card,.match-result-card{transition:none!important}}
+
   </style>
 </head>
 <body>

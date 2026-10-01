@@ -84,10 +84,15 @@ test("query deep link starts exactly one live search and URL submission requests
   await new Promise(resolve=>setImmediate(resolve));
   const html=element("#results").innerHTML;
   assert.doesNotMatch(html,/data-dimension="colorKey"/,"PS5 casing colors must not become a device selector");
-  assert.match(html,/data-dimension="editionKey"/);
-  assert.ok(html.indexOf('class="match-results-section"')<html.indexOf('class="product-configurator"'),"product cards should lead comparison details");
+  assert.match(html,/نسخة رقمية/);
+  assert.match(html,/نسخة الأقراص/);
+  assert.doesNotMatch(html,/class="product-configurator"/,"comparison details are rendered only after selecting a product");
   assert.match(html,/ألعاب للجهاز/);
   assert.match(html,/data-image-options=/);
+  assert.match(html,/class="product-summary-card/);
+  assert.match(html,/aria-expanded="false"/);
+  assert.match(html,/سعر المنتج من/);
+  assert.match(html,/عروض/);
   assert.match(html,/https:\/\/img.example\/digital-2.jpg/);
   let renderedCards = [];
   element('#results').querySelectorAll = selector => {

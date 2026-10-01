@@ -1,5 +1,6 @@
 // Shared by the API and browser: aliases affect matching and provider queries alike.
 const ALIASES = [
+  ["قهوه", "coffee"], ["بن", "coffee"], ["قميص", "shirt"], ["ملابس", "clothing"],
   ["اي فون", "iphone"], ["ايفون", "iphone"], ["اير بودز", "airpods"], ["ايربودز", "airpods"],
   ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"],
   ["سامسونج", "samsung"], ["جالاكسي", "galaxy"], ["جالكسي", "galaxy"],
@@ -72,12 +73,14 @@ export const PRODUCT_CATEGORIES = [
   ['appliance','أجهزة منزلية', /\b(?:refrigerator|fridge|washer|washing machine|dryer|dishwasher|oven|microwave|air conditioner|purifier|blender|kettle|coffee maker)\b/],
   ['network','شبكات', /\b(?:router|modem|wifi|wi fi|network switch)\b/],
   ['projector','بروجكترات', /\bprojector\b/],
+  ['coffee','قهوة', /\b(?:coffee|ground coffee|coffee beans)\b/],
+  ['clothing','ملابس', /\b(?:clothing|shirts?|tees?|t shirts?|hoodies?|pants?|jackets?|flannel|longsleeve)\b/],
   ['tool','أدوات', /\b(?:drill|saw|screwdriver|power tool)\b/],
 ];
 export function productCategory(offer = {}) {
   const gaming = describeProduct(offer);
   if (gaming.kind !== 'product') return gaming.kind;
-  const text = normalizeSearchQuery([offer.title,offer.specs?.deviceType,offer.specs?.series].filter(Boolean).join(' ')).replace(/\b(?:backlit|integrated|built in) keyboard\b/g, '');
+  const text = normalizeSearchQuery([offer.title,offer.productType,offer.specs?.deviceType,offer.specs?.series].filter(Boolean).join(' ')).replace(/\b(?:backlit|integrated|built in) keyboard\b/g, '');
   const explicitTypes = ['accessory','printer','desktop'].map(key=>PRODUCT_CATEGORIES.find(([id])=>id===key));
   return explicitTypes.find(([, , pattern])=>pattern.test(text))?.[0] || PRODUCT_CATEGORIES.find(([, , pattern])=>pattern.test(text))?.[0] || 'other';
 }
@@ -153,7 +156,7 @@ export function assessOfferMatch(query, offer) {
   const normalizedQuery = intent.providerQuery;
   const semanticQuery = normalizedQuery.replace(PRODUCT_CATEGORIES.find(([key]) => key === intent.category)?.[2] || /$^/, " ");
   const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
-  const title = normalizeSearchQuery([offer?.title, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
+  const title = normalizeSearchQuery([offer?.title, offer?.productType, offer?.brand, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));

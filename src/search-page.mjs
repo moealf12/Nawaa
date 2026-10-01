@@ -506,7 +506,7 @@ function offerComparisonRow(offer, index, group, intelligence = null) {
   const intel = intelligence?.rows?.find((row) => row.offer === offer) || null;
   const isLowest = intel ? intel.offer === intelligence.baselineOffer : index === 0;
   const price = intel?.value ?? (Number.isFinite(offer.totalSAR) ? offer.totalSAR : offer.productPrice);
-  const priceLabel = Number.isFinite(offer.totalSAR) ? "الإجمالي المقارن" : "السعر المعلن";
+  const priceLabel = intel?.priceBasis === "comparable_total" ? "تكلفة الوصول المؤكدة" : "سعر المنتج";
   const availability = offer.sourceMeta?.jeddahInStock === true
     ? "متوفر في جدة"
     : offer.sourceMeta?.jeddahInStock === false
@@ -544,6 +544,7 @@ function offerComparisonRow(offer, index, group, intelligence = null) {
         <small>${priceLabel}</small>
         <b>${fmt(price)}</b>
         ${deltaMarkup}
+        ${intel?.priceBasis !== "comparable_total" && offer.bucket === "confirmed" ? `<span>تكلفة الوصول المؤكدة: ${fmt(offer.totalSAR)}</span>` : ""}
         ${isLowest ? '<em>' + (intelligence?.priceBasis === "comparable_total" || group.priceBasis === "comparable_total" ? "أقل إجمالي مؤكد" : "أقل سعر معلن") + '</em>' : ""}
       </div>
       <div class="merchant-actions">
@@ -813,30 +814,37 @@ function productImageMarkup(offer, group, title, fallbackClass) {
   return '<img src="' + escapeHtml(images[0]) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" data-image-options="' + escapeHtml(JSON.stringify(images)) + '" data-image-index="0" onerror="const urls=JSON.parse(this.dataset.imageOptions);const next=Number(this.dataset.imageIndex)+1;this.dataset.imageIndex=next;if(next &lt; urls.length){this.src=urls[next]}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';}">' + fallback;
 }
 
-function exactMatchCard(group, selectedGroup) {
-  const intelligence = buildOfferIntelligence(group);
-  const offer = intelligence.baselineOffer || group.bestPriceOffer || group.bestOffer || group.offers?.[0];
+function exactMatchCard(group, selectedGroup, comparisonMarkup = "") {
+  const available = (group.offers || []).filter(item => item.availability !== "out_of_stock" && item.canShipToSaudi !== false);
+  const priced = available.filter(item => Number.isFinite(item.productPrice)).sort((a,b)=>a.productPrice-b.productPrice);
+  const offer = priced[0] || group.bestOffer || group.offers?.[0];
   if (!offer) return "";
-  const specs = offer.specs || {};
   const title = productDisplayTitle(offer);
-  const modelNumber = specs.modelNumber || null;
-  const uniqueMerchants = new Set((group.offers || []).map((item) => item.merchant).filter(Boolean)).size;
+  const uniqueMerchants = new Set((group.offers || []).map(item => item.merchant).filter(Boolean)).size;
+  const countries = [...new Map((group.offers || []).filter(item => item.merchantCountryCode).map(item => [item.merchantCountryCode,item.merchantCountryNameAr || item.merchantCountryCode])).entries()];
   const selected = selectedGroup?.key === group.key;
   const image = productImageMarkup(offer, group, title, "match-card-fallback");
+  const specs = specEntries(offer).filter(([label]) => !(describeProduct(offer).kind === "console" && label === "اللون")).slice(0,3);
+  const confirmed = available.filter(item => item.bucket === "confirmed" && Number.isFinite(item.totalSAR)).sort((a,b)=>a.totalSAR-b.totalSAR)[0];
+  const price = priced[0]?.productPrice ?? null;
 
   return `
-    <button type="button" class="match-result-card ${selected ? "active" : ""}" data-group-key="${escapeHtml(group.key)}">
+    <article class="product-summary-card ${selected ? "is-expanded" : ""}">
+    <button type="button" class="match-result-card ${selected ? "active" : ""}" data-group-key="${escapeHtml(group.key)}" aria-expanded="${selected}">
       <div class="match-card-image">${image}</div>
       <div class="match-card-copy">
         <span class="mini-kicker">${escapeHtml(categoryLabel(productCategory(offer)))}</span>
         <strong>${escapeHtml(title)}</strong>
-        <small>${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
+        <div class="card-specs">${specs.map(([label,value])=>`<span>${escapeHtml(label)}: ${escapeHtml(value)}</span>`).join("")}<span>${conditionDisplay(offer.condition || "unknown")}</span></div>
+        <div class="card-coverage"><small>${group.offers.length} عروض · ${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
+          <span class="card-countries">${countries.slice(0,3).map(([code,name])=>`<span aria-label="${escapeHtml(name)}" title="${escapeHtml(name)}">${countryFlag(code)}</span>`).join("")}${countries.length > 3 ? `<small>+${countries.length-3}</small>` : ""}</span>
+        </div>
       </div>
-      <div class="match-card-price">
-        <small>${intelligence.priceBasis === "comparable_total" ? "إجمالي مقارن" : "السعر المعلن من"}</small>
-        <b>${fmt(intelligence.baselineValue ?? group.bestValue)}</b>
-      </div>
+      <div class="match-card-price"><div><small>${priced.length ? "سعر المنتج من" : "سعر متوفر غير مؤكد"}</small><b>${fmt(price)}</b></div><span class="card-expand-label">${selected ? "إغلاق العروض ↑" : "مقارنة العروض ↓"}</span></div>
+      <small class="card-delivery">${confirmed ? `أقل تكلفة وصول مؤكدة: ${fmt(confirmed.totalSAR)}` : "الشحن والرسوم تُحسب في التسعيرة"}</small>
     </button>
+    ${selected ? comparisonMarkup : ""}
+    </article>
   `;
 }
 
@@ -893,7 +901,7 @@ function renderProduct(product, query) {
   const selectedIntelligence = selectedGroup ? buildOfferIntelligence(selectedGroup) : null;
   const featuredOffer = selectedIntelligence?.baselineOffer || selectedGroup?.bestPriceOffer || selectedGroup?.bestOffer || null;
   const featuredValue = selectedIntelligence?.baselineValue ?? selectedGroup?.bestValue ?? null;
-  const featuredConfirmed = featuredOffer?.bucket === "confirmed";
+  const featuredConfirmed = selectedIntelligence?.priceBasis === "comparable_total" && featuredOffer?.bucket === "confirmed";
   const canonicalProfile = buildCanonicalProductProfile(selectedGroup?.offers || []);
 
   const modelCount = selector.options.models.length;
@@ -910,37 +918,7 @@ function renderProduct(product, query) {
   const selectedSpecs = featuredOffer?.specs || {};
   const selectedTitle = featuredOffer ? productDisplayTitle(featuredOffer) : product.model;
 
-  els.results.innerHTML = `
-    <section class="result-head">
-      <div>
-        <span class="mini-kicker">نتائج البحث</span>
-        <h2>${escapeHtml(product.nameAr)}</h2>
-        <p>${intent.discoveryMode === "brand" ? "منتجات الشركة حسب الفئة. اختر منتجًا لمقارنة عروض المتاجر." : "اختر الفئة والمنتج، ثم قارن عروض المتاجر للنسخة نفسها."}</p>
-      </div>
-      <div class="identity-pill">${exactGroups.length} منتجات مطابقة · ${relatedGroups.length} بدائل</div>
-    </section>
-
-    <div class="results-toolbar">
-      <label>التوفر <select id="availabilityFilter"><option value="all" ${state.availability === "all" ? "selected" : ""}>كل حالات التوفر</option><option value="in_stock" ${state.availability === "in_stock" ? "selected" : ""}>المتوفر فقط</option></select></label>
-      <label>المتجر <select id="merchantFilter"><option value="all">كل المتاجر</option>${[...new Set(product.offers.map(o => o.merchant).filter(Boolean))].map(merchant => '<option value="'+escapeHtml(merchant)+'" '+(state.merchant === merchant ? 'selected' : '')+'>'+escapeHtml(merchant)+'</option>').join("")}</select></label>
-      <span>${filteredOffers.length} من ${product.offers.length} عرضًا</span>
-      <button id="resetResultFilters" type="button">مسح الفلاتر</button>
-    </div>
-    ${!exactGroups.length ? '<div class="search-notice" role="status">'+(!filteredOffers.length ? 'لا توجد عروض ضمن الفلاتر الحالية. جرّب مسح الفلاتر.' : 'لم نجد النسخة المطلوبة مطابقةً بالكامل. البدائل أدناه تختلف عن طلبك؛ تحقق من الموديل والسعة واللون قبل الاختيار.')+'</div>' : ''}
-    ${discoverySections.length > 1 ? `<nav class="category-tabs" aria-label="فئات النتائج">
-      <button type="button" class="category-tab ${state.category === 'all' ? 'active' : ''}" aria-pressed="${state.category === 'all'}" data-category="all">الكل <span>${exactGroups.length}</span></button>
-      ${discoverySections.map(section=>`<button type="button" class="category-tab ${state.category === section.key ? 'active' : ''}" aria-pressed="${state.category === section.key}" data-category="${escapeHtml(section.key)}">${escapeHtml(section.label)} <span>${section.groups.length}</span></button>`).join('')}
-    </nav>` : ''}
-    ${displayedSections.map(section=>{
-      const limit = state.category === 'all' ? 6 : state.visibleCount;
-      return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
-        <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
-        <div class="match-results-grid">${section.groups.slice(0,limit).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null)).join('')}</div>
-        ${section.groups.length > limit ? `<button type="button" class="show-category" data-show-category="${escapeHtml(section.key)}">عرض المزيد من ${escapeHtml(section.label)} (${section.groups.length-limit})</button>` : ''}
-      </section>`;
-    }).join('')}
-    ${!displayedSections.length ? '<div class="empty-state">لا توجد منتجات مطابقة ضمن الفلاتر الحالية.</div>' : ''}
-
+  const comparisonMarkup = `
     <details class="selected-comparison" ${state.comparisonOpen ? 'open' : 'hidden'}>
     <summary>مقارنة عروض المنتج المختار${state.comparisonOpen && featuredOffer ? ' · '+escapeHtml(selectedTitle) : ''}</summary>
     <section class="result-grid comparison-layout">
@@ -1034,6 +1012,40 @@ function renderProduct(product, query) {
     </section>
 
     </details>
+  `;
+
+  els.results.innerHTML = `
+    <section class="result-head">
+      <div>
+        <span class="mini-kicker">نتائج البحث</span>
+        <h2>${escapeHtml(product.nameAr)}</h2>
+        <p>${intent.discoveryMode === "brand" ? "منتجات الشركة حسب الفئة. اختر منتجًا لمقارنة عروض المتاجر." : "اختر الفئة والمنتج، ثم قارن عروض المتاجر للنسخة نفسها."}</p>
+      </div>
+      <div class="identity-pill">${exactGroups.length} منتجات مطابقة · ${relatedGroups.length} بدائل</div>
+    </section>
+
+    <div class="results-toolbar">
+      <label>التوفر <select id="availabilityFilter"><option value="all" ${state.availability === "all" ? "selected" : ""}>كل حالات التوفر</option><option value="in_stock" ${state.availability === "in_stock" ? "selected" : ""}>المتوفر فقط</option></select></label>
+      <label>المتجر <select id="merchantFilter"><option value="all">كل المتاجر</option>${[...new Set(product.offers.map(o => o.merchant).filter(Boolean))].map(merchant => '<option value="'+escapeHtml(merchant)+'" '+(state.merchant === merchant ? 'selected' : '')+'>'+escapeHtml(merchant)+'</option>').join("")}</select></label>
+      <span>${filteredOffers.length} من ${product.offers.length} عرضًا</span>
+      <button id="resetResultFilters" type="button">مسح الفلاتر</button>
+    </div>
+    ${!exactGroups.length ? '<div class="search-notice" role="status">'+(!filteredOffers.length ? 'لا توجد عروض ضمن الفلاتر الحالية. جرّب مسح الفلاتر.' : 'لم نجد النسخة المطلوبة مطابقةً بالكامل. البدائل أدناه تختلف عن طلبك؛ تحقق من الموديل والسعة واللون قبل الاختيار.')+'</div>' : ''}
+    ${discoverySections.length > 1 ? `<nav class="category-tabs" aria-label="فئات النتائج">
+      <button type="button" class="category-tab ${state.category === 'all' ? 'active' : ''}" aria-pressed="${state.category === 'all'}" data-category="all">الكل <span>${exactGroups.length}</span></button>
+      ${discoverySections.map(section=>`<button type="button" class="category-tab ${state.category === section.key ? 'active' : ''}" aria-pressed="${state.category === section.key}" data-category="${escapeHtml(section.key)}">${escapeHtml(section.label)} <span>${section.groups.length}</span></button>`).join('')}
+    </nav>` : ''}
+    ${displayedSections.map(section=>{
+      const limit = state.category === 'all' ? 6 : state.visibleCount;
+      return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
+        <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
+        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup)).join('')}</div>
+        ${section.groups.length > limit ? `<button type="button" class="show-category" data-show-category="${escapeHtml(section.key)}">عرض المزيد من ${escapeHtml(section.label)} (${section.groups.length-limit})</button>` : ''}
+      </section>`;
+    }).join('')}
+    ${!displayedSections.length ? '<div class="empty-state">لا توجد منتجات مطابقة ضمن الفلاتر الحالية.</div>' : ''}
+
+    ${!state.comparisonOpen ? '<details class="selected-comparison" hidden></details>' : ""}
 
     ${additionalResultsSection("نسخ ومنتجات أخرى", relatedGroups.filter(group => !["game","accessory"].includes(describeProduct(group.bestOffer).kind)))}
     ${additionalResultsSection("ألعاب للجهاز", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "game"))}
@@ -1052,7 +1064,7 @@ function renderProduct(product, query) {
     const sameCategory = state.category === button.dataset.showCategory;
     state.category=button.dataset.showCategory; state.visibleCount=sameCategory ? state.visibleCount+12 : 12; renderProduct(product,query);
   }));
-  document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ state.comparisonOpen=event.target.open; });
+  document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
   $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
@@ -1061,7 +1073,7 @@ function renderProduct(product, query) {
       const group = exactGroups.find((item) => item.key === button.dataset.groupKey);
       const offer = group?.bestPriceOffer || group?.bestOffer;
       if (!offer) return;
-      state.comparisonOpen = true;
+      state.comparisonOpen = !(state.comparisonOpen && state.selectedGroupKey === group.key);
       state.selectedGroupKey = group.key;
       const dimensions = offerVariantDimensions(offer);
       state.selectorSelection = {
@@ -1073,7 +1085,7 @@ function renderProduct(product, query) {
         skuKey: dimensions.skuKey,
       };
       renderProduct(product, query);
-      requestAnimationFrame(() => {
+      if (state.comparisonOpen) requestAnimationFrame(() => {
         document.querySelector(".product-configurator")?.scrollIntoView({ behavior:"smooth", block:"start" });
       });
     });
