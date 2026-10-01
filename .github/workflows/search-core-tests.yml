@@ -6,6 +6,8 @@ on:
     paths:
       - "src/search-query.mjs"
       - "tests/regressions.test.mjs"
+      - "tests/source-coverage.test.mjs"
+      - "tests/discovery.test.mjs"
       - "tests/ui-flow.test.mjs"
       - "tests/search-cache.test.mjs"
       - "server/search-cache.mjs"
