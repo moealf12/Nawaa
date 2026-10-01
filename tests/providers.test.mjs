@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { extractProductLinks, selectedStores, configuredFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractProductLinks, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -315,5 +315,32 @@ assert.ok(freeLinks[0].url.includes("p-123456.html"));
 assert.ok(selectedStores("فستان شي ان", 8).some((store) => store.id === "shein-sa"));
 assert.ok(selectedStores("لابتوب", 8).some((store) => store.id === "newegg-global"));
 assert.ok(configuredFreeStorefronts().length >= 15);
+
+const fashionRoutes = routeFreeStorefronts("فستان شي ان", 8);
+assert.equal(fashionRoutes[0].store.id, "shein-sa");
+assert.ok(fashionRoutes[0].reasons.includes("brand"));
+assert.ok(fashionRoutes.every((route) =>
+  route.store.categories.includes("clothing") ||
+  route.store.categories.includes("*") ||
+  route.reasons.includes("adjacent_category")
+));
+
+const laptopRoutes = routeFreeStorefronts("لابتوب hp", 8);
+assert.ok(laptopRoutes.some((route) => route.store.id === "newegg-global"));
+assert.ok(laptopRoutes.some((route) => route.store.id === "bestbuy-us"));
+assert.ok(laptopRoutes.some((route) => route.store.id === "bhphoto-us"));
+assert.ok(!laptopRoutes.some((route) => route.store.id === "sephora-sa"));
+assert.ok(laptopRoutes.length <= 8);
+
+const perfumeRoutes = routeFreeStorefronts("عطر", 8);
+assert.equal(perfumeRoutes[0].store.id, "sephora-sa");
+assert.ok(perfumeRoutes.some((route) => route.store.id === "aliexpress-cn"));
+assert.ok(!perfumeRoutes.some((route) => route.store.id === "newegg-global"));
+
+const unknownRoutes = routeFreeStorefronts("منتج غريب غير مصنف", 8);
+assert.ok(unknownRoutes.length >= 3);
+assert.ok(unknownRoutes.every((route) =>
+  route.store.categories.includes("*") || route.store.categories.includes("other")
+));
 
 console.log("NAWAA provider tests passed");
