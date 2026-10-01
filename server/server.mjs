@@ -1,3 +1,4 @@
+import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
 import http from "node:http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -133,7 +134,18 @@ async function searchAll(query) {
 }
 
 const cachedSearch = createSearchCache(searchAll);
+const ebayDeletion = createEbayDeletionHandler({
+  token: process.env.EBAY_DELETION_VERIFICATION_TOKEN,
+  endpoint: process.env.EBAY_DELETION_ENDPOINT,
+  onDelete: () => cachedSearch.clear(),
+});
+
 const server = http.createServer(async (req, res) => {
+  const notificationUrl = new URL(req.url, "http://localhost");
+  if (notificationUrl.pathname === "/api/ebay/account-deletion") {
+    await ebayDeletion(req, res, notificationUrl);
+    return;
+  }
   const origin = allowedOrigin(req.headers.origin || "");
   if (req.method === "OPTIONS") {
     if (!origin) return jsonResponse(res, 403, { error: "origin_not_allowed" }, "null");

@@ -22,7 +22,7 @@ const MARKETS = [
 
 let tokenCache = { token: null, expiresAt: 0 };
 
-async function getToken() {
+export async function getEbayApplicationToken() {
   if (tokenCache.token && Date.now() < tokenCache.expiresAt - 60_000) return tokenCache.token;
 
   const id = process.env.EBAY_CLIENT_ID;
@@ -76,7 +76,7 @@ async function normalizeItem(item, market) {
   return {
     provider: "ebay",
     providerMarket: marketplaceId,
-    merchant: item?.seller?.username ? `eBay · ${item.seller.username}` : "eBay",
+    merchant: "eBay", // Seller account identifiers must not enter client storage or quotes.
     merchantCountryCode: item?.itemLocation?.country || countryCode,
     merchantCountryNameAr: countryNameAr,
     sourceUrl: item?.itemWebUrl || null,
@@ -136,7 +136,7 @@ async function searchMarket(query, market, token, limit = 6) {
 }
 
 export async function searchEbayWorldwide(query, options = {}) {
-  const token = await getToken();
+  const token = await getEbayApplicationToken();
   const requested = Number(options.marketLimit || process.env.EBAY_MARKET_LIMIT || 8);
   const marketLimit = Number.isFinite(requested) ? Math.max(1, Math.min(MARKETS.length, requested)) : 8;
   const selected = MARKETS.slice(0, marketLimit);
