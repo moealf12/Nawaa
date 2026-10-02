@@ -62,3 +62,36 @@ test("reconciliation keeps one-source products stable", () => {
   assert.equal(result.reconciled,false);
   assert.deepEqual(result.contributingStrategies,["jsonld"]);
 });
+
+
+test("reconciliation refuses to merge fields from a different product", () => {
+  const anchor = {
+    strategy:"domain_adapter",
+    adapterId:"shein",
+    confidence:0.96,
+    product:{
+      name:"Black Evening Dress",
+      brand:"SHEIN",
+      sku:"DRESS-1",
+      offers:{price:149,priceCurrency:"SAR",availability:"instock"},
+    },
+  };
+  const unrelated = {
+    strategy:"jsonld",
+    confidence:0.99,
+    product:{
+      name:"Wireless Bluetooth Speaker",
+      brand:"SoundCo",
+      sku:"SPK-9",
+      image:"https://example.com/speaker.jpg",
+      offers:{price:89,priceCurrency:"SAR",availability:"instock"},
+    },
+  };
+
+  const result = reconcileProductCandidates([anchor,unrelated],anchor);
+  assert.equal(result.product.name,"Black Evening Dress");
+  assert.equal(result.product.mpn,"DRESS-1");
+  assert.notEqual(result.product.image,"https://example.com/speaker.jpg");
+  assert.equal(result.identity.summary.rejected,1);
+  assert.deepEqual(result.identity.summary.rejectedSources,["jsonld"]);
+});
