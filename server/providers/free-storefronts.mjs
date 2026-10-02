@@ -2,7 +2,7 @@ import { resolveProductUrl } from "../url-resolver.mjs";
 import { normalizeSearchQuery, parseSearchIntent } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 
-const USER_AGENT = "Mozilla/5.0 (compatible; NAWAA-Free-Discovery/1.0; +https://moealf12.github.io/Nawaa/)";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
 const STORES = [
   {
@@ -119,6 +119,14 @@ function stripHtml(value = "") {
   return decodeHtml(String(value).replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
+function canonicalizeCandidateUrl(url) {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    return parsed.href;
+  } catch { return url; }
+}
+
 function sameHost(candidate, base) {
   try {
     const a = new URL(candidate);
@@ -133,22 +141,29 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
   const out = [];
   const seen = new Set();
-  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  let match;
-  while ((match = re.exec(html))) {
+  const addCandidate = (rawUrl, rawLabel = "") => {
     let url;
-    try { url = new URL(decodeHtml(match[1]), searchUrl).href; } catch { continue; }
-    if (!sameHost(url, searchUrl) || !store.productPath.test(url)) continue;
-    const label = stripHtml(match[2]);
+    try { url = new URL(decodeHtml(rawUrl).replace(/\\u002F/gi, "/").replace(/\\\//g, "/"), searchUrl).href; } catch { return; }
+    if (!sameHost(url, searchUrl) || !store.productPath.test(url)) return;
+    const label = stripHtml(rawLabel);
     const haystack = normalizeSearchQuery(label + " " + url);
     const hits = tokens.filter((token) => haystack.includes(token)).length;
     const score = tokens.length ? hits / tokens.length : 0.5;
-    if (score < 0.2 && tokens.length > 1) continue;
-    url = url.split("#")[0];
-    if (seen.has(url)) continue;
+    if (score < 0.2 && tokens.length > 1) return;
+    url = canonicalizeCandidateUrl(url);
+    if (seen.has(url)) return;
     seen.add(url);
     out.push({ url, label, score });
-  }
+  };
+
+  const anchorRe = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = anchorRe.exec(html))) addCandidate(match[1], match[2]);
+
+  // Modern storefronts often hydrate search results in JSON instead of rendering
+  // product anchors server-side. Scan quoted URL values as a second discovery path.
+  const quotedUrlRe = /["']((?:https?:)?\\?\/\\?\/[^"'<>\\s]+|\\?\/[^"'<>\\s]+)["']/gi;
+  while ((match = quotedUrlRe.exec(html))) addCandidate(match[1], "");
   const ranked = out.sort((a,b) => b.score - a.score);
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
@@ -157,7 +172,13 @@ async function fetchText(url) {
   const response = await fetch(url, {
     headers:{
       accept:"text/html,application/xhtml+xml",
-      "accept-language":"en-US,en;q=0.8,ar-SA;q=0.7",
+      "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
+      "cache-control":"no-cache",
+      pragma:"no-cache",
+      "sec-fetch-dest":"document",
+      "sec-fetch-mode":"navigate",
+      "sec-fetch-site":"none",
+      "upgrade-insecure-requests":"1",
       "user-agent":USER_AGENT,
     },
     redirect:"follow",
