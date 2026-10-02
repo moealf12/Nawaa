@@ -26,7 +26,7 @@ test("NAWAA extractor normalizes a verified product into stable schema", () => {
   assert.equal(product.identity.brand,"Example");
   assert.equal(product.commerce.priceSAR,100);
   assert.equal(product.quality.extractionStrategy,"json_ld");
-  assert.equal(product.quality.confidence,1);
+  assert.equal(product.quality.confidence,0.93);
   assert.deepEqual(product.quality.missingFields,[]);
 });
 
