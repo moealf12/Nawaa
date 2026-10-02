@@ -283,7 +283,10 @@ export function parseLandmarkAlgoliaPayload(payload, storeId) {
     seen.add(productId);
 
     let sourceUrl;
-    try { sourceUrl = new URL(path, config.host).href; } catch { continue; }
+    try {
+      const localizedPath = path.startsWith("/buy-") ? "/sa/en" + path : path;
+      sourceUrl = new URL(localizedPath, config.host).href;
+    } catch { continue; }
 
     const imageRaw = String(hit?.thumb_image || hit?.thumbnailImg || hit?.primaryAssetContentUrl || hit?.galleryImages?.[0]?.url || "").trim();
     let image = null;
