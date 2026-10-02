@@ -1,4 +1,4 @@
-const STRATEGY_WEIGHT = {
+const DEFAULT_WEIGHT = {
   jsonld: 1.00,
   domain_adapter: 0.99,
   embedded_json: 0.97,
@@ -7,12 +7,21 @@ const STRATEGY_WEIGHT = {
   meta: 0.75,
 };
 
+const FIELD_WEIGHT = {
+  price: { domain_adapter:1.12, storefront_data:1.08, embedded_json:1.04, jsonld:1.00, hydrated_state:0.98, meta:0.72 },
+  availability: { domain_adapter:1.12, storefront_data:1.08, embedded_json:1.04, jsonld:1.00, hydrated_state:0.98, meta:0.72 },
+  name: { jsonld:1.08, domain_adapter:1.05, embedded_json:1.02, storefront_data:1.00, hydrated_state:0.97, meta:0.72 },
+  identity: { jsonld:1.08, domain_adapter:1.05, embedded_json:1.02, storefront_data:1.00, hydrated_state:0.97, meta:0.72 },
+};
+
 function sourceKey(entry) {
   return entry?.adapterId ? `${entry.strategy}:${entry.adapterId}` : entry?.strategy || "unknown";
 }
 
-function rank(entry) {
-  return Number(entry?.confidence || 0) * (STRATEGY_WEIGHT[entry?.strategy] || 0.8);
+function rank(entry, field = null) {
+  const table = field ? FIELD_WEIGHT[field] : null;
+  const weight = table?.[entry?.strategy] ?? DEFAULT_WEIGHT[entry?.strategy] ?? 0.8;
+  return Number(entry?.confidence || 0) * weight;
 }
 
 function normalizeText(value) {
@@ -53,8 +62,13 @@ function offerOf(product) {
   return null;
 }
 
-function best(entries) {
-  return [...entries].sort((a,b) => rank(b) - rank(a))[0] || null;
+function best(entries, field = null) {
+  return [...entries].sort((a,b) => rank(b, field) - rank(a, field))[0] || null;
+}
+
+export function choosePreferredCandidate(candidates = [], field = null, predicate = null) {
+  const eligible = predicate ? candidates.filter(predicate) : candidates;
+  return best(eligible, field);
 }
 
 export function detectCandidateConflicts(candidates = []) {
@@ -70,7 +84,7 @@ export function detectCandidateConflicts(candidates = []) {
       const base = Math.max(Math.abs(a.offer.price), Math.abs(b.offer.price), 1);
       const deltaPct = Math.abs(a.offer.price - b.offer.price) / base;
       if (deltaPct >= 0.03) {
-        const winner = best([a.entry,b.entry]);
+        const winner = best([a.entry,b.entry], "price");
         conflicts.push({
           field:"price",
           severity:deltaPct >= 0.15 ? "high" : "medium",
@@ -87,7 +101,7 @@ export function detectCandidateConflicts(candidates = []) {
       const avA = a.offer.availability;
       const avB = b.offer.availability;
       if (avA && avB && avA !== avB && /stock|available|unavailable|soldout/.test(avA + " " + avB)) {
-        const winner = best([a.entry,b.entry]);
+        const winner = best([a.entry,b.entry], "price");
         conflicts.push({
           field:"availability",
           severity:"medium",
@@ -107,7 +121,7 @@ export function detectCandidateConflicts(candidates = []) {
     for (let j = i + 1; j < named.length; j++) {
       const similarity = textSimilarity(named[i].product.name, named[j].product.name);
       if (similarity < 0.45) {
-        const winner = best([named[i],named[j]]);
+        const winner = best([named[i],named[j]], "name");
         conflicts.push({
           field:"name",
           severity:similarity < 0.2 ? "high" : "medium",
