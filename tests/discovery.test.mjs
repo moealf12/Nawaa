@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as query from '../src/search-query.mjs';
 import * as core from '../src/search-core.mjs';
-import { routeFreeStorefronts } from '../server/providers/free-storefronts.mjs';
+import { routeFreeStorefronts, extractProductLinks } from '../server/providers/free-storefronts.mjs';
 const offer=(title,price,brand='HP')=>({title,productPrice:price,condition:'new',availability:'in_stock',merchant:'Store',specs:{brand},...query.assessOfferMatch(brand,{title,condition:'new',specs:{brand}})});
 const sections=(q,offers)=>core.buildDiscoverySections?.(q,core.groupComparableOffers(offers)) || [];
 
@@ -123,4 +123,12 @@ test('free storefront routing has no fixed source cap',()=>{
   const routes=routeFreeStorefronts('فستان');
   assert.ok(routes.length > 8, 'expected every relevant storefront, not the former eight-store cap');
   assert.equal(new Set(routes.map(route=>route.store.id)).size,routes.length);
+});
+
+
+test('storefront discovery does not cap product candidates at five or forty',()=>{
+  const store={productPath:/\/p\/\d+$/};
+  const html=Array.from({length:55},(_,i)=>'<a href="/p/'+(i+1)+'">phone '+(i+1)+'</a>').join('');
+  const links=extractProductLinks(html,'https://shop.example/search',store,'phone');
+  assert.equal(links.length,55);
 });
