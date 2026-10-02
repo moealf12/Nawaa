@@ -109,6 +109,41 @@ Other gated adapters (3):
 
 ## Current audit conclusion
 
-No source will be promoted to `LIVE_VERIFIED` from code inspection alone. The next pass must exercise the connected sources against real merchant responses and record candidates found, verified offers, structured price, extraction failures, blocking, and latency.
+Latest repeatable live audit on 2026-10-02 verified **11 of 20 free storefronts**. The audit probe is capped at 100 offers per source for CI speed only; production search remains uncapped by this audit setting.
 
-The deployed Render API could not be reached from the current external inspection environment at audit start, so no fabricated live-success statuses are recorded here.
+### LIVE_VERIFIED (11)
+
+- aliexpress-cn
+- ikea-sa
+- asos-global
+- newegg-global
+- bestbuy-us
+- nike-sa
+- namshi-sa
+- centrepoint-sa
+- maxfashion-sa
+- decathlon-sa
+- niceone-sa
+
+### Connected but no verified candidates yet (3)
+
+- shein-sa
+- temu-global
+- walmart-us
+
+### Failing / blocked in latest audit (6)
+
+- iherb-sa
+- farfetch-sa
+- etsy-global
+- bhphoto-us
+- adidas-sa
+- sephora-sa
+
+Notable live proof from the latest pass:
+- Centrepoint: 100/100 audit offers verified via Bloomreach, SAR pricing.
+- Max Fashion: 100/100 audit offers verified via Bloomreach, SAR pricing.
+- IKEA Saudi: official SIK search backend verified with live SAR product pricing.
+- Best Buy, Newegg, ASOS, AliExpress, Nike, Namshi, Decathlon, and Nice One also returned verified live offers.
+
+A source is promoted only from real merchant responses; code presence alone does not qualify it as live.
