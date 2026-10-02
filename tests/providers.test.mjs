@@ -552,3 +552,24 @@ assert.match(maxAlgoliaOffers[0].sourceUrl, /maxfashion\.com\/buy-teddy-bear/);
 
 
 assert.equal(true, true, "Landmark Algolia host rotation is covered by live source audit");
+
+
+const bloomreachLandmarkFixture = {
+  response:{
+    docs:[{
+      pid:"2129361",
+      title:"Iconic A-line Midi Satin Dress with Belt Detail",
+      sale_price:73,
+      price:169,
+      url:"/buy-iconic-aline-midi-satin-dress-with-belt-detail/p/2129361",
+      thumb_image:"https://media.centrepointstores.com/i/centrepoint/2129361.jpg",
+      brand:"Iconic",
+      inStock:1,
+    }],
+  },
+};
+const bloomreachLandmarkOffers = parseLandmarkBloomreachPayload(bloomreachLandmarkFixture, "centrepoint-sa");
+assert.equal(bloomreachLandmarkOffers.length, 1);
+assert.equal(bloomreachLandmarkOffers[0].price, 73);
+assert.equal(bloomreachLandmarkOffers[0].currency, "SAR");
+assert.match(bloomreachLandmarkOffers[0].sourceUrl, /centrepointstores\.com\/sa\/en\/buy-iconic/);
