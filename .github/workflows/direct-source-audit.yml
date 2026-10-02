@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Run test suite
+        run: npm test
       - name: Audit direct sources
         run: node scripts/audit-direct-sources.mjs direct-source-audit-results.json
       - name: Upload audit artifact
