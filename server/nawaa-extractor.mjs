@@ -71,6 +71,12 @@ export function buildExtractionDiagnostics(product) {
       highSeverity:0,
       fields:[],
     },
+    freshness: extraction.freshness || {
+      freshestObservedAt:null,
+      staleSources:[],
+      unknownFreshnessSources:[],
+      sources:[],
+    },
     missingFields: product?.quality?.missingFields || [],
     confidence: product?.quality?.confidence ?? null,
     completeness: product?.quality?.completeness ?? null,
