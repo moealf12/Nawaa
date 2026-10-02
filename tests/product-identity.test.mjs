@@ -19,7 +19,7 @@ test("identity engine treats matching GTIN as the same product", () => {
 test("identity engine rejects conflicting strong identifiers", () => {
   const result = compareProductIdentity(
     {name:"Phone Model A",brand:"BrandX",sku:"SKU-A"},
-    {name:"Phone Model B",brand:"BrandX",sku:"SKU-B"}
+    {name:"Kitchen Blender B",brand:"BrandY",sku:"SKU-B"}
   );
   assert.equal(result.verdict,"different");
   assert.ok(result.conflicts.includes("sku"));
