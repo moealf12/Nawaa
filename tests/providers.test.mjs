@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { extractProductLinks, extractAliExpressSearchOffers, extractBestBuySearchOffers, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractProductLinks, extractAliExpressSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 import { extractEmbeddedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
@@ -488,3 +488,28 @@ const bestBuyModernLinks = extractProductLinks(
 );
 assert.equal(bestBuyModernLinks.length, 1);
 assert.match(bestBuyModernLinks[0].url, /\/sku\/6667483/);
+
+
+const ikeaSikFixture = {
+  results:[{
+    component:"PRIMARY_AREA",
+    items:[{
+      type:"PRODUCT",
+      product:{
+        itemNo:"30605423",
+        name:"SANDSBERG",
+        typeName:"Chair",
+        itemMeasureReferenceText:"black",
+        pipUrl:"https://www.ikea.com/sa/en/p/sandsberg-chair-black-30605423/",
+        mainImageUrl:"https://www.ikea.com/sa/en/images/products/sandsberg-chair-black.jpg",
+        salesPrice:{ numeral:59, currencyCode:"SAR" },
+      },
+    }],
+  }],
+};
+const ikeaSikOffers = parseIkeaSikPayload(ikeaSikFixture, "chair");
+assert.equal(ikeaSikOffers.length, 1);
+assert.equal(ikeaSikOffers[0].productId, "30605423");
+assert.equal(ikeaSikOffers[0].price, 59);
+assert.equal(ikeaSikOffers[0].currency, "SAR");
+assert.match(ikeaSikOffers[0].sourceUrl, /sandsberg-chair-black-30605423/);
