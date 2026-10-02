@@ -235,9 +235,14 @@ export function parseLandmarkAlgoliaPayload(payload, storeId) {
 async function searchLandmarkAlgolia(storeId, query, limit = Infinity) {
   const config = LANDMARK_ALGOLIA[storeId];
   if (!config) return [];
-  const endpoint =
-    "https://" + config.appId.toLowerCase() + "-dsn.algolia.net/1/indexes/" +
-    encodeURIComponent(config.index) + "/query";
+  const app = config.appId.toLowerCase();
+  const hosts = [
+    app + "-dsn.algolia.net",
+    app + ".algolia.net",
+    app + "-1.algolianet.com",
+    app + "-2.algolianet.com",
+    app + "-3.algolianet.com",
+  ];
   const all = [];
   const seen = new Set();
   const finiteLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : Infinity;
@@ -245,29 +250,46 @@ async function searchLandmarkAlgolia(storeId, query, limit = Infinity) {
   let page = 0;
   let nbPages = 1;
 
-  while (page < nbPages && all.length < finiteLimit) {
-    const response = await fetch(endpoint, {
-      method:"POST",
-      headers:{
-        accept:"application/json",
-        "content-type":"application/json",
-        "x-algolia-application-id":config.appId,
-        "x-algolia-api-key":config.apiKey,
-        "user-agent":USER_AGENT,
-      },
-      body:JSON.stringify({
-        query,
-        page,
-        hitsPerPage,
-        attributesToRetrieve:["*"],
-      }),
-      signal:AbortSignal.timeout(10000),
-    });
-    if (!response.ok) {
-      const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 300);
-      throw new Error("Landmark Algolia HTTP " + response.status + (detail ? ": " + detail : ""));
+  const requestPage = async (pageNumber) => {
+    const errors = [];
+    for (const host of hosts) {
+      const endpoint = "https://" + host + "/1/indexes/" + encodeURIComponent(config.index) + "/query";
+      try {
+        const response = await fetch(endpoint, {
+          method:"POST",
+          headers:{
+            accept:"application/json",
+            "content-type":"application/json",
+            "x-algolia-application-id":config.appId,
+            "x-algolia-api-key":config.apiKey,
+            "user-agent":USER_AGENT,
+          },
+          body:JSON.stringify({
+            query,
+            page:pageNumber,
+            hitsPerPage,
+            attributesToRetrieve:["*"],
+          }),
+          signal:AbortSignal.timeout(8000),
+        });
+        if (!response.ok) {
+          const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 220);
+          errors.push(host + " HTTP " + response.status + (detail ? " " + detail : ""));
+          continue;
+        }
+        return await response.json();
+      } catch (error) {
+        const detail = error instanceof Error
+          ? (error.cause?.code ? error.message + " (" + error.cause.code + ")" : error.message)
+          : String(error);
+        errors.push(host + " " + detail);
+      }
     }
-    const payload = await response.json();
+    throw new Error("Landmark Algolia hosts failed: " + errors.join(" | "));
+  };
+
+  while (page < nbPages && all.length < finiteLimit) {
+    const payload = await requestPage(page);
     nbPages = Math.max(1, Number(payload?.nbPages) || 1);
     for (const item of parseLandmarkAlgoliaPayload(payload, storeId)) {
       if (seen.has(item.productId)) continue;
