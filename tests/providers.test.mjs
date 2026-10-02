@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { extractProductLinks, extractAliExpressSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractProductLinks, extractAliExpressSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 import { extractEmbeddedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
@@ -513,3 +513,39 @@ assert.equal(ikeaSikOffers[0].productId, "30605423");
 assert.equal(ikeaSikOffers[0].price, 59);
 assert.equal(ikeaSikOffers[0].currency, "SAR");
 assert.match(ikeaSikOffers[0].sourceUrl, /sandsberg-chair-black-30605423/);
+
+
+const centrepointAlgoliaFixture = {
+  hits:[{
+    pid:"2129361",
+    title:"Iconic A-line Midi Satin Dress with Belt Detail",
+    sale_price:73,
+    price:73,
+    url:"/buy-iconic-aline-midi-satin-dress-with-belt-detail/p/2129361",
+    thumb_image:"https://media.centrepointstores.com/i/centrepoint/item.jpg",
+    brand:"Iconic",
+    inStock:1,
+  }],
+};
+const centrepointAlgoliaOffers = parseLandmarkAlgoliaPayload(centrepointAlgoliaFixture, "centrepoint-sa");
+assert.equal(centrepointAlgoliaOffers.length, 1);
+assert.equal(centrepointAlgoliaOffers[0].price, 73);
+assert.equal(centrepointAlgoliaOffers[0].currency, "SAR");
+assert.match(centrepointAlgoliaOffers[0].sourceUrl, /centrepointstores\.com\/buy-iconic/);
+
+const maxAlgoliaFixture = {
+  hits:[{
+    pid:"B26KGYBCTGT325GREYLIGHT",
+    title:"Teddy Bear Print Cotton Dress",
+    sale_price:22,
+    url:"/buy-teddy-bear-print-cotton-dress/p/B26KGYBCTGT325GREYLIGHT",
+    thumb_image:"https://media.maxfashion.com/i/max/item.jpg",
+    brand:"MAX",
+    inStock:1,
+  }],
+};
+const maxAlgoliaOffers = parseLandmarkAlgoliaPayload(maxAlgoliaFixture, "maxfashion-sa");
+assert.equal(maxAlgoliaOffers.length, 1);
+assert.equal(maxAlgoliaOffers[0].price, 22);
+assert.equal(maxAlgoliaOffers[0].currency, "SAR");
+assert.match(maxAlgoliaOffers[0].sourceUrl, /maxfashion\.com\/buy-teddy-bear/);
