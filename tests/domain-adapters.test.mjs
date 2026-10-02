@@ -3,8 +3,9 @@ import test from "node:test";
 import { extractDomainProduct, findDomainAdapter } from "../server/domain-adapters.mjs";
 import { extractionCandidates } from "../server/url-resolver.mjs";
 
-test("domain adapter registry matches SHEIN, Centrepoint, and Max Fashion", () => {
+test("domain adapter registry matches SHEIN, Temu, Centrepoint, and Max Fashion", () => {
   assert.equal(findDomainAdapter("https://www.shein.com/product-p-1.html")?.id, "shein");
+  assert.equal(findDomainAdapter("https://www.temu.com/test-product-g-601099999999999.html")?.id, "temu");
   assert.equal(findDomainAdapter("https://www.centrepointstores.com.sa/p/123")?.id, "centrepoint");
   assert.equal(findDomainAdapter("https://www.maxfashion.com.sa/p/456")?.id, "maxfashion");
   assert.equal(findDomainAdapter("https://example.com/p"), null);
@@ -68,6 +69,33 @@ test("SHEIN adapter reads assigned gbRawData payloads and normalizes SR to SAR",
   assert.equal(result?.product?.offers?.priceCurrency, "SAR");
   assert.equal(result?.product?.sku, "sr260306010176658381094");
   assert.equal(result?.product?.offers?.availability, "instock");
+});
+
+
+test("Temu adapter reads window.rawData and prioritizes URL product id", () => {
+  const html = `<script>
+    window.rawData = {
+      "recommendations": [{
+        "goodsName": "Wrong Recommendation",
+        "salePrice": {"amount": "8.99", "currency": "USD"},
+        "goodsId": "111"
+      }],
+      "goods": {
+        "goodsName": "Magnetic iPhone 17 Case",
+        "salePrice": {"amount": "12.49", "currency": "USD"},
+        "goodsImage": "https://img.example.com/temu.jpg",
+        "goodsId": "606259461874199",
+        "stockStatus": "in_stock"
+      }
+    };
+  </script>`;
+
+  const result = extractDomainProduct("https://www.temu.com/magnetic-case-g-606259461874199.html", html);
+  assert.equal(result?.adapterId, "temu");
+  assert.equal(result?.product?.name, "Magnetic iPhone 17 Case");
+  assert.equal(result?.product?.offers?.price, 12.49);
+  assert.equal(result?.product?.offers?.priceCurrency, "USD");
+  assert.equal(result?.product?.sku, "606259461874199");
 });
 
 test("Landmark adapters support priceData objects and unavailable stock correctly", () => {
