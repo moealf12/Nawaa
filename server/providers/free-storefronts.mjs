@@ -148,7 +148,23 @@ function searchPageDiagnostics(html, searchUrl) {
     canonicalUrl: /["']?(?:canonicalUrl|productUrl|url)["']?\s*[:=]/gi,
   };
   const hints = Object.fromEntries(Object.entries(hintPatterns).map(([key, regex]) => [key, (source.match(regex) || []).length]));
-  return { htmlBytes:new TextEncoder().encode(source).byteLength, hrefSamples:hrefs, hints };
+  const structuredUrlSamples = [];
+  const structuredUrlRe = /["'](?:canonicalUrl|productUrl|url)["']\s*:\s*["']([^"']+)["']/gi;
+  while ((match = structuredUrlRe.exec(source)) && structuredUrlSamples.length < 8) {
+    structuredUrlSamples.push(match[1]);
+  }
+  const productIdSamples = [];
+  const productIdRe = /["'](?:productId|product_id|goods_id|skuId)["']\s*:\s*["']?([A-Za-z0-9_-]+)["']?/gi;
+  while ((match = productIdRe.exec(source)) && productIdSamples.length < 8) {
+    productIdSamples.push(match[1]);
+  }
+  return {
+    htmlBytes:new TextEncoder().encode(source).byteLength,
+    hrefSamples:hrefs,
+    hints,
+    structuredUrlSamples,
+    productIdSamples,
+  };
 }
 
 function sameHost(candidate, base) {
