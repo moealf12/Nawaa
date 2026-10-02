@@ -1,0 +1,27 @@
+name: Live Source Audit
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "server/source-audit.mjs"
+      - "server/providers/free-storefronts.mjs"
+      - "server/url-resolver.mjs"
+      - "scripts/audit-sources.mjs"
+      - ".github/workflows/source-audit.yml"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node scripts/audit-sources.mjs source-audit-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-audit-results
+          path: source-audit-results.json
