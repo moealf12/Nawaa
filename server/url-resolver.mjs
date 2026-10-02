@@ -267,6 +267,37 @@ function extractBalancedJsonAfter(html, marker) {
   return null;
 }
 
+export function extractStorefrontProductState(html) {
+  const source = String(html || "");
+  const candidates = [];
+
+  // Shopify and similar storefronts commonly expose product JSON in script blocks
+  // or hydration payloads. Reuse the bounded JSON walker rather than executing JS.
+  const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  let match;
+  while ((match = scriptRe.exec(source))) {
+    const attrs = match[1] || "";
+    const raw = match[2].trim();
+    if (!raw || raw.length > 1500000) continue;
+    const storefrontHint =
+      /product|shopify|storefront|commerce|application\/json/i.test(attrs) ||
+      /"variants"\s*:|"product"\s*:|"selectedOrFirstAvailableVariant"/i.test(raw);
+    if (!storefrontHint || !/^[\[{]/.test(raw)) continue;
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { continue; }
+    walkJson(parsed, (node) => {
+      const candidate = embeddedOfferCandidate(node);
+      if (candidate) candidates.push(candidate);
+    });
+  }
+
+  candidates.sort((a,b) =>
+    Number(Boolean(b.image)) - Number(Boolean(a.image)) ||
+    Number(Boolean(b.brand)) - Number(Boolean(a.brand))
+  );
+  return candidates[0] || null;
+}
+
 export function extractHydratedProductState(html) {
   const candidates = [];
   for (const marker of ["window.__INITIAL_STATE__", "__INITIAL_STATE__", "window.__PRELOADED_STATE__", "__PRELOADED_STATE__", "window.__APOLLO_STATE__", "__APOLLO_STATE__"]) {
@@ -313,11 +344,13 @@ export function extractionCandidates(html) {
   const jsonld = products.find((p) => chooseOffer(p)) || products[0] || null;
   const embedded = extractEmbeddedProductState(html);
   const hydrated = extractHydratedProductState(html);
+  const storefront = extractStorefrontProductState(html);
   const meta = extractMetaProductState(html);
   return [
     { strategy:"jsonld", product:jsonld, confidence:jsonld ? 0.99 : 0 },
     { strategy:"embedded_json", product:embedded, confidence:embedded ? 0.94 : 0 },
     { strategy:"hydrated_state", product:hydrated, confidence:hydrated ? 0.9 : 0 },
+    { strategy:"storefront_data", product:storefront, confidence:storefront ? 0.92 : 0 },
     { strategy:"meta", product:meta, confidence:meta ? 0.72 : 0 },
   ].filter((entry) => entry.product);
 }
@@ -383,7 +416,7 @@ export async function extractProductDocument(url) {
     finalUrl:fetched.finalUrl,
     candidates,
     diagnostics:{
-      attemptedStrategies:["jsonld","embedded_json","hydrated_state","meta"],
+      attemptedStrategies:["jsonld","embedded_json","hydrated_state","storefront_data","meta"],
       availableStrategies:candidates.map((entry) => entry.strategy),
       htmlBytes:new TextEncoder().encode(fetched.html).byteLength,
     },
@@ -458,12 +491,14 @@ export async function resolveProductUrl(url) {
     extraction: {
       strategy: selected?.strategy || "none",
       confidence: selected?.confidence || 0,
-      attemptedStrategies: ["jsonld","embedded_json","hydrated_state","meta"],
+      attemptedStrategies: ["jsonld","embedded_json","hydrated_state","storefront_data","meta"],
       availableStrategies: candidates.map((entry) => entry.strategy),
       jsonLdProductFound: selected?.strategy === "jsonld",
       embeddedJsonProductFound: selected?.strategy === "embedded_json",
       nextDataProductFound: selected?.strategy === "embedded_json" && extracted.diagnostics.availableStrategies.includes("embedded_json"),
       hydrationProductFound: selected?.strategy === "hydrated_state",
+      storefrontProductFound: selected?.strategy === "storefront_data",
+      shopifyProductFound: selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics)),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
     }
