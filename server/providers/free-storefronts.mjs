@@ -387,6 +387,19 @@ async function searchStore(store, query, perStore = Infinity) {
             url:candidate?.url || null,
             error:result.reason instanceof Error ? result.reason.message : String(result.reason || "resolution_failed"),
           })),
+        unpricedSamples:settled
+          .map((result,index)=>({result,candidate:links[index]}))
+          .filter(({result})=>result.status === "fulfilled" && !Number.isFinite(result.value?.productPrice))
+          .slice(0,3)
+          .map(({result,candidate})=>({
+            url:candidate?.url || null,
+            title:result.value?.title || null,
+            originalProductPrice:result.value?.originalProductPrice ?? null,
+            originalCurrency:result.value?.originalCurrency || null,
+            strategy:result.value?.extraction?.strategy || null,
+            availableStrategies:result.value?.extraction?.availableStrategies || [],
+            domainAdapterId:result.value?.extraction?.domainAdapterId || null,
+          })),
       },
     };
   } catch (error) {
