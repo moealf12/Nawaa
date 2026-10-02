@@ -434,6 +434,9 @@ export async function extractProductDocument(url) {
     diagnostics:{
       attemptedStrategies:["jsonld","embedded_json","hydrated_state","storefront_data","domain_adapter","meta"],
       availableStrategies:candidates.map((entry) => entry.strategy),
+      domainAdapters:candidates
+        .filter((entry) => entry.strategy === "domain_adapter" && entry.adapterId)
+        .map((entry) => entry.adapterId),
       htmlBytes:new TextEncoder().encode(fetched.html).byteLength,
     },
   };
@@ -450,6 +453,11 @@ export async function resolveProductUrl(url) {
   }) || candidates[0] || null;
   const product = selected?.product || null;
   const offer = chooseOffer(product);
+  const selectionReason = selected
+    ? (selected.strategy === "domain_adapter"
+      ? "domain_adapter_with_complete_price"
+      : "highest_priority_candidate_with_complete_price")
+    : "no_product_candidate";
 
   const title = product && product.name || null;
   const imageRaw = product && product.image;
@@ -507,8 +515,10 @@ export async function resolveProductUrl(url) {
     extraction: {
       strategy: selected?.strategy || "none",
       confidence: selected?.confidence || 0,
+      selectionReason,
       attemptedStrategies: ["jsonld","embedded_json","hydrated_state","storefront_data","domain_adapter","meta"],
       availableStrategies: candidates.map((entry) => entry.strategy),
+      availableDomainAdapters: extracted.diagnostics.domainAdapters || [],
       jsonLdProductFound: selected?.strategy === "jsonld",
       embeddedJsonProductFound: selected?.strategy === "embedded_json",
       nextDataProductFound: selected?.strategy === "embedded_json" && extracted.diagnostics.availableStrategies.includes("embedded_json"),
