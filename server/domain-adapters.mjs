@@ -220,11 +220,51 @@ export function findDomainAdapter(urlOrHost) {
   ) || null;
 }
 
+
+function decodeHtmlText(value = "") {
+  return String(value || "")
+    .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+    .replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">")
+    .replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractNeweggHtmlProduct(html) {
+  const source = String(html || "");
+  const title =
+    source.match(/<h1[^>]*class=["'][^"']*product-title[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i)?.[1] ||
+    source.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1] ||
+    null;
+  const priceMatch =
+    source.match(/class=["'][^"']*price-current[^"']*["'][^>]*>[\s\S]*?<strong>([\d,]+)<\/strong>[\s\S]*?<sup>\.?(\d{1,2})<\/sup>/i) ||
+    source.match(/"price"\s*:\s*"?([0-9]+(?:\.[0-9]{1,2})?)"?/i);
+  const image =
+    source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] ||
+    null;
+  const integer = priceMatch?.[1]?.replace(/,/g, "");
+  const price = priceMatch
+    ? Number(priceMatch[2] !== undefined ? integer + "." + priceMatch[2] : integer)
+    : null;
+  if (!title || !Number.isFinite(price)) return null;
+  return {
+    name: decodeHtmlText(title),
+    image: image || null,
+    brand: null,
+    sku: null,
+    offers: { price, priceCurrency:"USD", availability:"" },
+  };
+}
+
 export function extractDomainProduct(url, html) {
   const adapter = findDomainAdapter(url);
   if (!adapter) return null;
 
   const candidates = [];
+  if (adapter.id === "newegg") {
+    const htmlProduct = extractNeweggHtmlProduct(html);
+    if (htmlProduct) candidates.push(htmlProduct);
+  }
   for (const payload of parseScriptJson(html)) {
     walkJson(payload, (node) => {
       const candidate = buildCandidate(node, adapter);
