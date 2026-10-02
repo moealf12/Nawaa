@@ -240,45 +240,38 @@ export function extractEmbeddedProductState(html) {
 }
 
 
-function parseJsonLoose(raw = "") {
-  const text = String(raw || "").trim().replace(/^<!--|-->$/g, "").trim();
-  if (!text || text.length > 1500000) return null;
-  try { return JSON.parse(text); } catch { return null; }
-}
-
-function assignmentJsonCandidates(html) {
-  const out = [];
-  const patterns = [
-    /(?:window\.)?__INITIAL_STATE__\s*=\s*({[\s\S]*?})\s*;<\/script>/gi,
-    /(?:window\.)?__PRELOADED_STATE__\s*=\s*({[\s\S]*?})\s*;<\/script>/gi,
-    /(?:window\.)?__APOLLO_STATE__\s*=\s*({[\s\S]*?})\s*;<\/script>/gi,
-  ];
-  for (const re of patterns) {
-    let match;
-    while ((match = re.exec(String(html || "")))) {
-      const parsed = parseJsonLoose(match[1]);
-      if (parsed) out.push(parsed);
-      if (out.length >= 8) return out;
+function extractBalancedJsonAfter(html, marker) {
+  const source = String(html || "");
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const start = source.indexOf("{", markerIndex + marker.length);
+  if (start < 0) return null;
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < source.length && i - start <= 1500000; i++) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(source.slice(start, i + 1)); } catch { return null; }
+      }
     }
   }
-  return out;
-}
-
-function scoreCandidate(candidate) {
-  if (!candidate) return -1;
-  let score = 0;
-  if (candidate.name) score += 4;
-  if (candidate.image) score += 2;
-  if (candidate.brand) score += 2;
-  if (candidate.sku) score += 1;
-  if (candidate.offers?.price !== null && candidate.offers?.price !== undefined) score += 5;
-  if (candidate.offers?.priceCurrency) score += 3;
-  return score;
+  return null;
 }
 
 export function extractHydratedProductState(html) {
   const candidates = [];
-  for (const parsed of assignmentJsonCandidates(html)) {
+  for (const marker of ["window.__INITIAL_STATE__", "__INITIAL_STATE__", "window.__PRELOADED_STATE__", "__PRELOADED_STATE__", "window.__APOLLO_STATE__", "__APOLLO_STATE__"]) {
+    const parsed = extractBalancedJsonAfter(html, marker);
+    if (!parsed) continue;
     walkJson(parsed, (node) => {
       const candidate = embeddedOfferCandidate(node);
       if (candidate) candidates.push(candidate);
