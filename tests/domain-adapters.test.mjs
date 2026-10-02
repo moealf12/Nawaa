@@ -88,3 +88,30 @@ test("Landmark adapters support priceData objects and unavailable stock correctl
   assert.equal(result?.product?.offers?.priceCurrency, "SAR");
   assert.equal(result?.product?.offers?.availability, "outofstock");
 });
+
+
+test("SHEIN adapter prioritizes the page product over recommendation payloads", () => {
+  const html = `<script type="application/json">{
+    "recommendations": [
+      {
+        "goods_name": "Recommended Item",
+        "salePrice": {"amount": 20, "currency": "SAR"},
+        "goods_img": "https://img.example.com/reco.jpg",
+        "goods_sn": "RECO-SKU",
+        "goods_id": "111"
+      }
+    ],
+    "goods": {
+      "goods_name": "Actual Page Product",
+      "salePrice": {"amount": 49, "currency": "SAR"},
+      "goods_img": "https://img.example.com/page.jpg",
+      "goods_sn": "PAGE-SKU",
+      "goods_id": "416403066"
+    }
+  }</script>`;
+
+  const result = extractDomainProduct("https://m.shein.com/ar-en/item-p-416403066.html", html);
+  assert.equal(result?.product?.name, "Actual Page Product");
+  assert.equal(result?.product?.sku, "PAGE-SKU");
+  assert.equal(result?.product?.offers?.price, 49);
+});
