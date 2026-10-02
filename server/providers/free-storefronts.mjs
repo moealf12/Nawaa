@@ -324,6 +324,17 @@ async function searchStore(store, query, perStore = Infinity) {
       candidates:links.length,
       offers,
       failures,
+      diagnostics:{
+        candidateSamples:links.slice(0,5).map((candidate)=>candidate.url),
+        failureSamples:settled
+          .map((result,index)=>({result,candidate:links[index]}))
+          .filter(({result})=>result.status === "rejected")
+          .slice(0,5)
+          .map(({result,candidate})=>({
+            url:candidate?.url || null,
+            error:result.reason instanceof Error ? result.reason.message : String(result.reason || "resolution_failed"),
+          })),
+      },
     };
   } catch (error) {
     sourceReliability.record(store.id, {
