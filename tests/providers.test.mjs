@@ -429,3 +429,12 @@ const neweggLinks = extractProductLinks(
 );
 assert.equal(neweggLinks.length, 1);
 assert.match(neweggLinks[0].url, /\/p\/N82E16834156568/);
+
+const unicodeEscapedLinks = extractProductLinks(
+  '<script>{"productUrl":"\\u002Fip\\u002Fapple-iphone-17\\u002F123456789"}</script>',
+  "https://www.walmart.com/search?q=iphone",
+  { productPath:/\/ip\/[^?#]+\/\d+(?:[/?#]|$)/i },
+  "iphone"
+);
+assert.equal(unicodeEscapedLinks.length, 1);
+assert.match(unicodeEscapedLinks[0].url, /\/ip\/apple-iphone-17\/123456789/);
