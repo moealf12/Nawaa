@@ -22,8 +22,8 @@ function ranked(candidates = []) {
   return [...candidates].sort((a,b) => (b.confidence || 0) - (a.confidence || 0));
 }
 
-function pick(compatibleCandidates, getter, field = "identity") {
-  const eligible = candidates.filter((entry) => hasValue(getter(entry.product)));
+function pick(entries, getter, field = "identity") {
+  const eligible = entries.filter((entry) => hasValue(getter(entry.product)));
   const preferred = choosePreferredCandidate(eligible, field);
   if (preferred) {
     return {
