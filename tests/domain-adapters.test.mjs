@@ -115,3 +115,13 @@ test("SHEIN adapter prioritizes the page product over recommendation payloads", 
   assert.equal(result?.product?.sku, "PAGE-SKU");
   assert.equal(result?.product?.offers?.price, 49);
 });
+
+
+test("Newegg adapter extracts assigned product payload", () => {
+  const html = `<script>window.__INITIAL_STATE__={"product":{"Description":"Gaming Laptop","FinalPrice":"1299.99","CurrencyCode":"USD","ItemNumber":"9SIA123","ImageUrl":"https://c1.neweggimages.com/a.jpg","inStock":true}}</script>`;
+  const result = extractDomainProduct("https://www.newegg.com/p/9SIA123", html);
+  assert.equal(result?.adapterId, "newegg");
+  assert.equal(result?.product?.name, "Gaming Laptop");
+  assert.equal(result?.product?.offers?.price, 1299.99);
+  assert.equal(result?.product?.offers?.priceCurrency, "USD");
+});
