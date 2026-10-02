@@ -469,9 +469,9 @@ assert.match(aliSearchOffers[0].title, /iPhone 17/);
 assert.match(aliSearchOffers[0].sourceUrl, /BundleDeals2/);
 
 
-const bestBuySearchFixture = String.raw\`
+const bestBuySearchFixture = String.raw`
 {"buyingOptions":[{"type":"New","product":{"primaryImage":{"piscesHref":"https://pisces.bbystatic.com/image2/laptop.jpg"},"name":{"short":"HP - 14\\" Laptop - Intel N150 Processor"},"skuId":"6667483"},"pdpUrl":"https://www.bestbuy.com/product/hp-14-laptop/JJGW3FGF9T/sku/6667483"}],"price":{"customerPrice":219.99,"mobileContracts":null,"skuId":"6667483"},"primaryImage":{"piscesHref":"https://pisces.bbystatic.com/image2/laptop.jpg"}}
-\`;
+`;
 const bestBuySearchOffers = extractBestBuySearchOffers(bestBuySearchFixture, "hp laptop");
 assert.equal(bestBuySearchOffers.length, 1);
 assert.equal(bestBuySearchOffers[0].productId, "6667483");
