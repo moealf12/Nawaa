@@ -548,7 +548,7 @@ const maxAlgoliaOffers = parseLandmarkAlgoliaPayload(maxAlgoliaFixture, "maxfash
 assert.equal(maxAlgoliaOffers.length, 1);
 assert.equal(maxAlgoliaOffers[0].price, 22);
 assert.equal(maxAlgoliaOffers[0].currency, "SAR");
-assert.match(maxAlgoliaOffers[0].sourceUrl, /maxfashion\.com\/buy-teddy-bear/);
+assert.match(maxAlgoliaOffers[0].sourceUrl, /maxfashion\.com\/sa\/en\/buy-teddy-bear/);
 
 
 assert.equal(true, true, "Landmark Algolia host rotation is covered by live source audit");
