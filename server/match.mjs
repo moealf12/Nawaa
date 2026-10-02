@@ -6,13 +6,18 @@ export function dedupeNormalizedOffers(offers = []) {
   const seen = new Set();
   const out = [];
   for (const offer of offers) {
-    const key = normalizeSearchText([
-      offer.provider,
-      offer.sourceUrl,
-      offer.title,
-      offer.originalProductPrice,
-      offer.originalCurrency,
-    ].join("|"));
+    // A marketplace listing can surface through several country storefronts with
+    // translated titles/currencies. Prefer the provider's stable listing ID when present.
+    const stableListingId = String(offer.sourceListingId || "").trim();
+    const key = stableListingId
+      ? normalizeSearchText([offer.provider, "listing", stableListingId].join("|"))
+      : normalizeSearchText([
+          offer.provider,
+          offer.sourceUrl,
+          offer.title,
+          offer.originalProductPrice,
+          offer.originalCurrency,
+        ].join("|"));
     if (!key || seen.has(key)) continue;
     seen.add(key);
     out.push(offer);
