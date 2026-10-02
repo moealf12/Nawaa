@@ -1,0 +1,33 @@
+name: Direct Source Audit
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/audit-direct-sources.mjs"
+      - "server/providers/extra-unbxd.mjs"
+      - "server/providers/jarir.mjs"
+      - "server/providers/sharafdg.mjs"
+      - "server/providers/swarovski.mjs"
+      - ".github/workflows/direct-source-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Audit direct sources
+        run: node scripts/audit-direct-sources.mjs direct-source-audit-results.json
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-source-audit-results
+          path: direct-source-audit-results.json
+          retention-days: 90
