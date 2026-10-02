@@ -1,6 +1,14 @@
 import { resolveProductUrl } from "./url-resolver.mjs";
 
-const EXTRACTOR_VERSION = "1.0.0";
+const EXTRACTOR_VERSION = "2.0.0";
+
+const STRATEGIES = [
+  ["json_ld", (e) => e.jsonLdProductFound],
+  ["embedded_json", (e) => e.embeddedJsonProductFound || e.nextDataProductFound || e.hydrationProductFound],
+  ["storefront_data", (e) => e.storefrontProductFound || e.shopifyProductFound || e.commerceApiProductFound],
+  ["domain_adapter", (e) => e.domainAdapterFound],
+  ["structured_meta", (e) => e.structuredPriceFound || e.structuredCurrencyFound],
+];
 
 function missingFields(offer = {}) {
   const required = ["title", "image", "productPrice", "originalCurrency", "sourceUrl"];
@@ -11,28 +19,43 @@ function missingFields(offer = {}) {
   return missing;
 }
 
+function evidenceCount(extraction = {}) {
+  return Object.values(extraction).filter(Boolean).length;
+}
+
 function confidenceFor(offer, missing) {
-  let score = 1;
   const extraction = offer?.extraction || {};
-  if (!extraction.jsonLdProductFound) score -= 0.18;
-  if (!extraction.structuredPriceFound) score -= 0.3;
-  if (!extraction.structuredCurrencyFound) score -= 0.18;
-  if (!offer?.image) score -= 0.08;
-  if (!offer?.specs?.brand) score -= 0.05;
-  if (!offer?.availability || offer.availability === "unknown") score -= 0.04;
-  if (missing.includes("shipping")) score -= 0.03;
+  let score = 0.35;
+  if (extraction.jsonLdProductFound) score += 0.28;
+  if (extraction.embeddedJsonProductFound || extraction.nextDataProductFound || extraction.hydrationProductFound) score += 0.22;
+  if (extraction.storefrontProductFound || extraction.shopifyProductFound || extraction.commerceApiProductFound) score += 0.2;
+  if (extraction.domainAdapterFound) score += 0.18;
+  if (extraction.structuredPriceFound) score += 0.12;
+  if (extraction.structuredCurrencyFound) score += 0.08;
+  if (offer?.image) score += 0.04;
+  if (offer?.specs?.brand) score += 0.03;
+  if (offer?.availability && offer.availability !== "unknown") score += 0.02;
+  if (!missing.includes("shipping")) score += 0.01;
+  score -= Math.min(0.3, missing.length * 0.035);
   return Math.max(0, Math.min(1, Number(score.toFixed(3))));
 }
 
-function strategyFromOffer(offer = {}) {
-  if (offer?.extraction?.jsonLdProductFound) return "json_ld";
-  if (offer?.extraction?.structuredPriceFound) return "structured_meta";
-  return "page_metadata";
+export function strategyFromOffer(offer = {}) {
+  const extraction = offer?.extraction || {};
+  return STRATEGIES.find(([, matches]) => matches(extraction))?.[0] || "page_metadata";
+}
+
+function extractionTrail(offer = {}) {
+  const extraction = offer?.extraction || {};
+  const seen = STRATEGIES.filter(([, matches]) => matches(extraction)).map(([name]) => name);
+  if (!seen.length) seen.push("page_metadata");
+  return seen;
 }
 
 export function toNawaaProduct(offer, inputUrl) {
   const missing = missingFields(offer);
   const confidence = confidenceFor(offer, missing);
+  const strategy = strategyFromOffer(offer);
   return {
     schemaVersion: "nawaa.product.v1",
     extractorVersion: EXTRACTOR_VERSION,
@@ -44,9 +67,7 @@ export function toNawaaProduct(offer, inputUrl) {
       gtin: offer?.specs?.barcode || null,
       color: offer?.specs?.color || null,
     },
-    media: {
-      primaryImage: offer.image || null,
-    },
+    media: { primaryImage: offer.image || null },
     commerce: {
       priceSAR: Number.isFinite(offer.productPrice) ? offer.productPrice : null,
       originalPrice: Number.isFinite(offer.originalProductPrice) ? offer.originalProductPrice : null,
@@ -71,7 +92,9 @@ export function toNawaaProduct(offer, inputUrl) {
       confidence,
       completeness: Number(((Math.max(0, 8 - Math.min(8, missing.length))) / 8).toFixed(3)),
       missingFields: missing,
-      extractionStrategy: strategyFromOffer(offer),
+      extractionStrategy: strategy,
+      extractionTrail: extractionTrail(offer),
+      evidenceCount: evidenceCount(offer.extraction || {}),
       structuredEvidence: offer.extraction || {},
     },
     rawOffer: offer,
@@ -81,22 +104,17 @@ export function toNawaaProduct(offer, inputUrl) {
 export async function extractNawaaProduct(url) {
   const attempts = [];
   const started = Date.now();
-
   try {
     const offer = await resolveProductUrl(url);
     const product = toNawaaProduct(offer, url);
     attempts.push({
       strategy: product.quality.extractionStrategy,
+      trail: product.quality.extractionTrail,
       ok: true,
       durationMs: Date.now() - started,
       confidence: product.quality.confidence,
     });
-    return {
-      ok: true,
-      product,
-      attempts,
-      observedAt: new Date().toISOString(),
-    };
+    return { ok: true, product, attempts, observedAt: new Date().toISOString() };
   } catch (error) {
     attempts.push({
       strategy: "safe_html_resolver",
