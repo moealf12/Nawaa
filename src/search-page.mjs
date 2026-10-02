@@ -37,7 +37,7 @@ const state = {
   availability: "all",
   merchant: "all",
   category: "all",
-  visibleCount: 12,
+  visibleCount: 10,
   comparisonOpen: false,
   selectedGroupKey: null,
   requestId: 0,
@@ -1034,7 +1034,7 @@ function renderProduct(product, query) {
       ${discoverySections.map(section=>`<button type="button" class="category-tab ${state.category === section.key ? 'active' : ''}" aria-pressed="${state.category === section.key}" data-category="${escapeHtml(section.key)}">${escapeHtml(section.label)} <span>${section.groups.length}</span></button>`).join('')}
     </nav>` : ''}
     ${displayedSections.map(section=>{
-      const limit = state.category === 'all' ? 6 : state.visibleCount;
+      const limit = state.visibleCount;
       return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
         <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
         <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup)).join('')}</div>
@@ -1056,11 +1056,11 @@ function renderProduct(product, query) {
   `;
 
   els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
-    state.category=button.dataset.category; state.visibleCount=12; state.comparisonOpen=false; renderProduct(product,query);
+    state.category=button.dataset.category; state.visibleCount=10; state.comparisonOpen=false; renderProduct(product,query);
   }));
   els.results.querySelectorAll('.show-category').forEach(button=>button.addEventListener('click',()=>{
     const sameCategory = state.category === button.dataset.showCategory;
-    state.category=button.dataset.showCategory; state.visibleCount=sameCategory ? state.visibleCount+12 : 12; renderProduct(product,query);
+    state.category=button.dataset.showCategory; state.visibleCount=sameCategory ? state.visibleCount+10 : 10; renderProduct(product,query);
   }));
   document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (event.target.isConnected === false) return; if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
   $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
