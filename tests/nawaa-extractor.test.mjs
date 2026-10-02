@@ -93,3 +93,16 @@ test("resolver extraction evidence maps into extractor v2 strategy names", () =>
   }, "https://example.com/h2");
   assert.equal(hydrated.quality.extractionStrategy,"embedded_json");
 });
+
+
+test("NAWAA extractor v2 consumes storefront resolver evidence", () => {
+  const product = toNawaaProduct({
+    title:"Storefront Live Product", image:"https://example.com/store.jpg", productPrice:199,
+    originalCurrency:"SAR", sourceUrl:"https://example.com/products/live", availability:"in_stock",
+    shipping:0, specs:{brand:"Storefront"},
+    extraction:{storefrontProductFound:true,structuredPriceFound:true,structuredCurrencyFound:true},
+  }, "https://example.com/products/live");
+  assert.equal(product.quality.extractionStrategy,"storefront_data");
+  assert.ok(product.quality.extractionTrail.includes("storefront_data"));
+  assert.ok(product.quality.confidence > 0.7);
+});
