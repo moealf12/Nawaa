@@ -382,12 +382,26 @@ function merchantName(url) {
   return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
-export async function resolveProductUrl(url) {
-  const fetched = await fetchHtmlSafe(url);
-  const html = fetched.html;
-  const finalUrl = fetched.finalUrl;
 
-  const candidates = extractionCandidates(html);
+export async function extractProductDocument(url) {
+  const fetched = await fetchHtmlSafe(url);
+  const candidates = extractionCandidates(fetched.html);
+  return {
+    finalUrl:fetched.finalUrl,
+    candidates,
+    diagnostics:{
+      attemptedStrategies:["jsonld","embedded_json","hydrated_state","meta"],
+      availableStrategies:candidates.map((entry) => entry.strategy),
+      htmlBytes:new TextEncoder().encode(fetched.html).byteLength,
+    },
+  };
+}
+
+export async function resolveProductUrl(url) {
+  const extracted = await extractProductDocument(url);
+  const finalUrl = extracted.finalUrl;
+  const candidates = extracted.candidates;
+  const html = null;
   const selected = candidates.find((entry) => {
     const offer = chooseOffer(entry.product);
     return offer && offer.price !== null && offer.currency;
@@ -395,21 +409,14 @@ export async function resolveProductUrl(url) {
   const product = selected?.product || null;
   const offer = chooseOffer(product);
 
-  const title = product && product.name || titleFromHtml(html) || null;
+  const title = product && product.name || null;
   const imageRaw = product && product.image;
   const image = Array.isArray(imageRaw)
     ? (typeof imageRaw[0] === "string" ? imageRaw[0] : imageRaw[0] && imageRaw[0].url)
-    : (typeof imageRaw === "string" ? imageRaw : imageRaw && imageRaw.url) || imageFromHtml(html);
+    : (typeof imageRaw === "string" ? imageRaw : imageRaw && imageRaw.url) || null;
 
-  const originalPrice = (offer && offer.price) ?? parseMoney(
-    metaContent(html, "product:price:amount") ||
-    metaContent(html, "og:price:amount") ||
-    metaContent(html, "twitter:data1", "name")
-  );
-  const originalCurrency = (offer && offer.currency) ||
-    metaContent(html, "product:price:currency") ||
-    metaContent(html, "og:price:currency") ||
-    null;
+  const originalPrice = (offer && offer.price) ?? null;
+  const originalCurrency = (offer && offer.currency) || null;
 
   const priceSAR = originalPrice !== null && originalCurrency
     ? await moneyToSAR(originalPrice, originalCurrency).catch(() => null)
