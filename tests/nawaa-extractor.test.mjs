@@ -140,3 +140,36 @@ test("NAWAA extractor exposes adapter diagnostics for API consumers", () => {
   assert.ok(diagnostics.missingFields.includes("shipping"));
   assert.ok(diagnostics.confidence > 0.5);
 });
+
+
+test("NAWAA diagnostics expose reconciliation sources", () => {
+  const product = toNawaaProduct({
+    title:"Merged Product",
+    image:"https://example.com/m.jpg",
+    productPrice:149,
+    originalProductPrice:149,
+    originalCurrency:"SAR",
+    sourceUrl:"https://www.shein.com/item-p-123.html",
+    availability:"in_stock",
+    shipping:null,
+    specs:{brand:"Brand X",modelNumber:"SKU-123"},
+    extraction:{
+      domainAdapterFound:true,
+      domainAdapterId:"shein",
+      reconciled:true,
+      contributingStrategies:["jsonld","domain_adapter:shein"],
+      fieldSources:{
+        image:{strategy:"jsonld",adapterId:null},
+        offers:{strategy:"domain_adapter",adapterId:"shein"}
+      },
+      structuredPriceFound:true,
+      structuredCurrencyFound:true
+    },
+  }, "https://www.shein.com/item-p-123.html");
+
+  const diagnostics = buildExtractionDiagnostics(product);
+  assert.equal(diagnostics.reconciled,true);
+  assert.deepEqual(diagnostics.contributingStrategies,["jsonld","domain_adapter:shein"]);
+  assert.equal(diagnostics.fieldSources.image.strategy,"jsonld");
+  assert.equal(diagnostics.fieldSources.offers.adapterId,"shein");
+});
