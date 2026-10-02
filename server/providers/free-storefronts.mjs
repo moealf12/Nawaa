@@ -586,6 +586,13 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
 
     const unicodeUrlRe = /["']((?:https?:)?(?:\\u002F){1,2}[^"'<>]+)["']/gi;
     while ((match = unicodeUrlRe.exec(hydratedSource))) addCandidate(match[1], "");
+
+    // Some storefronts (notably Temu/SHEIN) hydrate product links under
+    // structured keys without a leading slash, so the generic quoted-URL
+    // scanner above cannot see them. Resolve those values relative to the
+    // search URL and let the store-specific productPath validate them.
+    const structuredUrlRe = /["'](?:canonicalUrl|productUrl|productDetailUrl|seoUrl|seoLinkUrl|linkUrl|url)["']\s*:\s*["']((?:\\.|[^"'\\])*)["']/gi;
+    while ((match = structuredUrlRe.exec(hydratedSource))) addCandidate(match[1], "");
   }
 
   if (store.id === "aliexpress-cn") {
