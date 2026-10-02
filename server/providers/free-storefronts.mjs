@@ -226,6 +226,86 @@ export function extractAliExpressSearchOffers(html, query) {
 }
 
 
+
+export function parseIkeaSikPayload(payload, query) {
+  const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  const primary = results.find((entry) => entry?.component === "PRIMARY_AREA");
+  const items = Array.isArray(primary?.items) ? primary.items : [];
+  const offers = [];
+  const seen = new Set();
+
+  for (const item of items) {
+    if (item?.type !== "PRODUCT" || !item.product) continue;
+    const product = item.product;
+    const productId = String(product.itemNo || "").trim();
+    const title = String(product.name || "").trim();
+    const price = Number(product.salesPrice?.numeral);
+    const currency = String(product.salesPrice?.currencyCode || "").toUpperCase();
+    const sourceUrl = product.pipUrl ? new URL(product.pipUrl, "https://www.ikea.com").href : null;
+    const image = product.mainImageUrl ? new URL(product.mainImageUrl, "https://www.ikea.com").href : null;
+
+    if (!productId || !title || !Number.isFinite(price) || price <= 0 || !currency || !sourceUrl) continue;
+    const haystack = normalizeSearchQuery([
+      title,
+      product.typeName,
+      product.itemMeasureReferenceText,
+      product.productDescription,
+    ].filter(Boolean).join(" "));
+    const hits = tokens.filter((token) => haystack.includes(token)).length;
+    if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
+    if (seen.has(productId)) continue;
+    seen.add(productId);
+    offers.push({ productId, title, image, price, currency, sourceUrl });
+  }
+  return offers;
+}
+
+async function searchIkeaSik(query) {
+  const endpoint = "https://sik.search.blue.cdtapps.com/sa/en/search?c=sr&v=20260727";
+  const body = {
+    searchParameters:{ input:query, type:"QUERY" },
+    allowAutocorrect:true,
+    isUserLoggedIn:false,
+    isB2B:false,
+    listingABTest:true,
+    components:[
+      {
+        component:"PRIMARY_AREA",
+        columns:2,
+        types:{ main:"PRODUCT", breakouts:["PLANNER","CATEGORY","CONTENT","MATTRESS_WARRANTY","FINANCIAL_SERVICES"] },
+        filterConfig:{ "subcategories-style":"tree-navigation", "max-num-filters":7, presetFilters:{} },
+        window:{ size:48, offset:0 },
+        forceFilterCalculation:true,
+      },
+      { component:"CONTENT_AREA", types:{ main:"CONTENT", breakouts:[] }, window:{ size:12, offset:0 } },
+      { component:"RELATED_SEARCHES" },
+      { component:"QUESTIONS_AND_ANSWERS" },
+      { component:"STORES" },
+      { component:"CATEGORIES" },
+      { component:"SIMILAR_PRODUCTS" },
+      { component:"SEARCH_SUMMARY" },
+      { component:"PAGE_MESSAGES" },
+      { component:"RELATED_CATEGORIES" },
+      { component:"PRODUCT_GROUP" },
+    ],
+  };
+  const response = await fetch(endpoint, {
+    method:"POST",
+    headers:{
+      accept:"application/json",
+      "content-type":"application/json",
+      origin:"https://www.ikea.com",
+      referer:"https://www.ikea.com/sa/en/search/",
+      "user-agent":USER_AGENT,
+    },
+    body:JSON.stringify(body),
+    signal:AbortSignal.timeout(8000),
+  });
+  if (!response.ok) throw new Error("IKEA SIK HTTP " + response.status);
+  return parseIkeaSikPayload(await response.json(), query);
+}
+
 export function extractBestBuySearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
@@ -432,9 +512,17 @@ async function searchStore(store, query, perStore = Infinity) {
   const started = Date.now();
   const searchUrl = store.search(query);
   try {
-    const html = await fetchText(searchUrl);
-    const links = extractProductLinks(html, searchUrl, store, query, perStore);
+    let html = "";
+    let ikeaSearchOffers = [];
+    let ikeaSearchError = null;
+    if (store.id === "ikea-sa") {
+      try { ikeaSearchOffers = await searchIkeaSik(query); }
+      catch (error) { ikeaSearchError = error instanceof Error ? error.message : String(error); }
+    }
+    if (!ikeaSearchOffers.length) html = await fetchText(searchUrl);
+    const links = html ? extractProductLinks(html, searchUrl, store, query, perStore) : [];
     const directSearchOffers =
+      ikeaSearchOffers.length ? ikeaSearchOffers :
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       [];
@@ -511,7 +599,8 @@ async function searchStore(store, query, perStore = Infinity) {
       offers,
       failures,
       diagnostics:{
-        searchPage:searchPageDiagnostics(html, searchUrl),
+        searchPage:html ? searchPageDiagnostics(html, searchUrl) : null,
+        ikeaSikError:ikeaSearchError,
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
           : links.slice(0,5).map((candidate)=>candidate.url)),
