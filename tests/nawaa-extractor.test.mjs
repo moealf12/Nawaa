@@ -46,3 +46,33 @@ test("NAWAA extractor reports incomplete fields and lowers confidence", () => {
   assert.ok(product.quality.missingFields.includes("productPrice"));
   assert.ok(product.quality.missingFields.includes("specs.brand"));
 });
+
+
+test("NAWAA extractor v2 prioritizes embedded JSON over structured metadata", () => {
+  const product = toNawaaProduct({
+    title:"Hydrated Product", image:"https://example.com/h.jpg", productPrice:250,
+    originalProductPrice:250, originalCurrency:"SAR", sourceUrl:"https://example.com/h",
+    availability:"in_stock", shipping:0, specs:{brand:"Hydra"},
+    extraction:{embeddedJsonProductFound:true,structuredPriceFound:true,structuredCurrencyFound:true},
+  }, "https://example.com/h");
+  assert.equal(product.extractorVersion,"2.0.0");
+  assert.equal(product.quality.extractionStrategy,"embedded_json");
+  assert.deepEqual(product.quality.extractionTrail,["embedded_json","structured_meta"]);
+  assert.ok(product.quality.evidenceCount >= 3);
+});
+
+test("NAWAA extractor v2 recognizes storefront and domain-adapter evidence", () => {
+  const storefront = toNawaaProduct({
+    title:"Store Product", image:"https://example.com/s.jpg", productPrice:99,
+    originalCurrency:"SAR", sourceUrl:"https://example.com/s", availability:"in_stock",
+    shipping:0, specs:{brand:"Store"}, extraction:{shopifyProductFound:true},
+  }, "https://example.com/s");
+  assert.equal(storefront.quality.extractionStrategy,"storefront_data");
+
+  const adapted = toNawaaProduct({
+    title:"Adapted Product", image:"https://example.com/a.jpg", productPrice:120,
+    originalCurrency:"SAR", sourceUrl:"https://example.com/a", availability:"in_stock",
+    shipping:0, specs:{brand:"Adapter"}, extraction:{domainAdapterFound:true},
+  }, "https://example.com/a");
+  assert.equal(adapted.quality.extractionStrategy,"domain_adapter");
+});
