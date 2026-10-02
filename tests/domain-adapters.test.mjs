@@ -139,3 +139,22 @@ test("Newegg adapter extracts visible product title and price HTML", () => {
   assert.equal(result?.product?.offers?.price, 849.99);
   assert.equal(result?.product?.offers?.priceCurrency, "USD");
 });
+
+
+test("ASOS adapter extracts stockPriceResponse payload", () => {
+  const html = `
+    <meta property="og:title" content="Nike P-6000 trainers">
+    <meta property="og:image" content="https://images.asos-media.com/a.jpg">
+    <script>
+      window.asos = window.asos || {};
+      window.asos.pdp = window.asos.pdp || {};
+      window.asos.pdp.config = window.asos.pdp.config || {};
+      window.asos.pdp.config.stockPriceResponse = '[{\"productId\":206633512,\"productPrice\":{\"current\":{\"value\":80,\"text\":\"£80.00\"},\"currency\":\"GBP\"}}]';
+    </script>
+  `;
+  const result = extractDomainProduct("https://www.asos.com/nike/item/prd/206633512", html);
+  assert.equal(result?.adapterId, "asos");
+  assert.equal(result?.product?.name, "Nike P-6000 trainers");
+  assert.equal(result?.product?.offers?.price, 80);
+  assert.equal(result?.product?.offers?.priceCurrency, "GBP");
+});
