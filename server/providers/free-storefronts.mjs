@@ -64,7 +64,7 @@ const STORES = [
   {
     id:"bestbuy-us", name:"Best Buy", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["phone","laptop","desktop","monitor","audio","camera","appliance","tv","console","game","accessory"],
     search:(q)=>"https://www.bestbuy.com/site/searchpage.jsp?st="+encodeURIComponent(q),
-    productPath:/\/site\/[^?#]+\/\d+\.p(?:[?#]|$)/i,
+    productPath:/\/(?:site\/[^?#]+\/\d+\.p|product\/[^?#]+\/[^/?#]+\/sku\/\d+)(?:[?#]|$)/i,
   },
   {
     id:"adidas-sa", name:"adidas Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["adidas"], categories:["clothing","shoes","sports","bag"],
@@ -222,6 +222,51 @@ export function extractAliExpressSearchOffers(html, query) {
     const sourceUrl = decodeJsonString(sourceRaw).replace(/&amp;/g, "&");
     offers.push({ productId, title, image, price, currency, sourceUrl });
   }
+  return offers;
+}
+
+
+export function extractBestBuySearchOffers(html, query) {
+  const source = String(html || "");
+  const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
+  const offers = [];
+  const seen = new Set();
+  const priceRe = /"price":\{"customerPrice":([0-9]+(?:\.[0-9]+)?)[\s\S]{0,2200}?"skuId":"(\d+)"/g;
+  let match;
+
+  const decodeJsonString = (value = "") => {
+    try { return JSON.parse('"' + value + '"'); } catch { return decodeHtml(value).replace(/\\"/g, '"').replace(/\\u0026/gi, "&").replace(/\\\//g, "/"); }
+  };
+
+  while ((match = priceRe.exec(source))) {
+    const price = Number(match[1]);
+    const sku = match[2];
+    if (!Number.isFinite(price) || price <= 0 || seen.has(sku)) continue;
+
+    const start = Math.max(0, match.index - 16000);
+    const end = Math.min(source.length, match.index + 7000);
+    const block = source.slice(start, end);
+
+    const pdpMatches = [...block.matchAll(/"pdpUrl":"((?:\\.|[^"\\])+)"/g)]
+      .map((item) => decodeJsonString(item[1]))
+      .filter((url) => !/\/openbox(?:[/?#]|$)/i.test(url) && new RegExp("/sku/" + sku + "(?:[/?#]|$)", "i").test(url));
+    const sourceUrl = pdpMatches.at(-1) || null;
+
+    const nameMatches = [...block.matchAll(/"name":\{"short":"((?:\\.|[^"\\])*)"/g)];
+    const title = nameMatches.length ? decodeJsonString(nameMatches.at(-1)[1]) : null;
+
+    const imageMatches = [...block.matchAll(/"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g)];
+    const image = imageMatches.length ? decodeJsonString(imageMatches.at(-1)[1]) : null;
+
+    if (!sourceUrl || !title) continue;
+    const haystack = normalizeSearchQuery(title);
+    const hits = tokens.filter((token) => haystack.includes(token)).length;
+    if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
+
+    seen.add(sku);
+    offers.push({ productId:sku, title, image, price, currency:"USD", sourceUrl });
+  }
+
   return offers;
 }
 
@@ -389,8 +434,11 @@ async function searchStore(store, query, perStore = Infinity) {
   try {
     const html = await fetchText(searchUrl);
     const links = extractProductLinks(html, searchUrl, store, query, perStore);
-    const aliSearchOffers = store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) : [];
-    const resolutionLinks = aliSearchOffers.length ? [] : links;
+    const directSearchOffers =
+      store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
+      store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
+      [];
+    const resolutionLinks = directSearchOffers.length ? [] : links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url)));
     const resolvedOffers = settled
       .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
@@ -412,7 +460,7 @@ async function searchStore(store, query, perStore = Infinity) {
           searchUrl,
         },
       }));
-    const directOffers = (await Promise.all(aliSearchOffers.map(async (item) => {
+    const directOffers = (await Promise.all(directSearchOffers.map(async (item) => {
       const converted = await moneyToSAR(item.price, item.currency).catch(() => null);
       if (!converted) return null;
       return {
@@ -459,13 +507,13 @@ async function searchStore(store, query, perStore = Infinity) {
     return {
       store,
       searchUrl,
-      candidates:aliSearchOffers.length || links.length,
+      candidates:directSearchOffers.length || links.length,
       offers,
       failures,
       diagnostics:{
         searchPage:searchPageDiagnostics(html, searchUrl),
-        candidateSamples:(aliSearchOffers.length
-          ? aliSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
+        candidateSamples:(directSearchOffers.length
+          ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
           : links.slice(0,5).map((candidate)=>candidate.url)),
         failureSamples:settled
           .map((result,index)=>({result,candidate:resolutionLinks[index]}))
