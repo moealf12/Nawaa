@@ -122,6 +122,7 @@ function buildCandidate(node, config) {
     brandRaw && firstValue(brandRaw, ["name","title","brandName"]);
   const image = imageValue(firstValue(node, config.imageKeys));
   const sku = firstValue(node, config.skuKeys);
+  const pageId = config.pageIdKeys ? firstValue(node, config.pageIdKeys) : null;
   const availability = firstValue(node, config.availabilityKeys);
 
   return {
@@ -134,17 +135,27 @@ function buildCandidate(node, config) {
       priceCurrency: normalizeCurrency(currency),
       availability: normalizeAvailability(availability),
     },
+    _pageId: pageId ? String(pageId) : null,
   };
 }
 
-function score(candidate) {
+function score(candidate, pageProductId = null) {
   if (!candidate) return 0;
   let value = 1;
   if (candidate.image) value += 2;
   if (candidate.brand) value += 1;
   if (candidate.sku) value += 1;
   if (candidate.offers?.availability) value += 0.5;
+  if (pageProductId && candidate._pageId && String(candidate._pageId) === String(pageProductId)) value += 8;
   return value;
+}
+
+function productIdFromUrl(url, adapterId) {
+  const href = String(url || "");
+  if (adapterId === "shein") {
+    return href.match(/-p-(\d+)\.html/i)?.[1] || href.match(/[?&]goods_id=(\d+)/i)?.[1] || null;
+  }
+  return null;
 }
 
 const COMMON = {
@@ -160,7 +171,8 @@ export const DOMAIN_ADAPTERS = [
     priceKeys: ["salePrice","sale_price","retailPrice","retail_price","unitPrice","price","priceData"],
     currencyKeys: ["currency","currencyCode","priceCurrency","currency_code"],
     imageKeys: ["goods_img","goodsImg","goods_image","image","imageUrl","image_url","mainImage"],
-    skuKeys: ["goods_id","goodsId","goods_sn","goodsSn","sku","productId","product_id"],
+    skuKeys: ["goods_sn","goodsSn","sku","goods_id","goodsId","productId","product_id"],
+    pageIdKeys: ["goods_id","goodsId","productId","product_id"],
     ...COMMON,
   },
   {
@@ -206,7 +218,9 @@ export function extractDomainProduct(url, html) {
     });
   }
 
-  candidates.sort((a,b) => score(b) - score(a));
+  const pageProductId = productIdFromUrl(url, adapter.id);
+  candidates.sort((a,b) => score(b, pageProductId) - score(a, pageProductId));
   const product = candidates[0] || null;
+  if (product) delete product._pageId;
   return product ? { adapterId: adapter.id, product } : null;
 }
