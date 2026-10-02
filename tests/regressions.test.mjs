@@ -173,3 +173,30 @@ test("URL comparison keeps the source offer and labels conflicting SKUs as relat
   assert.equal(offers?.[2].exactMatch, false);
   assert.equal(offers?.[3].exactMatch, false);
 });
+
+test('same eBay listing across translated marketplaces is deduplicated',async()=>{
+ const {dedupeNormalizedOffers}=await import('../server/match.mjs');
+ const base={provider:'ebay',sourceListingId:'v1|123456789|0',sourceUrl:'https://www.ebay.co.uk/itm/123456789',title:'Shein Small Red Dress',originalProductPrice:3,originalCurrency:'GBP'};
+ const offers=[
+  base,
+  {...base,providerMarket:'EBAY_FR',sourceUrl:'https://www.ebay.fr/itm/123456789',title:'Petite robe rouge Shein',originalProductPrice:3.5,originalCurrency:'EUR'},
+  {...base,providerMarket:'EBAY_DE',sourceUrl:'https://www.ebay.de/itm/123456789',title:'Shein kleines rotes Kleid',originalProductPrice:4,originalCurrency:'EUR'},
+ ];
+ assert.equal(dedupeNormalizedOffers(offers).length,1);
+});
+
+test('translated dress titles remain clothing and match a Shein dress search',async()=>{
+ const {productCategory,assessOfferMatch}=await import('../src/search-query.mjs');
+ for(const title of [
+  'Abito Shein piccolo rosso e bianco vita elasticizzata maniche corte',
+  'Petite robe rouge et blanche Shein taille elastiquee manches courtes',
+  'Shein kleines rot-weisses Kleid Gummizug kurze Armel',
+ ]){
+  const offer={title,condition:'new',specs:{brand:'Shein'}};
+  assert.equal(productCategory(offer),'clothing');
+  const match=assessOfferMatch('فستان شي ان',offer);
+  assert.equal(match.productKind,'product');
+  assert.notEqual(match.matchReason,'نوع المنتج يختلف عن المطلوب');
+ }
+});
+
