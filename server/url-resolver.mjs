@@ -3,6 +3,7 @@ import net from "node:net";
 import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
+import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
@@ -451,7 +452,8 @@ export async function resolveProductUrl(url) {
     const offer = chooseOffer(entry.product);
     return offer && offer.price !== null && offer.currency;
   }) || candidates[0] || null;
-  const product = selected?.product || null;
+  const reconciliation = reconcileProductCandidates(candidates, selected);
+  const product = reconciliation.product || selected?.product || null;
   const offer = chooseOffer(product);
   const selectionReason = selected
     ? (selected.strategy === "domain_adapter"
@@ -489,7 +491,7 @@ export async function resolveProductUrl(url) {
       brand: typeof product?.brand === "string" ? product.brand : product?.brand?.name || null,
       deviceType: typeof product?.model === "string" ? product.model : product?.model?.name || null,
       color: product?.color || null,
-      modelNumber: product?.mpn || null,
+      modelNumber: product?.mpn || product?.sku || null,
       barcode: product?.gtin13 || product?.gtin14 || product?.gtin || null,
     },
     condition: condition === "unknown" ? "new" : condition,
@@ -519,13 +521,17 @@ export async function resolveProductUrl(url) {
       attemptedStrategies: ["jsonld","embedded_json","hydrated_state","storefront_data","domain_adapter","meta"],
       availableStrategies: candidates.map((entry) => entry.strategy),
       availableDomainAdapters: extracted.diagnostics.domainAdapters || [],
-      jsonLdProductFound: selected?.strategy === "jsonld",
-      embeddedJsonProductFound: selected?.strategy === "embedded_json",
-      nextDataProductFound: selected?.strategy === "embedded_json" && extracted.diagnostics.availableStrategies.includes("embedded_json"),
-      hydrationProductFound: selected?.strategy === "hydrated_state",
-      storefrontProductFound: selected?.strategy === "storefront_data",
-      domainAdapterFound: selected?.strategy === "domain_adapter",
-      domainAdapterId: selected?.adapterId || null,
+      reconciled: reconciliation.reconciled,
+      contributingStrategies: reconciliation.contributingStrategies,
+      fieldSources: reconciliation.fieldSources,
+      jsonLdProductFound: candidates.some((entry) => entry.strategy === "jsonld"),
+
+      embeddedJsonProductFound: candidates.some((entry) => entry.strategy === "embedded_json"),
+      nextDataProductFound: extracted.diagnostics.availableStrategies.includes("embedded_json"),
+      hydrationProductFound: candidates.some((entry) => entry.strategy === "hydrated_state"),
+      storefrontProductFound: candidates.some((entry) => entry.strategy === "storefront_data"),
+      domainAdapterFound: candidates.some((entry) => entry.strategy === "domain_adapter"),
+      domainAdapterId: candidates.find((entry) => entry.strategy === "domain_adapter")?.adapterId || null,
       shopifyProductFound: selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics)),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
