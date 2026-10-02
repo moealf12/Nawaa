@@ -396,6 +396,98 @@ async function searchLandmarkAlgolia(storeId, query, limit = Infinity) {
   return all;
 }
 
+function extractAssignedJsonObject(source, marker, maxBytes = 5000000) {
+  const text = String(source || "");
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const start = text.indexOf("{", markerIndex + marker.length);
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  const endLimit = Math.min(text.length, start + maxBytes);
+  for (let i = start; i < endLimit; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try { return JSON.parse(text.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+function stableTemuProductUrl(rawUrl, productId) {
+  if (!rawUrl) return "https://www.temu.com/goods.html?goods_id=" + encodeURIComponent(productId);
+  try {
+    const url = new URL(rawUrl, "https://www.temu.com");
+    if (/-g-\d+\.html$/i.test(url.pathname)) {
+      url.search = "";
+      url.hash = "";
+      return url.href;
+    }
+    if (/\/goods\.html$/i.test(url.pathname)) {
+      const id = url.searchParams.get("goods_id") || url.searchParams.get("goodsId") || productId;
+      url.search = "";
+      url.searchParams.set("goods_id", id);
+      url.hash = "";
+      return url.href;
+    }
+    url.hash = "";
+    return url.href;
+  } catch {
+    return "https://www.temu.com/goods.html?goods_id=" + encodeURIComponent(productId);
+  }
+}
+
+export function extractTemuSearchOffers(html, query) {
+  const raw =
+    extractAssignedJsonObject(html, "window.rawData=") ||
+    extractAssignedJsonObject(html, "window.rawData =");
+  const list = Array.isArray(raw?.store?.goodsList) ? raw.store.goodsList : [];
+  const tokens = normalizeSearchQuery(query).split(" ").filter((token) => token.length >= 2);
+  const offers = [];
+  const seen = new Set();
+
+  for (const entry of list) {
+    const item = entry?.data && typeof entry.data === "object" ? entry.data : entry;
+    if (!item || typeof item !== "object") continue;
+    const productId = String(item.goodsId || item.goods_id || item.productId || "").trim();
+    const title = String(item.title || item.goodsName || item.goods_name || "").replace(/\s+/g, " ").trim();
+    const priceInfo = item.priceInfo || item.price_info || {};
+    const rawPrice = Number(priceInfo.price ?? item.price);
+    const currency = String(priceInfo.currency || item.currency || raw?.store?.localInfo?.currency || "").trim().toUpperCase();
+    if (!productId || !title || !Number.isFinite(rawPrice) || rawPrice <= 0 || !currency) continue;
+
+    const haystack = normalizeSearchQuery(title);
+    const hits = tokens.filter((token) => haystack.includes(token)).length;
+    if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
+    if (seen.has(productId)) continue;
+    seen.add(productId);
+
+    // Temu search hydration reports the integer price in minor currency units.
+    const price = rawPrice / 100;
+    if (!Number.isFinite(price) || price <= 0) continue;
+
+    const sourceUrl = stableTemuProductUrl(item.seoLinkUrl || item.linkUrl || item.url, productId);
+    const imageRaw = item.image?.url || item.imageUrl || item.image_url || null;
+    let image = null;
+    try { if (imageRaw) image = new URL(imageRaw, "https://www.temu.com").href; } catch {}
+
+    offers.push({ productId, title, image, price, currency, sourceUrl });
+  }
+  return offers;
+}
+
 export function extractAliExpressSearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
@@ -788,6 +880,7 @@ async function searchStore(store, query, perStore = Infinity) {
     const directSearchOffers =
       primarySearchOffers.length ? primarySearchOffers :
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
+      store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       [];
     const resolutionLinks = directSearchOffers.length ? [] : links;
