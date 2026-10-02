@@ -440,13 +440,13 @@ assert.equal(unicodeEscapedLinks.length, 1);
 assert.match(unicodeEscapedLinks[0].url, /\/ip\/apple-iphone-17\/123456789/);
 
 const htmlEscapedLinks = extractProductLinks(
-  '<div data-state="{&quot;url&quot;:&quot;\\/prd\\/12345678&quot;}"></div>',
+  '<div data-state="{&quot;url&quot;:&quot;\\/nike\\/nike-shoes\\/prd\\/12345678&quot;}"></div>',
   "https://www.asos.com/search/?q=nike%20shoes",
   { productPath:/\/prd\/\d+(?:[/?#]|$)/i },
   "nike shoes"
 );
 assert.equal(htmlEscapedLinks.length, 1);
-assert.match(htmlEscapedLinks[0].url, /\/prd\/12345678/);
+assert.match(htmlEscapedLinks[0].url, /\/nike\/nike-shoes\/prd\/12345678/);
 
 const aliExpressDerivedLinks = extractProductLinks(
   '<script>{"url":"https://www.aliexpress.com/ssr/x?productIds=1005009463232289\\u0026skuId=12000060375536387"}</script>',
