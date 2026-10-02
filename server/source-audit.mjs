@@ -25,7 +25,7 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
     const probeQuery = query || DEFAULT_QUERIES[store.id] || store.name;
     const started = Date.now();
     try {
-      const result = await searchFreeStorefrontById(store.id, probeQuery);
+      const result = await searchFreeStorefrontById(store.id, probeQuery, { perStore:100 });
       const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
         ? "FAILING"
         : classify(result);
