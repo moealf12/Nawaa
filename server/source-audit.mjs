@@ -30,6 +30,7 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
         id:store.id, name:store.name, query:probeQuery, status:classify(result),
         candidates:result.candidates, verifiedOffers:result.offers.length, failures:result.failures,
         durationMs:Date.now()-started,
+        diagnostics:result.diagnostics || null,
         sampleOffers:result.offers.slice(0,3).map(offer=>({
           title:offer.title, price:offer.productPrice, currency:offer.currency,
           merchant:offer.merchant, sourceUrl:offer.sourceUrl,
