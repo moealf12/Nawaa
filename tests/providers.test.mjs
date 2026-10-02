@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { extractProductLinks, extractAliExpressSearchOffers, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractProductLinks, extractAliExpressSearchOffers, extractBestBuySearchOffers, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 import { extractEmbeddedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
@@ -467,3 +467,24 @@ assert.equal(aliSearchOffers[0].price, 0.33);
 assert.equal(aliSearchOffers[0].currency, "USD");
 assert.match(aliSearchOffers[0].title, /iPhone 17/);
 assert.match(aliSearchOffers[0].sourceUrl, /BundleDeals2/);
+
+
+const bestBuySearchFixture = String.raw\`
+{"buyingOptions":[{"type":"New","product":{"primaryImage":{"piscesHref":"https://pisces.bbystatic.com/image2/laptop.jpg"},"name":{"short":"HP - 14\\" Laptop - Intel N150 Processor"},"skuId":"6667483"},"pdpUrl":"https://www.bestbuy.com/product/hp-14-laptop/JJGW3FGF9T/sku/6667483"}],"price":{"customerPrice":219.99,"mobileContracts":null,"skuId":"6667483"},"primaryImage":{"piscesHref":"https://pisces.bbystatic.com/image2/laptop.jpg"}}
+\`;
+const bestBuySearchOffers = extractBestBuySearchOffers(bestBuySearchFixture, "hp laptop");
+assert.equal(bestBuySearchOffers.length, 1);
+assert.equal(bestBuySearchOffers[0].productId, "6667483");
+assert.equal(bestBuySearchOffers[0].price, 219.99);
+assert.equal(bestBuySearchOffers[0].currency, "USD");
+assert.match(bestBuySearchOffers[0].title, /HP/);
+assert.match(bestBuySearchOffers[0].sourceUrl, /\/sku\/6667483/);
+
+const bestBuyModernLinks = extractProductLinks(
+  '<a href="https://www.bestbuy.com/product/hp-14-laptop/JJGW3FGF9T/sku/6667483">HP 14 laptop</a>',
+  "https://www.bestbuy.com/site/searchpage.jsp?st=laptop",
+  { productPath:/\/(?:site\/[^?#]+\/\d+\.p|product\/[^?#]+\/[^/?#]+\/sku\/\d+)(?:[?#]|$)/i },
+  "hp laptop"
+);
+assert.equal(bestBuyModernLinks.length, 1);
+assert.match(bestBuyModernLinks[0].url, /\/sku\/6667483/);
