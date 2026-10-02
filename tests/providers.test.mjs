@@ -344,7 +344,7 @@ const sheinStructuredLinks = extractProductLinks(String.raw`
   {"canonicalUrl":"Women-Dresses/Summer-Dress-p-123456.html"}
 `, "https://ar.shein.com/pdsearch/dress/", sheinStore, "dress", 5);
 assert.equal(sheinStructuredLinks.length, 1);
-assert.ok(sheinStructuredLinks[0].url.includes("Summer-Dress-p-123456.html"));
+assert.equal(sheinStructuredLinks[0].url, "https://ar.shein.com/Women-Dresses/Summer-Dress-p-123456.html");
 
 const temuStore = {
   id:"temu-global",
