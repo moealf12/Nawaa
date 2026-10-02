@@ -26,8 +26,11 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
     const started = Date.now();
     try {
       const result = await searchFreeStorefrontById(store.id, probeQuery);
+      const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
+        ? "FAILING"
+        : classify(result);
       results.push({
-        id:store.id, name:store.name, query:probeQuery, status:classify(result),
+        id:store.id, name:store.name, query:probeQuery, status,
         candidates:result.candidates, verifiedOffers:result.offers.length, failures:result.failures,
         durationMs:Date.now()-started,
         diagnostics:result.diagnostics || null,
