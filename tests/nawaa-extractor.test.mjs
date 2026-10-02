@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { toNawaaProduct } from "../server/nawaa-extractor.mjs";
+import { buildExtractionDiagnostics, toNawaaProduct } from "../server/nawaa-extractor.mjs";
 
 test("NAWAA extractor normalizes a verified product into stable schema", () => {
   const product = toNawaaProduct({
@@ -105,4 +105,38 @@ test("NAWAA extractor v2 consumes storefront resolver evidence", () => {
   assert.equal(product.quality.extractionStrategy,"storefront_data");
   assert.ok(product.quality.extractionTrail.includes("storefront_data"));
   assert.ok(product.quality.confidence > 0.7);
+});
+
+
+test("NAWAA extractor exposes adapter diagnostics for API consumers", () => {
+  const product = toNawaaProduct({
+    title:"Adapted Product",
+    image:"https://example.com/a.jpg",
+    productPrice:120,
+    originalProductPrice:120,
+    originalCurrency:"SAR",
+    sourceUrl:"https://www.shein.com/item-p-123.html",
+    availability:"in_stock",
+    shipping:null,
+    specs:{brand:"SHEIN"},
+    extraction:{
+      strategy:"domain_adapter",
+      domainAdapterFound:true,
+      domainAdapterId:"shein",
+      availableDomainAdapters:["shein"],
+      selectionReason:"domain_adapter_with_complete_price",
+      attemptedStrategies:["jsonld","embedded_json","domain_adapter","meta"],
+      availableStrategies:["domain_adapter","meta"],
+      structuredPriceFound:true,
+      structuredCurrencyFound:true
+    },
+  }, "https://www.shein.com/item-p-123.html");
+
+  const diagnostics = buildExtractionDiagnostics(product);
+  assert.equal(diagnostics.adapterId,"shein");
+  assert.equal(diagnostics.selectedStrategy,"domain_adapter");
+  assert.equal(diagnostics.selectionReason,"domain_adapter_with_complete_price");
+  assert.deepEqual(diagnostics.availableDomainAdapters,["shein"]);
+  assert.ok(diagnostics.missingFields.includes("shipping"));
+  assert.ok(diagnostics.confidence > 0.5);
 });
