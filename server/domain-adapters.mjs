@@ -23,14 +23,56 @@ function walkJson(node, visit, depth = 0, seen = new Set()) {
   for (const value of Object.values(node)) walkJson(value, visit, depth + 1, seen);
 }
 
+function extractBalancedJson(raw, marker) {
+  const markerIndex = raw.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const start = raw.indexOf("{", markerIndex + marker.length);
+  if (start < 0) return null;
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < raw.length && i - start <= MAX_SCRIPT_BYTES; i++) {
+    const ch = raw[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(raw.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
 function parseScriptJson(html) {
   const payloads = [];
   const re = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+  const assignmentMarkers = [
+    "window.gbRawData",
+    "gbRawData",
+    "window.__INITIAL_STATE__",
+    "__INITIAL_STATE__",
+    "window.__PRELOADED_STATE__",
+    "__PRELOADED_STATE__",
+    "productIntroData",
+    "goodsDetail",
+  ];
   let match;
   while ((match = re.exec(String(html || "")))) {
     const raw = match[1].trim();
-    if (!raw || raw.length > MAX_SCRIPT_BYTES || !/^[\[{]/.test(raw)) continue;
-    try { payloads.push(JSON.parse(raw)); } catch {}
+    if (!raw || raw.length > MAX_SCRIPT_BYTES) continue;
+    if (/^[\[{]/.test(raw)) {
+      try { payloads.push(JSON.parse(raw)); } catch {}
+    }
+    for (const marker of assignmentMarkers) {
+      const parsed = extractBalancedJson(raw, marker);
+      if (parsed) payloads.push(parsed);
+    }
   }
   return payloads;
 }
@@ -46,9 +88,23 @@ function imageValue(value) {
 
 function normalizeAvailability(value) {
   const text = String(value || "").toLowerCase();
-  if (/in.?stock|available|instock|true|1/.test(text)) return "instock";
-  if (/out.?of.?stock|sold.?out|unavailable|false|0/.test(text)) return "outofstock";
+  if (/out.?of.?stock|sold.?out|unavailable|false|^0$/.test(text)) return "outofstock";
+  if (/in.?stock|\bavailable\b|instock|true|^1$/.test(text)) return "instock";
   return text;
+}
+
+function normalizeCurrency(value) {
+  const text = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+  const aliases = {
+    SR: "SAR",
+    "S.R": "SAR",
+    "S.R.": "SAR",
+    "ر.س": "SAR",
+    DHS: "AED",
+    DH: "AED",
+    "د.إ": "AED",
+  };
+  return aliases[text] || text;
 }
 
 function buildCandidate(node, config) {
@@ -56,9 +112,9 @@ function buildCandidate(node, config) {
   const title = firstValue(node, config.titleKeys);
   const rawPrice = firstValue(node, config.priceKeys);
   const priceObject = rawPrice && typeof rawPrice === "object" ? rawPrice : null;
-  const price = parseMoney(priceObject ? firstValue(priceObject, ["amount","value","price","salePrice"]) : rawPrice);
+  const price = parseMoney(priceObject ? firstValue(priceObject, ["amount","value","price","salePrice","formattedValue"]) : rawPrice);
   const currency = firstValue(node, config.currencyKeys) ||
-    (priceObject && firstValue(priceObject, ["currency","currencyCode","priceCurrency"]));
+    (priceObject && firstValue(priceObject, ["currency","currencyCode","priceCurrency","currencyIso"]));
   if (typeof title !== "string" || title.trim().length < 3 || price === null || !currency) return null;
 
   const brandRaw = firstValue(node, config.brandKeys);
@@ -75,7 +131,7 @@ function buildCandidate(node, config) {
     sku: sku ? String(sku) : null,
     offers: {
       price,
-      priceCurrency: String(currency).toUpperCase(),
+      priceCurrency: normalizeCurrency(currency),
       availability: normalizeAvailability(availability),
     },
   };
@@ -101,19 +157,19 @@ export const DOMAIN_ADAPTERS = [
     id: "shein",
     hosts: ["shein.com","shein.co.uk","shein.com.mx","shein.com.br"],
     titleKeys: ["goods_name","goodsName","productName","product_name","name","title"],
-    priceKeys: ["salePrice","sale_price","retailPrice","retail_price","unitPrice","price"],
+    priceKeys: ["salePrice","sale_price","retailPrice","retail_price","unitPrice","price","priceData"],
     currencyKeys: ["currency","currencyCode","priceCurrency","currency_code"],
-    imageKeys: ["goods_img","goodsImg","goods_image","image","imageUrl","image_url"],
-    skuKeys: ["goods_id","goodsId","sku","productId","product_id"],
+    imageKeys: ["goods_img","goodsImg","goods_image","image","imageUrl","image_url","mainImage"],
+    skuKeys: ["goods_id","goodsId","goods_sn","goodsSn","sku","productId","product_id"],
     ...COMMON,
   },
   {
     id: "centrepoint",
     hosts: ["centrepointstores.com","centrepointstores.com.sa"],
     titleKeys: ["productName","product_name","name","title"],
-    priceKeys: ["salePrice","sellingPrice","finalPrice","price","currentPrice"],
-    currencyKeys: ["currency","currencyCode","priceCurrency"],
-    imageKeys: ["image","imageUrl","image_url","thumbnail","primaryImage"],
+    priceKeys: ["salePrice","sellingPrice","finalPrice","price","currentPrice","priceData"],
+    currencyKeys: ["currency","currencyCode","priceCurrency","currencyIso"],
+    imageKeys: ["image","imageUrl","image_url","thumbnail","primaryImage","productImage"],
     skuKeys: ["sku","productId","product_id","code"],
     ...COMMON,
   },
@@ -121,9 +177,9 @@ export const DOMAIN_ADAPTERS = [
     id: "maxfashion",
     hosts: ["maxfashion.com","maxfashion.com.sa"],
     titleKeys: ["productName","product_name","name","title"],
-    priceKeys: ["salePrice","sellingPrice","finalPrice","price","currentPrice"],
-    currencyKeys: ["currency","currencyCode","priceCurrency"],
-    imageKeys: ["image","imageUrl","image_url","thumbnail","primaryImage"],
+    priceKeys: ["salePrice","sellingPrice","finalPrice","price","currentPrice","priceData"],
+    currencyKeys: ["currency","currencyCode","priceCurrency","currencyIso"],
+    imageKeys: ["image","imageUrl","image_url","thumbnail","primaryImage","productImage"],
     skuKeys: ["sku","productId","product_id","code"],
     ...COMMON,
   },
