@@ -1,4 +1,5 @@
 import { choosePreferredCandidate } from "./conflict-resolution.mjs";
+import { identityCluster } from "./product-identity.mjs";
 
 function hasValue(value) {
   return value !== null && value !== undefined && value !== "";
@@ -21,7 +22,7 @@ function ranked(candidates = []) {
   return [...candidates].sort((a,b) => (b.confidence || 0) - (a.confidence || 0));
 }
 
-function pick(candidates, getter, field = "identity") {
+function pick(compatibleCandidates, getter, field = "identity") {
   const eligible = candidates.filter((entry) => hasValue(getter(entry.product)));
   const preferred = choosePreferredCandidate(eligible, field);
   if (preferred) {
@@ -47,26 +48,35 @@ function chooseOffer(product) {
 
 export function reconcileProductCandidates(candidates = [], selectedEntry = null) {
   if (!candidates.length) {
-    return { product:null, fieldSources:{}, contributingStrategies:[], reconciled:false };
+    return {
+      product:null,
+      fieldSources:{},
+      contributingStrategies:[],
+      reconciled:false,
+      identity:{ anchor:null, accepted:[], rejected:[], comparisons:[], summary:{accepted:0,rejected:0} },
+    };
   }
 
+  const identity = identityCluster(candidates, selectedEntry);
+  const compatibleCandidates = identity.accepted.length ? identity.accepted : candidates;
+
   const priceEntry = choosePreferredCandidate(
-    candidates,
+    compatibleCandidates,
     "price",
     (entry) => Boolean(chooseOffer(entry.product))
-  ) || selectedEntry || ranked(candidates).find((entry) => chooseOffer(entry.product)) || candidates[0];
+  ) || selectedEntry || ranked(compatibleCandidates).find((entry) => chooseOffer(entry.product)) || compatibleCandidates[0];
   const priceOffer = chooseOffer(priceEntry?.product);
 
   const fields = {
-    name: pick(candidates, (p) => p?.name, "name"),
-    image: pick(candidates, (p) => firstImage(p?.image), "identity"),
-    brand: pick(candidates, (p) => normalizedBrand(p?.brand), "identity"),
-    model: pick(candidates, (p) => typeof p?.model === "string" ? p.model : p?.model?.name, "identity"),
-    color: pick(candidates, (p) => p?.color, "identity"),
-    mpn: pick(candidates, (p) => p?.mpn || p?.sku, "identity"),
-    gtin13: pick(candidates, (p) => p?.gtin13, "identity"),
-    gtin14: pick(candidates, (p) => p?.gtin14, "identity"),
-    gtin: pick(candidates, (p) => p?.gtin, "identity"),
+    name: pick(compatibleCandidates, (p) => p?.name, "name"),
+    image: pick(compatibleCandidates, (p) => firstImage(p?.image), "identity"),
+    brand: pick(compatibleCandidates, (p) => normalizedBrand(p?.brand), "identity"),
+    model: pick(compatibleCandidates, (p) => typeof p?.model === "string" ? p.model : p?.model?.name, "identity"),
+    color: pick(compatibleCandidates, (p) => p?.color, "identity"),
+    mpn: pick(compatibleCandidates, (p) => p?.mpn || p?.sku, "identity"),
+    gtin13: pick(compatibleCandidates, (p) => p?.gtin13, "identity"),
+    gtin14: pick(compatibleCandidates, (p) => p?.gtin14, "identity"),
+    gtin: pick(compatibleCandidates, (p) => p?.gtin, "identity"),
   };
 
   const product = {
@@ -104,5 +114,6 @@ export function reconcileProductCandidates(candidates = [], selectedEntry = null
     fieldSources,
     contributingStrategies,
     reconciled: contributingStrategies.length > 1,
+    identity,
   };
 }
