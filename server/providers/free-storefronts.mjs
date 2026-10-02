@@ -254,6 +254,14 @@ export function selectedStores(query) {
   return routeFreeStorefronts(query).map((entry) => entry.store);
 }
 
+export async function searchFreeStorefrontById(storeId, query, options = {}) {
+  const store = STORES.find((entry) => entry.id === storeId);
+  if (!store) throw new Error("unknown storefront: " + storeId);
+  const requestedPerStore = Number(options.perStore);
+  const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0 ? requestedPerStore : Infinity;
+  return searchStore(store, query, perStore);
+}
+
 async function searchStore(store, query, perStore = Infinity) {
   const started = Date.now();
   const searchUrl = store.search(query);
