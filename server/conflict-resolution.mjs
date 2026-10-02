@@ -101,7 +101,7 @@ export function detectCandidateConflicts(candidates = []) {
       const avA = a.offer.availability;
       const avB = b.offer.availability;
       if (avA && avB && avA !== avB && /stock|available|unavailable|soldout/.test(avA + " " + avB)) {
-        const winner = best([a.entry,b.entry], "price");
+        const winner = best([a.entry,b.entry], "availability");
         conflicts.push({
           field:"availability",
           severity:"medium",
