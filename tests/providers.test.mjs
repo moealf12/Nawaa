@@ -531,7 +531,7 @@ const centrepointAlgoliaOffers = parseLandmarkAlgoliaPayload(centrepointAlgoliaF
 assert.equal(centrepointAlgoliaOffers.length, 1);
 assert.equal(centrepointAlgoliaOffers[0].price, 73);
 assert.equal(centrepointAlgoliaOffers[0].currency, "SAR");
-assert.match(centrepointAlgoliaOffers[0].sourceUrl, /centrepointstores\.com\/buy-iconic/);
+assert.match(centrepointAlgoliaOffers[0].sourceUrl, /centrepointstores\.com\/sa\/en\/buy-iconic/);
 
 const maxAlgoliaFixture = {
   hits:[{
