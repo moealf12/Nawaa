@@ -47,3 +47,44 @@ test("resolver exposes domain adapter as a candidate", () => {
   assert.equal(adapted?.adapterId, "centrepoint");
   assert.equal(adapted?.product?.offers?.price, 89);
 });
+
+
+test("SHEIN adapter reads assigned gbRawData payloads and normalizes SR to SAR", () => {
+  const html = `<script>
+    window.gbRawData = {
+      "goods": {
+        "goods_name": "Live-style SHEIN Product",
+        "salePrice": {"amount": "49.00", "currency": "SR"},
+        "goods_img": "https://img.example.com/item.jpg",
+        "goods_sn": "sr260306010176658381094",
+        "stockStatus": "available"
+      }
+    };
+  </script>`;
+
+  const result = extractDomainProduct("https://m.shein.com/ar-en/item-p-416403066.html", html);
+  assert.equal(result?.adapterId, "shein");
+  assert.equal(result?.product?.offers?.price, 49);
+  assert.equal(result?.product?.offers?.priceCurrency, "SAR");
+  assert.equal(result?.product?.sku, "sr260306010176658381094");
+  assert.equal(result?.product?.offers?.availability, "instock");
+});
+
+test("Landmark adapters support priceData objects and unavailable stock correctly", () => {
+  const html = `<script type="application/json">{
+    "product": {
+      "productName": "Landmark Product",
+      "priceData": {"formattedValue": "SAR 79.00", "currencyIso": "SAR"},
+      "productImage": {"url": "https://img.example.com/lm.jpg"},
+      "brandName": "Test Brand",
+      "code": "LM-1",
+      "stockStatus": "unavailable"
+    }
+  }</script>`;
+
+  const result = extractDomainProduct("https://www.maxfashion.com.sa/p/lm-1", html);
+  assert.equal(result?.adapterId, "maxfashion");
+  assert.equal(result?.product?.offers?.price, 79);
+  assert.equal(result?.product?.offers?.priceCurrency, "SAR");
+  assert.equal(result?.product?.offers?.availability, "outofstock");
+});
