@@ -178,6 +178,109 @@ function sameHost(candidate, base) {
   } catch { return false; }
 }
 
+
+const LANDMARK_ALGOLIA = {
+  "centrepoint-sa":{
+    appId:"LM8X36L8LA",
+    apiKey:"889d60a488b9a65b7d1ba14716572255",
+    index:"blc_prod_sa_cp_product",
+    host:"https://www.centrepointstores.com",
+  },
+  "maxfashion-sa":{
+    appId:"QNYHZLFWA8",
+    apiKey:"a83ce90ce2870849c24015f7bee3355d",
+    index:"blc_prod_sa_max_product",
+    host:"https://www.maxfashion.com",
+  },
+};
+
+export function parseLandmarkAlgoliaPayload(payload, storeId) {
+  const config = LANDMARK_ALGOLIA[storeId];
+  if (!config) return [];
+  const hits = Array.isArray(payload?.hits) ? payload.hits : [];
+  const offers = [];
+  const seen = new Set();
+
+  for (const hit of hits) {
+    const productId = String(hit?.pid || hit?.sku || hit?.objectID || "").trim();
+    const title = String(hit?.title || hit?.name?.en || hit?.description?.en || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    const price = Number(hit?.sale_price ?? hit?.low_sale_price ?? hit?.price ?? hit?.low_price);
+    const path = String(hit?.url || hit?.uri || "").trim();
+    if (!productId || !title || !Number.isFinite(price) || price <= 0 || !path) continue;
+    if (seen.has(productId)) continue;
+    seen.add(productId);
+
+    let sourceUrl;
+    try { sourceUrl = new URL(path, config.host).href; } catch { continue; }
+
+    const imageRaw = String(hit?.thumb_image || hit?.thumbnailImg || hit?.primaryAssetContentUrl || hit?.galleryImages?.[0]?.url || "").trim();
+    let image = null;
+    try { if (imageRaw) image = new URL(imageRaw, config.host).href; } catch {}
+
+    offers.push({
+      productId,
+      title,
+      image,
+      price,
+      currency:"SAR",
+      sourceUrl,
+      brand:String(hit?.brand || hit?.brandDisplayValue?.en || hit?.manufacturerNameAll?.[0] || "").trim() || null,
+      inStock:hit?.inStock === 1 || hit?.inStock === true,
+    });
+  }
+
+  return offers;
+}
+
+async function searchLandmarkAlgolia(storeId, query, limit = Infinity) {
+  const config = LANDMARK_ALGOLIA[storeId];
+  if (!config) return [];
+  const endpoint =
+    "https://" + config.appId.toLowerCase() + "-dsn.algolia.net/1/indexes/" +
+    encodeURIComponent(config.index) + "/query";
+  const all = [];
+  const seen = new Set();
+  const finiteLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : Infinity;
+  const hitsPerPage = Number.isFinite(finiteLimit) ? Math.max(1, Math.min(100, finiteLimit)) : 100;
+  let page = 0;
+  let nbPages = 1;
+
+  while (page < nbPages && all.length < finiteLimit) {
+    const response = await fetch(endpoint, {
+      method:"POST",
+      headers:{
+        accept:"application/json",
+        "content-type":"application/json",
+        "x-algolia-application-id":config.appId,
+        "x-algolia-api-key":config.apiKey,
+        "user-agent":USER_AGENT,
+      },
+      body:JSON.stringify({
+        query,
+        page,
+        hitsPerPage,
+        attributesToRetrieve:["*"],
+      }),
+      signal:AbortSignal.timeout(10000),
+    });
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new Error("Landmark Algolia HTTP " + response.status + (detail ? ": " + detail : ""));
+    }
+    const payload = await response.json();
+    nbPages = Math.max(1, Number(payload?.nbPages) || 1);
+    for (const item of parseLandmarkAlgoliaPayload(payload, storeId)) {
+      if (seen.has(item.productId)) continue;
+      seen.add(item.productId);
+      all.push(item);
+      if (all.length >= finiteLimit) break;
+    }
+    page += 1;
+  }
+
+  return all;
+}
+
 export function extractAliExpressSearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
@@ -518,16 +621,19 @@ async function searchStore(store, query, perStore = Infinity) {
   const searchUrl = store.search(query);
   try {
     let html = "";
-    let ikeaSearchOffers = [];
-    let ikeaSearchError = null;
+    let primarySearchOffers = [];
+    let primarySearchError = null;
     if (store.id === "ikea-sa") {
-      try { ikeaSearchOffers = await searchIkeaSik(query); }
-      catch (error) { ikeaSearchError = error instanceof Error ? error.message : String(error); }
+      try { primarySearchOffers = await searchIkeaSik(query); }
+      catch (error) { primarySearchError = error instanceof Error ? error.message : String(error); }
+    } else if (LANDMARK_ALGOLIA[store.id]) {
+      try { primarySearchOffers = await searchLandmarkAlgolia(store.id, query, perStore); }
+      catch (error) { primarySearchError = error instanceof Error ? error.message : String(error); }
     }
-    if (!ikeaSearchOffers.length) html = await fetchText(searchUrl);
+    if (!primarySearchOffers.length) html = await fetchText(searchUrl);
     const links = html ? extractProductLinks(html, searchUrl, store, query, perStore) : [];
     const directSearchOffers =
-      ikeaSearchOffers.length ? ikeaSearchOffers :
+      primarySearchOffers.length ? primarySearchOffers :
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       [];
@@ -605,7 +711,7 @@ async function searchStore(store, query, perStore = Infinity) {
       failures,
       diagnostics:{
         searchPage:html ? searchPageDiagnostics(html, searchUrl) : null,
-        ikeaSikError:ikeaSearchError,
+        primarySearchError,
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
           : links.slice(0,5).map((candidate)=>candidate.url)),
