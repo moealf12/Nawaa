@@ -186,7 +186,7 @@ async function searchAll(query) {
   }));
 
   const sources = currentSources();
-  const selectedOffers = selectDiverseOffers(offers, 120);
+  const selectedOffers = selectDiverseOffers(offers, Infinity);
   return {
     providersConfigured: configuredProviders(),
     coverage: {
