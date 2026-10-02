@@ -1,18 +1,27 @@
 const query = process.argv.slice(2).join(" ") || "iphone 17 case";
 
-const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36";
+const CHROME_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36";
+const GOOGLEBOT_UA = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
+const BINGBOT_UA = "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)";
 const searchPath = "/search_result.html?search_key=" + encodeURIComponent(query) + "&search_method=user";
 const referer = "https://www.temu.com" + searchPath;
 
+const seoBodies = [
+  { label:"pathname", body:{ query, page:1, count:40, origin_url:"/search_result.html" } },
+  { label:"full-search-path", body:{ query, page:1, count:40, origin_url:searchPath } },
+  { label:"sa-pathname", body:{ query, page:1, count:40, origin_url:"/sa-en/search_result.html" } },
+];
+
 const probes = [
-  {
-    name:"seo",
-    url:"https://www.temu.com/api/seo/get_search_page_goods",
-    body:{ query, page:1, count:40, origin_url:searchPath },
-  },
+  ...seoBodies.flatMap(({label,body}) => [
+    { name:"seo-chrome-" + label, url:"https://www.temu.com/api/seo/get_search_page_goods", body, userAgent:CHROME_UA },
+    { name:"seo-googlebot-" + label, url:"https://www.temu.com/api/seo/get_search_page_goods", body, userAgent:GOOGLEBOT_UA },
+    { name:"seo-bingbot-" + label, url:"https://www.temu.com/api/seo/get_search_page_goods", body, userAgent:BINGBOT_UA },
+  ]),
   {
     name:"poppy",
     url:"https://www.temu.com/api/poppy/v1/search",
+    userAgent:CHROME_UA,
     body:{
       listId:"NAWAA1",
       offset:0,
@@ -40,10 +49,12 @@ function summarize(value) {
     [];
   return {
     success:value?.success ?? null,
-    msg:value?.msg ?? value?.error_msg ?? null,
+    errorCode:value?.error_code ?? null,
+    msg:value?.msg ?? value?.message ?? value?.error_msg ?? null,
     topKeys:value && typeof value === "object" ? Object.keys(value) : [],
     resultKeys:result && typeof result === "object" ? Object.keys(result) : [],
     dataKeys:data && typeof data === "object" ? Object.keys(data) : [],
+    total:result?.total ?? data?.total ?? null,
     goodsCount:goods.length,
     firstGood:goods[0] || null,
   };
@@ -60,7 +71,7 @@ for (const probe of probes) {
         origin:"https://www.temu.com",
         referer,
         "x-origin-uri":searchPath,
-        "user-agent":USER_AGENT,
+        "user-agent":probe.userAgent || CHROME_UA,
       },
       body:JSON.stringify(probe.body),
       redirect:"follow",
