@@ -34,7 +34,9 @@ function summarize(value) {
   const data = result?.data;
   const goods =
     (Array.isArray(result?.goodsList) && result.goodsList) ||
+    (Array.isArray(result?.goods_list) && result.goods_list) ||
     (Array.isArray(data?.goodsList) && data.goodsList) ||
+    (Array.isArray(data?.goods_list) && data.goods_list) ||
     [];
   return {
     success:value?.success ?? null,
