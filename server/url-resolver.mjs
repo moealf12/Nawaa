@@ -44,7 +44,7 @@ async function assertPublicHttps(url) {
   return parsed;
 }
 
-async function fetchHtmlSafe(url, redirects = 0) {
+export async function fetchHtmlSafe(url, redirects = 0) {
   const parsed = await assertPublicHttps(url);
   const response = await fetch(parsed, {
     redirect: "manual",
@@ -239,6 +239,96 @@ export function extractEmbeddedProductState(html) {
   return candidates[0] || null;
 }
 
+
+function parseJsonLoose(raw = "") {
+  const text = String(raw || "").trim().replace(/^<!--|-->$/g, "").trim();
+  if (!text || text.length > 1500000) return null;
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+function assignmentJsonCandidates(html) {
+  const out = [];
+  const patterns = [
+    /(?:window\.)?__INITIAL_STATE__\s*=\s*({[\s\S]*?})\s*;<\/script>/gi,
+    /(?:window\.)?__PRELOADED_STATE__\s*=\s*({[\s\S]*?})\s*;<\/script>/gi,
+    /(?:window\.)?__APOLLO_STATE__\s*=\s*({[\s\S]*?})\s*;<\/script>/gi,
+  ];
+  for (const re of patterns) {
+    let match;
+    while ((match = re.exec(String(html || "")))) {
+      const parsed = parseJsonLoose(match[1]);
+      if (parsed) out.push(parsed);
+      if (out.length >= 8) return out;
+    }
+  }
+  return out;
+}
+
+function scoreCandidate(candidate) {
+  if (!candidate) return -1;
+  let score = 0;
+  if (candidate.name) score += 4;
+  if (candidate.image) score += 2;
+  if (candidate.brand) score += 2;
+  if (candidate.sku) score += 1;
+  if (candidate.offers?.price !== null && candidate.offers?.price !== undefined) score += 5;
+  if (candidate.offers?.priceCurrency) score += 3;
+  return score;
+}
+
+export function extractHydratedProductState(html) {
+  const candidates = [];
+  for (const parsed of assignmentJsonCandidates(html)) {
+    walkJson(parsed, (node) => {
+      const candidate = embeddedOfferCandidate(node);
+      if (candidate) candidates.push(candidate);
+    });
+  }
+  candidates.sort((a,b) => scoreCandidate(b) - scoreCandidate(a));
+  return candidates[0] || null;
+}
+
+export function extractMetaProductState(html) {
+  const title = titleFromHtml(html);
+  const image = imageFromHtml(html);
+  const price = parseMoney(
+    metaContent(html, "product:price:amount") ||
+    metaContent(html, "og:price:amount") ||
+    metaContent(html, "twitter:data1", "name")
+  );
+  const currency =
+    metaContent(html, "product:price:currency") ||
+    metaContent(html, "og:price:currency") ||
+    null;
+  if (!title && !image && price === null) return null;
+  return {
+    name:title || null,
+    image:image || null,
+    brand:null,
+    sku:null,
+    offers:{
+      price,
+      priceCurrency:currency ? String(currency).toUpperCase() : null,
+      availability:"",
+    },
+  };
+}
+
+export function extractionCandidates(html) {
+  const nodes = extractJsonLd(html);
+  const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
+  const jsonld = products.find((p) => chooseOffer(p)) || products[0] || null;
+  const embedded = extractEmbeddedProductState(html);
+  const hydrated = extractHydratedProductState(html);
+  const meta = extractMetaProductState(html);
+  return [
+    { strategy:"jsonld", product:jsonld, confidence:jsonld ? 0.99 : 0 },
+    { strategy:"embedded_json", product:embedded, confidence:embedded ? 0.94 : 0 },
+    { strategy:"hydrated_state", product:hydrated, confidence:hydrated ? 0.9 : 0 },
+    { strategy:"meta", product:meta, confidence:meta ? 0.72 : 0 },
+  ].filter((entry) => entry.product);
+}
+
 function chooseOffer(product) {
   const raw = product && product.offers;
   let offers = [];
@@ -297,11 +387,12 @@ export async function resolveProductUrl(url) {
   const html = fetched.html;
   const finalUrl = fetched.finalUrl;
 
-  const nodes = extractJsonLd(html);
-  const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
-  const jsonLdProduct = products.find((p) => chooseOffer(p)) || products[0] || null;
-  const embeddedProduct = extractEmbeddedProductState(html);
-  const product = jsonLdProduct || embeddedProduct || null;
+  const candidates = extractionCandidates(html);
+  const selected = candidates.find((entry) => {
+    const offer = chooseOffer(entry.product);
+    return offer && offer.price !== null && offer.currency;
+  }) || candidates[0] || null;
+  const product = selected?.product || null;
   const offer = chooseOffer(product);
 
   const title = product && product.name || titleFromHtml(html) || null;
@@ -365,9 +456,10 @@ export async function resolveProductUrl(url) {
     dataKind: "live",
     fx: priceSAR ? { rate: priceSAR.rate, source: priceSAR.source, observedAt: priceSAR.observedAt } : null,
     extraction: {
-      strategy: jsonLdProduct ? "jsonld" : embeddedProduct ? "embedded_json" : "meta",
-      jsonLdProductFound: Boolean(jsonLdProduct),
-      embeddedProductFound: Boolean(embeddedProduct),
+      strategy: selected?.strategy || "none",
+      confidence: selected?.confidence || 0,
+      attemptedStrategies: ["jsonld","embedded_json","hydrated_state","meta"],
+      availableStrategies: candidates.map((entry) => entry.strategy),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
     }
