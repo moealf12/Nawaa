@@ -37,6 +37,8 @@ on:
       - "server/providers/free-storefronts.mjs"
       - "server/providers/saudi-retailers.mjs"
       - "server/url-resolver.mjs"
+      - "server/domain-adapters.mjs"
+      - "tests/domain-adapters.test.mjs"
       - "tests/providers.test.mjs"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
@@ -87,3 +89,4 @@ jobs:
           node --check server/providers/free-storefronts.mjs
           node --check server/providers/saudi-retailers.mjs
           node --check server/url-resolver.mjs
+          node --check server/domain-adapters.mjs
