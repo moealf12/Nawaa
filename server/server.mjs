@@ -24,6 +24,7 @@ import { configuredFreeStorefronts, searchFreeStorefronts } from "./providers/fr
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
+import { auditFreeStorefronts } from "./source-audit.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -264,6 +265,20 @@ const server = http.createServer(async (req, res) => {
       sourceReliability: sourceReliability.snapshot(),
       now: new Date().toISOString(),
     }, origin || "*");
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/source-audit") {
+    const storeId = String(url.searchParams.get("store") || "").trim() || null;
+    const query = String(url.searchParams.get("q") || "").trim() || null;
+    try {
+      const audit = await auditFreeStorefronts({ storeId, query });
+      return jsonResponse(res, 200, audit, origin || "*");
+    } catch (error) {
+      return jsonResponse(res, 400, {
+        error:"source_audit_failed",
+        message:error instanceof Error ? error.message : String(error),
+      }, origin || "*");
+    }
   }
 
   if (req.method === "GET" && url.pathname === "/api/extract") {
