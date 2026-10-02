@@ -460,6 +460,10 @@ export async function resolveProductUrl(url) {
       confidence: selected?.confidence || 0,
       attemptedStrategies: ["jsonld","embedded_json","hydrated_state","meta"],
       availableStrategies: candidates.map((entry) => entry.strategy),
+      jsonLdProductFound: selected?.strategy === "jsonld",
+      embeddedJsonProductFound: selected?.strategy === "embedded_json",
+      nextDataProductFound: selected?.strategy === "embedded_json" && extracted.diagnostics.availableStrategies.includes("embedded_json"),
+      hydrationProductFound: selected?.strategy === "hydrated_state",
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
     }
