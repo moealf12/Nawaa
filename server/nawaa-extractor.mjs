@@ -64,6 +64,13 @@ export function buildExtractionDiagnostics(product) {
     reconciled: Boolean(extraction.reconciled),
     contributingStrategies: extraction.contributingStrategies || [],
     fieldSources: extraction.fieldSources || {},
+    conflicts: extraction.conflicts || [],
+    conflictSummary: extraction.conflictSummary || {
+      hasConflicts:false,
+      count:0,
+      highSeverity:0,
+      fields:[],
+    },
     missingFields: product?.quality?.missingFields || [],
     confidence: product?.quality?.confidence ?? null,
     completeness: product?.quality?.completeness ?? null,
