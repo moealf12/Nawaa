@@ -1,3 +1,5 @@
+import { choosePreferredCandidate } from "./conflict-resolution.mjs";
+
 function hasValue(value) {
   return value !== null && value !== undefined && value !== "";
 }
@@ -19,10 +21,15 @@ function ranked(candidates = []) {
   return [...candidates].sort((a,b) => (b.confidence || 0) - (a.confidence || 0));
 }
 
-function pick(candidates, getter) {
-  for (const entry of ranked(candidates)) {
-    const value = getter(entry.product);
-    if (hasValue(value)) return { value, strategy: entry.strategy, adapterId: entry.adapterId || null };
+function pick(candidates, getter, field = "identity") {
+  const eligible = candidates.filter((entry) => hasValue(getter(entry.product)));
+  const preferred = choosePreferredCandidate(eligible, field);
+  if (preferred) {
+    return {
+      value:getter(preferred.product),
+      strategy:preferred.strategy,
+      adapterId:preferred.adapterId || null,
+    };
   }
   return { value:null, strategy:null, adapterId:null };
 }
@@ -43,19 +50,23 @@ export function reconcileProductCandidates(candidates = [], selectedEntry = null
     return { product:null, fieldSources:{}, contributingStrategies:[], reconciled:false };
   }
 
-  const priceEntry = selectedEntry || ranked(candidates).find((entry) => chooseOffer(entry.product)) || candidates[0];
+  const priceEntry = choosePreferredCandidate(
+    candidates,
+    "price",
+    (entry) => Boolean(chooseOffer(entry.product))
+  ) || selectedEntry || ranked(candidates).find((entry) => chooseOffer(entry.product)) || candidates[0];
   const priceOffer = chooseOffer(priceEntry?.product);
 
   const fields = {
-    name: pick(candidates, (p) => p?.name),
-    image: pick(candidates, (p) => firstImage(p?.image)),
-    brand: pick(candidates, (p) => normalizedBrand(p?.brand)),
-    model: pick(candidates, (p) => typeof p?.model === "string" ? p.model : p?.model?.name),
-    color: pick(candidates, (p) => p?.color),
-    mpn: pick(candidates, (p) => p?.mpn || p?.sku),
-    gtin13: pick(candidates, (p) => p?.gtin13),
-    gtin14: pick(candidates, (p) => p?.gtin14),
-    gtin: pick(candidates, (p) => p?.gtin),
+    name: pick(candidates, (p) => p?.name, "name"),
+    image: pick(candidates, (p) => firstImage(p?.image), "identity"),
+    brand: pick(candidates, (p) => normalizedBrand(p?.brand), "identity"),
+    model: pick(candidates, (p) => typeof p?.model === "string" ? p.model : p?.model?.name, "identity"),
+    color: pick(candidates, (p) => p?.color, "identity"),
+    mpn: pick(candidates, (p) => p?.mpn || p?.sku, "identity"),
+    gtin13: pick(candidates, (p) => p?.gtin13, "identity"),
+    gtin14: pick(candidates, (p) => p?.gtin14, "identity"),
+    gtin: pick(candidates, (p) => p?.gtin, "identity"),
   };
 
   const product = {
