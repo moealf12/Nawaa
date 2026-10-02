@@ -630,7 +630,28 @@ async function searchStore(store, query, perStore = Infinity) {
       try { primarySearchOffers = await searchLandmarkAlgolia(store.id, query, perStore); }
       catch (error) { primarySearchError = error instanceof Error ? error.message : String(error); }
     }
-    if (!primarySearchOffers.length) html = await fetchText(searchUrl);
+    if (!primarySearchOffers.length) {
+      try { html = await fetchText(searchUrl); }
+      catch (error) {
+        if (!primarySearchError) throw error;
+        // Preserve the real primary-provider failure (e.g. Algolia/SIK) instead
+        // of hiding it behind a secondary storefront-page 403.
+        return {
+          store,
+          searchUrl,
+          candidates:0,
+          offers:[],
+          failures:1,
+          diagnostics:{
+            searchPage:null,
+            primarySearchError,
+            candidateSamples:[],
+            failureSamples:[],
+            unpricedSamples:[],
+          },
+        };
+      }
+    }
     const links = html ? extractProductLinks(html, searchUrl, store, query, perStore) : [];
     const directSearchOffers =
       primarySearchOffers.length ? primarySearchOffers :
