@@ -128,7 +128,7 @@ function canonicalizeCandidateUrl(url) {
   } catch { return url; }
 }
 
-function searchPageDiagnostics(html, searchUrl) {
+function searchPageDiagnostics(html, searchUrl, finalUrl = searchUrl) {
   const hrefs = [];
   const seen = new Set();
   const re = /href=["']([^"'#]+)["']/gi;
@@ -159,8 +159,26 @@ function searchPageDiagnostics(html, searchUrl) {
   while ((match = productIdRe.exec(source)) && productIdSamples.length < 8) {
     productIdSamples.push(match[1]);
   }
+  let blockedReason = null;
+  try {
+    const requested = new URL(searchUrl);
+    const final = new URL(finalUrl || searchUrl);
+    const host = final.hostname.toLowerCase();
+    if (host.endsWith("shein.com") && (
+      /\/risk\/challenge/i.test(final.pathname) ||
+      /captcha_type=|risk-id=|\/risk\/challenge/i.test(source)
+    )) blockedReason = "shein_risk_challenge";
+    if (host.endsWith("temu.com") && /\/search_result\.html/i.test(requested.pathname) && (
+      /\/(?:login|c)\.html$/i.test(final.pathname) ||
+      /"originUrl":"\\u002F(?:login|c)\.html"/i.test(source) ||
+      /login_scene/i.test(final.search)
+    )) blockedReason = "temu_search_redirect";
+  } catch {}
   return {
     htmlBytes:new TextEncoder().encode(source).byteLength,
+    requestedUrl:searchUrl,
+    finalUrl:finalUrl || searchUrl,
+    blockedReason,
     hrefSamples:hrefs,
     hints,
     structuredUrlSamples,
@@ -619,7 +637,7 @@ async function fetchText(url) {
   if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("non-html response");
   const text = await response.text();
   if (text.length > 5000000) throw new Error("search response too large");
-  return text;
+  return { html:text, finalUrl:response.url || url };
 }
 
 const GENERAL_STORE_IDS = new Set(["aliexpress-cn","temu-global","walmart-us"]);
@@ -718,6 +736,8 @@ async function searchStore(store, query, perStore = Infinity) {
   const searchUrl = store.search(query);
   try {
     let html = "";
+    let searchPageFinalUrl = searchUrl;
+    let searchDiagnostics = null;
     let primarySearchOffers = [];
     let primarySearchError = null;
     if (store.id === "ikea-sa") {
@@ -735,7 +755,15 @@ async function searchStore(store, query, perStore = Infinity) {
       }
     }
     if (!primarySearchOffers.length) {
-      try { html = await fetchText(searchUrl); }
+      try {
+        const page = await fetchText(searchUrl);
+        html = page.html;
+        searchPageFinalUrl = page.finalUrl || searchUrl;
+        searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
+        if (searchDiagnostics?.blockedReason && !primarySearchError) {
+          primarySearchError = "Storefront blocked: " + searchDiagnostics.blockedReason;
+        }
+      }
       catch (error) {
         if (!primarySearchError) throw error;
         // Preserve the real primary-provider failure (e.g. Algolia/SIK) instead
@@ -835,7 +863,7 @@ async function searchStore(store, query, perStore = Infinity) {
       offers,
       failures,
       diagnostics:{
-        searchPage:html ? searchPageDiagnostics(html, searchUrl) : null,
+        searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
