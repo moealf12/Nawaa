@@ -293,8 +293,9 @@ async function searchIkeaSik(query) {
   const response = await fetch(endpoint, {
     method:"POST",
     headers:{
-      accept:"application/json",
-      "content-type":"application/json",
+      accept:"*/*",
+      "content-type":"text/plain;charset=UTF-8",
+      "session-id":"6f29f48b-5fc4-4d56-9c66-nawaaikea2026",
       origin:"https://www.ikea.com",
       referer:"https://www.ikea.com/sa/en/search/",
       "user-agent":USER_AGENT,
