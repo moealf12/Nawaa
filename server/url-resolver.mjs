@@ -4,6 +4,7 @@ import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
+import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
@@ -452,6 +453,8 @@ export async function resolveProductUrl(url) {
     const offer = chooseOffer(entry.product);
     return offer && offer.price !== null && offer.currency;
   }) || candidates[0] || null;
+  const conflicts = detectCandidateConflicts(candidates);
+  const conflictState = conflictSummary(conflicts);
   const reconciliation = reconcileProductCandidates(candidates, selected);
   const product = reconciliation.product || selected?.product || null;
   const offer = chooseOffer(product);
@@ -524,6 +527,8 @@ export async function resolveProductUrl(url) {
       reconciled: reconciliation.reconciled,
       contributingStrategies: reconciliation.contributingStrategies,
       fieldSources: reconciliation.fieldSources,
+      conflicts,
+      conflictSummary: conflictState,
       jsonLdProductFound: candidates.some((entry) => entry.strategy === "jsonld"),
 
       embeddedJsonProductFound: candidates.some((entry) => entry.strategy === "embedded_json"),
