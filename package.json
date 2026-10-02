@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server/server.mjs",
-    "test": "node tests/search-core.test.mjs && node tests/providers.test.mjs && node --test tests/regressions.test.mjs tests/ui-flow.test.mjs tests/search-cache.test.mjs tests/discovery.test.mjs tests/ebay-notifications.test.mjs tests/source-coverage.test.mjs tests/shopify.test.mjs tests/product-grouping.test.mjs tests/source-reliability.test.mjs && node --test tests/nawaa-extractor.test.mjs tests/domain-adapters.test.mjs"
+    "test": "node tests/search-core.test.mjs && node tests/providers.test.mjs && node --test tests/regressions.test.mjs tests/ui-flow.test.mjs tests/search-cache.test.mjs tests/discovery.test.mjs tests/ebay-notifications.test.mjs tests/source-coverage.test.mjs tests/shopify.test.mjs tests/product-grouping.test.mjs tests/source-reliability.test.mjs && node --test tests/nawaa-extractor.test.mjs tests/domain-adapters.test.mjs tests/reconciliation.test.mjs"
   },
   "engines": {
     "node": ">=22"
