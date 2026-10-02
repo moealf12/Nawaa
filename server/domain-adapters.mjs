@@ -59,6 +59,8 @@ function parseScriptJson(html) {
     "__INITIAL_STATE__",
     "window.__PRELOADED_STATE__",
     "__PRELOADED_STATE__",
+    "window.rawData",
+    "rawData",
     "productIntroData",
     "goodsDetail",
   ];
@@ -155,6 +157,9 @@ function productIdFromUrl(url, adapterId) {
   if (adapterId === "shein") {
     return href.match(/-p-(\d+)\.html/i)?.[1] || href.match(/[?&]goods_id=(\d+)/i)?.[1] || null;
   }
+  if (adapterId === "temu") {
+    return href.match(/-g-(\d+)\.html/i)?.[1] || href.match(/[?&](?:goods_id|goodsId)=(\d+)/i)?.[1] || null;
+  }
   if (adapterId === "newegg") {
     return href.match(/\/p\/([A-Z0-9-]+)/i)?.[1] || null;
   }
@@ -179,6 +184,17 @@ export const DOMAIN_ADAPTERS = [
     imageKeys: ["goods_img","goodsImg","goods_image","image","imageUrl","image_url","mainImage"],
     skuKeys: ["goods_sn","goodsSn","sku","goods_id","goodsId","productId","product_id"],
     pageIdKeys: ["goods_id","goodsId","productId","product_id"],
+    ...COMMON,
+  },
+  {
+    id: "temu",
+    hosts: ["temu.com"],
+    titleKeys: ["goodsName","goods_name","productName","product_name","name","title"],
+    priceKeys: ["salePrice","sale_price","retailPrice","retail_price","price","goodsPrice","goods_price","priceData"],
+    currencyKeys: ["currency","currencyCode","priceCurrency","currency_code"],
+    imageKeys: ["goodsImage","goods_image","image","imageUrl","image_url","thumbUrl","thumb_url","mainImage"],
+    skuKeys: ["goodsId","goods_id","productId","product_id","skuId","sku_id"],
+    pageIdKeys: ["goodsId","goods_id","productId","product_id"],
     ...COMMON,
   },
   {

@@ -18,7 +18,7 @@ const STORES = [
   },
   {
     id:"temu-global", name:"Temu", countryCode:"CN", countryNameAr:"الصين", categories:["*"],
-    search:(q)=>"https://www.temu.com/search_result.html?search_key="+encodeURIComponent(q),
+    search:(q)=>"https://www.temu.com/search_result.html?search_key="+encodeURIComponent(q)+"&search_method=user",
     productPath:/\/(?:goods|item)\.html(?:[?#]|$)|-g-\d+\.html/i,
   },
   {
@@ -128,7 +128,7 @@ function canonicalizeCandidateUrl(url) {
   } catch { return url; }
 }
 
-function searchPageDiagnostics(html, searchUrl) {
+function searchPageDiagnostics(html, searchUrl, finalUrl = searchUrl) {
   const hrefs = [];
   const seen = new Set();
   const re = /href=["']([^"'#]+)["']/gi;
@@ -159,8 +159,27 @@ function searchPageDiagnostics(html, searchUrl) {
   while ((match = productIdRe.exec(source)) && productIdSamples.length < 8) {
     productIdSamples.push(match[1]);
   }
+  let blockedReason = null;
+  try {
+    const requested = new URL(searchUrl);
+    const final = new URL(finalUrl || searchUrl);
+    const host = final.hostname.toLowerCase();
+    if (host.endsWith("shein.com") && (
+      /\/risk\/challenge/i.test(final.pathname) ||
+      /captcha_type=|risk-id=|\/risk\/challenge/i.test(source)
+    )) blockedReason = "shein_risk_challenge";
+    if (host.endsWith("temu.com") && /\/search_result\.html/i.test(requested.pathname) && (
+      /\/(?:login|c)\.html$/i.test(final.pathname) ||
+      /"originUrl":"\\u002F(?:login|c)\.html"/i.test(source) ||
+      /login_scene/i.test(final.search)
+    )) blockedReason = "temu_search_redirect";
+    if (host.endsWith("walmart.com") && /\/blocked(?:\/|$)/i.test(final.pathname)) blockedReason = "walmart_blocked";
+  } catch {}
   return {
     htmlBytes:new TextEncoder().encode(source).byteLength,
+    requestedUrl:searchUrl,
+    finalUrl:finalUrl || searchUrl,
+    blockedReason,
     hrefSamples:hrefs,
     hints,
     structuredUrlSamples,
@@ -376,6 +395,98 @@ async function searchLandmarkAlgolia(storeId, query, limit = Infinity) {
   }
 
   return all;
+}
+
+function extractAssignedJsonObject(source, marker, maxBytes = 5000000) {
+  const text = String(source || "");
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const start = text.indexOf("{", markerIndex + marker.length);
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  const endLimit = Math.min(text.length, start + maxBytes);
+  for (let i = start; i < endLimit; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try { return JSON.parse(text.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+function stableTemuProductUrl(rawUrl, productId) {
+  if (!rawUrl) return "https://www.temu.com/goods.html?goods_id=" + encodeURIComponent(productId);
+  try {
+    const url = new URL(rawUrl, "https://www.temu.com");
+    if (/-g-\d+\.html$/i.test(url.pathname)) {
+      url.search = "";
+      url.hash = "";
+      return url.href;
+    }
+    if (/\/goods\.html$/i.test(url.pathname)) {
+      const id = url.searchParams.get("goods_id") || url.searchParams.get("goodsId") || productId;
+      url.search = "";
+      url.searchParams.set("goods_id", id);
+      url.hash = "";
+      return url.href;
+    }
+    url.hash = "";
+    return url.href;
+  } catch {
+    return "https://www.temu.com/goods.html?goods_id=" + encodeURIComponent(productId);
+  }
+}
+
+export function extractTemuSearchOffers(html, query) {
+  const raw =
+    extractAssignedJsonObject(html, "window.rawData=") ||
+    extractAssignedJsonObject(html, "window.rawData =");
+  const list = Array.isArray(raw?.store?.goodsList) ? raw.store.goodsList : [];
+  const tokens = normalizeSearchQuery(query).split(" ").filter((token) => token.length >= 2);
+  const offers = [];
+  const seen = new Set();
+
+  for (const entry of list) {
+    const item = entry?.data && typeof entry.data === "object" ? entry.data : entry;
+    if (!item || typeof item !== "object") continue;
+    const productId = String(item.goodsId || item.goods_id || item.productId || "").trim();
+    const title = String(item.title || item.goodsName || item.goods_name || "").replace(/\s+/g, " ").trim();
+    const priceInfo = item.priceInfo || item.price_info || {};
+    const rawPrice = Number(priceInfo.price ?? item.price);
+    const currency = String(priceInfo.currency || item.currency || raw?.store?.localInfo?.currency || "").trim().toUpperCase();
+    if (!productId || !title || !Number.isFinite(rawPrice) || rawPrice <= 0 || !currency) continue;
+
+    const haystack = normalizeSearchQuery(title);
+    const hits = tokens.filter((token) => haystack.includes(token)).length;
+    if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
+    if (seen.has(productId)) continue;
+    seen.add(productId);
+
+    // Temu search hydration reports the integer price in minor currency units.
+    const price = rawPrice / 100;
+    if (!Number.isFinite(price) || price <= 0) continue;
+
+    const sourceUrl = stableTemuProductUrl(item.seoLinkUrl || item.linkUrl || item.url, productId);
+    const imageRaw = item.image?.url || item.imageUrl || item.image_url || null;
+    let image = null;
+    try { if (imageRaw) image = new URL(imageRaw, "https://www.temu.com").href; } catch {}
+
+    offers.push({ productId, title, image, price, currency, sourceUrl });
+  }
+  return offers;
 }
 
 export function extractAliExpressSearchOffers(html, query) {
@@ -634,7 +745,7 @@ async function fetchText(url) {
   if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("non-html response");
   const text = await response.text();
   if (text.length > 5000000) throw new Error("search response too large");
-  return text;
+  return { html:text, finalUrl:response.url || url };
 }
 
 const GENERAL_STORE_IDS = new Set(["aliexpress-cn","temu-global","walmart-us"]);
@@ -733,6 +844,8 @@ async function searchStore(store, query, perStore = Infinity) {
   const searchUrl = store.search(query);
   try {
     let html = "";
+    let searchPageFinalUrl = searchUrl;
+    let searchDiagnostics = null;
     let primarySearchOffers = [];
     let primarySearchError = null;
     if (store.id === "ikea-sa") {
@@ -750,7 +863,15 @@ async function searchStore(store, query, perStore = Infinity) {
       }
     }
     if (!primarySearchOffers.length) {
-      try { html = await fetchText(searchUrl); }
+      try {
+        const page = await fetchText(searchUrl);
+        html = page.html;
+        searchPageFinalUrl = page.finalUrl || searchUrl;
+        searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
+        if (searchDiagnostics?.blockedReason && !primarySearchError) {
+          primarySearchError = "Storefront blocked: " + searchDiagnostics.blockedReason;
+        }
+      }
       catch (error) {
         if (!primarySearchError) throw error;
         // Preserve the real primary-provider failure (e.g. Algolia/SIK) instead
@@ -775,6 +896,7 @@ async function searchStore(store, query, perStore = Infinity) {
     const directSearchOffers =
       primarySearchOffers.length ? primarySearchOffers :
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
+      store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       [];
     const resolutionLinks = directSearchOffers.length ? [] : links;
@@ -850,7 +972,7 @@ async function searchStore(store, query, perStore = Infinity) {
       offers,
       failures,
       diagnostics:{
-        searchPage:html ? searchPageDiagnostics(html, searchUrl) : null,
+        searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)

@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { extractProductLinks, extractAliExpressSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, parseLandmarkBloomreachPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractProductLinks, extractAliExpressSearchOffers, extractTemuSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, parseLandmarkBloomreachPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 import { extractEmbeddedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
@@ -476,6 +476,20 @@ const aliExpressDerivedLinks = extractProductLinks(
 assert.equal(aliExpressDerivedLinks.length, 1);
 assert.match(aliExpressDerivedLinks[0].url, /\/item\/1005009463232289\.html/);
 
+
+const temuSearchFixture = `
+<script>
+window.rawData={"store":{"localInfo":{"currency":"USD"},"goodsList":[
+  {"data":{"goodsId":"606259461874199","title":"Magnetic Clear Case for iPhone 17 Pro Max","priceInfo":{"price":1249,"currency":"USD"},"image":{"url":"https://img.kwcdn.com/product/temu-case.jpg"},"seoLinkUrl":"/magnetic-clear-case-for-iphone-17-pro-max-g-606259461874199.html?refer_page_name=search_result"}},
+  {"data":{"goodsId":"606259461874200","title":"Unrelated Kitchen Spoon","priceInfo":{"price":599,"currency":"USD"},"seoLinkUrl":"/kitchen-spoon-g-606259461874200.html"}}
+]}}</script>`;
+const temuSearchOffers = extractTemuSearchOffers(temuSearchFixture, "iphone 17 case");
+assert.equal(temuSearchOffers.length, 1);
+assert.equal(temuSearchOffers[0].productId, "606259461874199");
+assert.equal(temuSearchOffers[0].price, 12.49);
+assert.equal(temuSearchOffers[0].currency, "USD");
+assert.match(temuSearchOffers[0].sourceUrl, /-g-606259461874199\.html$/);
+assert.match(temuSearchOffers[0].image, /temu-case\.jpg/);
 
 const aliSearchFixture = `
 {"redirectedId":"3256810253104496","itemType":"productV3","productType":"natural","productId":"3256810253104496","image":{"imgUrl":"//ae-pic-a1.aliexpress-media.com/kf/test.jpg"},"title":{"displayTitle":"Magnetic Clear Case for iPhone 17 Pro Max"},"prices":{"skuId":"12000059808812209","salePrice":{"currencyCode":"USD","minPrice":0.33,"formattedPrice":"US $0.33"}},"productDetailUrl":"https://www.aliexpress.com/ssr/300000512/BundleDeals2?productIds=1005010439419248\\u0026sourceName=SEARCHProduct"}
