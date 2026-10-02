@@ -129,7 +129,7 @@ function sameHost(candidate, base) {
   } catch { return false; }
 }
 
-export function extractProductLinks(html, searchUrl, store, query, limit = 5) {
+export function extractProductLinks(html, searchUrl, store, query, limit = Infinity) {
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
   const out = [];
   const seen = new Set();
@@ -148,9 +148,9 @@ export function extractProductLinks(html, searchUrl, store, query, limit = 5) {
     if (seen.has(url)) continue;
     seen.add(url);
     out.push({ url, label, score });
-    if (out.length >= 40) break;
   }
-  return out.sort((a,b) => b.score - a.score).slice(0, limit);
+  const ranked = out.sort((a,b) => b.score - a.score);
+  return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
 
 async function fetchText(url) {
@@ -254,7 +254,7 @@ export function selectedStores(query) {
   return routeFreeStorefronts(query).map((entry) => entry.store);
 }
 
-async function searchStore(store, query, perStore = 3) {
+async function searchStore(store, query, perStore = Infinity) {
   const started = Date.now();
   const searchUrl = store.search(query);
   try {
@@ -314,7 +314,10 @@ export function configuredFreeStorefronts() {
 export async function searchFreeStorefronts(query, options = {}) {
   const routes = routeFreeStorefronts(query);
   const stores = routes.map((entry) => entry.store);
-  const perStore = Math.max(1, Math.min(5, Number(options.perStore || 3)));
+  const requestedPerStore = Number(options.perStore);
+  const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0
+    ? requestedPerStore
+    : Infinity;
   const settled = await Promise.allSettled(stores.map((store) => searchStore(store, query, perStore)));
   const offers = [];
   const errors = [];
