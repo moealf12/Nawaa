@@ -77,6 +77,10 @@ export function buildExtractionDiagnostics(product) {
       unknownFreshnessSources:[],
       sources:[],
     },
+    identity: extraction.identity || {
+      summary:{ accepted:0, rejected:0, rejectedSources:[], anchorSource:null },
+      comparisons:[],
+    },
     missingFields: product?.quality?.missingFields || [],
     confidence: product?.quality?.confidence ?? null,
     completeness: product?.quality?.completeness ?? null,
