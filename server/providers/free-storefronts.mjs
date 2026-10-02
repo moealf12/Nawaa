@@ -173,6 +173,7 @@ function searchPageDiagnostics(html, searchUrl, finalUrl = searchUrl) {
       /"originUrl":"\\u002F(?:login|c)\.html"/i.test(source) ||
       /login_scene/i.test(final.search)
     )) blockedReason = "temu_search_redirect";
+    if (host.endsWith("walmart.com") && /\/blocked(?:\/|$)/i.test(final.pathname)) blockedReason = "walmart_blocked";
   } catch {}
   return {
     htmlBytes:new TextEncoder().encode(source).byteLength,
