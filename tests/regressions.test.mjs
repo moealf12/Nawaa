@@ -200,3 +200,14 @@ test('translated dress titles remain clothing and match a Shein dress search',as
  }
 });
 
+test('accessory lookalikes do not become exact perfume or laptop matches',async()=>{
+ const {productCategory,assessOfferMatch}=await import('../src/search-query.mjs');
+ const atomizer={title:'Niceone Mini Perfume Atomizer Bottle - Blue',condition:'new',specs:{brand:'Niceone'}};
+ assert.equal(productCategory(atomizer),'accessory');
+ assert.equal(assessOfferMatch('نايس ون عطر',atomizer).exactMatch,false);
+
+ const panel={title:'14 Laptop Screen for HP ProBook 640 Series Non-touch Panel',condition:'new',specs:{brand:'HP'}};
+ assert.equal(productCategory(panel),'accessory');
+ assert.equal(assessOfferMatch('لابتوب hp',panel).exactMatch,false);
+});
+
