@@ -8,7 +8,7 @@ import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
 import { extractProductLinks, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
-import { extractEmbeddedProductState } from "../server/url-resolver.mjs";
+import { extractEmbeddedProductState, extractHydratedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -24,6 +24,29 @@ assert.equal(embedded.offers.price, 249.5);
 assert.equal(embedded.offers.priceCurrency, "SAR");
 assert.equal(embedded.brand, "Example");
 assert.equal(embedded.sku, "SKU-1");
+
+const hydratedFixture = `
+<script>
+window.__INITIAL_STATE__ = {"catalog":{"product":{"title":"Hydrated Product","finalPrice":{"amount":399,"currency":"SAR"},"image":"https://example.com/h.jpg","brand":"Hydrated","sku":"H-1"}}};
+</script>`;
+const hydrated = extractHydratedProductState(hydratedFixture);
+assert.equal(hydrated.name, "Hydrated Product");
+assert.equal(hydrated.offers.price, 399);
+assert.equal(hydrated.offers.priceCurrency, "SAR");
+
+const metaFixture = `
+<meta property="og:title" content="Meta Product">
+<meta property="og:image" content="https://example.com/meta.jpg">
+<meta property="product:price:amount" content="129.50">
+<meta property="product:price:currency" content="SAR">`;
+const metaProduct = extractMetaProductState(metaFixture);
+assert.equal(metaProduct.name, "Meta Product");
+assert.equal(metaProduct.offers.price, 129.5);
+assert.equal(metaProduct.offers.priceCurrency, "SAR");
+
+const strategies = extractionCandidates(embeddedFixture);
+assert.ok(strategies.some((entry) => entry.strategy === "embedded_json"));
+
 
 
 const iphone = assessOfferMatch("iPhone 17 256GB", {
