@@ -163,6 +163,82 @@ function typeIncludesProduct(type) {
   return String(type || "").toLowerCase() === "product";
 }
 
+
+function walkJson(node, visit, depth = 0, seen = new Set()) {
+  if (!node || typeof node !== "object" || depth > 12 || seen.has(node)) return;
+  seen.add(node);
+  visit(node);
+  if (Array.isArray(node)) {
+    for (const item of node.slice(0, 500)) walkJson(item, visit, depth + 1, seen);
+    return;
+  }
+  for (const value of Object.values(node)) walkJson(value, visit, depth + 1, seen);
+}
+
+function firstValue(obj, keys) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return null;
+}
+
+function embeddedOfferCandidate(node) {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return null;
+  const title = firstValue(node, ["name","title","productName","product_name"]);
+  const priceRaw = firstValue(node, ["salePrice","sale_price","sellingPrice","finalPrice","price","currentPrice","current_price"]);
+  const priceObj = priceRaw && typeof priceRaw === "object" ? priceRaw : null;
+  const price = parseMoney(priceObj ? firstValue(priceObj, ["value","amount","price"]) : priceRaw);
+  const currency = firstValue(node, ["currency","priceCurrency","currencyCode","currency_code"]) ||
+    (priceObj && firstValue(priceObj, ["currency","currencyCode","currency_code"]));
+  const imageRaw = firstValue(node, ["image","imageUrl","image_url","thumbnail","thumbnailUrl"]);
+  const image = typeof imageRaw === "string" ? imageRaw :
+    (Array.isArray(imageRaw) ? imageRaw[0] : imageRaw && firstValue(imageRaw, ["url","src"]));
+  const brandRaw = firstValue(node, ["brand","brandName","brand_name"]);
+  const brand = typeof brandRaw === "string" ? brandRaw : brandRaw && firstValue(brandRaw, ["name","title"]);
+  const sku = firstValue(node, ["sku","productId","product_id","id","mpn"]);
+  const availabilityRaw = String(firstValue(node, ["availability","stockStatus","stock_status","inventoryStatus"]) || "").toLowerCase();
+
+  if (typeof title !== "string" || title.trim().length < 3 || price === null || !currency) return null;
+  return {
+    name:title.trim(),
+    image:image || null,
+    brand:brand || null,
+    sku:sku ? String(sku) : null,
+    offers:{
+      price,
+      priceCurrency:String(currency).toUpperCase(),
+      availability:availabilityRaw,
+    },
+  };
+}
+
+export function extractEmbeddedProductState(html) {
+  const candidates = [];
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  let match;
+  while ((match = re.exec(String(html || "")))) {
+    const attrs = match[1] || "";
+    const raw = match[2].trim();
+    if (!raw || raw.length > 1500000) continue;
+    const looksJson = /type=["']application\/json["']/i.test(attrs) ||
+      /id=["']__NEXT_DATA__["']/i.test(attrs) ||
+      /^[\[{]/.test(raw);
+    if (!looksJson) continue;
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { continue; }
+    walkJson(parsed, (node) => {
+      const candidate = embeddedOfferCandidate(node);
+      if (candidate) candidates.push(candidate);
+    });
+  }
+  candidates.sort((a,b) =>
+    Number(Boolean(b.image)) - Number(Boolean(a.image)) ||
+    Number(Boolean(b.brand)) - Number(Boolean(a.brand))
+  );
+  return candidates[0] || null;
+}
+
 function chooseOffer(product) {
   const raw = product && product.offers;
   let offers = [];
@@ -223,7 +299,9 @@ export async function resolveProductUrl(url) {
 
   const nodes = extractJsonLd(html);
   const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
-  const product = products.find((p) => chooseOffer(p)) || products[0] || null;
+  const jsonLdProduct = products.find((p) => chooseOffer(p)) || products[0] || null;
+  const embeddedProduct = extractEmbeddedProductState(html);
+  const product = jsonLdProduct || embeddedProduct || null;
   const offer = chooseOffer(product);
 
   const title = product && product.name || titleFromHtml(html) || null;
@@ -287,7 +365,9 @@ export async function resolveProductUrl(url) {
     dataKind: "live",
     fx: priceSAR ? { rate: priceSAR.rate, source: priceSAR.source, observedAt: priceSAR.observedAt } : null,
     extraction: {
-      jsonLdProductFound: Boolean(product),
+      strategy: jsonLdProduct ? "jsonld" : embeddedProduct ? "embedded_json" : "meta",
+      jsonLdProductFound: Boolean(jsonLdProduct),
+      embeddedProductFound: Boolean(embeddedProduct),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
     }
