@@ -76,3 +76,20 @@ test("NAWAA extractor v2 recognizes storefront and domain-adapter evidence", () 
   }, "https://example.com/a");
   assert.equal(adapted.quality.extractionStrategy,"domain_adapter");
 });
+
+
+test("resolver extraction evidence maps into extractor v2 strategy names", () => {
+  const jsonLd = toNawaaProduct({
+    title:"JSON-LD Product", image:"https://example.com/j.jpg", productPrice:10,
+    originalCurrency:"SAR", sourceUrl:"https://example.com/j", availability:"in_stock",
+    shipping:0, specs:{brand:"JSON"}, extraction:{jsonLdProductFound:true,structuredPriceFound:true,structuredCurrencyFound:true},
+  }, "https://example.com/j");
+  assert.equal(jsonLd.quality.extractionStrategy,"json_ld");
+
+  const hydrated = toNawaaProduct({
+    title:"Hydrated Product", image:"https://example.com/h2.jpg", productPrice:10,
+    originalCurrency:"SAR", sourceUrl:"https://example.com/h2", availability:"in_stock",
+    shipping:0, specs:{brand:"Hydrated"}, extraction:{hydrationProductFound:true,structuredPriceFound:true,structuredCurrencyFound:true},
+  }, "https://example.com/h2");
+  assert.equal(hydrated.quality.extractionStrategy,"embedded_json");
+});
