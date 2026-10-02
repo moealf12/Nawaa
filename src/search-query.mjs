@@ -259,7 +259,11 @@ export function assessOfferMatch(query, offer) {
   );
   if (hasUnrequestedVariant) confidence *= 0.82;
 
-  const conditionMismatch = intent.condition ? offer?.condition !== intent.condition : offer?.condition && offer.condition !== "new";
+  const titleSignalsUsed = /\b(?:used|pre owned|pre-owned|b grade|c grade|grade [bc])\b/.test(title);
+  const titleSignalsRefurbished = /\b(?:refurbished|renewed|remanufactured)\b/.test(title);
+  const inferredTitleCondition = titleSignalsRefurbished ? "refurbished" : titleSignalsUsed ? "used" : null;
+  const effectiveCondition = inferredTitleCondition || offer?.condition || null;
+  const conditionMismatch = intent.condition ? effectiveCondition !== intent.condition : effectiveCondition && effectiveCondition !== "new";
   if (conditionMismatch) confidence -= 0.15;
   confidence = Math.max(0, Math.min(1, confidence));
 
