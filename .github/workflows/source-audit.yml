@@ -10,6 +10,7 @@ on:
       - "server/domain-adapters.mjs"
       - "tests/domain-adapters.test.mjs"
       - "scripts/audit-sources.mjs"
+      - "scripts/probe-temu.mjs"
       - ".github/workflows/source-audit.yml"
 
 jobs:
@@ -22,6 +23,8 @@ jobs:
         with:
           node-version: "22"
       - run: node scripts/audit-sources.mjs source-audit-results.json
+      - name: Probe Temu public search endpoints
+        run: node scripts/probe-temu.mjs "iphone 17 case"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
