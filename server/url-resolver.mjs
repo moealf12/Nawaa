@@ -54,7 +54,14 @@ export async function fetchHtmlSafe(url, redirects = 0) {
     redirect: "manual",
     headers: {
       accept: "text/html,application/xhtml+xml",
-      "user-agent": "NAWAA-Product-Resolver/0.2 (+https://moealf12.github.io/Nawaa/)",
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+      "accept-language": "en-US,en;q=0.9,ar-SA;q=0.8",
+      "cache-control": "no-cache",
+      pragma: "no-cache",
+      "sec-fetch-dest": "document",
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-site": "none",
+      "upgrade-insecure-requests": "1",
     },
     signal: AbortSignal.timeout(12000),
   });
