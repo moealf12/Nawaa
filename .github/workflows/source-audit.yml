@@ -7,6 +7,8 @@ on:
       - "server/source-audit.mjs"
       - "server/providers/free-storefronts.mjs"
       - "server/url-resolver.mjs"
+      - "server/domain-adapters.mjs"
+      - "tests/domain-adapters.test.mjs"
       - "scripts/audit-sources.mjs"
       - ".github/workflows/source-audit.yml"
 
