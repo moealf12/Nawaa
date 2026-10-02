@@ -18,7 +18,7 @@ const STORES = [
   },
   {
     id:"temu-global", name:"Temu", countryCode:"CN", countryNameAr:"الصين", categories:["*"],
-    search:(q)=>"https://www.temu.com/search_result.html?search_key="+encodeURIComponent(q),
+    search:(q)=>"https://www.temu.com/search_result.html?search_key="+encodeURIComponent(q)+"&search_method=user",
     productPath:/\/(?:goods|item)\.html(?:[?#]|$)|-g-\d+\.html/i,
   },
   {
