@@ -2,6 +2,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, parseMoney } from "./provider-utils.mjs";
+import { extractDomainProduct } from "./domain-adapters.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
@@ -240,6 +241,19 @@ export function extractEmbeddedProductState(html) {
 }
 
 
+function scoreCandidate(candidate) {
+  if (!candidate) return 0;
+  let score = 1;
+  if (candidate.image) score += 2;
+  if (candidate.brand) score += 1;
+  if (candidate.sku) score += 1;
+  const offer = chooseOffer(candidate);
+  if (offer?.price !== null) score += 2;
+  if (offer?.currency) score += 1;
+  if (offer?.availability) score += 0.5;
+  return score;
+}
+
 function extractBalancedJsonAfter(html, marker) {
   const source = String(html || "");
   const markerIndex = source.indexOf(marker);
@@ -338,19 +352,21 @@ export function extractMetaProductState(html) {
   };
 }
 
-export function extractionCandidates(html) {
+export function extractionCandidates(html, url = null) {
   const nodes = extractJsonLd(html);
   const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
   const jsonld = products.find((p) => chooseOffer(p)) || products[0] || null;
   const embedded = extractEmbeddedProductState(html);
   const hydrated = extractHydratedProductState(html);
   const storefront = extractStorefrontProductState(html);
+  const adapted = url ? extractDomainProduct(url, html) : null;
   const meta = extractMetaProductState(html);
   return [
     { strategy:"jsonld", product:jsonld, confidence:jsonld ? 0.99 : 0 },
     { strategy:"embedded_json", product:embedded, confidence:embedded ? 0.94 : 0 },
     { strategy:"hydrated_state", product:hydrated, confidence:hydrated ? 0.9 : 0 },
     { strategy:"storefront_data", product:storefront, confidence:storefront ? 0.92 : 0 },
+    { strategy:"domain_adapter", product:adapted?.product || null, confidence:adapted ? 0.96 : 0, adapterId:adapted?.adapterId || null },
     { strategy:"meta", product:meta, confidence:meta ? 0.72 : 0 },
   ].filter((entry) => entry.product);
 }
@@ -411,12 +427,12 @@ function merchantName(url) {
 
 export async function extractProductDocument(url) {
   const fetched = await fetchHtmlSafe(url);
-  const candidates = extractionCandidates(fetched.html);
+  const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
   return {
     finalUrl:fetched.finalUrl,
     candidates,
     diagnostics:{
-      attemptedStrategies:["jsonld","embedded_json","hydrated_state","storefront_data","meta"],
+      attemptedStrategies:["jsonld","embedded_json","hydrated_state","storefront_data","domain_adapter","meta"],
       availableStrategies:candidates.map((entry) => entry.strategy),
       htmlBytes:new TextEncoder().encode(fetched.html).byteLength,
     },
@@ -491,13 +507,15 @@ export async function resolveProductUrl(url) {
     extraction: {
       strategy: selected?.strategy || "none",
       confidence: selected?.confidence || 0,
-      attemptedStrategies: ["jsonld","embedded_json","hydrated_state","storefront_data","meta"],
+      attemptedStrategies: ["jsonld","embedded_json","hydrated_state","storefront_data","domain_adapter","meta"],
       availableStrategies: candidates.map((entry) => entry.strategy),
       jsonLdProductFound: selected?.strategy === "jsonld",
       embeddedJsonProductFound: selected?.strategy === "embedded_json",
       nextDataProductFound: selected?.strategy === "embedded_json" && extracted.diagnostics.availableStrategies.includes("embedded_json"),
       hydrationProductFound: selected?.strategy === "hydrated_state",
       storefrontProductFound: selected?.strategy === "storefront_data",
+      domainAdapterFound: selected?.strategy === "domain_adapter",
+      domainAdapterId: selected?.adapterId || null,
       shopifyProductFound: selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics)),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
