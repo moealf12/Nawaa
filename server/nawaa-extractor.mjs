@@ -52,6 +52,21 @@ function extractionTrail(offer = {}) {
   return seen;
 }
 
+export function buildExtractionDiagnostics(product) {
+  const extraction = product?.rawOffer?.extraction || {};
+  return {
+    selectedStrategy: product?.quality?.extractionStrategy || extraction.strategy || "unknown",
+    selectionReason: extraction.selectionReason || null,
+    adapterId: extraction.domainAdapterId || null,
+    availableDomainAdapters: extraction.availableDomainAdapters || [],
+    attemptedStrategies: extraction.attemptedStrategies || [],
+    availableStrategies: extraction.availableStrategies || [],
+    missingFields: product?.quality?.missingFields || [],
+    confidence: product?.quality?.confidence ?? null,
+    completeness: product?.quality?.completeness ?? null,
+  };
+}
+
 export function toNawaaProduct(offer, inputUrl) {
   const missing = missingFields(offer);
   const confidence = confidenceFor(offer, missing);
@@ -114,7 +129,13 @@ export async function extractNawaaProduct(url) {
       durationMs: Date.now() - started,
       confidence: product.quality.confidence,
     });
-    return { ok: true, product, attempts, observedAt: new Date().toISOString() };
+    return {
+      ok: true,
+      product,
+      diagnostics: buildExtractionDiagnostics(product),
+      attempts,
+      observedAt: new Date().toISOString(),
+    };
   } catch (error) {
     attempts.push({
       strategy: "safe_html_resolver",
