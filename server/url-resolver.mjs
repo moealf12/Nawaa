@@ -5,6 +5,7 @@ import { normalizeCondition, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
+import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
@@ -447,7 +448,8 @@ export async function extractProductDocument(url) {
 export async function resolveProductUrl(url) {
   const extracted = await extractProductDocument(url);
   const finalUrl = extracted.finalUrl;
-  const candidates = extracted.candidates;
+  const observedAt = new Date().toISOString();
+  const candidates = annotateCandidateFreshness(extracted.candidates, observedAt);
   const html = null;
   const selected = candidates.find((entry) => {
     const offer = chooseOffer(entry.product);
@@ -455,6 +457,7 @@ export async function resolveProductUrl(url) {
   }) || candidates[0] || null;
   const conflicts = detectCandidateConflicts(candidates);
   const conflictState = conflictSummary(conflicts);
+  const freshnessState = freshnessSummary(candidates);
   const reconciliation = reconcileProductCandidates(candidates, selected);
   const product = reconciliation.product || selected?.product || null;
   const offer = chooseOffer(product);
@@ -514,7 +517,7 @@ export async function resolveProductUrl(url) {
     priceConfidence: priceSAR ? "incomplete" : "unknown",
     isLocal: country.countryCode === "SA",
     deliveryDays: null,
-    observedAt: new Date().toISOString(),
+    observedAt,
     dataKind: "live",
     fx: priceSAR ? { rate: priceSAR.rate, source: priceSAR.source, observedAt: priceSAR.observedAt } : null,
     extraction: {
@@ -529,6 +532,7 @@ export async function resolveProductUrl(url) {
       fieldSources: reconciliation.fieldSources,
       conflicts,
       conflictSummary: conflictState,
+      freshness: freshnessState,
       jsonLdProductFound: candidates.some((entry) => entry.strategy === "jsonld"),
 
       embeddedJsonProductFound: candidates.some((entry) => entry.strategy === "embedded_json"),
