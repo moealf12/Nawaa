@@ -202,11 +202,20 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
 
   // Modern storefronts often hydrate search results in JSON instead of rendering
   // product anchors server-side. Scan quoted URL values as a second discovery path.
-  const quotedUrlRe = /["']((?:https?:)?(?:\\?\/){1,2}[^"' <>\s]+)["']/gi;
-  while ((match = quotedUrlRe.exec(html))) addCandidate(match[1], "");
+  for (const hydratedSource of [String(html || ""), decodeHtml(html)]) {
+    const quotedUrlRe = /["']((?:https?:)?(?:\\?\/){1,2}[^"' <>\s]+)["']/gi;
+    while ((match = quotedUrlRe.exec(hydratedSource))) addCandidate(match[1], "");
 
-  const unicodeUrlRe = /["']((?:https?:)?(?:\\u002F){1,2}[^"'<>]+)["']/gi;
-  while ((match = unicodeUrlRe.exec(html))) addCandidate(match[1], "");
+    const unicodeUrlRe = /["']((?:https?:)?(?:\\u002F){1,2}[^"'<>]+)["']/gi;
+    while ((match = unicodeUrlRe.exec(hydratedSource))) addCandidate(match[1], "");
+  }
+
+  if (store.id === "aliexpress-cn") {
+    const productIdRe = /productIds(?:=|%3D|\\u003D)(\d{10,})/gi;
+    while ((match = productIdRe.exec(String(html || "")))) {
+      addCandidate("https://www.aliexpress.com/item/" + match[1] + ".html", query);
+    }
+  }
   const ranked = out.sort((a,b) => b.score - a.score);
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
