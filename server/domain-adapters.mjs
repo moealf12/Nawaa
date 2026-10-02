@@ -158,6 +158,9 @@ function productIdFromUrl(url, adapterId) {
   if (adapterId === "newegg") {
     return href.match(/\/p\/([A-Z0-9-]+)/i)?.[1] || null;
   }
+  if (adapterId === "asos") {
+    return href.match(/\/prd\/(\d+)/i)?.[1] || null;
+  }
   return null;
 }
 
@@ -176,6 +179,17 @@ export const DOMAIN_ADAPTERS = [
     imageKeys: ["goods_img","goodsImg","goods_image","image","imageUrl","image_url","mainImage"],
     skuKeys: ["goods_sn","goodsSn","sku","goods_id","goodsId","productId","product_id"],
     pageIdKeys: ["goods_id","goodsId","productId","product_id"],
+    ...COMMON,
+  },
+  {
+    id: "asos",
+    hosts: ["asos.com"],
+    titleKeys: ["name","title","productName"],
+    priceKeys: ["price","currentPrice","salePrice"],
+    currencyKeys: ["currency","priceCurrency"],
+    imageKeys: ["image","imageUrl"],
+    skuKeys: ["productId","id","sku"],
+    pageIdKeys: ["productId","id"],
     ...COMMON,
   },
   {
@@ -228,6 +242,43 @@ function decodeHtmlText(value = "") {
     .replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function extractAsosHtmlProduct(html, url) {
+  const source = String(html || "");
+  const responseMatch = source.match(/stockPriceResponse\s*=\s*'([\\s\\S]*?)';/i);
+  if (!responseMatch) return null;
+  let rows;
+  try {
+    const decoded = responseMatch[1]
+      .replace(/\\'/g, "'")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\");
+    rows = JSON.parse(decoded);
+  } catch { return null; }
+  const pageId = productIdFromUrl(url, "asos");
+  const row = Array.isArray(rows)
+    ? (rows.find((item) => String(item?.productId) === String(pageId)) || rows[0])
+    : null;
+  const price = parseMoney(row?.productPrice?.current?.value);
+  const currency = normalizeCurrency(row?.productPrice?.currency);
+  if (price === null || !currency) return null;
+  const title =
+    source.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1] ||
+    source.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ||
+    "ASOS product";
+  const image =
+    source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] ||
+    null;
+  return {
+    name: decodeHtmlText(title),
+    image,
+    brand:null,
+    sku:pageId,
+    offers:{ price, priceCurrency:currency, availability:"" },
+  };
+}
+
 function extractNeweggHtmlProduct(html) {
   const source = String(html || "");
   const title =
@@ -261,6 +312,10 @@ export function extractDomainProduct(url, html) {
   if (!adapter) return null;
 
   const candidates = [];
+  if (adapter.id === "asos") {
+    const htmlProduct = extractAsosHtmlProduct(html, url);
+    if (htmlProduct) candidates.push(htmlProduct);
+  }
   if (adapter.id === "newegg") {
     const htmlProduct = extractNeweggHtmlProduct(html);
     if (htmlProduct) candidates.push(htmlProduct);
