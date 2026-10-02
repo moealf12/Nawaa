@@ -415,3 +415,17 @@ assert.ok(configuredFreeStorefronts().some((store) => store.id === "decathlon-sa
 assert.ok(configuredFreeStorefronts().some((store) => store.id === "niceone-sa"));
 
 console.log("NAWAA provider tests passed");
+
+
+test("Newegg discovery excludes /p/pl category listing URLs", () => {
+  const html = [
+    '<a href="https://www.newegg.com/p/pl?d=laptop">Laptop category</a>',
+    '<a href="https://www.newegg.com/p/N82E16834156568">Laptop RTX</a>'
+  ].join("");
+  const store = {
+    productPath:/\/p\/(?!pl(?:[/?#]|$))[A-Z0-9-]+(?:[/?#]|$)/i,
+  };
+  const links = extractProductLinks(html, "https://www.newegg.com/global/sa-en/p/pl?d=laptop", store, "laptop");
+  assert.equal(links.length, 1);
+  assert.match(links[0].url, /\/p\/N82E16834156568/);
+});
