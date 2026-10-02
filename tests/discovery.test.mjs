@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as query from '../src/search-query.mjs';
 import * as core from '../src/search-core.mjs';
+import { routeFreeStorefronts } from '../server/providers/free-storefronts.mjs';
 const offer=(title,price,brand='HP')=>({title,productPrice:price,condition:'new',availability:'in_stock',merchant:'Store',specs:{brand},...query.assessOfferMatch(brand,{title,condition:'new',specs:{brand}})});
 const sections=(q,offers)=>core.buildDiscoverySections?.(q,core.groupComparableOffers(offers)) || [];
 
@@ -116,3 +117,10 @@ test('Saudi retail aliases route to canonical brands',()=>{
   assert.equal(query.parseSearchIntent('نايس ون عطر').brand,'niceone');
 });
 
+
+
+test('free storefront routing has no fixed source cap',()=>{
+  const routes=routeFreeStorefronts('فستان');
+  assert.ok(routes.length > 8, 'expected every relevant storefront, not the former eight-store cap');
+  assert.equal(new Set(routes.map(route=>route.store.id)).size,routes.length);
+});
