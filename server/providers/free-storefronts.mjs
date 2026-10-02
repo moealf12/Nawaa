@@ -210,10 +210,9 @@ function routeScore(store, intent, normalizedQuery) {
   return { score, reasons, exactCategory, explicitBrand, broad };
 }
 
-export function routeFreeStorefronts(query, maxStores = 8) {
+export function routeFreeStorefronts(query) {
   const normalizedQuery = normalizeSearchQuery(query);
   const intent = parseSearchIntent(normalizedQuery);
-  const cap = Math.max(1, Math.min(10, Number(maxStores) || 8));
   const routed = STORES
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
@@ -243,7 +242,7 @@ export function routeFreeStorefronts(query, maxStores = 8) {
       : (entry.broad || entry.explicitBrand || entry.reasons.includes("general_specialist"))
   );
 
-  return relevant.slice(0, cap).map((entry, index) => ({
+  return relevant.map((entry, index) => ({
     ...entry,
     rank:index + 1,
     category:intent.category || null,
@@ -251,8 +250,8 @@ export function routeFreeStorefronts(query, maxStores = 8) {
   }));
 }
 
-export function selectedStores(query, maxStores = 8) {
-  return routeFreeStorefronts(query, maxStores).map((entry) => entry.store);
+export function selectedStores(query) {
+  return routeFreeStorefronts(query).map((entry) => entry.store);
 }
 
 async function searchStore(store, query, perStore = 3) {
@@ -313,7 +312,7 @@ export function configuredFreeStorefronts() {
 }
 
 export async function searchFreeStorefronts(query, options = {}) {
-  const routes = routeFreeStorefronts(query, Number(options.maxStores || 8));
+  const routes = routeFreeStorefronts(query);
   const stores = routes.map((entry) => entry.store);
   const perStore = Math.max(1, Math.min(5, Number(options.perStore || 3)));
   const settled = await Promise.allSettled(stores.map((store) => searchStore(store, query, perStore)));
