@@ -6,7 +6,7 @@ export function compareOffers(a,b) {
     (Number.isFinite(a.productPrice) ? a.productPrice : Infinity) - (Number.isFinite(b.productPrice) ? b.productPrice : Infinity);
 }
 export function selectDiverseOffers(offers = [], limit = 120) {
-  const cap = Number.isFinite(limit) ? Math.max(0,Math.floor(limit)) : 120;
+  const cap = limit === Infinity ? Infinity : (Number.isFinite(limit) ? Math.max(0,Math.floor(limit)) : 120);
   const sorted = [...offers].sort(compareOffers), selected=[];
   for (const tier of [3,2,1,0]) {
     const merchants=new Map();
