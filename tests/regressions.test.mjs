@@ -211,3 +211,11 @@ test('accessory lookalikes do not become exact perfume or laptop matches',async(
  assert.equal(assessOfferMatch('لابتوب hp',panel).exactMatch,false);
 });
 
+test('marketplace title condition overrides optimistic API condition',async()=>{
+ const {assessOfferMatch}=await import('../src/search-query.mjs');
+ const offer={title:'iPhone 17 Black 256GB 97% Battery (B Grade)',condition:'new',specs:{brand:'Apple',storage:'256GB',color:'Black'}};
+ const match=assessOfferMatch('ايفون 17 256 اسود',offer);
+ assert.equal(match.exactMatch,false);
+ assert.equal(match.matchReason,'حالة المنتج تختلف عن المطلوب');
+});
+
