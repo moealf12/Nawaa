@@ -455,10 +455,13 @@ export async function resolveProductUrl(url) {
     const offer = chooseOffer(entry.product);
     return offer && offer.price !== null && offer.currency;
   }) || candidates[0] || null;
-  const conflicts = detectCandidateConflicts(candidates);
-  const conflictState = conflictSummary(conflicts);
   const freshnessState = freshnessSummary(candidates);
   const reconciliation = reconcileProductCandidates(candidates, selected);
+  const compatibleCandidates = reconciliation.identity?.accepted?.length
+    ? reconciliation.identity.accepted
+    : candidates;
+  const conflicts = detectCandidateConflicts(compatibleCandidates);
+  const conflictState = conflictSummary(conflicts);
   const product = reconciliation.product || selected?.product || null;
   const offer = chooseOffer(product);
   const selectionReason = selected
@@ -533,6 +536,17 @@ export async function resolveProductUrl(url) {
       conflicts,
       conflictSummary: conflictState,
       freshness: freshnessState,
+      identity: {
+        summary: reconciliation.identity?.summary || { accepted:0, rejected:0, rejectedSources:[], anchorSource:null },
+        comparisons: (reconciliation.identity?.comparisons || []).map((item) => ({
+          source:item.source,
+          score:item.score,
+          verdict:item.verdict,
+          matches:item.matches,
+          conflicts:item.conflicts,
+          titleSimilarity:item.titleSimilarity ?? null,
+        })),
+      },
       jsonLdProductFound: candidates.some((entry) => entry.strategy === "jsonld"),
 
       embeddedJsonProductFound: candidates.some((entry) => entry.strategy === "embedded_json"),
