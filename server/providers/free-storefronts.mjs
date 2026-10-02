@@ -127,6 +127,30 @@ function canonicalizeCandidateUrl(url) {
   } catch { return url; }
 }
 
+function searchPageDiagnostics(html, searchUrl) {
+  const hrefs = [];
+  const seen = new Set();
+  const re = /href=["']([^"'#]+)["']/gi;
+  let match;
+  while ((match = re.exec(String(html || ""))) && hrefs.length < 12) {
+    let url;
+    try { url = new URL(decodeHtml(match[1]), searchUrl).href; } catch { continue; }
+    if (seen.has(url)) continue;
+    seen.add(url);
+    hrefs.push(url);
+  }
+  const source = String(html || "");
+  const hintPatterns = {
+    ip: /(?:\\u002F|\\\/|\/)ip(?:\\u002F|\\\/|\/)/gi,
+    prd: /(?:\\u002F|\\\/|\/)prd(?:\\u002F|\\\/|\/)/gi,
+    item: /(?:\\u002F|\\\/|\/)item(?:\\u002F|\\\/|\/)/gi,
+    productId: /["']?(?:productId|product_id|goods_id|skuId)["']?\s*[:=]/gi,
+    canonicalUrl: /["']?(?:canonicalUrl|productUrl|url)["']?\s*[:=]/gi,
+  };
+  const hints = Object.fromEntries(Object.entries(hintPatterns).map(([key, regex]) => [key, (source.match(regex) || []).length]));
+  return { htmlBytes:new TextEncoder().encode(source).byteLength, hrefSamples:hrefs, hints };
+}
+
 function sameHost(candidate, base) {
   try {
     const a = new URL(candidate);
@@ -325,6 +349,7 @@ async function searchStore(store, query, perStore = Infinity) {
       offers,
       failures,
       diagnostics:{
+        searchPage:searchPageDiagnostics(html, searchUrl),
         candidateSamples:links.slice(0,5).map((candidate)=>candidate.url),
         failureSamples:settled
           .map((result,index)=>({result,candidate:links[index]}))
