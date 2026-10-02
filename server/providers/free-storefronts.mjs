@@ -295,7 +295,7 @@ async function searchIkeaSik(query) {
     headers:{
       accept:"*/*",
       "content-type":"text/plain;charset=UTF-8",
-      "session-id":"6f29f48b-5fc4-4d56-9c66-nawaaikea2026",
+      "Session-Id":"6f29f48b-5fc4-4d56-9c66-5fdd72aa2026",
       origin:"https://www.ikea.com",
       referer:"https://www.ikea.com/sa/en/search/",
       "user-agent":USER_AGENT,
@@ -303,7 +303,10 @@ async function searchIkeaSik(query) {
     body:JSON.stringify(body),
     signal:AbortSignal.timeout(8000),
   });
-  if (!response.ok) throw new Error("IKEA SIK HTTP " + response.status);
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 500);
+    throw new Error("IKEA SIK HTTP " + response.status + (detail ? ": " + detail : ""));
+  }
   return parseIkeaSikPayload(await response.json(), query);
 }
 
