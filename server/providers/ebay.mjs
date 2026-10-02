@@ -76,6 +76,7 @@ async function normalizeItem(item, market) {
   return {
     provider: "ebay",
     providerMarket: marketplaceId,
+    sourceListingId: item?.itemId || item?.legacyItemId || null,
     merchant: "eBay", // Seller account identifiers must not enter client storage or quotes.
     merchantCountryCode: item?.itemLocation?.country || countryCode,
     merchantCountryNameAr: countryNameAr,
