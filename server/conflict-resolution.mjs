@@ -1,3 +1,5 @@
+import { freshnessFor } from "./freshness.mjs";
+
 const DEFAULT_WEIGHT = {
   jsonld: 1.00,
   domain_adapter: 0.99,
@@ -21,7 +23,11 @@ function sourceKey(entry) {
 function rank(entry, field = null) {
   const table = field ? FIELD_WEIGHT[field] : null;
   const weight = table?.[entry?.strategy] ?? DEFAULT_WEIGHT[entry?.strategy] ?? 0.8;
-  return Number(entry?.confidence || 0) * weight;
+  const freshness = entry?.freshness || freshnessFor(entry);
+  const freshnessWeight = field === "price" || field === "availability"
+    ? 0.75 + (freshness.freshness * 0.25)
+    : 0.9 + (freshness.freshness * 0.1);
+  return Number(entry?.confidence || 0) * weight * freshnessWeight;
 }
 
 function normalizeText(value) {
