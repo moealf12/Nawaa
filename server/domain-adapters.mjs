@@ -244,7 +244,7 @@ function decodeHtmlText(value = "") {
 
 function extractAsosHtmlProduct(html, url) {
   const source = String(html || "");
-  const responseMatch = source.match(/stockPriceResponse\s*=\s*'([\\s\\S]*?)';/i);
+  const responseMatch = source.match(/stockPriceResponse\s*=\s*'([\s\S]*?)';/i);
   if (!responseMatch) return null;
   let rows;
   try {
