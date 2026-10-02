@@ -155,6 +155,9 @@ function productIdFromUrl(url, adapterId) {
   if (adapterId === "shein") {
     return href.match(/-p-(\d+)\.html/i)?.[1] || href.match(/[?&]goods_id=(\d+)/i)?.[1] || null;
   }
+  if (adapterId === "newegg") {
+    return href.match(/\/p\/([A-Z0-9-]+)/i)?.[1] || null;
+  }
   return null;
 }
 
@@ -173,6 +176,17 @@ export const DOMAIN_ADAPTERS = [
     imageKeys: ["goods_img","goodsImg","goods_image","image","imageUrl","image_url","mainImage"],
     skuKeys: ["goods_sn","goodsSn","sku","goods_id","goodsId","productId","product_id"],
     pageIdKeys: ["goods_id","goodsId","productId","product_id"],
+    ...COMMON,
+  },
+  {
+    id: "newegg",
+    hosts: ["newegg.com"],
+    titleKeys: ["Description","description","Title","title","productTitle","ProductTitle","name"],
+    priceKeys: ["FinalPrice","finalPrice","CurrentPrice","currentPrice","SalePrice","salePrice","price","Price"],
+    currencyKeys: ["CurrencyCode","currencyCode","currency","Currency","priceCurrency"],
+    imageKeys: ["Image","image","ImageUrl","imageUrl","ItemCellImageName","itemCellImageName","thumbnail"],
+    skuKeys: ["ItemNumber","itemNumber","ItemNo","itemNo","sku","Sku","productId"],
+    pageIdKeys: ["ItemNumber","itemNumber","ItemNo","itemNo","sku","Sku","productId"],
     ...COMMON,
   },
   {
