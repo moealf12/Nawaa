@@ -125,3 +125,17 @@ test("Newegg adapter extracts assigned product payload", () => {
   assert.equal(result?.product?.offers?.price, 1299.99);
   assert.equal(result?.product?.offers?.priceCurrency, "USD");
 });
+
+
+test("Newegg adapter extracts visible product title and price HTML", () => {
+  const html = `
+    <meta property="og:image" content="https://c1.neweggimages.com/a.jpg">
+    <h1 class="product-title">Acer Aspire Go 15</h1>
+    <li class="price-current"><strong>849</strong><sup>.99</sup></li>
+  `;
+  const result = extractDomainProduct("https://www.newegg.com/p/N82E16834360412", html);
+  assert.equal(result?.adapterId, "newegg");
+  assert.equal(result?.product?.name, "Acer Aspire Go 15");
+  assert.equal(result?.product?.offers?.price, 849.99);
+  assert.equal(result?.product?.offers?.priceCurrency, "USD");
+});
