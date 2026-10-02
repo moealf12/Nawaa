@@ -188,6 +188,9 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   // product anchors server-side. Scan quoted URL values as a second discovery path.
   const quotedUrlRe = /["']((?:https?:)?\\?\/\\?\/[^"'<>\\s]+|\\?\/[^"'<>\\s]+)["']/gi;
   while ((match = quotedUrlRe.exec(html))) addCandidate(match[1], "");
+
+  const unicodeUrlRe = /["']((?:https?:)?(?:\\u002F){1,2}[^"'<>\\s]+)["']/gi;
+  while ((match = unicodeUrlRe.exec(html))) addCandidate(match[1], "");
   const ranked = out.sort((a,b) => b.score - a.score);
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
