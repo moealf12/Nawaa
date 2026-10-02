@@ -1,6 +1,7 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
 import { normalizeSearchQuery, parseSearchIntent } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
+import { moneyToSAR } from "../fx.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -177,6 +178,53 @@ function sameHost(candidate, base) {
   } catch { return false; }
 }
 
+export function extractAliExpressSearchOffers(html, query) {
+  const source = String(html || "");
+  const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
+  const starts = [];
+  const marker = /{"redirectedId"/g;
+  let markerMatch;
+  while ((markerMatch = marker.exec(source))) starts.push(markerMatch.index);
+  const offers = [];
+  const seen = new Set();
+
+  const decodeJsonString = (value = "") => {
+    try { return JSON.parse('"' + value + '"'); } catch { return decodeHtml(value).replace(/\\u0026/gi, "&").replace(/\\//g, "/"); }
+  };
+
+  for (let n = 0; n < starts.length; n++) {
+    const start = starts[n];
+    const end = starts[n + 1] ?? Math.min(source.length, start + 30000);
+    const block = source.slice(start, end);
+    if (!/"itemType":"productV3"/.test(block)) continue;
+
+    const productId = block.match(/"productId":"?(\d+)"?/)?.[1] || null;
+    const titleRaw = block.match(/"title":{"displayTitle":"((?:\\.|[^"\\])*)"/)?.[1] || null;
+    const imageRaw = block.match(/"image":{"imgUrl":"((?:\\.|[^"\\])*)"/)?.[1] || null;
+    const priceBlock =
+      block.match(/"salePrice":{[\s\S]{0,1200}?}/)?.[0] ||
+      block.match(/"originalPrice":{[\s\S]{0,1200}?}/)?.[0] ||
+      null;
+    const currency = priceBlock?.match(/"currencyCode":"([A-Z]{3})"/)?.[1] || null;
+    const price = Number(priceBlock?.match(/"minPrice":([0-9]+(?:\.[0-9]+)?)/)?.[1]);
+    const sourceRaw = block.match(/"productDetailUrl":"((?:\\.|[^"\\])*)"/)?.[1] || null;
+
+    if (!productId || !titleRaw || !currency || !Number.isFinite(price) || price <= 0 || !sourceRaw) continue;
+    const title = decodeJsonString(titleRaw);
+    const haystack = normalizeSearchQuery(title);
+    const hits = tokens.filter((token) => haystack.includes(token)).length;
+    if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
+    if (seen.has(productId)) continue;
+    seen.add(productId);
+
+    let image = imageRaw ? decodeJsonString(imageRaw) : null;
+    if (image?.startsWith("//")) image = "https:" + image;
+    const sourceUrl = decodeJsonString(sourceRaw).replace(/&amp;/g, "&");
+    offers.push({ productId, title, image, price, currency, sourceUrl });
+  }
+  return offers;
+}
+
 export function extractProductLinks(html, searchUrl, store, query, limit = Infinity) {
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
   const out = [];
@@ -341,8 +389,10 @@ async function searchStore(store, query, perStore = Infinity) {
   try {
     const html = await fetchText(searchUrl);
     const links = extractProductLinks(html, searchUrl, store, query, perStore);
-    const settled = await Promise.allSettled(links.map((candidate) => resolveProductUrl(candidate.url)));
-    const offers = settled
+    const aliSearchOffers = store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) : [];
+    const resolutionLinks = aliSearchOffers.length ? [] : links;
+    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url)));
+    const resolvedOffers = settled
       .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
       .map((result) => ({
         ...result.value,
@@ -362,6 +412,42 @@ async function searchStore(store, query, perStore = Infinity) {
           searchUrl,
         },
       }));
+    const directOffers = (await Promise.all(aliSearchOffers.map(async (item) => {
+      const converted = await moneyToSAR(item.price, item.currency).catch(() => null);
+      if (!converted) return null;
+      return {
+        provider:"free-storefronts",
+        providerMarket:store.id,
+        merchant:store.name,
+        merchantCountryCode:store.countryCode,
+        merchantCountryNameAr:store.countryNameAr,
+        canShipToSaudi:null,
+        isLocal:false,
+        exactMatch:false,
+        matchConfidence:0.9,
+        sourceUrl:item.sourceUrl,
+        image:item.image,
+        title:item.title,
+        specs:{ modelNumber:item.productId },
+        condition:"new",
+        availability:"unknown",
+        productPrice:converted.value,
+        originalProductPrice:item.price,
+        shipping:null,
+        importCost:null,
+        tax:null,
+        mandatoryFees:0,
+        discount:0,
+        currency:"SAR",
+        originalCurrency:item.currency,
+        deliveryDays:null,
+        observedAt:new Date().toISOString(),
+        dataKind:"live",
+        fx:{ rate:converted.rate, source:converted.source, observedAt:converted.observedAt },
+        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true },
+      };
+    }))).filter(Boolean);
+    const offers = [...directOffers, ...resolvedOffers];
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
     sourceReliability.record(store.id, {
@@ -373,14 +459,16 @@ async function searchStore(store, query, perStore = Infinity) {
     return {
       store,
       searchUrl,
-      candidates:links.length,
+      candidates:aliSearchOffers.length || links.length,
       offers,
       failures,
       diagnostics:{
         searchPage:searchPageDiagnostics(html, searchUrl),
-        candidateSamples:links.slice(0,5).map((candidate)=>candidate.url),
+        candidateSamples:(aliSearchOffers.length
+          ? aliSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
+          : links.slice(0,5).map((candidate)=>candidate.url)),
         failureSamples:settled
-          .map((result,index)=>({result,candidate:links[index]}))
+          .map((result,index)=>({result,candidate:resolutionLinks[index]}))
           .filter(({result})=>result.status === "rejected")
           .slice(0,5)
           .map(({result,candidate})=>({
@@ -388,7 +476,7 @@ async function searchStore(store, query, perStore = Infinity) {
             error:result.reason instanceof Error ? result.reason.message : String(result.reason || "resolution_failed"),
           })),
         unpricedSamples:settled
-          .map((result,index)=>({result,candidate:links[index]}))
+          .map((result,index)=>({result,candidate:resolutionLinks[index]}))
           .filter(({result})=>result.status === "fulfilled" && !Number.isFinite(result.value?.productPrice))
           .slice(0,3)
           .map(({result,candidate})=>({
