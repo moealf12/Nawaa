@@ -8,10 +8,23 @@ import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
 import { extractProductLinks, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractEmbeddedProductState } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
 assert.equal(parseMoney("$1,299.99"), 1299.99);
+
+const embeddedFixture = `
+<script id="__NEXT_DATA__" type="application/json">
+{"props":{"pageProps":{"product":{"productName":"Example Saudi Product","salePrice":{"amount":249.5,"currency":"SAR"},"imageUrl":"https://example.com/p.jpg","brandName":"Example","sku":"SKU-1","stockStatus":"IN_STOCK"}}}}
+</script>`;
+const embedded = extractEmbeddedProductState(embeddedFixture);
+assert.equal(embedded.name, "Example Saudi Product");
+assert.equal(embedded.offers.price, 249.5);
+assert.equal(embedded.offers.priceCurrency, "SAR");
+assert.equal(embedded.brand, "Example");
+assert.equal(embedded.sku, "SKU-1");
+
 
 const iphone = assessOfferMatch("iPhone 17 256GB", {
   title: "Apple iPhone 17 256GB Black Factory Unlocked",
