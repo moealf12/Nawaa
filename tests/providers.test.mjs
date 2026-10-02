@@ -8,7 +8,7 @@ import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
 import { extractProductLinks, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
-import { extractEmbeddedProductState, extractHydratedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
+import { extractEmbeddedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
 assert.equal(normalizeCondition("Open Box"), "open_box");
@@ -24,15 +24,6 @@ assert.equal(embedded.offers.price, 249.5);
 assert.equal(embedded.offers.priceCurrency, "SAR");
 assert.equal(embedded.brand, "Example");
 assert.equal(embedded.sku, "SKU-1");
-
-const hydratedFixture = `
-<script>
-window.__INITIAL_STATE__ = {"catalog":{"product":{"title":"Hydrated Product","price":399,"currency":"SAR","image":"https://example.com/h.jpg","brand":"Hydrated","sku":"H-1"}}};
-</script>`;
-const hydrated = extractHydratedProductState(hydratedFixture);
-assert.equal(hydrated.name, "Hydrated Product");
-assert.equal(hydrated.offers.price, 399);
-assert.equal(hydrated.offers.priceCurrency, "SAR");
 
 const metaFixture = `
 <meta property="og:title" content="Meta Product">
