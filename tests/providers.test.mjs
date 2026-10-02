@@ -339,6 +339,25 @@ const freeLinks = extractProductLinks(`
 `, "https://ar.shein.com/pdsearch/dress/", sheinStore, "dress", 5);
 assert.equal(freeLinks.length, 1);
 assert.ok(freeLinks[0].url.includes("p-123456.html"));
+
+const sheinStructuredLinks = extractProductLinks(String.raw`
+  {"canonicalUrl":"Women-Dresses/Summer-Dress-p-123456.html"}
+`, "https://ar.shein.com/pdsearch/dress/", sheinStore, "dress", 5);
+assert.equal(sheinStructuredLinks.length, 1);
+assert.ok(sheinStructuredLinks[0].url.includes("Summer-Dress-p-123456.html"));
+
+const temuStore = {
+  id:"temu-global",
+  productPath:/\/(?:goods|item)\.html(?:[?#]|$)|-g-\d+\.html/i,
+};
+const temuStructuredLinks = extractProductLinks(String.raw`
+  {"canonicalUrl":"sa-en/iphone-17-clear-case-g-601100089500228.html"}
+  {"productUrl":"\\u002Fsa-en\\u002Fiphone-17-pro-case-g-601100089500229.html"}
+`, "https://www.temu.com/search_result.html?search_key=iphone%2017%20case", temuStore, "iphone 17 case", 10);
+assert.equal(temuStructuredLinks.length, 2);
+assert.ok(temuStructuredLinks.every((entry) => entry.url.includes("temu.com/sa-en/")));
+assert.ok(temuStructuredLinks.some((entry) => entry.url.includes("601100089500228")));
+assert.ok(temuStructuredLinks.some((entry) => entry.url.includes("601100089500229")));
 assert.ok(selectedStores("فستان شي ان", 8).some((store) => store.id === "shein-sa"));
 assert.ok(selectedStores("لابتوب", 8).some((store) => store.id === "newegg-global"));
 assert.ok(configuredFreeStorefronts().length >= 15);
