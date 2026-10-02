@@ -27,7 +27,7 @@ assert.equal(embedded.sku, "SKU-1");
 
 const hydratedFixture = `
 <script>
-window.__INITIAL_STATE__ = {"catalog":{"product":{"title":"Hydrated Product","finalPrice":{"amount":399,"currency":"SAR"},"image":"https://example.com/h.jpg","brand":"Hydrated","sku":"H-1"}}};
+window.__INITIAL_STATE__ = {"catalog":{"product":{"title":"Hydrated Product","finalPrice":399,"currency":"SAR","image":"https://example.com/h.jpg","brand":"Hydrated","sku":"H-1"}}};
 </script>`;
 const hydrated = extractHydratedProductState(hydratedFixture);
 assert.equal(hydrated.name, "Hydrated Product");
