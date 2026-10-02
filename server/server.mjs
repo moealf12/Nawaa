@@ -11,6 +11,7 @@ import { ebayConfigured, searchEbayWorldwide } from "./providers/ebay.mjs";
 import { searchConfiguredShopifyStores, shopifyConfigured, configuredShopifyStores } from "./providers/shopify.mjs";
 import { assessOfferMatch, dedupeNormalizedOffers } from "./match.mjs";
 import { resolveProductUrl } from "./url-resolver.mjs";
+import { extractNawaaProduct } from "./nawaa-extractor.mjs";
 import { searchSaudiRetailers } from "./providers/saudi-retailers.mjs";
 import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
 import { searchJarir } from "./providers/jarir.mjs";
@@ -263,6 +264,16 @@ const server = http.createServer(async (req, res) => {
       sourceReliability: sourceReliability.snapshot(),
       now: new Date().toISOString(),
     }, origin || "*");
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/extract") {
+    const target = String(url.searchParams.get("url") || "").trim();
+    if (!target || target.length > 2000) {
+      return jsonResponse(res, 400, { error: "invalid_url" }, origin || "*");
+    }
+
+    const result = await extractNawaaProduct(target);
+    return jsonResponse(res, result.ok ? 200 : 422, result, origin || "*");
   }
 
   if (req.method === "GET" && url.pathname === "/api/resolve-url") {
