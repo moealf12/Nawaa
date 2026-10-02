@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { extractProductLinks, extractAliExpressSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractProductLinks, extractAliExpressSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, parseLandmarkBloomreachPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 import { extractEmbeddedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
