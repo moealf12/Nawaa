@@ -179,6 +179,23 @@ function sameHost(candidate, base) {
 }
 
 
+const LANDMARK_BLOOMREACH = {
+  "centrepoint-sa":{
+    accountId:"7586",
+    authKey:"afxfe9u8i2iwrxp4",
+    domainKey:"centrepointstores",
+    requestId:"7545662630568",
+    host:"https://www.centrepointstores.com",
+  },
+  "maxfashion-sa":{
+    accountId:"7585",
+    authKey:"hcm9cb32yykxejee",
+    domainKey:"maxfashion",
+    requestId:"7545662630568",
+    host:"https://www.maxfashion.com",
+  },
+};
+
 const LANDMARK_ALGOLIA = {
   "centrepoint-sa":{
     appId:"LM8X36L8LA",
@@ -193,6 +210,61 @@ const LANDMARK_ALGOLIA = {
     host:"https://www.maxfashion.com",
   },
 };
+
+export function parseLandmarkBloomreachPayload(payload, storeId) {
+  const docs = Array.isArray(payload?.response?.docs) ? payload.response.docs : [];
+  return parseLandmarkAlgoliaPayload({ hits:docs }, storeId);
+}
+
+async function searchLandmarkBloomreach(storeId, query, limit = Infinity) {
+  const config = LANDMARK_BLOOMREACH[storeId];
+  if (!config) return [];
+  const finiteLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : Infinity;
+  const rows = Number.isFinite(finiteLimit) ? Math.max(1, Math.min(100, finiteLimit)) : 100;
+  const all = [];
+  const seen = new Set();
+  let start = 0;
+  let total = Infinity;
+
+  while (start < total && all.length < finiteLimit) {
+    const params = new URLSearchParams({
+      account_id:config.accountId,
+      auth_key:config.authKey,
+      domain_key:config.domainKey,
+      request_id:config.requestId,
+      request_type:"search",
+      search_type:"keyword",
+      q:query,
+      rows:String(rows),
+      start:String(start),
+      fl:"pid,title,price,sale_price,low_price,low_sale_price,url,thumb_image,brand,inStock",
+      url:config.host + "/sa/en/search?q=" + encodeURIComponent(query),
+    });
+    const response = await fetch("https://core.dxpapi.com/api/v1/core/?" + params.toString(), {
+      headers:{
+        accept:"application/json",
+        "user-agent":USER_AGENT,
+      },
+      signal:AbortSignal.timeout(10000),
+    });
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new Error("Landmark Bloomreach HTTP " + response.status + (detail ? ": " + detail : ""));
+    }
+    const payload = await response.json();
+    total = Math.max(0, Number(payload?.response?.numFound) || 0);
+    const batch = parseLandmarkBloomreachPayload(payload, storeId);
+    for (const item of batch) {
+      if (seen.has(item.productId)) continue;
+      seen.add(item.productId);
+      all.push(item);
+      if (all.length >= finiteLimit) break;
+    }
+    if (batch.length === 0) break;
+    start += rows;
+  }
+  return all;
+}
 
 export function parseLandmarkAlgoliaPayload(payload, storeId) {
   const config = LANDMARK_ALGOLIA[storeId];
@@ -648,9 +720,16 @@ async function searchStore(store, query, perStore = Infinity) {
     if (store.id === "ikea-sa") {
       try { primarySearchOffers = await searchIkeaSik(query); }
       catch (error) { primarySearchError = error instanceof Error ? error.message : String(error); }
-    } else if (LANDMARK_ALGOLIA[store.id]) {
-      try { primarySearchOffers = await searchLandmarkAlgolia(store.id, query, perStore); }
-      catch (error) { primarySearchError = error instanceof Error ? error.message : String(error); }
+    } else if (LANDMARK_BLOOMREACH[store.id]) {
+      try { primarySearchOffers = await searchLandmarkBloomreach(store.id, query, perStore); }
+      catch (bloomError) {
+        try { primarySearchOffers = await searchLandmarkAlgolia(store.id, query, perStore); }
+        catch (algoliaError) {
+          const a = bloomError instanceof Error ? bloomError.message : String(bloomError);
+          const b = algoliaError instanceof Error ? algoliaError.message : String(algoliaError);
+          primarySearchError = a + " | fallback: " + b;
+        }
+      }
     }
     if (!primarySearchOffers.length) {
       try { html = await fetchText(searchUrl); }
