@@ -592,7 +592,15 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
     // scanner above cannot see them. Resolve those values relative to the
     // search URL and let the store-specific productPath validate them.
     const structuredUrlRe = /["'](?:canonicalUrl|productUrl|productDetailUrl|seoUrl|seoLinkUrl|linkUrl|url)["']\s*:\s*["']((?:\\.|[^"'\\])*)["']/gi;
-    while ((match = structuredUrlRe.exec(hydratedSource))) addCandidate(match[1], "");
+    while ((match = structuredUrlRe.exec(hydratedSource))) {
+      const structuredUrl = decodeHtml(match[1])
+        .replace(/\\u002F/gi, "/")
+        .replace(/\\\//g, "/");
+      const rootedUrl = /^(?:https?:)?\/\//i.test(structuredUrl) || structuredUrl.startsWith("/")
+        ? structuredUrl
+        : "/" + structuredUrl;
+      addCandidate(rootedUrl, "");
+    }
   }
 
   if (store.id === "aliexpress-cn") {
