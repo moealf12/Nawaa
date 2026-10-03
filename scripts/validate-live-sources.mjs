@@ -15,7 +15,14 @@ for (const [store, query] of CASES) {
   try {
     const result = await searchFreeStorefrontById(store, query, { perStore: 3 });
     const offers = result.offers || [];
-    const valid = offers.filter(o => o.title && o.sourceUrl && o.image && Number.isFinite(o.productPrice) && o.productPrice > 0);
+    // SKU is useful identity metadata, but it is not a requirement for a usable price result.
+    // A live source must return the shopper-facing essentials: product, URL, image and price.
+    const valid = offers.filter(o =>
+      typeof o.title === "string" && o.title.trim().length >= 3 &&
+      typeof o.sourceUrl === "string" && /^https:\/\//i.test(o.sourceUrl) &&
+      typeof o.image === "string" && /^https?:\/\//i.test(o.image) &&
+      Number.isFinite(o.productPrice) && o.productPrice > 0
+    );
     const status = valid.length ? "LIVE_VALIDATED" : "PROBED";
     if (valid.length) live++;
     rows.push({store,query,status,candidates:result.candidates,offers:offers.length,valid:valid.length,ms:Date.now()-started,error:result.diagnostics?.primarySearchError || null});
