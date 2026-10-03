@@ -2,6 +2,12 @@ name: Live Source Validation
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "server/providers/free-storefronts.mjs"
+      - "scripts/validate-live-sources.mjs"
+      - ".github/workflows/live-source-validation.yml"
   pull_request:
     paths:
       - "server/providers/free-storefronts.mjs"
