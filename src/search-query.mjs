@@ -268,6 +268,7 @@ export function assessOfferMatch(query, offer) {
   // when the shopper actually asks for an accessory or the brand itself is accessory-led.
   const accessoryLedBrands = new Set(["logitech"]);
   const queryHasAccessoryIntent = intent.category === "accessory" ||
+    productCategory({ title: normalizedQuery }) === "accessory" ||
     ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
     (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
   const titleHasAccessory = ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
