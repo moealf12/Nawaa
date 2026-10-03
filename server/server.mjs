@@ -164,7 +164,15 @@ async function searchAll(query) {
   let offers = primary.offers;
   let fallbackQuery = null;
 
-  if (!offers.length) {
+  // Do not let a handful of weak primary hits suppress recall expansion.
+  // Expand when the first pass has too few relevant offers or too little merchant diversity.
+  const primaryAssessed = dedupeNormalizedOffers(offers).map((offer) => ({
+    ...offer,
+    ...assessOfferMatch(query, offer),
+  }));
+  const relevantPrimary = primaryAssessed.filter((offer) => (offer.matchConfidence || 0) >= 0.65);
+  const primaryMerchants = new Set(relevantPrimary.map(offerMerchantKey)).size;
+  if (relevantPrimary.length < 20 || primaryMerchants < 5) {
     fallbackQuery = buildProviderFallbackQueries(query)[0] || null;
     if (fallbackQuery) {
       const fallback = await runProviderPass(fallbackQuery, "fallback", query);
@@ -178,7 +186,7 @@ async function searchAll(query) {
     ...offer,
     ...assessOfferMatch(query, offer),
     dataKind: "live",
-  }));
+  })).filter((offer) => (offer.matchConfidence || 0) >= 0.65);
 
   const sources = currentSources();
   const selectedOffers = selectDiverseOffers(offers, Infinity);
