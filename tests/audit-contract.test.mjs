@@ -13,6 +13,13 @@ const fixture = (overrides = {}) => ({
 });
 const probe = (offers, extra = {}) => async () => ({offers,errors:[],...extra});
 
+test('independent source audit rejects a wrong variant hidden behind a matching family prefix',async()=>{
+ const shopifySource={id:'shopify:fixture',name:'Fixture',adapter:'shopify',status:'configured'};
+ const offer=fixture({provider:'shopify',providerMarket:'fixture',merchant:'Fixture',merchantCountryCode:'US',sourceUrl:'https://fixture.example/products/case?variant=22',title:'iPhone 17 Series - Ultra Hybrid · iPhone 17 Pro Max / Clear White',productType:'Clear Cases',specs:{},sku:'PRO-MAX'});
+ const r=await auditSource({source:shopifySource,query:'iPhone 17 case',search:probe([offer]),verifyPage:async()=>offer});
+ assert.equal(r.status,'INVALID_OFFERS');assert.ok(r.rejections[0].reasons.includes('model_conflict'));
+});
+
 test('same-market canonical eXtra redirect survives independent page audit, another fetched ID does not',async()=>{
   const canonical='https://www.extra.com/en-sa/mobiles-tablets/mobiles/smartphone/iphone-17/p/123';
   const page=fixture({sourceUrl:canonical,resolvedPageUrl:canonical});

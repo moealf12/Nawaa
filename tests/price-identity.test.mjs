@@ -1,11 +1,107 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import dns from 'node:dns/promises';
-import {resolveProductUrl} from '../server/url-resolver.mjs';
+import {resolveProductUrl,extractionCandidates} from '../server/url-resolver.mjs';
 import {auditSource} from '../server/audit-contract.mjs';
 import * as jarir from '../server/providers/jarir.mjs';
 
 const url='https://fixture.example/products/shirt';
+const pixelData=()=>({shop:{name:'Tentree',paymentSettings:{currencyCode:'USD'},myshopifyDomain:'tentree-development-store.myshopify.com',countryCode:'US',storefrontUrl:'https://fixture.example'},customer:null,cart:null,checkout:null,productVariants:[
+ {id:'43940667916474',sku:'TCM4546-3560-S',title:'METEORITE BLACK RUSTIC PLAID / S',price:{amount:58.8,currencyCode:'USD'},product:{id:'7910652936378',title:'Forest Flannel Shirt',vendor:'tentree',url:'/products/shirt',type:'Mens'},image:{src:'//fixture.example/shirt-s.jpg'}},
+ {id:'43940667982010',sku:'TCM4546-3560-L',title:'METEORITE BLACK RUSTIC PLAID / L',price:{amount:58.8,currencyCode:'USD'},product:{id:'7910652936378',title:'Forest Flannel Shirt',vendor:'tentree',url:'/products/shirt',type:'Mens'},image:{src:'//fixture.example/shirt-l.jpg'}},
+]});
+const pixelHtml=data=>`<script>(function(){wpmLoader({shopId:23413995,storefrontBaseUrl:"https://fixture.example",initData: ${JSON.stringify(data)},other: true});})();</script>`;
+const pixelUrl=url+'?variant=43940667982010';
+const pixelCandidate=(html,pageUrl=pixelUrl)=>extractionCandidates(html,pageUrl).find(e=>e.strategy==='storefront_data')?.product || null;
+async function withHtml(html,run){
+ const oldFetch=globalThis.fetch,oldLookup=dns.lookup;
+ try{dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+  globalThis.fetch=async()=>new Response(html,{headers:{'content-type':'text/html'}});
+  return await run();
+ }finally{globalThis.fetch=oldFetch;dns.lookup=oldLookup;}
+}
+test('Shopify initData page verifies the requested L variant in major units without inventing stock',async()=>{
+ await withHtml(pixelHtml(pixelData()),async()=>{
+  const r=await resolveProductUrl(pixelUrl);
+  assert.equal(r.originalProductPrice,58.8);assert.equal(r.originalCurrency,'USD');
+  assert.equal(r.sku,'TCM4546-3560-L');assert.equal(r.variantId,'43940667982010');
+  assert.equal(r.sourceUrl,pixelUrl);assert.equal(r.resolvedPageUrl,pixelUrl);
+  assert.equal(r.title,'Forest Flannel Shirt · METEORITE BLACK RUSTIC PLAID / L');
+  assert.equal(r.image,'https://fixture.example/shirt-l.jpg');
+  assert.equal(r.availability,'unknown');assert.equal(r.shipping,null);assert.equal(r.tax,null);
+  assert.equal(r.specs.brand,null);assert.equal(r.specs.modelNumber,null);
+ });
+});
+test('Shopify pixel variant amount accepts explicit decimal major units including zero',()=>{
+ for(const [amount,want] of [[0,0],[58.8,58.8],['58.80',58.8]]){
+  const data=pixelData();data.productVariants[1].price.amount=amount;
+  assert.equal(pixelCandidate(pixelHtml(data))?.offers.price,want);
+ }
+});
+test('invalid pixel price or currency cannot establish a priced variant',()=>{
+ for(const amount of ['',null,-1,'Infinity','1e999',' 58.8 ',{},true]){
+  const data=pixelData();data.productVariants[1].price.amount=amount;
+  assert.equal(pixelCandidate(pixelHtml(data)),null,String(amount));
+ }
+ for(const currencyCode of [undefined,'','XYZ','usd']){
+  const data=pixelData();data.productVariants[1].price.currencyCode=currencyCode;
+  assert.equal(pixelCandidate(pixelHtml(data)),null,String(currencyCode));
+ }
+});
+test('pixel URL identity rejects another product, host, port or credentials',()=>{
+ for(const productUrl of ['/products/other','https://other.example/products/shirt','https://fixture.example:8000/products/shirt','https://user:pass@fixture.example/products/shirt','http://fixture.example/products/shirt']){
+  const data=pixelData();data.productVariants[1].product.url=productUrl;
+  assert.equal(pixelCandidate(pixelHtml(data)),null,productUrl);
+ }
+ assert.equal(pixelCandidate(pixelHtml(pixelData()),url+'?variant=999'),null);
+ const missing=pixelData();delete missing.productVariants[1].id;
+ assert.equal(pixelCandidate(pixelHtml(missing)),null);
+});
+test('duplicate pixel variant IDs and repeated qualifying blocks fail closed',()=>{
+ const data=pixelData();data.productVariants.push({...data.productVariants[1],price:{amount:1,currencyCode:'USD'}});
+ assert.equal(pixelCandidate(pixelHtml(data)),null);
+ assert.equal(pixelCandidate(pixelHtml(pixelData())+pixelHtml(pixelData())),null);
+});
+test('pixel parsing is bounded literal JSON and ignores unrelated recommendation data',async()=>{
+ const data=pixelData();data.productVariants[1].product.title='Forest {Flannel} "Shirt"';
+ const html=pixelHtml(data)+'<script>throw new Error("must never execute");</script>';
+ assert.equal(pixelCandidate(html)?.name,'Forest {Flannel} "Shirt"');
+ assert.equal(pixelCandidate('<div>initData: '+JSON.stringify(data)+'</div>'),null);
+ assert.equal(pixelCandidate('<script>var wpmLoader={initData: invalid()};</script>'),null);
+ await withHtml('<script type="application/json">'+JSON.stringify({recommendations:data.productVariants})+'</script>',async()=>{
+  await assert.rejects(()=>resolveProductUrl(pixelUrl),/variant/i);
+ });
+ const large=pixelData();large.customer={padding:'x'.repeat(1500001)};
+ assert.equal(pixelCandidate(pixelHtml(large)),null);
+ const many=pixelData();many.productVariants=Array.from({length:501},(_,i)=>({...many.productVariants[0],id:String(i)}));
+ assert.equal(pixelCandidate(pixelHtml(many)),null);
+});
+test('unrelated pixel payload cannot override an independently verified JSON-LD variant',async()=>{
+ const data=pixelData();data.productVariants[1].product.url='/products/other';
+ const schema={'@type':'Product',name:'Shirt',brand:'Actual Brand',offers:{name:'Large',sku:'ACTUAL-L',price:123,priceCurrency:'SAR',url:pixelUrl}};
+ await withHtml(pixelHtml(data)+`<script type="application/ld+json">${JSON.stringify(schema)}</script>`,async()=>{
+  const r=await resolveProductUrl(pixelUrl);assert.equal(r.sku,'ACTUAL-L');assert.equal(r.originalProductPrice,123);assert.equal(r.specs.brand,'Actual Brand');
+ });
+});
+test('pixel price evidence cannot conceal a redirect that discarded the variant',async()=>{
+ await withHtml(pixelHtml(pixelData()),async()=>{
+  const htmlFetch=globalThis.fetch;let first=true;
+  globalThis.fetch=async(...args)=>{
+   if(first){first=false;return new Response(null,{status:302,headers:{location:url}});}
+   return htmlFetch(...args);
+  };
+  await assert.rejects(()=>resolveProductUrl(pixelUrl),/variant/i);
+ });
+});
+test('a wpmLoader mention cannot qualify unrelated initData as variant price evidence',async()=>{
+ const data=pixelData();
+ for(const mention of ['/* wpmLoader */','const label="wpmLoader";','// wpmLoader\n']){
+  const html=`<script>${mention} const recommendations={initData: ${JSON.stringify(data)}};</script>`;
+  await withHtml(html,async()=>{await assert.rejects(()=>resolveProductUrl(pixelUrl),/variant/i);});
+ }
+ const nested=`<script>wpmLoader({recommendations:{initData: ${JSON.stringify(data)}}});</script>`;
+ await withHtml(nested,async()=>{await assert.rejects(()=>resolveProductUrl(pixelUrl),/variant/i);});
+});
 const product={ '@type':'Product',name:'Shirt',brand:'Brand',sku:'DEFAULT-SKU',mpn:'MODEL-1',offers:[
   {name:'Black',sku:'SHIRT-BLK',price:10,priceCurrency:'SAR',availability:'https://schema.org/InStock',url:'/products/shirt?variant=11'},
   {name:'White',sku:'SHIRT-WHT',price:20,priceCurrency:'SAR',availability:'https://schema.org/InStock',url:'/products/shirt?variant=22'},

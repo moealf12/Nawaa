@@ -7,6 +7,7 @@ import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
 import { selectVariantCandidates } from "./product-variant.mjs";
+import { extractShopifyVariantState } from "./shopify-page-variant.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
@@ -371,7 +372,7 @@ export function extractionCandidates(html, url = null) {
   const jsonld = products.find((p) => chooseOffer(p)) || products[0] || null;
   const embedded = extractEmbeddedProductState(html);
   const hydrated = extractHydratedProductState(html);
-  const storefront = extractStorefrontProductState(html);
+  const storefront = (url && extractShopifyVariantState(html,url)) || extractStorefrontProductState(html);
   const adapted = url ? extractDomainProduct(url, html) : null;
   const meta = extractMetaProductState(html);
   return [
@@ -516,6 +517,7 @@ export async function resolveProductUrl(url) {
     title: title || "منتج من رابط خارجي",
     sku: product?.sku || null,
     variantId: product?.variantId || null,
+    vendor:product?.vendor || null,
     specs: {
       brand: typeof product?.brand === "string" ? product.brand : product?.brand?.name || null,
       deviceType: typeof product?.model === "string" ? product.model : product?.model?.name || null,
@@ -575,7 +577,7 @@ export async function resolveProductUrl(url) {
       storefrontProductFound: candidates.some((entry) => entry.strategy === "storefront_data"),
       domainAdapterFound: candidates.some((entry) => entry.strategy === "domain_adapter"),
       domainAdapterId: candidates.find((entry) => entry.strategy === "domain_adapter")?.adapterId || null,
-      shopifyProductFound: selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics)),
+      shopifyProductFound: candidates.some(entry=>entry.product?.shopifyVariantEvidence === true) || (selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics))),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
     }
