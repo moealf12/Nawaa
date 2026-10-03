@@ -267,8 +267,9 @@ export function assessOfferMatch(query, offer) {
   // name (e.g. "Nike" returning Apple Watch Nike bands). Accessories are allowed only
   // when the shopper actually asks for an accessory or the brand itself is accessory-led.
   const accessoryLedBrands = new Set(["logitech"]);
+  const explicitAccessoryQuery = PRODUCT_CATEGORIES.find(([key]) => key === "accessory")?.[2]?.test(normalizedQuery) || false;
   const queryHasAccessoryIntent = intent.category === "accessory" ||
-    productCategory({ title: normalizedQuery }) === "accessory" ||
+    explicitAccessoryQuery ||
     ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
     (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
   const titleHasAccessory = ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
