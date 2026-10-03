@@ -1,7 +1,7 @@
 import net from "node:net";
-import { normalizeSearchQuery, queryMatchReasons } from "../src/search-query.mjs";
+import { queryMatchReasons } from "../src/search-query.mjs";
 import { toNawaaProduct } from "./nawaa-extractor.mjs";
-import { compareProductIdentity } from "./product-identity.mjs";
+import { sameOfferIdentity } from "./product-identity.mjs";
 
 const currencies = new Set(Intl.supportedValuesOf("currency"));
 const costFields = ["shipping","importCost","tax","mandatoryFees","discount"];
@@ -64,6 +64,11 @@ export function auditFailureCode(error) {
   const status = message.match(/\b(4\d\d|5\d\d)\b/)?.[1];
   if(status) return "HTTP_"+status;
   if(/challenge|captcha|blocked|risk[- ]?control/i.test(message)) return "ACCESS_BLOCKED";
+  if(/Requested product variant could not be verified/.test(message)) return "PAGE_VARIANT_UNVERIFIED";
+  if(/Product page identity mismatch/.test(message)) return "PAGE_IDENTITY_MISMATCH";
+  if(/Product page query mismatch/.test(message)) return "PAGE_QUERY_MISMATCH";
+  if(/Product page currency mismatch/.test(message)) return "PAGE_CURRENCY_CHANGED";
+  if(/Product page price invalid/.test(message)) return "PAGE_DATA_INVALID";
   const transportCode=error?.cause?.code || error?.code;
   if(["ENOTFOUND","EAI_AGAIN"].includes(transportCode)) return "DNS_LOOKUP_FAILED";
   if(["ECONNRESET","ECONNREFUSED","UND_ERR_SOCKET"].includes(transportCode)) return "CONNECTION_FAILED";
@@ -77,19 +82,6 @@ export function auditFailureCode(error) {
 function failureStatus(code) {
   return ["HTTP_403","HTTP_429","ACCESS_BLOCKED"].includes(code) ? "BLOCKED" : code === "TIMEOUT" ? "TIMEOUT" : "FETCH_FAILED";
 }
-function identity(offer) {
-  return {title:offer.title,brand:offer.brand || offer.specs?.brand,sku:offer.sku,model:offer.specs?.modelNumber,gtin:offer.specs?.barcode};
-}
-
-function matchingPage(offer,resolved) {
-  const same=compareProductIdentity(identity(offer),identity(resolved));
-  const host=url=>new URL(url).hostname.toLowerCase().replace(/^www\./,"");
-  if(host(offer.sourceUrl)!==host(resolved.sourceUrl) || same.conflicts.length) return false;
-  const identifier=same.matches.some(value=>["sku","gtin","model"].includes(value));
-  const exactTitle=normalizeSearchQuery(offer.title)===normalizeSearchQuery(resolved.title);
-  return ["same","likely_same"].includes(same.verdict) && (identifier || exactTitle);
-}
-
 async function beforeDeadline(operation,deadline) {
   if(deadline === null) return operation();
   const remaining=deadline-Date.now();
@@ -124,7 +116,10 @@ export async function auditSource({source,query,search,verifyPage=null,revision=
   }
   const raw=result.offers;
   const queryFilter=result.diagnostics?.queryFilter;
-  if(queryFilter && [queryFilter.input,queryFilter.retained,queryFilter.removed].every(n=>Number.isSafeInteger(n) && n>=0) && queryFilter.retained===raw.length && queryFilter.input===queryFilter.retained+queryFilter.removed) {
+  const pageRefresh=result.diagnostics?.pageRefresh;
+  const validRefresh=source.adapter==='jarir-direct' && pageRefresh && [pageRefresh.attempted,pageRefresh.verified,pageRefresh.failed].every(n=>Number.isSafeInteger(n)&&n>=0) && pageRefresh.attempted===pageRefresh.verified+pageRefresh.failed && pageRefresh.verified===raw.length && pageRefresh.attempted===queryFilter?.retained && pageRefresh.failed===(Array.isArray(result.errors)?result.errors.filter(e=>e.market==='jarir-sa').length:0);
+  if(validRefresh) report.providerPageRefresh={attempted:pageRefresh.attempted,verified:pageRefresh.verified,failed:pageRefresh.failed};
+  if(queryFilter && [queryFilter.input,queryFilter.retained,queryFilter.removed].every(n=>Number.isSafeInteger(n) && n>=0) && (queryFilter.retained===raw.length || validRefresh) && queryFilter.input===queryFilter.retained+queryFilter.removed) {
     report.providerQueryFilter={input:queryFilter.input,retained:queryFilter.retained,removed:queryFilter.removed};
   }
   report.counts={raw:raw.length,accepted:0,rejected:0,duplicates:0};
@@ -170,7 +165,7 @@ export async function auditSource({source,query,search,verifyPage=null,revision=
         const resolved=await beforeDeadline(()=>verifyPage(offer.sourceUrl),deadline);
         const validation=validateAuditOffer(query,resolved);
         if(!validation.accepted) {detail.code="PAGE_DATA_INVALID";detail.reasons=validation.reasons;}
-        else if(!matchingPage(offer,resolved)) detail.code="PAGE_IDENTITY_MISMATCH";
+        else if(!sameOfferIdentity(offer,resolved)) detail.code="PAGE_IDENTITY_MISMATCH";
         else if(resolved.originalCurrency !== offer.originalCurrency) detail.code="PAGE_CURRENCY_CHANGED";
         else if((Number.isFinite(offer.originalProductPrice) && Number.isFinite(resolved.originalProductPrice) && Math.abs(offer.originalProductPrice-resolved.originalProductPrice)>0.01) || ((!Number.isFinite(offer.originalProductPrice) || !Number.isFinite(resolved.originalProductPrice)) && Math.abs(offer.productPrice-resolved.productPrice)>0.01)) detail.code="PAGE_PRICE_CHANGED";
         else {page.verified++;detail.status="verified";}

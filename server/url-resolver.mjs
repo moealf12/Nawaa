@@ -6,6 +6,7 @@ import { extractDomainProduct } from "./domain-adapters.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
+import { selectVariantCandidates } from "./product-variant.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
@@ -207,7 +208,8 @@ function embeddedOfferCandidate(node) {
     (Array.isArray(imageRaw) ? imageRaw[0] : imageRaw && firstValue(imageRaw, ["url","src"]));
   const brandRaw = firstValue(node, ["brand","brandName","brand_name"]);
   const brand = typeof brandRaw === "string" ? brandRaw : brandRaw && firstValue(brandRaw, ["name","title"]);
-  const sku = firstValue(node, ["sku","productId","product_id","id","mpn"]);
+  const sku = firstValue(node, ["sku","productId","product_id","id"]);
+  const mpn = firstValue(node, ["mpn","modelNumber"]);
   const availabilityRaw = String(firstValue(node, ["availability","stockStatus","stock_status","inventoryStatus"]) || "").toLowerCase();
 
   if (typeof title !== "string" || title.trim().length < 3 || price === null || !currency) return null;
@@ -216,6 +218,7 @@ function embeddedOfferCandidate(node) {
     image:image || null,
     brand:brand || null,
     sku:sku ? String(sku) : null,
+    mpn:mpn ? String(mpn) : null,
     offers:{
       price,
       priceCurrency:String(currency).toUpperCase(),
@@ -455,8 +458,15 @@ export async function extractProductDocument(url) {
 export async function resolveProductUrl(url) {
   const extracted = await extractProductDocument(url);
   const finalUrl = extracted.finalUrl;
+  const requested = new URL(url);
+  const resolved = new URL(finalUrl);
+  if (requested.searchParams.has('variant') && (
+    requested.searchParams.get('variant') !== resolved.searchParams.get('variant') ||
+    requested.hostname.replace(/^www\./,'') !== resolved.hostname.replace(/^www\./,'') ||
+    requested.pathname.replace(/\/+$/,'') !== resolved.pathname.replace(/\/+$/,'')
+  )) throw new Error('Requested product variant could not be verified');
   const observedAt = new Date().toISOString();
-  const candidates = annotateCandidateFreshness(extracted.candidates, observedAt);
+  const candidates = annotateCandidateFreshness(selectVariantCandidates(extracted.candidates, finalUrl), observedAt);
   const html = null;
   const selected = candidates.find((entry) => {
     const offer = chooseOffer(entry.product);
@@ -501,13 +511,16 @@ export async function resolveProductUrl(url) {
     merchantCountryCode: country.countryCode,
     merchantCountryNameAr: country.countryNameAr,
     sourceUrl: offer && offer.url ? new URL(offer.url, finalUrl).href : finalUrl,
+    resolvedPageUrl:finalUrl,
     image: image ? new URL(image, finalUrl).href : null,
     title: title || "منتج من رابط خارجي",
+    sku: product?.sku || null,
+    variantId: product?.variantId || null,
     specs: {
       brand: typeof product?.brand === "string" ? product.brand : product?.brand?.name || null,
       deviceType: typeof product?.model === "string" ? product.model : product?.model?.name || null,
       color: product?.color || null,
-      modelNumber: product?.mpn || product?.sku || null,
+      modelNumber: product?.mpn || null,
       barcode: product?.gtin13 || product?.gtin14 || product?.gtin || null,
     },
     condition: condition === "unknown" ? "new" : condition,

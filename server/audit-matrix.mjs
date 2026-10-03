@@ -11,9 +11,11 @@ export const sourceQueries={
  'shopify:native-union':['charger','cable'],'shopify:spigen-us':['iPhone 17 case','charger'],
  'shopify:death-wish-coffee':['coffee','espresso'],'shopify:tentree':['shirt','hoodie'],
 };
-export function buildAuditMatrix() {
+export function buildAuditMatrix(sourceIds=Object.keys(sourceQueries)) {
+ if(!Array.isArray(sourceIds) || !sourceIds.length || new Set(sourceIds).size!==sourceIds.length || sourceIds.some(id=>!Object.hasOwn(sourceQueries,id))) throw Error('invalid_sources');
  const matrix=[];
  for(let round=1;round<=3;round++) for(const [sourceId,positive] of Object.entries(sourceQueries)) {
+  if(!sourceIds.includes(sourceId)) continue;
   for(const query of positive) matrix.push({round,sourceId,query,expected:'results'});
   matrix.push({round,sourceId,query:'nawaa-unfindable-943271-20261003',expected:'empty'});
  }

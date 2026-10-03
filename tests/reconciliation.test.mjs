@@ -32,14 +32,15 @@ test("reconciliation merges JSON-LD identity with domain-adapter price and SKU",
   assert.equal(result.product.name,"Premium Product");
   assert.equal(result.product.image,"https://example.com/p.jpg");
   assert.equal(result.product.brand,"Brand X");
-  assert.equal(result.product.mpn,"SKU-123");
+  assert.equal(result.product.sku,"SKU-123");
+  assert.equal(result.product.mpn,null);
   assert.equal(result.product.offers.price,149);
   assert.equal(result.product.offers.priceCurrency,"SAR");
   assert.equal(result.reconciled,true);
   assert.ok(result.contributingStrategies.includes("jsonld"));
   assert.ok(result.contributingStrategies.includes("domain_adapter:shein"));
   assert.equal(result.fieldSources.image.strategy,"jsonld");
-  assert.equal(result.fieldSources.mpn.adapterId,"shein");
+  assert.equal(result.fieldSources.sku.adapterId,"shein");
   assert.equal(result.fieldSources.offers.adapterId,"shein");
 });
 
@@ -90,7 +91,8 @@ test("reconciliation refuses to merge fields from a different product", () => {
 
   const result = reconcileProductCandidates([anchor,unrelated],anchor);
   assert.equal(result.product.name,"Black Evening Dress");
-  assert.equal(result.product.mpn,"DRESS-1");
+  assert.equal(result.product.sku,"DRESS-1");
+  assert.equal(result.product.mpn,null);
   assert.notEqual(result.product.image,"https://example.com/speaker.jpg");
   assert.equal(result.identity.summary.rejected,1);
   assert.deepEqual(result.identity.summary.rejectedSources,["jsonld"]);

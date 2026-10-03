@@ -8,7 +8,7 @@ import {auditSource} from '../server/audit-contract.mjs';
 
 const jarirItem=(title,id='1')=>({value:title,data:{id,url:`product-${id}.html`,price:3000,metadata:{}}});
 const extraItem=(title,id='1',storage=null)=>({id,name:title,currentPrice:3000,available:true,featureEnMemoryInternal:storage});
-async function withFetch(fetcher,run){const old=globalThis.fetch;try{globalThis.fetch=fetcher;return await run();}finally{globalThis.fetch=old;}}
+async function withFetch(fetcher,run){const old=globalThis.fetch,oldLookup=dns.lookup;try{globalThis.fetch=fetcher;dns.lookup=async()=>[{address:'93.184.216.34',family:4}];return await run();}finally{globalThis.fetch=old;dns.lookup=oldLookup;}}
 
 test('Jarir extraction strategies retain canonical attribution accepted by the source audit',async()=>{
   const constructor=parseJarirConstructorPayload({response:{results:[jarirItem('Apple iPhone 17 256GB')]}});
@@ -30,7 +30,7 @@ test('successful empty Jarir Constructor search never returns HTML recommendatio
   });
 });
 test('Jarir filters recommended wrong variants and records upstream output counts',async()=>{
-  await withFetch(async()=>Response.json({response:{results:[jarirItem('Apple iPhone 17 256GB','1'),jarirItem('Apple iPhone 17 Pro 256GB','2'),jarirItem('Apple iPhone 17 512GB','3')]}}),async()=>{
+  await withFetch(async url=>String(url).startsWith('https://ac.cnstrc.com/')?Response.json({response:{results:[jarirItem('Apple iPhone 17 256GB','1'),jarirItem('Apple iPhone 17 Pro 256GB','2'),jarirItem('Apple iPhone 17 512GB','3')]}}):new Response(`<script type="application/ld+json">${JSON.stringify({'@type':'Product',name:'Apple iPhone 17 256GB',offers:{price:3000,priceCurrency:'SAR',url:String(url)}})}</script>`,{headers:{'content-type':'text/html'}}),async()=>{
     const r=await searchJarir('ايفون ١٧ ٢٥٦ جيجا');
     assert.deepEqual(r.offers.map(x=>x.sourceMeta.productId),['1']);
     assert.deepEqual(r.diagnostics.queryFilter,{input:3,retained:1,removed:2});

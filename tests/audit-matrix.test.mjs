@@ -13,6 +13,13 @@ test('matrix covers each of 29 sources with 2 positive and 1 negative queries ac
  assert.equal(matrix.filter(x=>x.expected==='results').length,174);assert.equal(matrix.filter(x=>x.expected==='empty').length,87);
  assert.equal(new Set(matrix.map(x=>`${x.round}|${x.sourceId}|${x.query}`)).size,261);
 });
+test('focused matrix keeps original queries and nine entries per selected source',()=>{
+ const ids=['jarir','extra','decathlon-sa','asos-global','shopify:native-union','shopify:spigen-us','shopify:death-wish-coffee','shopify:tentree'];
+ const selected=buildAuditMatrix(ids);
+ assert.equal(selected.length,72);
+ assert.deepEqual(selected,buildAuditMatrix().filter(e=>ids.includes(e.sourceId)));
+ for(const invalid of [[],['jarir','jarir'],['unknown']]) assert.throws(()=>buildAuditMatrix(invalid),/sources/);
+});
 test('certification rejects incomplete structure and fractional page evidence',()=>{
  const matrix=buildAuditMatrix().filter(x=>x.sourceId==='extra');const records=matrix.map(report);
  for(const change of [{observedAt:undefined},{durationMs:undefined},{samples:undefined},{rejections:undefined},{counts:{raw:1,accepted:1,rejected:0}},{counts:{raw:2,accepted:1,rejected:0,duplicates:0}},{pageVerification:{attempted:0.5,verified:0.5,failed:0}},{samples:[]}]) {

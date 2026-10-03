@@ -10,10 +10,13 @@ for(const fallback of [false,true]) test('public API preserves requested renewed
   const title=fallback?'Apple iPhone 17 256GB Renewed':'Apple iPhone 17 Renewed';
   const script=`
     import http from 'node:http';
+    import dns from 'node:dns/promises';
+    dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
     process.env.PORT='0';
     globalThis.fetch=async url=>{
       if(String(url).startsWith('https://ac.cnstrc.com/')) return Response.json({response:{results:${fallback} && decodeURIComponent(new URL(url).pathname).includes('256gb')?[]:[{value:${JSON.stringify(title)},data:{id:'123',url:'apple-iphone-17-123.html',price:2000,metadata:{}}}]}});
       if(String(url).startsWith('https://search.unbxd.io/')) return Response.json({response:{products:[]}});
+      if(String(url).startsWith('https://www.jarir.com/sa-en/apple-iphone-17-123.html')) return new Response('<script type="application/ld+json">'+JSON.stringify({'@type':'Product',name:${JSON.stringify(title)},itemCondition:'renewed',offers:{price:2000,priceCurrency:'SAR',url:String(url)}})+'</script>',{headers:{'content-type':'text/html'}});
       return new Response('',{headers:{'content-type':'text/html'}});
     };
     const originalListen=http.Server.prototype.listen;

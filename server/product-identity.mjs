@@ -1,3 +1,23 @@
+import { normalizeSearchQuery } from '../src/search-query.mjs';
+
+// Offer adapters expose model/MPN and SKU in separate fields. Keep their
+// namespaces intact when comparing catalog data with a freshly resolved page.
+export function sameOfferIdentity(left, right) {
+  try {
+    const a = new URL(left.sourceUrl), b = new URL(right.sourceUrl);
+    const host = u => u.hostname.toLowerCase().replace(/^www\./, '');
+    const sameListing = u => a.protocol === 'https:' && u.protocol === 'https:' && !u.username && !u.password && (!u.port || u.port === '443') && host(a) === host(u) && a.pathname.replace(/\/+$/, '') === u.pathname.replace(/\/+$/, '') && (!a.searchParams.has('variant') || a.searchParams.get('variant') === u.searchParams.get('variant'));
+    // Structured Offer.url is untrusted data: it cannot conceal the URL fetched.
+    if (!sameListing(b) || (right.resolvedPageUrl && !sameListing(new URL(right.resolvedPageUrl)))) return false;
+    const identity = offer => ({title:offer.title,brand:offer.brand || offer.specs?.brand,sku:offer.sku,model:offer.specs?.modelNumber,gtin:offer.specs?.barcode});
+    const same = compareProductIdentity(identity(left), identity(right));
+    if (same.conflicts.length) return false;
+    const identifier = same.matches.some(value => ['sku','gtin','model'].includes(value));
+    const exactTitle = normalizeSearchQuery(left.title) === normalizeSearchQuery(right.title);
+    return ['same','likely_same'].includes(same.verdict) && (identifier || exactTitle);
+  } catch { return false; }
+}
+
 function clean(value) {
   return String(value || "")
     .toLowerCase()
@@ -26,7 +46,7 @@ function modelOf(product) {
 }
 
 function skuOf(product) {
-  return compact(product?.sku || product?.mpn || product?.productId || product?.product_id);
+  return compact(product?.sku || product?.productId || product?.product_id);
 }
 
 function gtinOf(product) {
