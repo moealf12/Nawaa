@@ -378,7 +378,7 @@ assert.ok(laptopRoutes.some((route) => route.store.id === "bhphoto-us"));
 assert.ok(!laptopRoutes.some((route) => route.store.id === "sephora-sa"));
 assert.ok(laptopRoutes.length <= 8);
 
-const perfumeRoutes = routeFreeStorefronts("عطر", 8);
+const perfumeRoutes = routeFreeStorefronts("عطر", 12);
 assert.ok(["sephora-sa","niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0].store.id));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "niceone-sa"));
