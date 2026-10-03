@@ -13,6 +13,15 @@ const fixture = (overrides = {}) => ({
 });
 const probe = (offers, extra = {}) => async () => ({offers,errors:[],...extra});
 
+test('same-market canonical eXtra redirect survives independent page audit, another fetched ID does not',async()=>{
+  const canonical='https://www.extra.com/en-sa/mobiles-tablets/mobiles/smartphone/iphone-17/p/123';
+  const page=fixture({sourceUrl:canonical,resolvedPageUrl:canonical});
+  const accepted=await auditSource({source,query:'iPhone 17 256GB',search:probe([fixture()]),verifyPage:async()=>page});
+  assert.equal(accepted.status,'VERIFIED_SAMPLE');assert.equal(accepted.pageVerification.verified,1);
+  const rejected=await auditSource({source,query:'iPhone 17 256GB',search:probe([fixture()]),verifyPage:async()=>({...page,resolvedPageUrl:canonical.replace('/p/123','/p/999')})});
+  assert.equal(rejected.status,'PAGE_VERIFICATION_FAILED');assert.equal(rejected.pageChecks[0].code,'PAGE_IDENTITY_MISMATCH');
+});
+
 test('page diagnosis distinguishes invalid data, identity, price and currency without raw errors',async()=>{
   const cases=[
     [fixture({productPrice:null}), 'PAGE_DATA_INVALID', 'invalid_price_sar'],
