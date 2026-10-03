@@ -488,7 +488,11 @@ export async function resolveProductUrl(url) {
       : "highest_priority_candidate_with_complete_price")
     : "no_product_candidate";
 
-  const title = product && product.name || null;
+  const baseTitle = product && product.name || null;
+  const label = product?.variantId && typeof offer?.raw?.name === 'string' && offer.raw.name !== 'Default Title' ? offer.raw.name.trim() : '';
+  // The reconciled price Offer has already passed explicit variant and identity
+  // checks. Preserve its label when a higher-priority name describes the family.
+  const title = baseTitle && label && !baseTitle.endsWith(` · ${label}`) ? `${baseTitle} · ${label}` : baseTitle;
   const imageRaw = product && product.image;
   const image = Array.isArray(imageRaw)
     ? (typeof imageRaw[0] === "string" ? imageRaw[0] : imageRaw[0] && imageRaw[0].url)
@@ -518,6 +522,7 @@ export async function resolveProductUrl(url) {
     sku: product?.sku || null,
     variantId: product?.variantId || null,
     vendor:product?.vendor || null,
+    productType:product?.productType || null,
     specs: {
       brand: typeof product?.brand === "string" ? product.brand : product?.brand?.name || null,
       deviceType: typeof product?.model === "string" ? product.model : product?.model?.name || null,

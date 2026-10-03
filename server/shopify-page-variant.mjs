@@ -86,7 +86,7 @@ export function extractShopifyVariantState(html,url) {
   let image=null;
   try{const value=text(variant.image?.src);if(value){const parsed=new URL(value,requested);if(secure(parsed))image=parsed.href;}}catch{}
   return {
-    name:product.title,image,brand:null,vendor:text(product.vendor),shopifyVariantEvidence:true,
+    name:product.title,image,brand:null,vendor:text(product.vendor),productType:text(product.type),shopifyVariantEvidence:true,
     offers:{name:text(variant.title),sku:text(variant.sku),image,price:Number(amount),priceCurrency:currency,url:productUrl.href},
   };
 }

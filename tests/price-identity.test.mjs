@@ -4,6 +4,7 @@ import dns from 'node:dns/promises';
 import {resolveProductUrl,extractionCandidates} from '../server/url-resolver.mjs';
 import {auditSource} from '../server/audit-contract.mjs';
 import * as jarir from '../server/providers/jarir.mjs';
+import {queryMatchReasons} from '../src/search-query.mjs';
 
 const url='https://fixture.example/products/shirt';
 const pixelData=()=>({shop:{name:'Tentree',paymentSettings:{currencyCode:'USD'},myshopifyDomain:'tentree-development-store.myshopify.com',countryCode:'US',storefrontUrl:'https://fixture.example'},customer:null,cart:null,checkout:null,productVariants:[
@@ -101,6 +102,25 @@ test('a wpmLoader mention cannot qualify unrelated initData as variant price evi
  }
  const nested=`<script>wpmLoader({recommendations:{initData: ${JSON.stringify(data)}}});</script>`;
  await withHtml(nested,async()=>{await assert.rejects(()=>resolveProductUrl(pixelUrl),/variant/i);});
+});
+test('reconciliation retains exact variant label and product type when JSON-LD only names a family',async()=>{
+ const data=pixelData(),variant=data.productVariants[1];
+ variant.product.title='iPhone 17 Series - Ultra Hybrid (Mag Fit)';variant.product.type='Clear Cases';variant.title='iPhone 17 / Clear White / In Stock';variant.sku='ACS10082';variant.price={amount:44.99,currencyCode:'SAR'};
+ const schema={'@type':'Product',name:variant.product.title,brand:'Spigen',offers:{sku:'ACS10082',price:44.99,priceCurrency:'SAR',url:pixelUrl}};
+ await withHtml(pixelHtml(data)+`<script type="application/ld+json">${JSON.stringify(schema)}</script>`,async()=>{
+  const r=await resolveProductUrl(pixelUrl);
+  assert.deepEqual(queryMatchReasons('iPhone 17 case',r),[]);
+  assert.equal(r.title,'iPhone 17 Series - Ultra Hybrid (Mag Fit) · iPhone 17 / Clear White / In Stock');
+  assert.equal(r.productType,'Clear Cases');assert.equal(r.sku,'ACS10082');assert.equal(r.originalProductPrice,44.99);
+ });
+});
+test('a conflicting pixel SKU cannot enrich the selected JSON-LD variant with a label or category',async()=>{
+ const data=pixelData();data.productVariants[1].product.type='Clear Cases';data.productVariants[1].sku='OTHER-SKU';
+ const schema={'@type':'Product',name:'Shirt Family',brand:'Actual Brand',offers:{sku:'ACTUAL-L',price:123,priceCurrency:'SAR',url:pixelUrl}};
+ await withHtml(pixelHtml(data)+`<script type="application/ld+json">${JSON.stringify(schema)}</script>`,async()=>{
+  const r=await resolveProductUrl(pixelUrl);assert.equal(r.sku,'ACTUAL-L');assert.equal(r.title,'Shirt Family');
+  assert.ok(!r.productType);assert.equal(r.originalProductPrice,123);
+ });
 });
 const product={ '@type':'Product',name:'Shirt',brand:'Brand',sku:'DEFAULT-SKU',mpn:'MODEL-1',offers:[
   {name:'Black',sku:'SHIRT-BLK',price:10,priceCurrency:'SAR',availability:'https://schema.org/InStock',url:'/products/shirt?variant=11'},
