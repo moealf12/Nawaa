@@ -56,3 +56,12 @@ npm test
 ```
 
 The existing `/api/source-audit` and `scripts/audit-sources.mjs` are legacy storefront diagnostics with a different promotion rule. Use the new CLI for this acceptance phase; it deliberately does not overwrite historical diagnostics or claim all registry sources work.
+
+
+## Protected production protocol
+
+`POST /internal/source-audit` runs the same isolated probe inside a disposable worker thread with the deployed service environment. It is disabled unless `NAWAA_INTERNAL_AUDIT_TOKEN` has at least 32 characters and `NAWAA_INTERNAL_AUDIT_EXPIRES_AT` is a future ISO timestamp. Use a randomly generated temporary token; never commit it or place it in browser code. No CORS access is granted, requests with an Origin header are refused, JSON bodies are limited to 2048 bytes, and only sourceId/query/expected are accepted. The service revision is authoritative.
+
+Two workers maximum, with one active probe per source. Probes have a 90-second internal deadline and workers are terminated after the report, including outstanding adapter work. A watchdog terminates stalled workers after 93 seconds. Reports remain internal and uncached. Disable the token and redeploy after collection; expiry also closes access automatically.
+
+`npm run audit:matrix -- --revision DEPLOYED_SHA --token-file /path/to/token --output /path/to/results` executes 29 source-specific triples across three rounds. Each report is persisted atomically. The default pause between rounds is 60 seconds; individual direct probes bypass the aggregate search cache. A resume requires the same target revision and matrix and preserves previous failure reports. The summary requires nine distinct successful results for each source. Catalog-only, mixed-version, unknown-cache and missing results cannot certify a source. Direct provider requests do not prove freshness inside a merchant's own upstream cache or long-term stability.

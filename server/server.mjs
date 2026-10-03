@@ -26,6 +26,7 @@ import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeCom
 import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
+import { createInternalAuditHandler } from "./internal-audit.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -200,9 +201,14 @@ const ebayDeletion = createEbayDeletionHandler({
   endpoint: process.env.EBAY_DELETION_ENDPOINT,
   onDelete: () => cachedSearch.clear(),
 });
+const internalAudit = createInternalAuditHandler();
 
 const server = http.createServer(async (req, res) => {
   const notificationUrl = new URL(req.url, "http://localhost");
+  if (notificationUrl.pathname === "/internal/source-audit") {
+    await internalAudit(req, res);
+    return;
+  }
   if (notificationUrl.pathname === "/api/ebay/account-deletion") {
     await ebayDeletion(req, res, notificationUrl);
     return;

@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
     paths:
+      - "server/internal-audit.mjs"
+      - "server/audit-matrix.mjs"
+      - "scripts/audit-worker.mjs"
+      - "scripts/audit-matrix.mjs"
+      - "tests/internal-audit.test.mjs"
+      - "tests/audit-matrix.test.mjs"
       - "server/audit-contract.mjs"
       - "server/source-config.mjs"
       - "server/source-probe.mjs"
@@ -50,6 +56,12 @@ on:
       - ".github/workflows/search-core-tests.yml"
   pull_request:
     paths:
+      - "server/internal-audit.mjs"
+      - "server/audit-matrix.mjs"
+      - "scripts/audit-worker.mjs"
+      - "scripts/audit-matrix.mjs"
+      - "tests/internal-audit.test.mjs"
+      - "tests/audit-matrix.test.mjs"
       - "server/audit-contract.mjs"
       - "server/source-config.mjs"
       - "server/source-probe.mjs"
@@ -104,3 +116,6 @@ jobs:
           node --check server/providers/saudi-retailers.mjs
           node --check server/url-resolver.mjs
           node --check server/domain-adapters.mjs
+          node --check server/internal-audit.mjs
+          node --check scripts/audit-worker.mjs
+          node --check scripts/audit-matrix.mjs
