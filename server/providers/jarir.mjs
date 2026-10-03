@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { filterQueryOffers } from "../../src/search-query.mjs";
+import { filterQueryOffers, queryMatchReasons } from "../../src/search-query.mjs";
+import { resolveProductUrl } from "../url-resolver.mjs";
+import { sameOfferIdentity } from "../product-identity.mjs";
 
 // Constructor index keys are public browser-side identifiers, not API tokens.
 // Jarir exposes this English index key in its public storefront configuration.
@@ -266,20 +268,48 @@ async function searchViaHtml(query, limit) {
   return parseJarirSearchHtml(html, limit);
 }
 
+export async function refreshJarirPrices(raw, matchingQuery, {resolvePage=resolveProductUrl}={}) {
+  const {offers:matches,queryFilter}=filterQueryOffers(matchingQuery,raw);
+  const refreshed=new Array(matches.length), failures=new Array(matches.length);
+  const pageRefresh={attempted:matches.length,verified:0,failed:0};
+  let cursor=0;
+  const worker=async()=>{
+    while(cursor<matches.length){
+      const index=cursor++, offer=matches[index];
+      try{
+        const page=await resolvePage(offer.sourceUrl);
+        if(!sameOfferIdentity(offer,page)) throw new Error('Product page identity mismatch');
+        if(queryMatchReasons(matchingQuery,page).length) throw new Error('Product page query mismatch');
+        if(page.currency!=='SAR' || page.originalCurrency!=='SAR') throw new Error('Product page currency mismatch');
+        if(typeof page.productPrice!=='number' || !Number.isFinite(page.productPrice) || page.productPrice<=0 || typeof page.originalProductPrice!=='number' || page.originalProductPrice!==page.productPrice) throw new Error('Product page price invalid');
+        refreshed[index]={...offer,productPrice:page.productPrice,originalProductPrice:page.originalProductPrice,
+          availability:page.availability,observedAt:page.observedAt,
+          sourceMeta:{...offer.sourceMeta,indexPrice:offer.productPrice,priceSource:'product-page',priceObservedAt:page.observedAt}};
+        pageRefresh.verified++;
+      }catch(error){
+        failures[index]={market:'jarir-sa',error:error?.message || String(error)};
+        pageRefresh.failed++;
+      }
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(6,matches.length)},worker));
+  return {offers:refreshed.filter(Boolean),errors:failures.filter(Boolean),queryFilter,pageRefresh};
+}
+
 export async function searchJarir(query, limit = 24, matchingQuery = query) {
   const capped = Math.max(1, Math.min(48, limit));
   const errors = [];
 
   try {
     const raw = await searchViaConstructor(query, capped);
-    const {offers,queryFilter} = filterQueryOffers(matchingQuery, raw);
+    const {offers,errors:pageErrors,queryFilter,pageRefresh} = await refreshJarirPrices(raw,matchingQuery);
     return {
         provider: "jarir-direct",
         ok: offers.length > 0,
         searchedMarkets: [{ id: "jarir-sa", countryCode: "SA", countryNameAr: "السعودية" }],
         offers,
-        errors: [],
-        diagnostics: {queryFilter},
+        errors: pageErrors,
+        diagnostics: {queryFilter,pageRefresh},
       };
   } catch (error) {
     errors.push({ market: "jarir-sa", error: error?.message || String(error) });
@@ -287,15 +317,15 @@ export async function searchJarir(query, limit = 24, matchingQuery = query) {
 
   try {
     const raw = await searchViaHtml(query, capped);
-    const {offers,queryFilter} = filterQueryOffers(matchingQuery, raw);
+    const {offers,errors:pageErrors,queryFilter,pageRefresh} = await refreshJarirPrices(raw,matchingQuery);
     if (raw.length) {
       return {
         provider: "jarir-direct",
         ok: offers.length > 0,
         searchedMarkets: [{ id: "jarir-sa", countryCode: "SA", countryNameAr: "السعودية" }],
         offers,
-        errors,
-        diagnostics: {queryFilter},
+        errors:[...errors,...pageErrors],
+        diagnostics: {queryFilter,pageRefresh},
       };
     }
     errors.push({ market: "jarir-sa", error: "HTML fallback returned no products" });

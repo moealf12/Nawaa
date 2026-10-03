@@ -5,7 +5,7 @@ import {buildAuditMatrix,sourceQueries,summarizeAuditMatrix} from '../server/aud
 const args=process.argv.slice(2);const options={};
 try {
  for(let i=0;i<args.length;i+=2) {
-  if(!['--base','--revision','--token-file','--output','--round-gap-ms'].includes(args[i]) || !args[i+1]) throw Error('arguments');
+  if(!['--base','--revision','--token-file','--output','--round-gap-ms','--sources'].includes(args[i]) || !args[i+1]) throw Error('arguments');
   options[args[i]]=args[i+1];
  }
  const base=options['--base'] || 'https://nawaa-search-api.onrender.com';
@@ -14,12 +14,14 @@ try {
  const token=options['--token-file']?(await readFile(options['--token-file'],'utf8')).trim():process.env.NAWAA_AUDIT_TOKEN;
  if(!token || token.length<32 || !options['--output']) throw Error('configuration_required');
  const gap=Number(options['--round-gap-ms'] || 60000);if(!Number.isInteger(gap)||gap<60000||gap>300000) throw Error('invalid_round_gap');
+ const matrix=options['--sources'] ? buildAuditMatrix(options['--sources'].split(',')) : buildAuditMatrix();
+ const ids=[...new Set(matrix.map(entry=>entry.sourceId))];
  const output=path.resolve(options['--output']);await mkdir(path.join(output,'results'),{recursive:true});
  const get=async route=>{const r=await fetch(new URL(route,base),{signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('health_unavailable');return r.json();};
  const health=await get('/health');if(health.revision!==revision) throw Error('revision_mismatch');
  const catalog=await get('/api/sources');
- if(!Object.keys(sourceQueries).every(id=>catalog.sources?.some(s=>s.id===id&&s.status==='configured'))) throw Error('configured_roster_mismatch');
- const matrix=buildAuditMatrix();const records=[];
+ if(!ids.every(id=>catalog.sources?.some(s=>s.id===id&&s.status==='configured'))) throw Error('configured_roster_mismatch');
+ const records=[];
  let fatal=null;
  const atomic=async(file,value)=>{await writeFile(file+'.tmp',JSON.stringify(value,null,2)+'\n');await rename(file+'.tmp',file);};
  const metadataPath=path.join(output,'metadata.json');
@@ -28,7 +30,7 @@ try {
   if(prior.revision!==revision || prior.base!==base || JSON.stringify(prior.matrix)!==JSON.stringify(matrix)) throw Error('resume_mismatch');
  }catch(error){if(error.code!=='ENOENT')throw error;await atomic(metadataPath,{revision,base,startedAt:new Date().toISOString(),roundGapMs:gap,health,catalog,matrix});}
  for(let round=1;round<=3;round++) {
-  let cursor=0;const ids=Object.keys(sourceQueries);
+  let cursor=0;
   const worker=async()=>{
    while(cursor<ids.length && !fatal) {
     const sourceId=ids[cursor++];const statuses=[];
@@ -71,6 +73,6 @@ try {
  await atomic(path.join(output,'summary.json'),{...summarizeAuditMatrix(matrix,records,revision),finishedAt:new Date().toISOString()});
  console.log(JSON.stringify({done:true,completed:records.length,output}));
 }catch(error) {
- const known=/^(arguments|https_required|revision_required|configuration_required|invalid_round_gap|health_unavailable|revision_mismatch|configured_roster_mismatch|resume_mismatch|endpoint_guard_\d+|audit_response_mismatch)$/;
+ const known=/^(arguments|https_required|revision_required|configuration_required|invalid_round_gap|invalid_sources|health_unavailable|revision_mismatch|configured_roster_mismatch|resume_mismatch|endpoint_guard_\d+|audit_response_mismatch)$/;
  console.error(known.test(error.message)?error.message:'matrix_failed');process.exitCode=1;
 }
