@@ -73,6 +73,20 @@ test("query deep link starts exactly one live search and URL submission requests
   await new Promise(resolve => setImmediate(resolve));
   assert.match(element("#results").innerHTML, /<h2>latest<\/h2>/);
 
+  let snapshotAttempts = 0;
+  globalThis.fetch = async url => {
+    const data = String(url).includes('/health') ? {ok:true} : ++snapshotAttempts === 1
+      ? {offers:[],errors:[{provider:'cache',message:'Search snapshot invalidated; retry'}]}
+      : {offers,providers:[],errors:[]};
+    return {ok:true,text:async()=>JSON.stringify(data)};
+  };
+  element('#searchInput').value='iphone snapshot';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setTimeout(resolve,1300));
+  assert.equal(snapshotAttempts,2,'an invalidated snapshot must trigger a fresh search');
+  assert.match(element('#searchStatus').textContent,/بحث حي/);
+  assert.doesNotMatch(element('#results').innerHTML,/NO LIVE OFFERS/);
+
   const consoleOffers = [
     { ...offer, title:"Sony PlayStation 5 Slim Digital Console White",image:"https://img.example/digital-1.jpg", specs:{brand:"Sony",color:"White",modelNumber:"CFI-2016B01Y",storage:"825GB"} },
     { ...offer,merchant:"Jarir", title:"PS5 Digital Console",image:"https://img.example/digital-2.jpg",specs:{brand:"Sony",modelNumber:"CFI2016B01Y",storage:"825GB"}},

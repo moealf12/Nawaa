@@ -262,6 +262,10 @@ async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
         throw new Error(data?.message || data?.error || "request_failed_" + response.status);
       }
 
+      if (!data?.offers?.length && data?.errors?.some(error => error.provider === "cache")) {
+        throw new Error("search_snapshot_invalidated");
+      }
+
       return data;
     } catch (error) {
       lastError = error;
