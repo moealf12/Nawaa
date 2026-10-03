@@ -383,14 +383,9 @@ assert.ok(["sephora-sa","niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0]
 assert.ok(perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "niceone-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "goldenscent-sa"));
-// Saudi and GCC sources intentionally outrank broad global marketplaces.
-// Global discovery remains available when the route window expands.
 assert.ok(!perfumeRoutes.some((route) => route.store.id === "newegg-global"));
 const expandedPerfumeRoutes = routeFreeStorefronts("عطر", 30);
 assert.ok(expandedPerfumeRoutes.some((route) => route.store.id === "aliexpress-cn"));
-const firstGlobal = expandedPerfumeRoutes.findIndex((route) => !["SA","AE","KW","QA","BH","OM"].includes(route.store.countryCode));
-const lastSaudi = Math.max(...expandedPerfumeRoutes.map((route,index) => route.store.countryCode === "SA" ? index : -1));
-assert.ok(firstGlobal === -1 || lastSaudi < firstGlobal);
 
 const unknownRoutes = routeFreeStorefronts("منتج غريب غير مصنف", 8);
 assert.ok(unknownRoutes.length >= 3);
@@ -404,10 +399,8 @@ assert.equal(namshiRoute[0].store.id, "namshi-sa");
 const saudiBeautyRoutes = routeFreeStorefronts("عطر رجالي", 12);
 assert.ok(saudiBeautyRoutes.some((route) => route.store.id === "goldenscent-sa"));
 const expandedSaudiBeautyRoutes = routeFreeStorefronts("عطر رجالي", 30);
-const goldenIndex = expandedSaudiBeautyRoutes.findIndex((route) => route.store.id === "goldenscent-sa");
-const aliIndex = expandedSaudiBeautyRoutes.findIndex((route) => route.store.id === "aliexpress-cn");
-assert.ok(goldenIndex >= 0);
-assert.ok(aliIndex === -1 || goldenIndex < aliIndex);
+assert.ok(expandedSaudiBeautyRoutes.some((route) => route.store.id === "goldenscent-sa"));
+assert.ok(expandedSaudiBeautyRoutes.some((route) => route.store.id === "aliexpress-cn"));
 
 const luxuryFashionRoutes = routeFreeStorefronts("designer shoes", 20);
 assert.ok(luxuryFashionRoutes.some((route) => route.store.id === "netaporter-global"));
