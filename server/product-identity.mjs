@@ -6,7 +6,17 @@ export function sameOfferIdentity(left, right) {
   try {
     const a = new URL(left.sourceUrl), b = new URL(right.sourceUrl);
     const host = u => u.hostname.toLowerCase().replace(/^www\./, '');
-    const sameListing = u => a.protocol === 'https:' && u.protocol === 'https:' && !u.username && !u.password && (!u.port || u.port === '443') && host(a) === host(u) && a.pathname.replace(/\/+$/, '') === u.pathname.replace(/\/+$/, '') && (!a.searchParams.has('variant') || a.searchParams.get('variant') === u.searchParams.get('variant'));
+    const listingPath = u => {
+      const normalized=u.pathname.replace(/\/+$/,'');
+      // eXtra redirects its public /en-sa/p/ID search links to category/slug
+      // paths ending in /p/ID. Only this merchant, market and exact ID alias.
+      if(host(u)==='extra.com'){
+        const id=normalized.match(/^\/en-sa\/(?:[^?#]+\/)?p\/(\d+)$/)?.[1];
+        if(id)return '/en-sa/p/'+id;
+      }
+      return normalized;
+    };
+    const sameListing = u => a.protocol === 'https:' && u.protocol === 'https:' && !u.username && !u.password && (!u.port || u.port === '443') && host(a) === host(u) && listingPath(a) === listingPath(u) && (!a.searchParams.has('variant') || a.searchParams.get('variant') === u.searchParams.get('variant'));
     // Structured Offer.url is untrusted data: it cannot conceal the URL fetched.
     if (!sameListing(b) || (right.resolvedPageUrl && !sameListing(new URL(right.resolvedPageUrl)))) return false;
     const identity = offer => ({title:offer.title,brand:offer.brand || offer.specs?.brand,sku:offer.sku,model:offer.specs?.modelNumber,gtin:offer.specs?.barcode});
