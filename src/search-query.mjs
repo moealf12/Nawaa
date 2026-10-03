@@ -263,9 +263,25 @@ export function assessOfferMatch(query, offer) {
   if (kindMismatch) confidence *= 0.2;
 
   const hasPhrase = (text, term) => (" " + text + " ").includes(" " + normalizeSearchQuery(term) + " ");
-  const queryHasAccessoryIntent = intent.category === "accessory" || intent.discoveryMode !== "specific" || ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term));
+  // Brand-only discovery must not be hijacked by accessories merely carrying the brand
+  // name (e.g. "Nike" returning Apple Watch Nike bands). Accessories are allowed only
+  // when the shopper actually asks for an accessory or the brand itself is accessory-led.
+  const accessoryLedBrands = new Set(["logitech"]);
+  const queryHasAccessoryIntent = intent.category === "accessory" ||
+    ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
+    (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
   const titleHasAccessory = ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
-  if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.35;
+  if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
+
+  // For brand-only searches, prefer the brand's primary editorial categories and
+  // strongly demote unrelated co-branded products.
+  if (intent.discoveryMode === "brand" && intent.brand) {
+    const offerCategory = productCategory(offer);
+    const priorities = BRAND_CATEGORY_PRIORITIES[intent.brand] || [];
+    const priorityIndex = priorities.indexOf(offerCategory);
+    if (priorityIndex >= 0) confidence = Math.min(1, confidence + Math.max(0.08, 0.24 - priorityIndex * 0.04));
+    else if (offerCategory) confidence *= 0.3;
+  }
 
   const queryTokens = new Set(q);
   const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
