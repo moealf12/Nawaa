@@ -24,6 +24,12 @@ for (const [store, query] of CASES) {
   }
 }
 console.table(rows);
-console.log(JSON.stringify({checked:CASES.length,liveValidated:live,rows},null,2));
-// Network/storefront failures are evidence, not a CI code regression. This workflow
-// records them so a source is never promoted merely because it exists in the catalog.
+const failed = rows.filter((row) => row.status === "PROBED_FAILED").length;
+const probedOnly = rows.filter((row) => row.status === "PROBED").length;
+const report = {checked:CASES.length,liveValidated:live,probedOnly,failed,rows};
+console.log(JSON.stringify(report,null,2));
+await import("node:fs").then(({writeFileSync}) => writeFileSync("live-source-validation.json", JSON.stringify(report,null,2)));
+if (live === 0) {
+  console.error("VALIDATION_GATE_FAILED: zero sources reached LIVE_VALIDATED. Discovery entries must not be promoted to production.");
+  process.exitCode = 1;
+}
