@@ -36,6 +36,38 @@ const STORES = [
     search:(q)=>"https://www.asos.com/search/?q="+encodeURIComponent(q),
     productPath:/\/prd\/\d+(?:[/?#]|$)/i,
   },
+  // GCC discovery tier: trusted regional storefronts are searched after Saudi sources
+  // and before the wider global catalog. Shipping to Saudi is metadata, never a gate.
+  {
+    id:"amazon-ae", name:"Amazon UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
+    search:(q)=>"https://www.amazon.ae/s?k="+encodeURIComponent(q),
+    productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
+  },
+  {
+    id:"noon-ae", name:"noon UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
+    search:(q)=>"https://www.noon.com/uae-en/search?q="+encodeURIComponent(q),
+    productPath:/\/[^?#]+\/p\/?(?:[?#]|$)|\/p-[A-Z0-9]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"sharafdg-ae", name:"Sharaf DG UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","desktop","monitor","audio","camera","appliance","tv","console","game","accessory"],
+    search:(q)=>"https://uae.sharafdg.com/?q="+encodeURIComponent(q)+"&post_type=product",
+    productPath:/\/product\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"virgin-ae", name:"Virgin Megastore UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","audio","console","game","book","toy","accessory","other"],
+    search:(q)=>"https://www.virginmegastore.ae/en/search/?text="+encodeURIComponent(q),
+    productPath:/\/p\/\d+(?:[/?#]|$)|\/[^?#]+\/p(?:[/?#]|$)/i,
+  },
+  {
+    id:"xcite-kw", name:"X-cite Kuwait", countryCode:"KW", countryNameAr:"الكويت", categories:["phone","laptop","desktop","monitor","audio","camera","appliance","tv","console","game","accessory"],
+    search:(q)=>"https://www.xcite.com/search?q="+encodeURIComponent(q),
+    productPath:/\/[^?#]+\/p(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"lulu-ae", name:"LuLu UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","audio","appliance","tv","grocery","baby","home","other"],
+    search:(q)=>"https://www.luluhypermarket.com/en-ae/search?q="+encodeURIComponent(q),
+    productPath:/\/[^?#]+\/p\/\d+(?:[/?#]|$)|\/product\/[^/?#]+(?:[/?#]|$)/i,
+  },
   {
     id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", brands:["farfetch"], categories:["clothing","shoes","bag","jewelry","watch"],
     search:(q)=>"https://www.farfetch.com/sa/shopping/items.aspx?q="+encodeURIComponent(q),
