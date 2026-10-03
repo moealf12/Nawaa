@@ -738,6 +738,12 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
     let url;
     try { url = new URL(decodeHtml(rawUrl).replace(/\\u002F/gi, "/").replace(/\\\//g, "/"), searchUrl).href; } catch { return; }
     if (!sameHost(url, searchUrl) || !store.productPath.test(url)) return;
+    // Product discovery must never promote static assets (images/fonts/etc.) to
+    // product pages even when a loose storefront regex happens to match them.
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      if (/\.(?:avif|gif|jpe?g|png|svg|webp|ico|woff2?|ttf|css|js)(?:\/)?$/.test(pathname)) return;
+    } catch { return; }
     const label = stripHtml(rawLabel);
     const haystack = normalizeSearchQuery(label + " " + url);
     const hits = tokens.filter((token) => haystack.includes(token)).length;
