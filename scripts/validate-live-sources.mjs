@@ -37,10 +37,12 @@ for (const [store, query] of CASES) {
 console.table(rows);
 const failed = rows.filter((row) => row.status === "PROBED_FAILED").length;
 const probedOnly = rows.filter((row) => row.status === "PROBED").length;
-const report = {checked:CASES.length,liveValidated:live,probedOnly,failed,rows};
+const liveSources = rows.filter((row) => row.status === "LIVE_VALIDATED").map((row) => row.store);
+const report = {checked:CASES.length,liveValidated:live,liveSources,probedOnly,failed,rows};
 console.log(JSON.stringify(report,null,2));
 await import("node:fs").then(({writeFileSync}) => writeFileSync("live-source-validation.json", JSON.stringify(report,null,2)));
-if (live === 0) {
-  console.error("VALIDATION_GATE_FAILED: zero sources reached LIVE_VALIDATED. Discovery entries must not be promoted to production.");
+const minimumLive = Number(process.env.MIN_LIVE_SOURCES || 2);
+if (live < minimumLive) {
+  console.error(`VALIDATION_GATE_FAILED: ${live}/${minimumLive} required sources reached LIVE_VALIDATED.`);
   process.exitCode = 1;
 }
