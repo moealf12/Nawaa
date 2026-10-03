@@ -268,7 +268,9 @@ export function assessOfferMatch(query, offer) {
   // than free-text tokens: reward the matching category without polluting model/
   // variant token matching.
   if (categoryTokenRequested && effectiveCategory && offerCategory === effectiveCategory) {
-    confidence = Math.min(1, confidence + 0.18);
+    // The category term itself was removed from semanticQuery, so a matching
+    // structural category is equivalent to that requested term matching.
+    confidence = q.length ? Math.min(1, confidence + (1 / (q.length + 1))) : 1;
   }
   const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
