@@ -46,7 +46,7 @@ const liveSources = rows.filter((row) => row.status === "LIVE_VALIDATED").map((r
 const report = {checked:CASES.length,liveValidated:live,liveSources,probedOnly,failed,rows};
 console.log(JSON.stringify(report,null,2));
 await import("node:fs").then(({writeFileSync}) => writeFileSync("live-source-validation.json", JSON.stringify(report,null,2)));
-const minimumLive = Number(process.env.MIN_LIVE_SOURCES || 2);
+const minimumLive = Number(process.env.MIN_LIVE_SOURCES || 5);
 if (live < minimumLive) {
   console.error(`VALIDATION_GATE_FAILED: ${live}/${minimumLive} required sources reached LIVE_VALIDATED.`);
   process.exitCode = 1;
