@@ -252,7 +252,7 @@ export function assessOfferMatch(query, offer) {
   const normalizedQuery = intent.providerQuery;
   const matchedCategory = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const effectiveCategory = intent.category || matchedCategory?.[0] || null;
-  const semanticQuery = normalizedQuery.replace(matchedCategory?.[2] || /$^/, " ");
+  const semanticQuery = normalizedQuery;
   const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
   const title = normalizeSearchQuery([offer?.title, offer?.productType, offer?.brand, offer?.vendor, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
