@@ -142,3 +142,13 @@ test('embedded conflicting MPN stays distinct from SKU and cannot overwrite a ca
     assert.equal(resolved.sku,null);assert.equal(resolved.specs.modelNumber,'DIFFERENT-MODEL');
   }finally{globalThis.fetch=oldFetch;dns.lookup=oldLookup;}
 });
+test('eXtra short and canonical product paths agree only for the same Saudi product ID',async()=>{
+  const {sameOfferIdentity}=await import('../server/product-identity.mjs');
+  const left={...catalog(),provider:'extra-unbxd',sourceUrl:'https://www.extra.com/en-sa/p/100460146'};
+  const canonical='https://www.extra.com/en-sa/mobiles-tablets/mobiles/smartphone/apple-iphone-17/p/100460146';
+  assert.equal(sameOfferIdentity(left,{...left,sourceUrl:canonical,resolvedPageUrl:canonical}),true);
+  for(const wrong of [canonical.replace('100460146','100460999'),canonical.replace('/en-sa/','/en-ae/'),canonical.replace('www.extra.com','other.example')]){
+    assert.equal(sameOfferIdentity(left,{...left,sourceUrl:wrong,resolvedPageUrl:wrong}),false);
+  }
+  assert.equal(sameOfferIdentity(catalog(),{...page(),sourceUrl:'https://www.jarir.com/sa-en/another-'+catalog().sourceMeta.productId+'.html'}),false);
+});
