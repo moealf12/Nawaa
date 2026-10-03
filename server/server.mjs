@@ -93,10 +93,15 @@ function providerTasks(providerQuery, matchingQuery) {
 
 async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery) {
   const tasks = providerTasks(providerQuery, matchingQuery);
+  const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
+  const withDeadline = (promise, sourceId) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + sourceId)), providerDeadlineMs)),
+  ]);
   const settled = await Promise.allSettled(tasks.map(async (task) => {
     const started = Date.now();
     try {
-      const value = await task.run();
+      const value = await withDeadline(Promise.resolve().then(() => task.run()), task.id);
       sourceReliability.record(task.id, {
         transportOk:true,
         offers:value.offers?.length || 0,
