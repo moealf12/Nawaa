@@ -252,7 +252,9 @@ export function assessOfferMatch(query, offer) {
   const normalizedQuery = intent.providerQuery;
   const matchedCategory = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const effectiveCategory = intent.category || matchedCategory?.[0] || null;
-  const semanticQuery = normalizedQuery;
+  const categoryPattern = matchedCategory?.[2] || /$^/;
+  const categoryTokenRequested = Boolean(matchedCategory);
+  const semanticQuery = normalizedQuery.replace(categoryPattern, " ").replace(/\s+/g, " ").trim();
   const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
   const title = normalizeSearchQuery([offer?.title, offer?.productType, offer?.brand, offer?.vendor, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
@@ -261,7 +263,14 @@ export function assessOfferMatch(query, offer) {
   const hits = q.filter((token) => titleTokens.has(token)).length;
   let confidence = q.length ? hits / q.length : 1;
   const description = describeProduct(offer);
-  const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== productCategory(offer)));
+  const offerCategory = productCategory(offer);
+  // Product-type words (mouse, laptop, perfume...) are structural intent rather
+  // than free-text tokens: reward the matching category without polluting model/
+  // variant token matching.
+  if (categoryTokenRequested && effectiveCategory && offerCategory === effectiveCategory) {
+    confidence = Math.min(1, confidence + 0.18);
+  }
+  const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
 
   const hasPhrase = (text, term) => (" " + text + " ").includes(" " + normalizeSearchQuery(term) + " ");
