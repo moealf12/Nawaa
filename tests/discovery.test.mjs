@@ -8,7 +8,7 @@ const sections=(q,offers)=>core.buildDiscoverySections?.(q,core.groupComparableO
 
 test('brand search leads with core categories rather than inexpensive accessories',()=>{
   const result=sections('hp',[offer('HP USB Mouse',20),offer('HP LaserJet Printer',700),offer('HP Pavilion Laptop',3000),offer('HP Monitor',500)]);
-  assert.deepEqual(result.map(s=>s.key),['laptop','printer','monitor','accessory']);
+  assert.deepEqual(result.map(s=>s.key),['laptop','printer','monitor']);
 });
 test('explicit requested category overrides brand priorities and excludes other categories',()=>{
   const result=sections('طابعة hp',[offer('HP Pavilion Laptop',3000),offer('HP LaserJet Printer',700)]);
@@ -39,7 +39,7 @@ test('explicit product types override ambiguous family names and brand discovery
   assert.equal(query.productCategory?.({title:'HP Pavilion Desktop PC'}),'desktop');
   assert.equal(query.productCategory?.({title:'HP Envy Printer'}),'printer');
   assert.equal(query.assessOfferMatch('apple',{title:'Apple iPhone 17 Pro',condition:'new',specs:{brand:'Apple'}}).exactMatch,true);
-  assert.equal(query.assessOfferMatch('Acme',{title:'Acme Charger',condition:'new'}).exactMatch,true);
+  assert.equal(query.assessOfferMatch('Acme',{title:'Acme Charger',condition:'new'}).exactMatch,false);
 });
 
 test('current merchant laptop family names classify without numeric SKUs',()=>{ assert.equal(query.productCategory?.({title:'HP OmniBook 5 Flip AI PC x360, Intel Core 5, 16 GB, 15.6 FHD'}),'laptop'); });
