@@ -106,6 +106,30 @@ const STORES = [
     search:(q)=>"https://niceonesa.com/en/search?q="+encodeURIComponent(q),
     productPath:/\/en\/[^?#]+-n\d+(?:[/?#]|$)/i,
   },
+  {
+    id:"goldenscent-sa", name:"Golden Scent", countryCode:"SA", countryNameAr:"السعودية", brands:["goldenscent"], categories:["beauty","perfume"],
+    search:(q)=>"https://www.goldenscent.com/en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"ounass-sa", name:"Ounass", countryCode:"SA", countryNameAr:"السعودية", brands:["ounass"], categories:["clothing","shoes","bag","beauty","jewelry","watch"],
+    search:(q)=>"https://saudi.ounass.com/search?q="+encodeURIComponent(q), productPath:/\/shop-[^?#]+(?:[?#]|$)|\/product\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"sunandsand-sa", name:"Sun & Sand Sports", countryCode:"SA", countryNameAr:"السعودية", brands:["sunandsand"], categories:["sports","shoes","clothing","bag"],
+    search:(q)=>"https://en-sa.sssports.com/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"virgin-sa", name:"Virgin Megastore Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["virgin"], categories:["phone","laptop","audio","console","game","book","toy","accessory","other"],
+    search:(q)=>"https://www.virginmegastore.sa/en/search/?text="+encodeURIComponent(q), productPath:/\/p\/\d+(?:[/?#]|$)|\/[^?#]+\/p(?:[/?#]|$)/i,
+  },
+  {
+    id:"homecentre-sa", name:"Home Centre Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["homecentre"], categories:["furniture","home","kitchen","office"],
+    search:(q)=>"https://www.homecentre.com/sa/en/search?q="+encodeURIComponent(q), productPath:/\/sa\/en\/buy-[^?#]+\/p\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"mumzworld-sa", name:"Mumzworld", countryCode:"SA", countryNameAr:"السعودية", brands:["mumzworld"], categories:["baby","toy","clothing","grocery","other"],
+    search:(q)=>"https://www.mumzworld.com/sa-en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+  },
 ];
 
 function decodeHtml(value = "") {
