@@ -1,5 +1,6 @@
 import { moneyToSAR } from "../fx.mjs";
 import { normalizeSearchQuery, queryMatchReasons } from "../../src/search-query.mjs";
+import { setTimeout as delay } from "node:timers/promises";
 
 function relevantProduct(query, product) {
   const normalized = normalizeSearchQuery(query);
@@ -21,16 +22,28 @@ function cleanBaseUrl(value) {
 
 // Ajax product prices are in minor units; predictive prices can be ranges.
 // Confirm each available variant before emitting a priced offer.
-export async function searchShopifyStore(query, store, {limit = 5, fetchImpl = fetch, convertMoney = moneyToSAR} = {}) {
+export async function searchShopifyStore(query, store, {limit = 5, fetchImpl = fetch, convertMoney = moneyToSAR, waitForRetry = (ms,signal) => delay(ms,undefined,{signal})} = {}) {
   const baseUrl = cleanBaseUrl(store.baseUrl);
+  const deadline = Date.now() + 15000;
   const signal = AbortSignal.timeout(15000);
   const get = async url => {
-    const response = await fetchImpl(url, {
-      headers: {accept:"application/json", "user-agent":"NAWAA-Price-Discovery/0.5"},
-      redirect:"follow", signal,
-    });
-    if(!response.ok) throw new Error(`${store.name}: HTTP ${response.status}`);
-    return response.json();
+    for(let attempt=0;attempt<3;attempt++) {
+      signal.throwIfAborted();
+      const response = await fetchImpl(url, {
+        headers: {accept:"application/json", "user-agent":"NAWAA-Price-Discovery/0.5"},
+        redirect:"follow", signal,
+      });
+      if(response.ok) return response.json();
+      const error = new Error(`${store.name}: HTTP ${response.status}`);
+      await response.body?.cancel().catch(()=>{});
+      if(response.status!==503 || attempt===2) throw error;
+      const retryAfter=response.headers?.get('retry-after');
+      const requestedDelay=retryAfter && (/^\d+$/.test(retryAfter.trim()) ? Number(retryAfter)*1000 : Date.parse(retryAfter)-Date.now());
+      const wait=Math.max(750*2**attempt,Number.isFinite(requestedDelay)?requestedDelay:0);
+      // A server-specified delay that cannot fit must fail, not be shortened.
+      if(wait+250>=deadline-Date.now()) throw error;
+      await waitForRetry(wait,signal);
+    }
   };
   const params = new URLSearchParams({q:query,"resources[type]":"product","resources[limit]":String(Math.max(1,Math.min(10,limit))),"resources[options][unavailable_products]":"hide","resources[options][fields]":"title,product_type,variants.title,vendor"});
   const [cart, data] = await Promise.all([get(`${baseUrl}/cart.js`),get(`${baseUrl}/search/suggest.json?${params}`)]);
@@ -40,7 +53,7 @@ export async function searchShopifyStore(query, store, {limit = 5, fetchImpl = f
   // currency precision instead of interpreting integer prices incorrectly.
   if(!["USD","SAR","EUR","GBP","CAD","AUD","HKD","AED"].includes(currency)) throw new Error(`${store.name}: unsupported currency precision`);
   const products = (data?.resources?.results?.products || []).slice(0,Math.max(1,Math.min(10,limit)));
-  const settled = await Promise.allSettled(products.map(async suggestion => {
+  const lookup = async suggestion => {
     const handle = suggestion.handle;
     if(typeof handle !== "string" || !/^[a-zA-Z0-9_-]{1,250}$/.test(handle)) throw new Error("Invalid product handle");
     const product = await get(`${baseUrl}/products/${encodeURIComponent(handle)}.js`);
@@ -78,7 +91,18 @@ export async function searchShopifyStore(query, store, {limit = 5, fetchImpl = f
         observedAt:new Date().toISOString(), fx:priceSAR ? {rate:priceSAR.rate,source:priceSAR.source,observedAt:priceSAR.observedAt} : null,
       };
     }));
-  }));
+  };
+  // Avoid a burst of up to ten product requests to one merchant.
+  const settled = new Array(products.length);
+  let cursor=0;
+  const worker=async()=>{
+    while(cursor<products.length) {
+      const index=cursor++;
+      try { settled[index]={status:'fulfilled',value:await lookup(products[index])}; }
+      catch(reason) { settled[index]={status:'rejected',reason}; }
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(2,products.length)},worker));
   const offers=[], errors=[];
   settled.forEach((result,index)=>{
     if(result.status === "fulfilled") offers.push(...result.value);

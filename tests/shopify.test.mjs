@@ -98,3 +98,81 @@ test('Shopify cannot hide a conflicting qualified Series variant',async()=>{
  const r=await searchShopifyStore('iPhone 17 case',store,{fetchImpl:productApi(product),convertMoney:async value=>({value})});
  assert.deepEqual(r.offers,[]);
 });
+
+for(const endpoint of ['/cart.js','/search/suggest.json','/products/shirt.js']) {
+ test(`Shopify recovers two transient 503 responses from ${endpoint}`,async()=>{
+  const counts=new Map(),delays=[];const original=api();
+  const fetchImpl=async(url,options)=>{
+   const pathname=new URL(url).pathname;
+   counts.set(pathname,(counts.get(pathname)||0)+1);
+   assert.ok(options.signal instanceof AbortSignal);
+   if(pathname===endpoint&&counts.get(pathname)<3)return new Response('Unavailable',{status:503});
+   return original(url);
+  };
+  const r=await searchShopifyStore('shirt',store,{fetchImpl,convertMoney:async value=>({value}),waitForRetry:async(ms,signal)=>{delays.push(ms);assert.ok(signal instanceof AbortSignal);}});
+  assert.equal(counts.get(endpoint),3);assert.deepEqual(delays,[750,1500]);
+  assert.deepEqual(r.errors,[]);assert.equal(r.offers[0].sku,'SHIRT-M');
+  assert.equal(r.offers[0].originalProductPrice,24.99);
+ });
+}
+test('persistent Shopify 503 stops after three requests without a predictive price fallback',async()=>{
+ let requests=0;const delays=[];const original=api();
+ const fetchImpl=async url=>{
+  if(new URL(url).pathname!=='/products/shirt.js')return original(url);
+  requests++;return new Response('Unavailable',{status:503});
+ };
+ const r=await searchShopifyStore('shirt',store,{fetchImpl,waitForRetry:async ms=>delays.push(ms)});
+ assert.equal(requests,3);assert.deepEqual(delays,[750,1500]);assert.deepEqual(r.offers,[]);
+ assert.equal(r.errors.length,1);assert.match(r.errors[0].error,/HTTP 503/);
+});
+test('persistent Shopify cart failure remains a failed search rather than an empty negative control',async()=>{
+ let requests=0;const original=api();
+ await assert.rejects(()=>searchShopifyStore('nawaa-no-such-product',store,{fetchImpl:async url=>{
+  if(new URL(url).pathname!=='/cart.js')return original(url);
+  requests++;return new Response('Unavailable',{status:503});
+ },waitForRetry:async()=>{}}),/HTTP 503/);
+ assert.equal(requests,3);
+});
+test('Shopify respects Retry-After and never shortens a delay beyond its search budget',async()=>{
+ const original=api();
+ for(const [header,expectedRequests,expectedDelays] of [['2',3,[2000,2000]],['60',1,[]]]){
+  let requests=0;const delays=[];
+  const r=await searchShopifyStore('shirt',store,{fetchImpl:async url=>{
+   if(new URL(url).pathname!=='/products/shirt.js')return original(url);
+   requests++;return new Response('Unavailable',{status:503,headers:{'Retry-After':header}});
+  },waitForRetry:async ms=>delays.push(ms)});
+  assert.equal(requests,expectedRequests);assert.deepEqual(delays,expectedDelays);assert.deepEqual(r.offers,[]);
+ }
+});
+test('Shopify does not retry permanent HTTP failures or invalid successful JSON',async()=>{
+ const original=api();
+ for(const response of [()=>new Response('Forbidden',{status:403}),()=>new Response('not json',{status:200})]){
+  let requests=0;
+  const r=await searchShopifyStore('shirt',store,{fetchImpl:async url=>{
+   if(new URL(url).pathname!=='/products/shirt.js')return original(url);
+   requests++;return response();
+  },waitForRetry:async()=>assert.fail('unexpected retry')});
+  assert.equal(requests,1);assert.deepEqual(r.offers,[]);assert.equal(r.errors.length,1);
+ }
+});
+test('Shopify abort during retry stops additional requests and retains a failed lookup',async()=>{
+ let requests=0;const original=api();
+ const r=await searchShopifyStore('shirt',store,{fetchImpl:async url=>{
+  if(new URL(url).pathname!=='/products/shirt.js')return original(url);
+  requests++;return new Response('Unavailable',{status:503});
+ },waitForRetry:async()=>{throw new DOMException('expired','TimeoutError');}});
+ assert.equal(requests,1);assert.deepEqual(r.offers,[]);assert.match(r.errors[0].error,/expired/);
+});
+test('Shopify bounds product lookup concurrency to two and preserves suggestion order',async()=>{
+ let active=0,peak=0;const products=Array.from({length:6},(_,i)=>({handle:`shirt-${i}`,title:'Shirt'}));
+ const fetchImpl=async url=>{
+  const pathname=new URL(url).pathname;
+  if(pathname==='/cart.js')return Response.json({currency:'USD'});
+  if(pathname==='/search/suggest.json')return Response.json({resources:{results:{products}}});
+  const i=Number(pathname.match(/shirt-(\d+)\.js$/)[1]);active++;peak=Math.max(peak,active);
+  await new Promise(resolve=>setTimeout(resolve,8-i));active--;
+  return Response.json({title:'Shirt',variants:[{id:i+1,title:'Default Title',price:999,available:true,sku:`SKU-${i}`} ]});
+ };
+ const r=await searchShopifyStore('shirt',store,{limit:6,fetchImpl,convertMoney:async value=>({value})});
+ assert.equal(peak,2);assert.deepEqual(r.offers.map(x=>x.sku),products.map((_,i)=>`SKU-${i}`));assert.deepEqual(r.errors,[]);
+});
