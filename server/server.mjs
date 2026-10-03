@@ -1,5 +1,6 @@
 import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
-import { buildSourceRegistry, sourceCoverageSummary } from "../src/source-registry.mjs";
+import { sourceCoverageSummary } from "../src/source-registry.mjs";
+import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import http from "node:http";
 import { createReadStream } from "node:fs";
@@ -25,6 +26,7 @@ import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeCom
 import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
+import { createInternalAuditHandler } from "./internal-audit.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -68,19 +70,6 @@ async function serveStaticFile(req, res, pathname) {
   } catch {
     return false;
   }
-}
-
-function configuredProviders() {
-  return ["extra-unbxd", "jarir-direct", "sharafdg-algolia", "swarovski-direct",
-    ...(amazonCreatorsConfigured() ? configuredAmazonCreatorMarkets().map((market) => "amazon-creators:" + market.id) : []),
-    ...configuredFreeStorefronts().map((store) => "free-storefronts:" + store.id),
-    ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
-    ...(noonConfigured() ? ["noon-catalog"] : []),
-    ...(ebayConfigured() ? ["ebay"] : []),
-    ...(shopifyConfigured() ? ["shopify"] : [])];
-}
-function currentSources() {
-  return buildSourceRegistry({configuredProviders:configuredProviders(),shopifyStores:configuredShopifyStores()});
 }
 
 function providerTasks(providerQuery) {
@@ -212,9 +201,14 @@ const ebayDeletion = createEbayDeletionHandler({
   endpoint: process.env.EBAY_DELETION_ENDPOINT,
   onDelete: () => cachedSearch.clear(),
 });
+const internalAudit = createInternalAuditHandler();
 
 const server = http.createServer(async (req, res) => {
   const notificationUrl = new URL(req.url, "http://localhost");
+  if (notificationUrl.pathname === "/internal/source-audit") {
+    await internalAudit(req, res);
+    return;
+  }
   if (notificationUrl.pathname === "/api/ebay/account-deletion") {
     await ebayDeletion(req, res, notificationUrl);
     return;
