@@ -1,5 +1,5 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
-import { normalizeSearchQuery, parseSearchIntent } from "../../src/search-query.mjs";
+import { normalizeSearchQuery, parseSearchIntent, filterQueryOffers } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 
@@ -836,10 +836,10 @@ export async function searchFreeStorefrontById(storeId, query, options = {}) {
   if (!store) throw new Error("unknown storefront: " + storeId);
   const requestedPerStore = Number(options.perStore);
   const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0 ? requestedPerStore : Infinity;
-  return searchStore(store, query, perStore);
+  return searchStore(store, query, perStore, options.matchingQuery || query);
 }
 
-async function searchStore(store, query, perStore = Infinity) {
+async function searchStore(store, query, perStore = Infinity, matchingQuery = query) {
   const started = Date.now();
   const searchUrl = store.search(query);
   try {
@@ -956,7 +956,7 @@ async function searchStore(store, query, perStore = Infinity) {
         sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true },
       };
     }))).filter(Boolean);
-    const offers = [...directOffers, ...resolvedOffers];
+    const {offers,queryFilter} = filterQueryOffers(matchingQuery, [...directOffers, ...resolvedOffers]);
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
     sourceReliability.record(store.id, {
@@ -972,6 +972,7 @@ async function searchStore(store, query, perStore = Infinity) {
       offers,
       failures,
       diagnostics:{
+        queryFilter,
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         candidateSamples:(directSearchOffers.length
@@ -1022,7 +1023,7 @@ export async function searchFreeStorefronts(query, options = {}) {
   const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0
     ? requestedPerStore
     : Infinity;
-  const settled = await Promise.allSettled(stores.map((store) => searchStore(store, query, perStore)));
+  const settled = await Promise.allSettled(stores.map((store) => searchStore(store, query, perStore, options.matchingQuery || query)));
   const offers = [];
   const errors = [];
   const diagnostics = [];

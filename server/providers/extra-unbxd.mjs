@@ -2,6 +2,8 @@ const EXTRA_API_KEY = "21705619e273429e5767eea44ccb1ad5";
 const EXTRA_SITE_KEY = "ss-unbxd-auk-extra-saudi-en-prod11541714990488";
 const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE_KEY}/search`;
 
+import { filterQueryOffers } from "../../src/search-query.mjs";
+
 function firstFinite(...values) {
   for (const value of values) {
     const n = typeof value === "number" ? value : Number(value);
@@ -130,7 +132,7 @@ function normalizeProduct(product) {
   };
 }
 
-export async function searchExtraUnbxd(query, limit = 12) {
+export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query) {
   const url = new URL(EXTRA_SEARCH_BASE);
   url.searchParams.set("q", query);
   url.searchParams.set("rows", String(Math.max(1, Math.min(24, limit))));
@@ -152,13 +154,15 @@ export async function searchExtraUnbxd(query, limit = 12) {
   const data = await response.json();
   if(!Array.isArray(data?.response?.products)) throw new Error("extra-unbxd: Malformed product response");
   const products = data.response.products;
-  const offers = products.map(normalizeProduct).filter(Boolean);
+  const normalized = products.map(normalizeProduct).filter(Boolean);
+  const {offers,queryFilter} = filterQueryOffers(matchingQuery, normalized);
 
   return {
     provider: "extra-unbxd",
     ok: offers.length > 0,
     searchedMarkets: [{ id: "extra-sa", countryCode: "SA", countryNameAr: "السعودية" }],
     offers,
-    errors: products.length && !offers.length ? [{ market: "extra-sa", error: "No valid live products returned" }] : [],
+    errors: products.length && !normalized.length ? [{ market: "extra-sa", error: "No valid live products returned" }] : [],
+    diagnostics: {queryFilter},
   };
 }

@@ -72,18 +72,18 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
-function providerTasks(providerQuery) {
+function providerTasks(providerQuery, matchingQuery) {
   const tasks = [];
   const add = (id, run, { explicit = false } = {}) => {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run });
   };
 
-  add("extra-unbxd", () => searchExtraUnbxd(providerQuery));
-  add("jarir-direct", () => searchJarir(providerQuery));
+  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 12, matchingQuery));
+  add("jarir-direct", () => searchJarir(providerQuery, 24, matchingQuery));
   add("sharafdg-algolia", () => searchSharafDG(providerQuery));
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
-  add("free-storefronts", () => searchFreeStorefronts(providerQuery));
+  add("free-storefronts", () => searchFreeStorefronts(providerQuery, {matchingQuery}));
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
   if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
   if (ebayConfigured()) add("ebay", () => searchEbayWorldwide(providerQuery));
@@ -91,8 +91,8 @@ function providerTasks(providerQuery) {
   return tasks;
 }
 
-async function runProviderPass(providerQuery, pass = "primary") {
-  const tasks = providerTasks(providerQuery);
+async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery) {
+  const tasks = providerTasks(providerQuery, matchingQuery);
   const settled = await Promise.allSettled(tasks.map(async (task) => {
     const started = Date.now();
     try {
@@ -153,7 +153,7 @@ async function searchAll(query) {
   query = normalizeSearchQuery(query);
   const providerQuery = parseSearchIntent(query).providerQuery;
 
-  const primary = await runProviderPass(providerQuery, "primary");
+  const primary = await runProviderPass(providerQuery, "primary", query);
   let providers = primary.providers;
   let errors = primary.errors;
   let offers = primary.offers;
@@ -162,7 +162,7 @@ async function searchAll(query) {
   if (!offers.length) {
     fallbackQuery = buildProviderFallbackQueries(query)[0] || null;
     if (fallbackQuery) {
-      const fallback = await runProviderPass(fallbackQuery, "fallback");
+      const fallback = await runProviderPass(fallbackQuery, "fallback", query);
       providers = providers.concat(fallback.providers);
       errors = errors.concat(fallback.errors);
       offers = offers.concat(fallback.offers);
