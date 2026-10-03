@@ -114,7 +114,6 @@ function render(snapshot) {
 
         <div class="actions">
           <button class="primary" id="quoteBtn">اطلب تسعيرة عبر نواة</button>
-          ${offer.sourceUrl ? '<a class="secondary" href="' + escapeHtml(offer.sourceUrl) + '" target="_blank" rel="noopener">فتح المصدر ↗</a>' : ""}
         </div>
       </div>
     </section>
@@ -200,6 +199,8 @@ async function load() {
   }
 
   const source = new URL(location.href).searchParams.get("source");
+  // A saved snapshot for another listing or variant cannot answer this URL.
+  if(source && snapshot?.offer?.sourceUrl !== source) snapshot=null;
 
   if ((!snapshot || !snapshot.offer) && source) {
     const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
@@ -208,6 +209,7 @@ async function load() {
       try {
         const response = await fetch(apiBase + "/api/resolve-url?url=" + encodeURIComponent(source), {
           headers: { accept: "application/json" },
+          credentials: "same-origin",
         });
         const data = await response.json();
         if (response.ok && data.offer) {

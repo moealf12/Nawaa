@@ -95,8 +95,16 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(html,/سعر المنتج من/);
   assert.match(html,/عروض/);
   assert.match(html,/https:\/\/img.example\/digital-2.jpg/);
-  let renderedCards = [];
+  let renderedCards = [],loadMoreButtons=[],detailButtons=[];
   element('#results').querySelectorAll = selector => {
+    if(selector==='.show-category') {
+      loadMoreButtons=[...element('#results').innerHTML.matchAll(/data-show-category="([^"]+)"/g)].map(match=>({dataset:{showCategory:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;}}));
+      return loadMoreButtons;
+    }
+    if(selector==='.product-detail-btn') {
+      detailButtons=[...element('#results').innerHTML.matchAll(/class="product-detail-btn"[^>]*data-source="([^"]+)"/g)].map(match=>({dataset:{source:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;}}));
+      return detailButtons;
+    }
     if (selector !== '.match-result-card') return [];
     renderedCards = [...element('#results').innerHTML.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;}}));
     return renderedCards;
@@ -129,5 +137,23 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.doesNotMatch(element("#results").innerHTML, /المصدر ↗/);
   element(".selected-comparison").events.toggle({target:{open:false,isConnected:true}});
   assert.match(element("#results").innerHTML,/<details class="selected-comparison" hidden>/,"closing the comparison clears its expanded card state");
+
+  const manyOffers=Array.from({length:25},(_,i)=>({...offer,title:`HP Pavilion Laptop ${i+1}`,sourceUrl:`https://example.com/hp-${i+1}`,specs:{brand:'HP',modelNumber:`HP-LAP-${i+1}`}}));
+  globalThis.fetch=async url=>({ok:true,text:async()=>JSON.stringify(String(url).includes('/health')?{ok:true}:{offers:manyOffers,providers:[]})});
+  element('#searchInput').value='hp laptop';element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  const countCards=()=> (element('#results').innerHTML.match(/class="match-result-card/g)||[]).length;
+  assert.equal(countCards(),10,'a fresh search must show ten products');
+  loadMoreButtons[0].events.click();assert.equal(countCards(),20,'the first Load more must add ten products');
+  loadMoreButtons[0].events.click();assert.equal(countCards(),25,'the final Load more must retain all remaining products');
+  assert.equal(loadMoreButtons.length,0,'no Load more remains after all products are visible');
+  element('#resetResultFilters').events.click();assert.equal(countCards(),10,'reset filters restores the first ten products');
+  renderedCards[0].events.click();
+  assert.ok(detailButtons.length>0,'selected product must expose its detail action');
+  globalThis.sessionStorage={setItem(){throw Error('storage blocked');}};
+  globalThis.localStorage={getItem(){return null;},setItem(){throw Error('storage blocked');}};
+  detailButtons[0].events.click();
+  assert.match(location.href,/^\.\/product\.html\?/,'blocked storage cannot prevent product detail navigation');
+  assert.match(new URL(location.href,'http://localhost').searchParams.get('source'),/https:\/\/example.com\/hp-/);
 
 });
