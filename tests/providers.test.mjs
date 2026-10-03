@@ -378,10 +378,11 @@ assert.ok(laptopRoutes.some((route) => route.store.id === "bhphoto-us"));
 assert.ok(!laptopRoutes.some((route) => route.store.id === "sephora-sa"));
 assert.ok(laptopRoutes.length <= 8);
 
-const perfumeRoutes = routeFreeStorefronts("عطر", 8);
-assert.ok(["sephora-sa","niceone-sa"].includes(perfumeRoutes[0].store.id));
+const perfumeRoutes = routeFreeStorefronts("عطر", 12);
+assert.ok(["sephora-sa","niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0].store.id));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "niceone-sa"));
+assert.ok(perfumeRoutes.some((route) => route.store.id === "goldenscent-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "aliexpress-cn"));
 assert.ok(!perfumeRoutes.some((route) => route.store.id === "newegg-global"));
 
@@ -393,6 +394,27 @@ assert.ok(unknownRoutes.every((route) =>
 
 const namshiRoute = routeFreeStorefronts("نمشي فستان", 8);
 assert.equal(namshiRoute[0].store.id, "namshi-sa");
+
+const saudiBeautyRoutes = routeFreeStorefronts("عطر رجالي", 12);
+assert.ok(saudiBeautyRoutes.some((route) => route.store.id === "goldenscent-sa"));
+assert.ok(saudiBeautyRoutes.findIndex((route) => route.store.id === "goldenscent-sa") <
+  saudiBeautyRoutes.findIndex((route) => route.store.id === "aliexpress-cn"));
+
+const luxuryFashionRoutes = routeFreeStorefronts("designer shoes", 20);
+assert.ok(luxuryFashionRoutes.some((route) => route.store.id === "netaporter-global"));
+assert.ok(luxuryFashionRoutes.some((route) => route.store.id === "mytheresa-global"));
+assert.ok(luxuryFashionRoutes.some((route) => route.store.id === "ssense-global"));
+
+const sneakerRoutes = routeFreeStorefronts("nike shoes", 20);
+assert.ok(sneakerRoutes.some((route) => route.store.id === "stockx-global"));
+assert.ok(sneakerRoutes.some((route) => route.store.id === "goat-global"));
+
+const watchRoutes = routeFreeStorefronts("watch", 20);
+assert.ok(watchRoutes.some((route) => route.store.id === "jomashop-global"));
+
+const beautyGlobalRoutes = routeFreeStorefronts("skincare", 20);
+assert.ok(beautyGlobalRoutes.some((route) => route.store.id === "lookfantastic-global"));
+assert.ok(beautyGlobalRoutes.some((route) => route.store.id === "cultbeauty-global"));
 assert.ok(namshiRoute[0].reasons.includes("brand"));
 
 const decathlonRoute = routeFreeStorefronts("ديكاتلون running shoes", 8);

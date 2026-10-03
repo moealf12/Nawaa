@@ -323,7 +323,10 @@ export function queryMatchReasons(query, offer) {
     .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ');
   const capacities = storageText.match(/\b\d+(?:gb|tb)\b/g) || [];
   if (storage && capacities.some(value => value !== storage)) reasons.push('capacity_conflict');
-  if (!match.exactMatch || (model && !titleModels.includes(model))) reasons.push('query_mismatch');
+  // Generic brand/category searches should retain strongly relevant products;
+  // exact-match is reserved for model/variant-sensitive queries.
+  const genericIntent = !model && !storage;
+  if ((genericIntent ? match.matchConfidence < 0.65 : !match.exactMatch) || (model && !titleModels.includes(model))) reasons.push('query_mismatch');
   return reasons;
 }
 

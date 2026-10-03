@@ -239,6 +239,36 @@ export const DOMAIN_ADAPTERS = [
     skuKeys: ["sku","productId","product_id","code"],
     ...COMMON,
   },
+  {
+    id: "goldenscent",
+    hosts: ["goldenscent.com"],
+    titleKeys: ["productName","product_name","name","title"],
+    priceKeys: ["special_price","finalPrice","salePrice","sellingPrice","price","currentPrice"],
+    currencyKeys: ["currency","currencyCode","priceCurrency","currency_code"],
+    imageKeys: ["image","imageUrl","image_url","thumbnail","small_image","base_image"],
+    skuKeys: ["sku","productId","product_id","id"],
+    ...COMMON,
+  },
+  {
+    id: "lookfantastic",
+    hosts: ["lookfantastic.com"],
+    titleKeys: ["productName","product_name","name","title"],
+    priceKeys: ["offerPrice","salePrice","sellingPrice","price","currentPrice","priceData"],
+    currencyKeys: ["currency","currencyCode","priceCurrency","currencyIso"],
+    imageKeys: ["image","imageUrl","image_url","thumbnail","primaryImage","productImage"],
+    skuKeys: ["sku","productId","product_id","id"],
+    ...COMMON,
+  },
+  {
+    id: "cultbeauty",
+    hosts: ["cultbeauty.com"],
+    titleKeys: ["productName","product_name","name","title"],
+    priceKeys: ["offerPrice","salePrice","sellingPrice","price","currentPrice","priceData"],
+    currencyKeys: ["currency","currencyCode","priceCurrency","currencyIso"],
+    imageKeys: ["image","imageUrl","image_url","thumbnail","primaryImage","productImage"],
+    skuKeys: ["sku","productId","product_id","id"],
+    ...COMMON,
+  },
 ];
 
 export function findDomainAdapter(urlOrHost) {

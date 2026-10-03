@@ -106,6 +106,70 @@ const STORES = [
     search:(q)=>"https://niceonesa.com/en/search?q="+encodeURIComponent(q),
     productPath:/\/en\/[^?#]+-n\d+(?:[/?#]|$)/i,
   },
+  {
+    id:"goldenscent-sa", name:"Golden Scent", countryCode:"SA", countryNameAr:"السعودية", brands:["goldenscent"], categories:["beauty","perfume"],
+    search:(q)=>"https://www.goldenscent.com/en/search?q="+encodeURIComponent(q), productPath:/\/(?!catalog\/product\/)[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"ounass-sa", name:"Ounass", countryCode:"SA", countryNameAr:"السعودية", brands:["ounass"], categories:["clothing","shoes","bag","beauty","jewelry","watch"],
+    search:(q)=>"https://saudi.ounass.com/search?q="+encodeURIComponent(q), productPath:/\/shop-[^?#]+(?:[?#]|$)|\/product\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"sunandsand-sa", name:"Sun & Sand Sports", countryCode:"SA", countryNameAr:"السعودية", brands:["sunandsand"], categories:["sports","shoes","clothing","bag"],
+    search:(q)=>"https://en-sa.sssports.com/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"virgin-sa", name:"Virgin Megastore Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["virgin"], categories:["phone","laptop","audio","console","game","book","toy","accessory","other"],
+    search:(q)=>"https://www.virginmegastore.sa/en/search/?text="+encodeURIComponent(q), productPath:/\/p\/\d+(?:[/?#]|$)|\/[^?#]+\/p(?:[/?#]|$)/i,
+  },
+  {
+    id:"homecentre-sa", name:"Home Centre Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["homecentre"], categories:["furniture","home","kitchen","office"],
+    search:(q)=>"https://www.homecentre.com/sa/en/search?q="+encodeURIComponent(q), productPath:/\/sa\/en\/buy-[^?#]+\/p\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"mumzworld-sa", name:"Mumzworld", countryCode:"SA", countryNameAr:"السعودية", brands:["mumzworld"], categories:["baby","toy","clothing","grocery","other"],
+    search:(q)=>"https://www.mumzworld.com/sa-en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"netaporter-global", name:"NET-A-PORTER", countryCode:"GB", countryNameAr:"بريطانيا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
+    search:(q)=>"https://www.net-a-porter.com/en-sa/shop/search/"+encodeURIComponent(q), productPath:/\/shop\/product\/[^?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"mrporter-global", name:"MR PORTER", countryCode:"GB", countryNameAr:"بريطانيا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
+    search:(q)=>"https://www.mrporter.com/en-sa/mens/shop/search/"+encodeURIComponent(q), productPath:/\/mens\/product\/[^?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"mytheresa-global", name:"Mytheresa", countryCode:"DE", countryNameAr:"ألمانيا", categories:["clothing","shoes","bag","jewelry","watch"],
+    search:(q)=>"https://www.mytheresa.com/sa/en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)/i,
+  },
+  {
+    id:"ssense-global", name:"SSENSE", countryCode:"CA", countryNameAr:"كندا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
+    search:(q)=>"https://www.ssense.com/en-sa/men?q="+encodeURIComponent(q), productPath:/\/en-sa\/(?:men|women)\/product\/[^?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"jomashop-global", name:"Jomashop", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["watch","jewelry","perfume","bag","accessory"],
+    search:(q)=>"https://www.jomashop.com/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)/i,
+  },
+  {
+    id:"fragrancex-global", name:"FragranceX", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["perfume","beauty"],
+    search:(q)=>"https://www.fragrancex.com/search/search_results?search="+encodeURIComponent(q), productPath:/\/products\/[^?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"lookfantastic-global", name:"LOOKFANTASTIC", countryCode:"GB", countryNameAr:"بريطانيا", categories:["beauty","perfume"],
+    search:(q)=>"https://www.lookfantastic.com/search/?q="+encodeURIComponent(q), productPath:/\/p\/[^?#]+\/\d+(?:[/?#]|$)/i,
+  },
+  {
+    id:"cultbeauty-global", name:"Cult Beauty", countryCode:"GB", countryNameAr:"بريطانيا", categories:["beauty","perfume"],
+    search:(q)=>"https://www.cultbeauty.com/search/?q="+encodeURIComponent(q), productPath:/\/p\/[^?#]+\/\d+(?:[/?#]|$)/i,
+  },
+  {
+    id:"stockx-global", name:"StockX", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["shoes","clothing","bag","watch","accessory"],
+    search:(q)=>"https://stockx.com/search?s="+encodeURIComponent(q), productPath:/https?:\/\/stockx\.com\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"goat-global", name:"GOAT", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["shoes","clothing","accessory"],
+    search:(q)=>"https://www.goat.com/search?query="+encodeURIComponent(q), productPath:/\/sneakers\/[^/?#]+(?:[/?#]|$)|\/apparel\/[^/?#]+(?:[/?#]|$)/i,
+  },
 ];
 
 function decodeHtml(value = "") {
@@ -674,6 +738,12 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
     let url;
     try { url = new URL(decodeHtml(rawUrl).replace(/\\u002F/gi, "/").replace(/\\\//g, "/"), searchUrl).href; } catch { return; }
     if (!sameHost(url, searchUrl) || !store.productPath.test(url)) return;
+    // Product discovery must never promote static assets (images/fonts/etc.) to
+    // product pages even when a loose storefront regex happens to match them.
+    try {
+      const pathname = new URL(url).pathname.toLowerCase();
+      if (/\.(?:avif|gif|jpe?g|png|svg|webp|ico|woff2?|ttf|css|js)(?:\/)?$/.test(pathname)) return;
+    } catch { return; }
     const label = stripHtml(rawLabel);
     const haystack = normalizeSearchQuery(label + " " + url);
     const hits = tokens.filter((token) => haystack.includes(token)).length;
@@ -787,7 +857,7 @@ function routeScore(store, intent, normalizedQuery) {
   return { score, reasons, exactCategory, explicitBrand, broad };
 }
 
-export function routeFreeStorefronts(query) {
+export function routeFreeStorefronts(query, limit = Infinity) {
   const normalizedQuery = normalizeSearchQuery(query);
   const intent = parseSearchIntent(normalizedQuery);
   const routed = STORES
@@ -819,12 +889,13 @@ export function routeFreeStorefronts(query) {
       : (entry.broad || entry.explicitBrand || entry.reasons.includes("general_specialist"))
   );
 
-  return relevant.map((entry, index) => ({
+  const ranked = relevant.map((entry, index) => ({
     ...entry,
     rank:index + 1,
     category:intent.category || null,
     brand:intent.brand || null,
   }));
+  return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, Math.floor(limit))) : ranked;
 }
 
 export function selectedStores(query) {
