@@ -37,7 +37,7 @@ const state = {
   availability: "all",
   merchant: "all",
   category: "all",
-  visibleCount: 10,
+  visibleCounts: {},
   comparisonOpen: false,
   selectedGroupKey: null,
   requestId: 0,
@@ -864,8 +864,8 @@ function openProductDetails(product, offer, query) {
     },
     offer,
   };
-  sessionStorage.setItem("nawaa_product_detail", JSON.stringify(payload));
-  localStorage.setItem("nawaa_selected_offer", JSON.stringify(payload));
+  try { sessionStorage.setItem("nawaa_product_detail", JSON.stringify(payload)); } catch {}
+  try { localStorage.setItem("nawaa_selected_offer", JSON.stringify(payload)); } catch {}
   const params = new URLSearchParams();
   if (offer?.sourceUrl) params.set("source", offer.sourceUrl);
   if (query) params.set("q", query);
@@ -1034,7 +1034,7 @@ function renderProduct(product, query) {
       ${discoverySections.map(section=>`<button type="button" class="category-tab ${state.category === section.key ? 'active' : ''}" aria-pressed="${state.category === section.key}" data-category="${escapeHtml(section.key)}">${escapeHtml(section.label)} <span>${section.groups.length}</span></button>`).join('')}
     </nav>` : ''}
     ${displayedSections.map(section=>{
-      const limit = state.visibleCount;
+      const limit = state.visibleCounts[section.key] || 10;
       return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
         <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
         <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup)).join('')}</div>
@@ -1056,16 +1056,16 @@ function renderProduct(product, query) {
   `;
 
   els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
-    state.category=button.dataset.category; state.visibleCount=10; state.comparisonOpen=false; renderProduct(product,query);
+    state.category=button.dataset.category; state.comparisonOpen=false; renderProduct(product,query);
   }));
   els.results.querySelectorAll('.show-category').forEach(button=>button.addEventListener('click',()=>{
-    const sameCategory = state.category === button.dataset.showCategory;
-    state.category=button.dataset.showCategory; state.visibleCount=sameCategory ? state.visibleCount+10 : 10; renderProduct(product,query);
+    const category=button.dataset.showCategory;
+    state.visibleCounts[category]=(state.visibleCounts[category] || 10)+10; renderProduct(product,query);
   }));
   document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (event.target.isConnected === false) return; if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
-  $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
-  $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
-  $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
+  $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
+  $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
+  $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   els.results.querySelectorAll(".match-result-card").forEach((button) => {
     button.addEventListener("click", () => {
       const group = exactGroups.find((item) => item.key === button.dataset.groupKey);
@@ -1154,7 +1154,7 @@ async function runSearch(rawQuery) {
     state.availability = "all"; state.merchant = "all";
     state.variantSelections = {};
     state.selectorSelection = {};
-    state.category = "all"; state.visibleCount = 12; state.comparisonOpen = false; state.selectedGroupKey = null;
+    state.category = "all"; state.visibleCounts = {}; state.comparisonOpen = false; state.selectedGroupKey = null;
   }
   state.query = query;
   saveRecent(query);
