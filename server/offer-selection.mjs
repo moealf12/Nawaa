@@ -1,16 +1,15 @@
 // Balance merchants within relevance tiers, then preserve normal match/price ordering.
 export const offerMerchantKey = offer => JSON.stringify([offer.provider, offer.provider === "shopify" ? offer.providerMarket || offer.merchant || "unknown" : offer.merchant || offer.providerMarket || "unknown"]);
 const relevanceTier = offer => offer.exactMatch ? 3 : (offer.matchConfidence || 0) >= .65 ? 2 : (offer.matchConfidence || 0) > 0 ? 1 : 0;
-const GCC_COUNTRIES = new Set(["AE","KW","QA","BH","OM"]);
-const geographyTier = offer => offer.merchantCountryCode === "SA" ? 3 : GCC_COUNTRIES.has(offer.merchantCountryCode) ? 2 : 1;
 export function compareOffers(a,b) {
-  // Relevance is non-negotiable. Within comparable relevance, surface Saudi
-  // availability first, GCC second, then global offers; price breaks ties.
+  // Rank for shopper value: relevance first, then price. Geography is metadata,
+  // not a hard ordering rule; a better global/GCC offer must be allowed to win.
   const relevanceDelta = (b.matchConfidence || 0) - (a.matchConfidence || 0);
   if (Math.abs(relevanceDelta) >= 0.12) return relevanceDelta;
-  return geographyTier(b) - geographyTier(a) ||
-    relevanceDelta ||
-    (Number.isFinite(a.productPrice) ? a.productPrice : Infinity) - (Number.isFinite(b.productPrice) ? b.productPrice : Infinity);
+  const priceDelta =
+    (Number.isFinite(a.productPrice) ? a.productPrice : Infinity) -
+    (Number.isFinite(b.productPrice) ? b.productPrice : Infinity);
+  return relevanceDelta || priceDelta;
 }
 export function selectDiverseOffers(offers = [], limit = 120) {
   const cap = limit === Infinity ? Infinity : (Number.isFinite(limit) ? Math.max(0,Math.floor(limit)) : 120);
