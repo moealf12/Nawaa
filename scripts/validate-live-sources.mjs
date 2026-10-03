@@ -25,7 +25,11 @@ for (const [store, query] of CASES) {
     );
     const status = valid.length ? "LIVE_VALIDATED" : "PROBED";
     if (valid.length) live++;
-    rows.push({store,query,status,candidates:result.candidates,offers:offers.length,valid:valid.length,ms:Date.now()-started,error:result.diagnostics?.primarySearchError || null});
+    rows.push({store,query,status,candidates:result.candidates,offers:offers.length,valid:valid.length,ms:Date.now()-started,error:result.diagnostics?.primarySearchError || null,
+      candidateSamples:result.diagnostics?.candidateSamples || [],
+      failureSamples:result.diagnostics?.failureSamples || [],
+      unpricedSamples:result.diagnostics?.unpricedSamples || [],
+      queryFilter:result.diagnostics?.queryFilter || null});
   } catch (error) {
     rows.push({store,query,status:"PROBED_FAILED",candidates:0,offers:0,valid:0,ms:Date.now()-started,error:error?.message || String(error)});
   }
