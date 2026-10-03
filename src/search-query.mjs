@@ -83,7 +83,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   honor: ['phone','tablet','laptop','watch','audio'],
   oneplus: ['phone','tablet','audio'], oppo: ['phone','tablet','audio'],
   realme: ['phone','tablet','audio'], nokia: ['phone','tablet'],
-  swarovski: ['jewelry','watch','accessory'],
+  swarovski: ['jewelry','watch','other','accessory'],
   shein: ['clothing','shoes','bag','beauty','home','jewelry'],
   nike: ['shoes','clothing','sports'], adidas: ['shoes','clothing','sports'],
   zara: ['clothing','shoes','bag'], hm: ['clothing','home'], ikea: ['furniture','home','kitchen'],
