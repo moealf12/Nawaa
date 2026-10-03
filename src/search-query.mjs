@@ -250,7 +250,9 @@ const UNREQUESTED_VARIANT_TERMS = [
 export function assessOfferMatch(query, offer) {
   const intent = parseSearchIntent(query);
   const normalizedQuery = intent.providerQuery;
-  const semanticQuery = normalizedQuery.replace(PRODUCT_CATEGORIES.find(([key]) => key === intent.category)?.[2] || /$^/, " ");
+  const matchedCategory = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
+  const effectiveCategory = intent.category || matchedCategory?.[0] || null;
+  const semanticQuery = normalizedQuery.replace(matchedCategory?.[2] || /$^/, " ");
   const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
   const title = normalizeSearchQuery([offer?.title, offer?.productType, offer?.brand, offer?.vendor, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
@@ -259,7 +261,7 @@ export function assessOfferMatch(query, offer) {
   const hits = q.filter((token) => titleTokens.has(token)).length;
   let confidence = q.length ? hits / q.length : 1;
   const description = describeProduct(offer);
-  const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (intent.category && intent.category !== productCategory(offer)));
+  const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== productCategory(offer)));
   if (kindMismatch) confidence *= 0.2;
 
   const hasPhrase = (text, term) => (" " + text + " ").includes(" " + normalizeSearchQuery(term) + " ");
@@ -268,7 +270,7 @@ export function assessOfferMatch(query, offer) {
   // when the shopper actually asks for an accessory or the brand itself is accessory-led.
   const accessoryLedBrands = new Set(["logitech"]);
   const explicitAccessoryQuery = PRODUCT_CATEGORIES.find(([key]) => key === "accessory")?.[2]?.test(normalizedQuery) || false;
-  const queryHasAccessoryIntent = intent.category === "accessory" ||
+  const queryHasAccessoryIntent = effectiveCategory === "accessory" ||
     explicitAccessoryQuery ||
     ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
     (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
