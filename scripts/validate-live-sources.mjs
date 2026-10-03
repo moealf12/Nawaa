@@ -1,9 +1,9 @@
 import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
 
 const CASES = [
-  ["goldenscent-sa","dior perfume"],["ounass-sa","nike shoes"],["sunandsand-sa","nike shoes"],
-  ["virgin-sa","airpods"],["homecentre-sa","office chair"],["mumzworld-sa","baby stroller"],
-  ["netaporter-global","nike shoes"],["mrporter-global","nike shoes"],["mytheresa-global","nike shoes"],
+  ["goldenscent-sa","dior sauvage"],["ounass-sa","nike shoes"],["sunandsand-sa","nike shoes"],
+  ["virgin-sa","airpods"],["homecentre-sa","office chair"],["mumzworld-sa","stroller"],
+  ["netaporter-global","nike shoes"],["mrporter-global","nike shoes"],["mytheresa-global","gucci shoes"],
   ["ssense-global","nike shoes"],["jomashop-global","seiko watch"],["fragrancex-global","dior perfume"],
   ["lookfantastic-global","cerave cleanser"],["cultbeauty-global","niod serum"],["stockx-global","nike shoes"],["goat-global","nike shoes"],
 ];
