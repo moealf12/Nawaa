@@ -11,6 +11,8 @@ const CASES = [
   ["netaporter-global","nike shoes"],["mrporter-global","nike shoes"],["mytheresa-global","gucci shoes"],
   ["ssense-global","nike shoes"],["jomashop-global","seiko watch"],["fragrancex-global","dior perfume"],
   ["lookfantastic-global","cerave cleanser"],["cultbeauty-global","niod serum"],["stockx-global","nike shoes"],["goat-global","nike shoes"],
+  ["amazon-ae","airpods"],["noon-ae","airpods"],["sharafdg-ae","airpods"],
+  ["virgin-ae","airpods"],["xcite-kw","airpods"],["lulu-ae","airpods"],
 ];
 
 let live = 0;
