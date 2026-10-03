@@ -9,7 +9,8 @@
     "test:remediation": "node --test tests/source-remediation.test.mjs",
     "audit:source": "node scripts/audit-source.mjs",
     "audit:matrix": "node scripts/audit-matrix.mjs",
-    "benchmark:search": "node scripts/search-quality-benchmark.mjs"
+    "benchmark:search": "node scripts/search-quality-benchmark.mjs",
+    "validate:sources": "node scripts/validate-live-sources.mjs"
   },
   "engines": {
     "node": ">=22"
