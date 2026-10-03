@@ -844,7 +844,12 @@ function routeScore(store, intent, normalizedQuery) {
   if (exactCategory) { score += 65; reasons.push("category"); }
   else if (adjacentCategory) { score += 24; reasons.push("adjacent_category"); }
   if (broad) { score += 32; reasons.push("general_marketplace"); }
-  if (store.countryCode === "SA") { score += 18; reasons.push("saudi_first"); }
+  // Geographic trust ladder for Saudi shoppers:
+  // Saudi sources first, then GCC, then trusted global sources.
+  const GCC_COUNTRIES = new Set(["AE","KW","QA","BH","OM"]);
+  if (store.countryCode === "SA") { score += 70; reasons.push("geo_saudi"); }
+  else if (GCC_COUNTRIES.has(store.countryCode)) { score += 38; reasons.push("geo_gcc"); }
+  else { score += 8; reasons.push("geo_global"); }
   if (GENERAL_STORE_IDS.has(store.id)) score += 8;
 
   // Unknown/general queries should still have useful broad-market coverage,
@@ -878,6 +883,7 @@ export function routeFreeStorefronts(query, limit = Infinity) {
       b.score - a.score ||
       b.reliability.reliability - a.reliability.reliability ||
       Number(b.store.countryCode === "SA") - Number(a.store.countryCode === "SA") ||
+      Number(["AE","KW","QA","BH","OM"].includes(b.store.countryCode)) - Number(["AE","KW","QA","BH","OM"].includes(a.store.countryCode)) ||
       a.store.id.localeCompare(b.store.id)
     );
 
