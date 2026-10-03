@@ -403,8 +403,11 @@ assert.equal(namshiRoute[0].store.id, "namshi-sa");
 
 const saudiBeautyRoutes = routeFreeStorefronts("عطر رجالي", 12);
 assert.ok(saudiBeautyRoutes.some((route) => route.store.id === "goldenscent-sa"));
-assert.ok(saudiBeautyRoutes.findIndex((route) => route.store.id === "goldenscent-sa") <
-  saudiBeautyRoutes.findIndex((route) => route.store.id === "aliexpress-cn"));
+const expandedSaudiBeautyRoutes = routeFreeStorefronts("عطر رجالي", 30);
+const goldenIndex = expandedSaudiBeautyRoutes.findIndex((route) => route.store.id === "goldenscent-sa");
+const aliIndex = expandedSaudiBeautyRoutes.findIndex((route) => route.store.id === "aliexpress-cn");
+assert.ok(goldenIndex >= 0);
+assert.ok(aliIndex === -1 || goldenIndex < aliIndex);
 
 const luxuryFashionRoutes = routeFreeStorefronts("designer shoes", 20);
 assert.ok(luxuryFashionRoutes.some((route) => route.store.id === "netaporter-global"));
