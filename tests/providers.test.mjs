@@ -383,8 +383,14 @@ assert.ok(["sephora-sa","niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0]
 assert.ok(perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "niceone-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "goldenscent-sa"));
-assert.ok(perfumeRoutes.some((route) => route.store.id === "aliexpress-cn"));
+// Saudi and GCC sources intentionally outrank broad global marketplaces.
+// Global discovery remains available when the route window expands.
 assert.ok(!perfumeRoutes.some((route) => route.store.id === "newegg-global"));
+const expandedPerfumeRoutes = routeFreeStorefronts("عطر", 30);
+assert.ok(expandedPerfumeRoutes.some((route) => route.store.id === "aliexpress-cn"));
+const firstGlobal = expandedPerfumeRoutes.findIndex((route) => !["SA","AE","KW","QA","BH","OM"].includes(route.store.countryCode));
+const lastSaudi = Math.max(...expandedPerfumeRoutes.map((route,index) => route.store.countryCode === "SA" ? index : -1));
+assert.ok(firstGlobal === -1 || lastSaudi < firstGlobal);
 
 const unknownRoutes = routeFreeStorefronts("منتج غريب غير مصنف", 8);
 assert.ok(unknownRoutes.length >= 3);
