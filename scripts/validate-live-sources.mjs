@@ -3,10 +3,10 @@ import { searchFreeStorefrontById } from "../server/providers/free-storefronts.m
 const CASES = [
   ["goldenscent-sa","dior sauvage"],["ounass-sa","nike shoes"],["sunandsand-sa","nike shoes"],
   ["virgin-sa","airpods"],["homecentre-sa","office chair"],["mumzworld-sa","stroller"],
-  ["asos-global","nike shoes"],["farfetch-sa","gucci shoes"],["etsy-global","silver necklace"],
+  ["asos-global","nike air max"],["farfetch-sa","gucci shoes"],["etsy-global","silver necklace"],
   ["newegg-global","gaming laptop"],["bhphoto-us","canon camera"],["walmart-us","airpods"],
-  ["bestbuy-us","airpods"],["nike-sa","nike shoes"],["adidas-sa","adidas shoes"],
-  ["sephora-sa","dior perfume"],["namshi-sa","nike shoes"],["centrepoint-sa","office chair"],
+  ["bestbuy-us","apple airpods 4"],["nike-sa","nike shoes"],["adidas-sa","adidas shoes"],
+  ["sephora-sa","dior perfume"],["namshi-sa","nike v5 runner"],["centrepoint-sa","leather chair"],
   ["maxfashion-sa","men shoes"],["decathlon-sa","running shoes"],["niceone-sa","dior perfume"],
   ["netaporter-global","nike shoes"],["mrporter-global","nike shoes"],["mytheresa-global","gucci shoes"],
   ["ssense-global","nike shoes"],["jomashop-global","seiko watch"],["fragrancex-global","dior perfume"],
