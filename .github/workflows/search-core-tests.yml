@@ -50,6 +50,12 @@ on:
       - "server/providers/free-storefronts.mjs"
       - "server/providers/saudi-retailers.mjs"
       - "server/url-resolver.mjs"
+      - "server/shopify-page-variant.mjs"
+      - "server/product-variant.mjs"
+      - "server/product-identity.mjs"
+      - "server/product-reconciliation.mjs"
+      - "tests/price-identity.test.mjs"
+      - "tests/shopify.test.mjs"
       - "server/domain-adapters.mjs"
       - "tests/domain-adapters.test.mjs"
       - "tests/providers.test.mjs"
@@ -81,6 +87,16 @@ on:
       - "src/source-registry.mjs"
       - "tests/search-core.test.mjs"
       - "search.html"
+
+      - "server/url-resolver.mjs"
+      - "server/shopify-page-variant.mjs"
+      - "server/product-variant.mjs"
+      - "server/product-identity.mjs"
+      - "server/product-reconciliation.mjs"
+      - "server/providers/shopify.mjs"
+      - "tests/price-identity.test.mjs"
+      - "tests/shopify.test.mjs"
+      - ".github/workflows/search-core-tests.yml"
 
 permissions:
   contents: read
