@@ -130,6 +130,46 @@ const STORES = [
     id:"mumzworld-sa", name:"Mumzworld", countryCode:"SA", countryNameAr:"السعودية", brands:["mumzworld"], categories:["baby","toy","clothing","grocery","other"],
     search:(q)=>"https://www.mumzworld.com/sa-en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
   },
+  {
+    id:"netaporter-global", name:"NET-A-PORTER", countryCode:"GB", countryNameAr:"بريطانيا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
+    search:(q)=>"https://www.net-a-porter.com/en-sa/shop/search/"+encodeURIComponent(q), productPath:/\/shop\/product\/[^?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"mrporter-global", name:"MR PORTER", countryCode:"GB", countryNameAr:"بريطانيا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
+    search:(q)=>"https://www.mrporter.com/en-sa/mens/shop/search/"+encodeURIComponent(q), productPath:/\/mens\/product\/[^?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"mytheresa-global", name:"Mytheresa", countryCode:"DE", countryNameAr:"ألمانيا", categories:["clothing","shoes","bag","jewelry","watch"],
+    search:(q)=>"https://www.mytheresa.com/sa/en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)/i,
+  },
+  {
+    id:"ssense-global", name:"SSENSE", countryCode:"CA", countryNameAr:"كندا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
+    search:(q)=>"https://www.ssense.com/en-sa/men?q="+encodeURIComponent(q), productPath:/\/en-sa\/(?:men|women)\/product\/[^?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"jomashop-global", name:"Jomashop", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["watch","jewelry","perfume","bag","accessory"],
+    search:(q)=>"https://www.jomashop.com/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)/i,
+  },
+  {
+    id:"fragrancex-global", name:"FragranceX", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["perfume","beauty"],
+    search:(q)=>"https://www.fragrancex.com/search/search_results?search="+encodeURIComponent(q), productPath:/\/products\/[^?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"lookfantastic-global", name:"LOOKFANTASTIC", countryCode:"GB", countryNameAr:"بريطانيا", categories:["beauty","perfume"],
+    search:(q)=>"https://www.lookfantastic.com/search/?q="+encodeURIComponent(q), productPath:/\/p\/[^?#]+\/\d+(?:[/?#]|$)/i,
+  },
+  {
+    id:"cultbeauty-global", name:"Cult Beauty", countryCode:"GB", countryNameAr:"بريطانيا", categories:["beauty","perfume"],
+    search:(q)=>"https://www.cultbeauty.com/search/?q="+encodeURIComponent(q), productPath:/\/p\/[^?#]+\/\d+(?:[/?#]|$)/i,
+  },
+  {
+    id:"stockx-global", name:"StockX", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["shoes","clothing","bag","watch","accessory"],
+    search:(q)=>"https://stockx.com/search?s="+encodeURIComponent(q), productPath:/https?:\/\/stockx\.com\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"goat-global", name:"GOAT", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["shoes","clothing","accessory"],
+    search:(q)=>"https://www.goat.com/search?query="+encodeURIComponent(q), productPath:/\/sneakers\/[^/?#]+(?:[/?#]|$)|\/apparel\/[^/?#]+(?:[/?#]|$)/i,
+  },
 ];
 
 function decodeHtml(value = "") {
