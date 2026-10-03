@@ -95,7 +95,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|case|cover|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -142,6 +142,20 @@ export function categoryLabel(key) {
   return PRODUCT_CATEGORIES.find(([id])=>id===key)?.[1] || ({console:'أجهزة ألعاب',game:'ألعاب',accessory:'ملحقات وإكسسوارات',other:'منتجات أخرى'})[key] || 'منتجات أخرى';
 }
 
+const MODEL_PATTERN = /\b(?:iphone (?:air|\d+)(?: pro(?: max)?| plus)?|galaxy s\d+(?: ultra| plus| fe)?|ps\d+(?: slim| pro)?|airpods(?: pro)?(?: \d+)?|dyson v\d+)\b/;
+
+function explicitModels(value) {
+  // Preserve merchant line/option boundaries before punctuation normalization
+  // can turn "Galaxy S25 - Ultra Hybrid" into a different device model.
+  return String(value).split(/\s+[-–—|·]\s+|\s*\/\s*/).flatMap(segment=>{
+    const text=normalizeSearchQuery(segment);
+    return [...text.matchAll(new RegExp(MODEL_PATTERN.source,'g'))]
+      .filter(match=>!(/^\s+series\b/.test(text.slice(match.index+match[0].length)) &&
+        /^(?:iphone \d+|galaxy s\d+|ps\d+|airpods(?: \d+)?|dyson v\d+)$/.test(match[0])))
+      .map(match=>match[0]);
+  });
+}
+
 export function parseSearchIntent(value = "") {
   const normalizedQuery = normalizeSearchQuery(value);
   const brand = Object.keys(BRAND_CATEGORY_PRIORITIES).find(name => (' '+normalizedQuery+' ').includes(' '+name+' ')) || null;
@@ -154,7 +168,7 @@ export function parseSearchIntent(value = "") {
   return {
     normalizedQuery,
     providerQuery: normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim(),
-    model: normalizedQuery.match(/\b(?:iphone (?:air|\d+)(?: pro(?: max)?| plus)?|galaxy s\d+(?: ultra| plus| fe)?|ps\d+(?: slim| pro)?|airpods(?: pro)?(?: \d+)?|dyson v\d+)\b/)?.[0] || null,
+    model: normalizedQuery.match(MODEL_PATTERN)?.[0] || null,
     storage: normalizedQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
     color: normalizedQuery.match(/\b(?:mist blue|desert titanium|natural titanium|black titanium|white titanium|cosmic orange|deep blue|black|white|lavender|sage|silver|gold|blue|green)\b/)?.[0] || null,
     condition,
@@ -238,7 +252,7 @@ export function assessOfferMatch(query, offer) {
   const normalizedQuery = intent.providerQuery;
   const semanticQuery = normalizedQuery.replace(PRODUCT_CATEGORIES.find(([key]) => key === intent.category)?.[2] || /$^/, " ");
   const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
-  const title = normalizeSearchQuery([offer?.title, offer?.productType, offer?.brand, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
+  const title = normalizeSearchQuery([offer?.title, offer?.productType, offer?.brand, offer?.vendor, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
@@ -254,8 +268,10 @@ export function assessOfferMatch(query, offer) {
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.35;
 
   const queryTokens = new Set(q);
-  const hasUnrequestedVariant = intent.discoveryMode === "specific" && UNREQUESTED_VARIANT_TERMS.some(
-    (term) => titleTokens.has(term) && !queryTokens.has(term)
+  const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
+    intent.model && intent.category === 'accessory'
+      ? explicitModels([offer?.title,offer?.specs?.deviceType,offer?.specs?.series].filter(Boolean).join(' ')).some(model=>model!==intent.model)
+      : UNREQUESTED_VARIANT_TERMS.some((term) => titleTokens.has(term) && !queryTokens.has(term))
   );
   if (hasUnrequestedVariant) confidence *= 0.82;
 
@@ -299,15 +315,15 @@ export function queryMatchReasons(query, offer) {
   const reasons = [];
   const match = assessOfferMatch(query, offer);
   const { model, storage } = parseSearchIntent(query);
-  const title = normalizeSearchQuery([offer?.title, offer?.specs?.deviceType].filter(Boolean).join(' '));
   const models = [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
-    .filter(Boolean).map(value => parseSearchIntent(value).model).filter(Boolean);
+    .filter(Boolean).flatMap(explicitModels);
+  const titleModels = [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels);
   if (model && models.some(value => value !== model)) reasons.push('model_conflict');
   const storageText = normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
     .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ');
   const capacities = storageText.match(/\b\d+(?:gb|tb)\b/g) || [];
   if (storage && capacities.some(value => value !== storage)) reasons.push('capacity_conflict');
-  if (!match.exactMatch || (model && !(' ' + title + ' ').includes(' ' + normalizeSearchQuery(model) + ' '))) reasons.push('query_mismatch');
+  if (!match.exactMatch || (model && !titleModels.includes(model))) reasons.push('query_mismatch');
   return reasons;
 }
 

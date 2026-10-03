@@ -1,5 +1,5 @@
 import { moneyToSAR } from "../fx.mjs";
-import { normalizeSearchQuery } from "../../src/search-query.mjs";
+import { normalizeSearchQuery, queryMatchReasons } from "../../src/search-query.mjs";
 
 function relevantProduct(query, product) {
   const normalized = normalizeSearchQuery(query);
@@ -45,21 +45,28 @@ export async function searchShopifyStore(query, store, {limit = 5, fetchImpl = f
     if(typeof handle !== "string" || !/^[a-zA-Z0-9_-]{1,250}$/.test(handle)) throw new Error("Invalid product handle");
     const product = await get(`${baseUrl}/products/${encodeURIComponent(handle)}.js`);
     if (!relevantProduct(query, product)) return [];
-    const variants = (product.variants || []).filter(v => v.available === true && Number.isSafeInteger(v.price) && v.price >= 0 && v.id != null).slice(0,3);
+    const variantDetails = variant => ({
+      title:`${product.title || suggestion.title || ""}${variant.title && variant.title !== "Default Title" ? ` · ${variant.title}` : ""}`,
+      vendor:product.vendor || suggestion.vendor || null,
+      brand:typeof product.brand === 'string' ? product.brand : product.brand?.name || null,
+      productType:product.type || suggestion.type || null,
+      specs:Object.fromEntries((product.options || []).map((option,i)=>[typeof option === "string" ? option : option.name, variant.options?.[i]]).filter(([key,value])=>key && value)),
+      condition:'new',
+    });
+    const variants = (product.variants || [])
+      .filter(v => v.available === true && Number.isSafeInteger(v.price) && v.price >= 0 && v.id != null)
+      .filter(v => queryMatchReasons(query,variantDetails(v)).length === 0).slice(0,3);
     return Promise.all(variants.map(async variant => {
       const rawPrice = variant.price / 100;
       const priceSAR = await convertMoney(rawPrice,currency).catch(()=>null);
       const sourceUrl = new URL(`${baseUrl}/products/${encodeURIComponent(handle)}`);
       sourceUrl.searchParams.set("variant", String(variant.id));
       const image = variant.featured_image?.src || variant.featured_image?.url || product.featured_image || suggestion.featured_image?.url || suggestion.image || null;
-      const optionTitle = variant.title && variant.title !== "Default Title" ? ` · ${variant.title}` : "";
       return {
         provider:"shopify", providerMarket:store.id || store.name, merchant:store.name,
         merchantCountryCode:String(store.countryCode).toUpperCase(), merchantCountryNameAr:store.countryNameAr || store.countryCode,
         sourceUrl:sourceUrl.href, image:image ? new URL(image,baseUrl).href : null,
-        title:`${product.title || suggestion.title || ""}${optionTitle}`, brand:product.vendor || suggestion.vendor || null,
-        productType:product.type || suggestion.type || null, sku:variant.sku || null,
-        specs:Object.fromEntries((product.options || []).map((option,i)=>[typeof option === "string" ? option : option.name, variant.options?.[i]]).filter(([key,value])=>key && value)),
+        ...variantDetails(variant), sku:variant.sku || null,
         condition:"new", availability:"in_stock",
         canShipToSaudi:store.saudiDelivery === "native" ? true : null,
         directShippingToSaudi:store.saudiDelivery === "forwarding_required" ? false : null,

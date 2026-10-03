@@ -9,6 +9,31 @@ import * as queries from "../src/search-query.mjs";
 
 const iphone = { title: "Apple iPhone 17 Pro Max, 256 GB, Black", condition: "new" };
 
+test('accessory line name and plural case type do not replace the explicit device model',()=>{
+ const base={title:'iPhone 17 Series - Ultra Hybrid (Mag Fit) · iPhone 17 / Clear White / In Stock',productType:'Clear Cases',condition:'new'};
+ assert.equal(queries.productCategory(base),'accessory');
+ assert.deepEqual(queries.queryMatchReasons('iPhone 17 case',base),[]);
+ const max={...base,title:'iPhone 17 Series - Ultra Hybrid (Mag Fit) · iPhone 17 Pro Max / Clear White / In Stock'};
+ assert.ok(queries.queryMatchReasons('iPhone 17 case',max).includes('model_conflict'));
+ const pro={...base,title:'iPhone 17 Series - Ultra Hybrid (Mag Fit) · iPhone 17 Pro / Clear White / In Stock'};
+ assert.deepEqual(queries.queryMatchReasons('iPhone 17 Pro case',pro),[]);
+ assert.ok(queries.queryMatchReasons('Galaxy S25 case',{...base,title:'Galaxy S25 Ultra Case'}).includes('model_conflict'));
+ assert.ok(queries.queryMatchReasons('iPhone 17 case',{...base,title:'iPhone 17 Series - Ultra Hybrid (Mag Fit)'}).includes('query_mismatch'));
+ assert.ok(queries.queryMatchReasons('iPhone 17 case',{...base,title:'iPhone 17 Case for iPhone 16'}).includes('model_conflict'));
+ assert.equal(queries.productCategory({...base,productType:'Clear Covers',title:'iPhone 17 Cover'}),'accessory');
+});
+test('Series labels preserve qualified model conflicts and requested qualified variants',()=>{
+ const offer={title:'iPhone 17 Case for iPhone 17 Pro Max Series',productType:'Clear Cases',condition:'new'};
+ assert.ok(queries.queryMatchReasons('iPhone 17 case',offer).includes('model_conflict'));
+ assert.deepEqual(queries.queryMatchReasons('iPhone 17 Pro Max case',{...offer,title:'iPhone 17 Pro Max Series Case'}),[]);
+ assert.ok(queries.queryMatchReasons('Galaxy S25 case',{...offer,title:'Galaxy S25 Case for Galaxy S25 Ultra Series'}).includes('model_conflict'));
+});
+test('Galaxy accessory line separators do not fabricate an Ultra device suffix',()=>{
+ const offer={title:'Galaxy S25 - Ultra Hybrid Case',productType:'Clear Cases',condition:'new'};
+ assert.deepEqual(queries.queryMatchReasons('Galaxy S25 case',offer),[]);
+ assert.ok(queries.queryMatchReasons('Galaxy S25 case',{...offer,title:'Galaxy S25 Ultra Case'}).includes('model_conflict'));
+});
+
 test("PS5 device search rejects games, controllers and accessories despite platform keywords", () => {
   for (const title of ["PS5 EA SPORTS FC 25", "Sony PS5 Dual Sense Edge Stick Module Black", "Grand Theft Auto V, PlayStation 5 (Games)", "Sony DualSense Charging Station for PlayStation 5", "Sony PS5 Media Remote", "Sony PS5 HD Camera", "PS5, Ghost of Yotei", "Sony Console Slim Cover PlayStation 5"])
     assert.equal(assessOfferMatch("ps5", {title,condition:"new"}).exactMatch,false,title);
@@ -218,4 +243,3 @@ test('marketplace title condition overrides optimistic API condition',async()=>{
  assert.equal(match.exactMatch,false);
  assert.equal(match.matchReason,'حالة المنتج تختلف عن المطلوب');
 });
-
