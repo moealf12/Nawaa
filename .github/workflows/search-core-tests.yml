@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
     paths:
+      - "server/audit-contract.mjs"
+      - "server/source-config.mjs"
+      - "server/source-probe.mjs"
+      - "scripts/audit-source.mjs"
+      - "tests/audit-contract.test.mjs"
+      - "tests/source-probe.test.mjs"
+      - "tests/audit-cli.test.mjs"
       - "src/search-query.mjs"
       - "tests/regressions.test.mjs"
       - "tests/source-coverage.test.mjs"
@@ -43,6 +50,13 @@ on:
       - ".github/workflows/search-core-tests.yml"
   pull_request:
     paths:
+      - "server/audit-contract.mjs"
+      - "server/source-config.mjs"
+      - "server/source-probe.mjs"
+      - "scripts/audit-source.mjs"
+      - "tests/audit-contract.test.mjs"
+      - "tests/source-probe.test.mjs"
+      - "tests/audit-cli.test.mjs"
       - "src/search-query.mjs"
       - "tests/regressions.test.mjs"
       - "tests/ui-flow.test.mjs"

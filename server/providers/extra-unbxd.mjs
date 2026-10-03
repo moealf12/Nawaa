@@ -150,7 +150,8 @@ export async function searchExtraUnbxd(query, limit = 12) {
   }
 
   const data = await response.json();
-  const products = Array.isArray(data?.response?.products) ? data.response.products : [];
+  if(!Array.isArray(data?.response?.products)) throw new Error("extra-unbxd: Malformed product response");
+  const products = data.response.products;
   const offers = products.map(normalizeProduct).filter(Boolean);
 
   return {
@@ -158,6 +159,6 @@ export async function searchExtraUnbxd(query, limit = 12) {
     ok: offers.length > 0,
     searchedMarkets: [{ id: "extra-sa", countryCode: "SA", countryNameAr: "السعودية" }],
     offers,
-    errors: offers.length ? [] : [{ market: "extra-sa", error: "No live products returned" }],
+    errors: products.length && !offers.length ? [{ market: "extra-sa", error: "No valid live products returned" }] : [],
   };
 }

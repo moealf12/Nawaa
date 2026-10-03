@@ -1,5 +1,6 @@
 import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
-import { buildSourceRegistry, sourceCoverageSummary } from "../src/source-registry.mjs";
+import { sourceCoverageSummary } from "../src/source-registry.mjs";
+import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import http from "node:http";
 import { createReadStream } from "node:fs";
@@ -68,19 +69,6 @@ async function serveStaticFile(req, res, pathname) {
   } catch {
     return false;
   }
-}
-
-function configuredProviders() {
-  return ["extra-unbxd", "jarir-direct", "sharafdg-algolia", "swarovski-direct",
-    ...(amazonCreatorsConfigured() ? configuredAmazonCreatorMarkets().map((market) => "amazon-creators:" + market.id) : []),
-    ...configuredFreeStorefronts().map((store) => "free-storefronts:" + store.id),
-    ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
-    ...(noonConfigured() ? ["noon-catalog"] : []),
-    ...(ebayConfigured() ? ["ebay"] : []),
-    ...(shopifyConfigured() ? ["shopify"] : [])];
-}
-function currentSources() {
-  return buildSourceRegistry({configuredProviders:configuredProviders(),shopifyStores:configuredShopifyStores()});
 }
 
 function providerTasks(providerQuery) {

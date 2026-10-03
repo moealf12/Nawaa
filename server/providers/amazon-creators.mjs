@@ -202,7 +202,7 @@ async function searchMarket(query, market, token, limit) {
 }
 
 export async function searchAmazonCreators(query, options = {}) {
-  const markets = configuredAmazonCreatorMarkets();
+  const markets = configuredAmazonCreatorMarkets().filter(market=>!options.marketId || market.id === options.marketId);
   if (!amazonCreatorsConfigured() || !markets.length) {
     return { provider:"amazon-creators", ok:false, searchedMarkets:[], offers:[], errors:[] };
   }
