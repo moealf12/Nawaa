@@ -1088,12 +1088,16 @@ export function configuredFreeStorefronts() {
 }
 
 export async function searchFreeStorefronts(query, options = {}) {
-  const routes = routeFreeStorefronts(query);
+  // Search a broad merchant set, but bound product-page fan-out per merchant.
+  // Diversity comes from more stores, not dozens of serial product resolutions inside one store.
+  const requestedStoreLimit = Number(options.storeLimit);
+  const storeLimit = Number.isFinite(requestedStoreLimit) && requestedStoreLimit > 0 ? requestedStoreLimit : 16;
+  const routes = routeFreeStorefronts(query, storeLimit);
   const stores = routes.map((entry) => entry.store);
   const requestedPerStore = Number(options.perStore);
   const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0
     ? requestedPerStore
-    : Infinity;
+    : 4;
   const settled = await Promise.allSettled(stores.map((store) => searchStore(store, query, perStore, options.matchingQuery || query)));
   const offers = [];
   const errors = [];
