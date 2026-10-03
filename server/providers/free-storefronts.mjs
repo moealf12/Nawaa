@@ -851,7 +851,7 @@ function routeScore(store, intent, normalizedQuery) {
   return { score, reasons, exactCategory, explicitBrand, broad };
 }
 
-export function routeFreeStorefronts(query) {
+export function routeFreeStorefronts(query, limit = Infinity) {
   const normalizedQuery = normalizeSearchQuery(query);
   const intent = parseSearchIntent(normalizedQuery);
   const routed = STORES
@@ -883,12 +883,13 @@ export function routeFreeStorefronts(query) {
       : (entry.broad || entry.explicitBrand || entry.reasons.includes("general_specialist"))
   );
 
-  return relevant.map((entry, index) => ({
+  const ranked = relevant.map((entry, index) => ({
     ...entry,
     rank:index + 1,
     category:intent.category || null,
     brand:intent.brand || null,
   }));
+  return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, Math.floor(limit))) : ranked;
 }
 
 export function selectedStores(query) {
