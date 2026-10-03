@@ -269,6 +269,26 @@ export const DOMAIN_ADAPTERS = [
     skuKeys: ["sku","productId","product_id","id"],
     ...COMMON,
   },
+  {
+    id: "virginmegastore",
+    hosts: ["virginmegastore.ae","virginmegastore.sa"],
+    titleKeys: ["productName","product_name","name","title"],
+    priceKeys: ["formattedValue","value","priceValue","salePrice","sellingPrice","finalPrice","currentPrice","price"],
+    currencyKeys: ["currencyIso","currencyCode","priceCurrency","currency"],
+    imageKeys: ["image","imageUrl","image_url","url","thumbnail","primaryImage","productImage"],
+    skuKeys: ["code","sku","productId","product_id","id"],
+    ...COMMON,
+  },
+  {
+    id: "noon",
+    hosts: ["noon.com"],
+    titleKeys: ["name","title","productName","product_name"],
+    priceKeys: ["sale_price","salePrice","offer_price","offerPrice","price","currentPrice"],
+    currencyKeys: ["currency","currencyCode","priceCurrency","currency_code"],
+    imageKeys: ["image","imageUrl","image_url","url","thumbnail"],
+    skuKeys: ["sku","productId","product_id","id","sku_code"],
+    ...COMMON,
+  },
 ];
 
 export function findDomainAdapter(urlOrHost) {
