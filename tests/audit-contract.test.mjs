@@ -13,6 +13,34 @@ const fixture = (overrides = {}) => ({
 });
 const probe = (offers, extra = {}) => async () => ({offers,errors:[],...extra});
 
+test('page diagnosis distinguishes invalid data, identity, price and currency without raw errors',async()=>{
+  const cases=[
+    [fixture({productPrice:null}), 'PAGE_DATA_INVALID', 'invalid_price_sar'],
+    [fixture({sourceUrl:'https://another.example/product/1'}),'PAGE_IDENTITY_MISMATCH',null],
+    [fixture({productPrice:3100,originalProductPrice:3100}),'PAGE_PRICE_CHANGED',null],
+    [fixture({originalCurrency:'USD',originalProductPrice:800,fx:{rate:3.75,source:'fixture',observedAt:'2026-10-03T00:00:00Z'}}),'PAGE_CURRENCY_CHANGED',null],
+  ];
+  for(const [resolved,code,reason] of cases){
+    const r=await auditSource({source,query:'iPhone 17 256GB',search:probe([fixture()]),verifyPage:async()=>resolved});
+    assert.equal(r.status,'PAGE_VERIFICATION_FAILED');assert.equal(r.pageChecks?.[0]?.code,code);
+    assert.equal(r.pageChecks[0].status,'failed');assert.equal(r.pageChecks[0].sampleIndex,0);
+    if(reason) assert.ok(r.pageChecks[0].reasons.includes(reason));
+  }
+});
+test('page transport diagnosis exposes allowlisted codes rather than exception text',async()=>{
+  for(const [error,code] of [[Object.assign(new Error('fetch failed secret-token'),{cause:{code:'ENOTFOUND'}}),'DNS_LOOKUP_FAILED'],[new Error('URL is not an HTML product page secret-token'),'PAGE_NOT_HTML'],[new Error('Product page is too large secret-token'),'PAGE_TOO_LARGE'],[new Error('Product page returned 403 secret-token'),'HTTP_403']]){
+    const r=await auditSource({source,query:'iPhone 17 256GB',search:probe([fixture()]),verifyPage:async()=>{throw error;}});
+    assert.equal(r.pageChecks?.[0]?.code,code);assert.ok(!JSON.stringify(r).includes('secret-token'));
+  }
+});
+test('provider filter counts survive empty output while upstream failures still fail the control',async()=>{
+  const queryFilter={input:18,retained:0,removed:18};
+  const r=await auditSource({source,query:'nawaa-unfindable-943271',expected:'empty',search:probe([],{diagnostics:{queryFilter}})});
+  assert.equal(r.status,'NEGATIVE_CONTROL_PASS');assert.deepEqual(r.providerQueryFilter,queryFilter);
+  const denied=await auditSource({source,query:'nawaa-unfindable-943271',expected:'empty',search:probe([],{diagnostics:{queryFilter},errors:[{error:'HTTP 503'}]})});
+  assert.equal(denied.status,'FETCH_FAILED');assert.deepEqual(denied.providerQueryFilter,queryFilter);
+});
+
 test("accepts a matching advertised price without inventing missing image or delivered cost", () => {
   const r=validateAuditOffer("iPhone 17 256GB",fixture());
   assert.equal(r.accepted,true);

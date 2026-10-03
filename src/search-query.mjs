@@ -293,6 +293,29 @@ export function buildComparisonQuery(offer = {}) {
   return (model ? [model, storage, color].filter(Boolean).join(" ") : title).slice(0, 180).trim();
 }
 
+// Shared by provider output and the stricter source audit. Metadata may not
+// hide a contradictory model or storage capacity explicitly present in a title.
+export function queryMatchReasons(query, offer) {
+  const reasons = [];
+  const match = assessOfferMatch(query, offer);
+  const { model, storage } = parseSearchIntent(query);
+  const title = normalizeSearchQuery([offer?.title, offer?.specs?.deviceType].filter(Boolean).join(' '));
+  const models = [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
+    .filter(Boolean).map(value => parseSearchIntent(value).model).filter(Boolean);
+  if (model && models.some(value => value !== model)) reasons.push('model_conflict');
+  const storageText = normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
+    .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ');
+  const capacities = storageText.match(/\b\d+(?:gb|tb)\b/g) || [];
+  if (storage && capacities.some(value => value !== storage)) reasons.push('capacity_conflict');
+  if (!match.exactMatch || (model && !(' ' + title + ' ').includes(' ' + normalizeSearchQuery(model) + ' '))) reasons.push('query_mismatch');
+  return reasons;
+}
+
+export function filterQueryOffers(query, offers) {
+  const retained = offers.filter(offer => queryMatchReasons(query, offer).length === 0);
+  return { offers: retained, queryFilter: { input: offers.length, retained: retained.length, removed: offers.length - retained.length } };
+}
+
 function comparisonUrl(value) {
   try {
     const url = new URL(value);

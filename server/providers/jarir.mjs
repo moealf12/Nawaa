@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { filterQueryOffers } from "../../src/search-query.mjs";
 
 // Constructor index keys are public browser-side identifiers, not API tokens.
 // Jarir exposes this English index key in its public storefront configuration.
@@ -82,7 +83,7 @@ function normalizeJarirConstructorResult(result) {
   const observedAt = new Date().toISOString();
 
   return {
-    provider: "jarir-constructor",
+    provider: "jarir-direct",
     providerMarket: "jarir-sa",
     merchant: "Jarir",
     merchantCountryCode: "SA",
@@ -174,7 +175,7 @@ export function parseJarirSearchHtml(html, limit = 24) {
     const observedAt = new Date().toISOString();
 
     offers.push({
-      provider: "jarir-html-fallback",
+      provider: "jarir-direct",
       providerMarket: "jarir-sa",
       merchant: "Jarir",
       merchantCountryCode: "SA",
@@ -243,6 +244,8 @@ async function searchViaConstructor(query, limit) {
   if (!response.ok) throw new Error("jarir-constructor: HTTP " + response.status);
 
   const payload = await response.json();
+  if (!Array.isArray(payload?.response?.results)) throw new Error("jarir-constructor: Malformed product response");
+  if (payload.response.results.length && !parseJarirConstructorPayload(payload, limit).length) throw new Error("jarir-constructor: No valid live products returned");
   return parseJarirConstructorPayload(payload, limit);
 }
 
@@ -263,35 +266,36 @@ async function searchViaHtml(query, limit) {
   return parseJarirSearchHtml(html, limit);
 }
 
-export async function searchJarir(query, limit = 24) {
+export async function searchJarir(query, limit = 24, matchingQuery = query) {
   const capped = Math.max(1, Math.min(48, limit));
   const errors = [];
 
   try {
-    const offers = await searchViaConstructor(query, capped);
-    if (offers.length) {
-      return {
+    const raw = await searchViaConstructor(query, capped);
+    const {offers,queryFilter} = filterQueryOffers(matchingQuery, raw);
+    return {
         provider: "jarir-direct",
-        ok: true,
+        ok: offers.length > 0,
         searchedMarkets: [{ id: "jarir-sa", countryCode: "SA", countryNameAr: "السعودية" }],
         offers,
         errors: [],
+        diagnostics: {queryFilter},
       };
-    }
-    errors.push({ market: "jarir-sa", error: "Constructor returned no products" });
   } catch (error) {
     errors.push({ market: "jarir-sa", error: error?.message || String(error) });
   }
 
   try {
-    const offers = await searchViaHtml(query, capped);
-    if (offers.length) {
+    const raw = await searchViaHtml(query, capped);
+    const {offers,queryFilter} = filterQueryOffers(matchingQuery, raw);
+    if (raw.length) {
       return {
         provider: "jarir-direct",
-        ok: true,
+        ok: offers.length > 0,
         searchedMarkets: [{ id: "jarir-sa", countryCode: "SA", countryNameAr: "السعودية" }],
         offers,
         errors,
+        diagnostics: {queryFilter},
       };
     }
     errors.push({ market: "jarir-sa", error: "HTML fallback returned no products" });

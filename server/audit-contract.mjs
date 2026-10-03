@@ -1,5 +1,5 @@
 import net from "node:net";
-import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent } from "../src/search-query.mjs";
+import { normalizeSearchQuery, queryMatchReasons } from "../src/search-query.mjs";
 import { toNawaaProduct } from "./nawaa-extractor.mjs";
 import { compareProductIdentity } from "./product-identity.mjs";
 
@@ -35,16 +35,7 @@ export function validateAuditOffer(query, input) {
   if(typeof offer.merchant !== "string" || !offer.merchant.trim()) reasons.push("missing_merchant");
   if(!/^[A-Z]{2}$/.test(offer.merchantCountryCode || "")) reasons.push("missing_country");
   if(typeof offer.title === "string") {
-    const match = assessOfferMatch(query,offer);
-    const {model,storage:requestedStorage} = parseSearchIntent(query);
-    const title = normalizeSearchQuery([offer.title,offer.specs?.deviceType].filter(Boolean).join(" "));
-    const models=[offer.title,offer.specs?.deviceType,offer.specs?.series,offer.specs?.modelNumber].filter(Boolean).map(value=>parseSearchIntent(value).model).filter(Boolean);
-    if(model && models.some(value=>value !== model)) reasons.push("model_conflict");
-    // Explicit RAM quantities are not storage. Unlabeled conflicting capacities remain ambiguous.
-    const storageText=normalizeSearchQuery([offer.title,offer.specs?.storage].filter(Boolean).join(" ")).replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g," ");
-    const capacities=storageText.match(/\b\d+(?:gb|tb)\b/g) || [];
-    if(requestedStorage && capacities.some(value=>value !== requestedStorage)) reasons.push("capacity_conflict");
-    if(!match.exactMatch || (model && !(" "+title+" ").includes(" "+normalizeSearchQuery(model)+" "))) reasons.push("query_mismatch");
+    reasons.push(...queryMatchReasons(query,offer));
   }
   for(const field of costFields) {
     if(offer[field] != null && !nonnegative(offer[field])) reasons.push("invalid_cost:"+field);
@@ -73,6 +64,13 @@ export function auditFailureCode(error) {
   const status = message.match(/\b(4\d\d|5\d\d)\b/)?.[1];
   if(status) return "HTTP_"+status;
   if(/challenge|captcha|blocked|risk[- ]?control/i.test(message)) return "ACCESS_BLOCKED";
+  const transportCode=error?.cause?.code || error?.code;
+  if(["ENOTFOUND","EAI_AGAIN"].includes(transportCode)) return "DNS_LOOKUP_FAILED";
+  if(["ECONNRESET","ECONNREFUSED","UND_ERR_SOCKET"].includes(transportCode)) return "CONNECTION_FAILED";
+  if(/not an HTML product page/i.test(message)) return "PAGE_NOT_HTML";
+  if(/Product page is too large/i.test(message)) return "PAGE_TOO_LARGE";
+  if(/Private\/internal addresses|Only HTTPS|Non-standard ports|Invalid product URL/i.test(message)) return "UNSAFE_PAGE_URL";
+  if(/Too many redirects|Redirect without location/i.test(message)) return "PAGE_REDIRECT_FAILED";
   return "UPSTREAM_ERROR";
 }
 
@@ -125,6 +123,10 @@ export async function auditSource({source,query,search,verifyPage=null,revision=
     return finish(failureStatus(report.failureCode));
   }
   const raw=result.offers;
+  const queryFilter=result.diagnostics?.queryFilter;
+  if(queryFilter && [queryFilter.input,queryFilter.retained,queryFilter.removed].every(n=>Number.isSafeInteger(n) && n>=0) && queryFilter.retained===raw.length && queryFilter.input===queryFilter.retained+queryFilter.removed) {
+    report.providerQueryFilter={input:queryFilter.input,retained:queryFilter.retained,removed:queryFilter.removed};
+  }
   report.counts={raw:raw.length,accepted:0,rejected:0,duplicates:0};
   report.errorCodes=(Array.isArray(result.errors) ? result.errors : []).map(auditFailureCode);
   if(result.diagnostics?.primarySearchError) report.errorCodes.push(auditFailureCode(result.diagnostics.primarySearchError));
@@ -160,22 +162,30 @@ export async function auditSource({source,query,search,verifyPage=null,revision=
   if(verifyPage) {
     const page={attempted:0,verified:0,failed:0};
     report.pageVerification=page;
+    report.pageChecks=[];
     for(const {offer} of accepted.slice(0,sampleLimit)) {
+      const detail={sampleIndex:page.attempted,status:"failed",code:null,reasons:[]};
       page.attempted++;
       try {
         const resolved=await beforeDeadline(()=>verifyPage(offer.sourceUrl),deadline);
         const validation=validateAuditOffer(query,resolved);
-        if(!validation.accepted || !matchingPage(offer,resolved)) throw new Error("Product identity verification failed");
-        if(resolved.originalCurrency !== offer.originalCurrency || (Number.isFinite(offer.originalProductPrice) && Number.isFinite(resolved.originalProductPrice) && Math.abs(offer.originalProductPrice-resolved.originalProductPrice) > 0.01)) throw new Error("Product price changed");
-        if((!Number.isFinite(offer.originalProductPrice) || !Number.isFinite(resolved.originalProductPrice)) && Math.abs(offer.productPrice-resolved.productPrice)>0.01) throw new Error("Product price changed");
-        page.verified++;
+        if(!validation.accepted) {detail.code="PAGE_DATA_INVALID";detail.reasons=validation.reasons;}
+        else if(!matchingPage(offer,resolved)) detail.code="PAGE_IDENTITY_MISMATCH";
+        else if(resolved.originalCurrency !== offer.originalCurrency) detail.code="PAGE_CURRENCY_CHANGED";
+        else if((Number.isFinite(offer.originalProductPrice) && Number.isFinite(resolved.originalProductPrice) && Math.abs(offer.originalProductPrice-resolved.originalProductPrice)>0.01) || ((!Number.isFinite(offer.originalProductPrice) || !Number.isFinite(resolved.originalProductPrice)) && Math.abs(offer.productPrice-resolved.productPrice)>0.01)) detail.code="PAGE_PRICE_CHANGED";
+        else {page.verified++;detail.status="verified";}
+        if(detail.code) {page.failed++;report.errorCodes.push(detail.code);}
       } catch(error) {
         page.failed++;const code=auditFailureCode(error);report.errorCodes.push(code);
+        detail.code=code;
+        report.pageChecks.push(detail);
         if(code === "TIMEOUT") {report.failureCode=code;report.failureStage="page_verification";return finish("TIMEOUT");}
+        continue;
       }
+      report.pageChecks.push(detail);
     }
     report.pageVerification=page;
-    if(page.failed) return finish("PAGE_VERIFICATION_FAILED");
+    if(page.failed) {report.failureStage="page_verification";return finish("PAGE_VERIFICATION_FAILED");}
   }
   if(report.counts.rejected || report.errorCodes.length) return finish("PARTIAL_SAMPLE");
   return finish(verifyPage ? "VERIFIED_SAMPLE" : "VALID_CATALOG_SAMPLE");
