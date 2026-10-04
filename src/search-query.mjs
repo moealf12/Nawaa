@@ -189,7 +189,7 @@ export function buildProviderFallbackQueries(value = "") {
     if (candidate.length >= 2 && candidate !== primary && !candidates.includes(candidate)) candidates.push(candidate);
   };
 
-  if (intent.model) push(intent.model);
+  if (intent.model && !intent.condition) push(intent.model);
 
   let relaxed = primary;
   for (const phrase of [intent.storage, intent.color, intent.condition].filter(Boolean)) {
