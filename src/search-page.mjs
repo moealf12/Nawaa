@@ -1073,10 +1073,13 @@ function renderProduct(product, query) {
   els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
     state.category=button.dataset.category; state.comparisonOpen=false; renderProduct(product,query);
   }));
-  els.results.querySelectorAll('.show-category[data-show-category]').forEach(button=>button.addEventListener('click',()=>{
+  els.results.querySelectorAll('.show-category').forEach(button=>{
     const category=button.dataset.showCategory;
-    state.visibleCounts[category]=(state.visibleCounts[category] || 10)+10; renderProduct(product,query);
-  }));
+    if(!category)return;
+    button.addEventListener('click',()=>{
+      state.visibleCounts[category]=(state.visibleCounts[category] || 10)+10; renderProduct(product,query);
+    });
+  });
   $("#loadMoreRemote")?.addEventListener("click",()=>loadMoreRemote(query));
   document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (event.target.isConnected === false) return; if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
   $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });

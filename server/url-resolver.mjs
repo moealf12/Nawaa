@@ -109,7 +109,10 @@ function fetchHtmlPinned(target, redirects) {
       servername:net.isIP(hostname) ? undefined : hostname,
       headers:{...PRODUCT_HEADERS,host:target.parsed.host},
       agent:false,
-      lookup:(_host,_options,callback)=>callback(null,target.address,target.family),
+      lookup:(_host,options,callback)=>{
+        if(options?.all) callback(null,[{address:target.address,family:target.family}]);
+        else callback(null,target.address,target.family);
+      },
     }, (response) => {
       const status = response.statusCode || 0;
       if ([301,302,303,307,308].includes(status)) {
