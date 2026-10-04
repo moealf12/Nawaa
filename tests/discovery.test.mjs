@@ -30,8 +30,8 @@ test('brand metadata can match when titles omit it; requested accessories are ne
   assert.equal(query.assessOfferMatch('hp',{title:'Pavilion Laptop',condition:'new',specs:{brand:'HP'}}).exactMatch,true);
   const mouse={title:'HP USB Mouse',productPrice:20,condition:'new',availability:'in_stock',merchant:'Store',specs:{brand:'HP'},...query.assessOfferMatch('hp mouse',{title:'HP USB Mouse',condition:'new',specs:{brand:'HP'}})};
   const result=sections('hp mouse',[mouse,offer('HP Pavilion Laptop',3000)]);
-  assert.equal(mouse.exactMatch,true);
-  assert.equal(mouse.matchConfidence >= .9,true);
+  assert.equal(mouse.exactMatch,true,JSON.stringify(mouse));
+  assert.equal(mouse.matchConfidence >= .9,true,JSON.stringify(mouse));
   assert.deepEqual(result.map(s=>s.key),['accessory']);
 });
 test('brand priorities generalize and empty results remain empty',()=>{
