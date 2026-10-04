@@ -391,16 +391,17 @@ async function searchAll(query, { depth = 0 } = {}) {
   const plan = acquisitionPlan(0, configuredFreeStorefronts().length);
   const providerQuery = parseSearchIntent(query).providerQuery;
 
-  // Amazon Saudi needs an isolated acquisition window on the free web instance.
-  // Fetch it first, then fan out all remaining providers and merge every result.
-  const amazon = await searchFreeStorefrontById("amazon-sa", providerQuery, {
+  // Local + GCC + global acquisition starts together. Amazon must never block
+  // the rest of the world before other providers get a chance to answer.
+  const amazonPromise = searchFreeStorefrontById("amazon-sa", providerQuery, {
     perStore: Infinity,
     catalogLimit: Infinity,
     amazonPageStart: plan.amazonPageStart,
     amazonPageCount: plan.amazonPageCount,
     matchingQuery: query,
   }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
-  const [primary,indexed,persisted] = await Promise.all([
+  const [amazon,primary,indexed,persisted] = await Promise.all([
+    amazonPromise,
     runProviderPass(providerQuery, "primary", query, { plan }),
     searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
     searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
@@ -435,7 +436,10 @@ async function searchAll(query, { depth = 0 } = {}) {
   const intent = parseSearchIntent(query);
   const broadDiscovery = intent.discoveryMode === "brand" || (!intent.model && !intent.storage && !intent.color && !intent.condition);
   const minimumUsefulOffers = broadDiscovery ? 20 : 6;
-  const needsRecallExpansion = amazonValidated.length >= 10 ? false :
+  // Never suppress global/local discovery merely because one marketplace
+  // (usually Amazon) already returned many hits. More sources can still contain
+  // the world's lowest price.
+  const needsRecallExpansion =
     relevantPrimary.length < minimumUsefulOffers ||
     (broadDiscovery && primaryMerchants < 2 && relevantPrimary.length < 40);
   if (needsRecallExpansion) {
