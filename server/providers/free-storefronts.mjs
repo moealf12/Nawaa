@@ -742,19 +742,27 @@ export function extractIkeaSearchOffers(html, query) {
   const source=String(html||"");
   const tokens=normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
   const offers=[]; const seen=new Set();
-  const linkRe=/<a\b[^>]*href=["']([^"']*\/sa\/en\/p\/[^"'?#]+-(?:s)?(\d{8})\/?[^"']*)["'][^>]*>([\s\S]{0,5000}?)<\/a>/gi;
-  let match;
-  while((match=linkRe.exec(source))){
-    const sourceUrl=new URL(decodeHtml(match[1]),"https://www.ikea.com").href;
-    const productId=match[2];
-    const block=source.slice(Math.max(0,match.index-1500),Math.min(source.length,match.index+9000));
-    const title=stripHtml(match[3]).replace(/\s+/g," ").trim() || stripHtml(block.match(/<h3\b[^>]*>([\s\S]*?)<\/h3>/i)?.[1]||"");
-    const image=decodeHtml(block.match(/<img\b[^>]*(?:src|data-src)=["']([^"']+)["']/i)?.[1]||"")||null;
-    const priceText=stripHtml(block.match(/(?:Price\s*)?(?:SAR|SR|﷼|ر\.س)[^0-9]{0,12}([0-9][0-9,.]*)/i)?.[0]||"");
-    const price=Number((priceText.match(/([0-9][0-9,.]*)/)?.[1]||"").replace(/,/g,""));
+  const add=(productId,title,image,price,sourceUrl)=>{
+    title=decodeHtml(String(title||"")).replace(/\\u0026/g,"&").replace(/\\n/g," ").replace(/\s+/g," ").trim();
+    price=Number(String(price??"").replace(/,/g,""));
+    try { sourceUrl=new URL(decodeHtml(String(sourceUrl||"")).replace(/\\u002F/gi,"/").replace(/\\\//g,"/"),"https://www.ikea.com").href; } catch { return; }
     const hay=normalizeSearchQuery(title); const hits=tokens.filter(t=>hay.includes(t)).length;
-    if(!title||!Number.isFinite(price)||price<=0||(tokens.length>1&&hits/tokens.length<0.2)||seen.has(productId)) continue;
-    seen.add(productId); offers.push({productId,title,image,price,currency:"SAR",sourceUrl});
+    if(!productId||!title||!Number.isFinite(price)||price<=0||(tokens.length>1&&hits/tokens.length<0.2)||seen.has(String(productId)))return;
+    seen.add(String(productId)); offers.push({productId:String(productId),title,image:image||null,price,currency:"SAR",sourceUrl});
+  };
+  // Render receives IKEA's SSR shell with product data serialized inside scripts.
+  // Mine local neighborhoods around every Saudi PIP URL instead of depending on DOM card shape.
+  const urlRe=/(?:https?:\\?\/\\?\/www\.ikea\.com)?\\?\/sa\\?\/en\\?\/p\\?\/[^"'<>\\s]+?-(s?\d{8})\\?\//gi;
+  let m;
+  while((m=urlRe.exec(source))){
+    const block=source.slice(Math.max(0,m.index-7000),Math.min(source.length,m.index+9000));
+    const rawUrl=m[0]; const productId=m[1].replace(/^s/i,"");
+    const nameMatches=[...block.matchAll(/"(?:name|productName)"\s*:\s*"((?:\\.|[^"\\]){2,180})"/gi)];
+    const typeMatches=[...block.matchAll(/"(?:typeName|productType)"\s*:\s*"((?:\\.|[^"\\]){2,100})"/gi)];
+    const priceMatches=[...block.matchAll(/"(?:numeral|price|currentPrice)"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/gi)];
+    const imageMatches=[...block.matchAll(/"(?:mainImageUrl|imageUrl|src)"\s*:\s*"((?:\\.|[^"\\])+?)"/gi)];
+    const title=[nameMatches.at(-1)?.[1],typeMatches.at(-1)?.[1]].filter(Boolean).join(" ");
+    add(productId,title,imageMatches.at(-1)?.[1]||null,priceMatches.at(-1)?.[1],rawUrl);
   }
   return offers;
 }
