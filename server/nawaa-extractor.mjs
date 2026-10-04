@@ -1,4 +1,5 @@
 import { resolveProductUrl } from "./url-resolver.mjs";
+import { extractProductWithCrawlee } from "./universal-acquisition.mjs";
 
 const EXTRACTOR_VERSION = "2.0.0";
 
@@ -163,12 +164,37 @@ export async function extractNawaaProduct(url) {
       durationMs: Date.now() - started,
       error: error instanceof Error ? error.message : String(error),
     });
-    return {
-      ok: false,
-      error: "extraction_failed",
-      message: error instanceof Error ? error.message : String(error),
-      attempts,
-      observedAt: new Date().toISOString(),
-    };
+    const fallbackStarted=Date.now();
+    try {
+      const offer=await extractProductWithCrawlee(url);
+      const product=toNawaaProduct(offer,url);
+      attempts.push({
+        strategy:"crawlee_universal",
+        ok:true,
+        durationMs:Date.now()-fallbackStarted,
+        confidence:product.quality.confidence,
+      });
+      return {
+        ok:true,
+        product,
+        diagnostics:buildExtractionDiagnostics(product),
+        attempts,
+        observedAt:new Date().toISOString(),
+      };
+    } catch (fallbackError) {
+      attempts.push({
+        strategy:"crawlee_universal",
+        ok:false,
+        durationMs:Date.now()-fallbackStarted,
+        error:fallbackError instanceof Error?fallbackError.message:String(fallbackError),
+      });
+      return {
+        ok:false,
+        error:"extraction_failed",
+        message:fallbackError instanceof Error?fallbackError.message:String(fallbackError),
+        attempts,
+        observedAt:new Date().toISOString(),
+      };
+    }
   }
 }
