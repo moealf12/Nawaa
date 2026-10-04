@@ -76,7 +76,7 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
-function providerTasks(providerQuery, matchingQuery) {
+function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false } = {}) {
   const tasks = [];
   const add = (id, run, { explicit = false, deadlineMs = null } = {}) => {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run, deadlineMs });
@@ -90,7 +90,9 @@ function providerTasks(providerQuery, matchingQuery) {
   add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
-  add("free-storefronts", () => searchFreeStorefronts(providerQuery, { matchingQuery, excludeStoreIds:["amazon-sa"] }), { explicit:true, deadlineMs:6000 });
+  if (!skipFreeStorefronts) {
+    add("free-storefronts", () => searchFreeStorefronts(providerQuery, { matchingQuery, excludeStoreIds:["amazon-sa"] }), { explicit:true, deadlineMs:6000 });
+  }
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
   if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
   if (ebayConfigured()) add("ebay", () => searchEbayWorldwide(providerQuery));
@@ -98,8 +100,8 @@ function providerTasks(providerQuery, matchingQuery) {
   return tasks;
 }
 
-async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery) {
-  const tasks = providerTasks(providerQuery, matchingQuery);
+async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery, options = {}) {
+  const tasks = providerTasks(providerQuery, matchingQuery, options);
   const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
   const withDeadline = (promise, sourceId, deadlineMs = providerDeadlineMs) => Promise.race([
     promise,
@@ -173,7 +175,7 @@ async function searchAll(query) {
     matchingQuery: query,
   }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
   const [primary,indexed,persisted,amazon] = await Promise.all([
-    runProviderPass(providerQuery, "primary", query),
+    runProviderPass(providerQuery, "primary", query, { skipFreeStorefronts:true }),
     searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
     searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
     amazonSaudi,
