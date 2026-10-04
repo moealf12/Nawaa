@@ -348,13 +348,16 @@ async function streamSearchProgress(query, onSnapshot) {
   let offers=[],providers=[],errors=[];
   const emit=(progress={})=>onSnapshot(progressiveSnapshot(query,offers,providers,errors,progress));
 
-  // Local accelerators are allowed to answer first; live recall continues regardless.
-  const local=await Promise.all([
+  // Start durable catalog lookup and every live source immediately. Neither path
+  // is allowed to block the other from producing the first useful result.
+  const localPromise=Promise.all([
     searchIndexedOffers(query).catch(()=>({offers:[]})),
     searchPersistedOffers(query).catch(()=>({offers:[]})),
-  ]);
-  offers.push(...(local[0].offers||[]),...(local[1].offers||[]));
-  if(offers.length) await emit({completed:0,pending:providerTasks(providerQuery,query,{plan}).length+1});
+  ]).then(async local=>{
+    offers.push(...(local[0].offers||[]),...(local[1].offers||[]));
+    if(offers.length) await emit({completed:providers.length,pending:providerTasks(providerQuery,query,{plan}).length+1});
+    return local;
+  });
 
   const amazonPromise=searchFreeStorefrontById("amazon-sa",providerQuery,{
     perStore:Infinity,catalogLimit:Infinity,amazonPageStart:plan.amazonPageStart,
@@ -378,11 +381,39 @@ async function streamSearchProgress(query, onSnapshot) {
   } else {
     errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:amazonResult.error instanceof Error?amazonResult.error.message:String(amazonResult.error)});
   }
-  await primaryPromise;
+  await Promise.all([primaryPromise,localPromise]);
 
-  // Full canonical search still runs to completion so fallback expansion, persistence,
-  // final ranking and every eligible source remain exactly as before.
-  return searchAll(query);
+  // Reuse the work already completed by the progressive pass. Do not replay the
+  // same providers a second time. Canonical search remains available to the JSON
+  // endpoint and deeper cursor passes; the stream returns the accumulated recall
+  // immediately and the UI can request deeper pages without losing any source.
+  const assessed=dedupeNormalizedOffers(offers)
+    .map(offer=>({...offer,...assessOfferMatch(query,offer),dataKind:offer.dataKind||"live"}))
+    .filter(offer=>(offer.matchConfidence||0)>=0.65);
+  const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
+  const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
+  void Promise.allSettled([
+    persistOffers(query,selectedOffers.filter(offer=>offer.dataKind==="live")),
+    indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")),
+  ]).catch(()=>{});
+  return {
+    providersConfigured:configuredProviders(),
+    coverage:{
+      ...sourceCoverageSummary(currentSources()),
+      returnedOffers:selectedOffers.length,
+      availableOffers:allSelectedOffers.length,
+      returnedMerchants:new Set(selectedOffers.map(offerMerchantKey)).size,
+      truncated:selectedOffers.length<allSelectedOffers.length,
+      exhaustive:false,
+      acquisitionDepth:plan.depth,
+      moreAvailable:plan.depth<MAX_SEARCH_DEPTH,
+    },
+    providers,
+    normalizedQuery:query,
+    fallbackQuery:null,
+    offers:selectedOffers,
+    errors,
+  };
 }
 
 async function searchAll(query, { depth = 0 } = {}) {
