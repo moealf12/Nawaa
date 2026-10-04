@@ -29,6 +29,7 @@ import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { persistOffers } from "./persistence.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
+import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
@@ -286,8 +287,7 @@ const server = http.createServer(async (req, res) => {
     if (!ingestAuthorized(req)) return jsonResponse(res, 401, { error:"unauthorized" }, origin || "*");
     try {
       const body=await readJsonBody(req);
-      const incoming=Array.isArray(body.offers)?body.offers:[];
-      const valid=incoming.filter(o=>o&&typeof o.title==="string"&&o.title.trim().length>=3&&/^https:\/\//.test(String(o.sourceUrl||""))&&Number.isFinite(Number(o.productPrice))&&Number(o.productPrice)>0).slice(0,500).map(o=>({...o,productPrice:Number(o.productPrice),dataKind:"ingested",observedAt:o.observedAt||new Date().toISOString()}));
+      const valid=normalizeIngestBatch(body.offers);
       if(!valid.length)return jsonResponse(res,422,{error:"no_valid_offers"},origin||"*");
       const [stored,indexed]=await Promise.all([persistOffers(String(body.source||"crawler"),valid),indexOffers(valid)]);
       cachedSearch.clear();
