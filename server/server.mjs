@@ -243,6 +243,18 @@ const ebayDeletion = createEbayDeletionHandler({
 });
 const internalAudit = createInternalAuditHandler();
 
+async function readJsonBody(req,{maxBytes=1000000}={}){
+  let size=0;const chunks=[];
+  for await(const chunk of req){size+=chunk.length;if(size>maxBytes)throw new Error("payload_too_large");chunks.push(chunk);}
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")||"{}");
+}
+function ingestAuthorized(req){
+  const expected=process.env.NAWAA_INGEST_TOKEN;
+  if(!expected)return false;
+  const auth=String(req.headers.authorization||"");
+  return auth===`Bearer ${expected}`;
+}
+
 const server = http.createServer(async (req, res) => {
   const notificationUrl = new URL(req.url, "http://localhost");
   if (notificationUrl.pathname === "/internal/source-audit") {
@@ -258,8 +270,8 @@ const server = http.createServer(async (req, res) => {
     if (!origin) return jsonResponse(res, 403, { error: "origin_not_allowed" }, "null");
     res.writeHead(204, {
       "access-control-allow-origin": origin,
-      "access-control-allow-methods": "GET,OPTIONS",
-      "access-control-allow-headers": "accept,content-type",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "accept,content-type,authorization",
       "access-control-max-age": "86400",
     });
     return res.end();
@@ -268,6 +280,21 @@ const server = http.createServer(async (req, res) => {
   if (!origin && req.headers.origin) return jsonResponse(res, 403, { error: "origin_not_allowed" }, "null");
 
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  if (req.method === "POST" && url.pathname === "/api/ingest/offers") {
+    if (!ingestAuthorized(req)) return jsonResponse(res, 401, { error:"unauthorized" }, origin || "*");
+    try {
+      const body=await readJsonBody(req);
+      const incoming=Array.isArray(body.offers)?body.offers:[];
+      const valid=incoming.filter(o=>o&&typeof o.title==="string"&&o.title.trim().length>=3&&/^https:\/\//.test(String(o.sourceUrl||""))&&Number.isFinite(Number(o.productPrice))&&Number(o.productPrice)>0).slice(0,500).map(o=>({...o,productPrice:Number(o.productPrice),dataKind:"ingested",observedAt:o.observedAt||new Date().toISOString()}));
+      if(!valid.length)return jsonResponse(res,422,{error:"no_valid_offers"},origin||"*");
+      const [stored,indexed]=await Promise.all([persistOffers(String(body.source||"crawler"),valid),indexOffers(valid)]);
+      cachedSearch.clear();
+      return jsonResponse(res,202,{accepted:valid.length,stored,indexed},origin||"*");
+    } catch(error) {
+      return jsonResponse(res,error?.message==="payload_too_large"?413:400,{error:"ingest_failed",message:error instanceof Error?error.message:String(error)},origin||"*");
+    }
+  }
 
   if (req.method === "GET" && url.pathname === "/api/sources") {
     const sources = currentSources();
