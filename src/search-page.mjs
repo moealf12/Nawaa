@@ -40,6 +40,9 @@ const state = {
   visibleCounts: {},
   comparisonOpen: false,
   selectedGroupKey: null,
+  nextCursor: null,
+  remoteLoading: false,
+  remoteExhausted: false,
   requestId: 0,
 };
 
@@ -259,7 +262,10 @@ async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
       }
 
       if (!response.ok) {
-        throw new Error(data?.message || data?.error || "request_failed_" + response.status);
+        const error = new Error(data?.message || data?.error || "request_failed_" + response.status);
+        error.status = response.status;
+        error.nonRetryable = response.status >= 400 && response.status < 500;
+        throw error;
       }
 
       if (!data?.offers?.length && data?.errors?.some(error => error.provider === "cache")) {
@@ -269,6 +275,7 @@ async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
       return data;
     } catch (error) {
       lastError = error;
+      if (error?.nonRetryable) break;
       if (attempt < attempts) await sleep(attempt * 1200);
     } finally {
       clearTimeout(timeout);
@@ -1051,6 +1058,8 @@ function renderProduct(product, query) {
 
     ${!state.comparisonOpen ? '<details class="selected-comparison" hidden></details>' : ""}
 
+    ${state.nextCursor ? `<div class="remote-more"><button type="button" class="show-category" id="loadMoreRemote" ${state.remoteLoading ? "disabled" : ""}>${state.remoteLoading ? "جاري توسيع البحث…" : "جلب نتائج إضافية من مصادر أكثر"}</button><small>يطلب هذا بحثًا أعمق من الخادم؛ لا يكرر كشف النتائج الموجودة في الصفحة.</small></div>` : state.remoteExhausted ? '<div class="remote-more exhausted"><small>وصلنا إلى أعمق نطاق بحث متاح حاليًا لهذه الجلسة.</small></div>' : ""}
+
     ${additionalResultsSection("نسخ ومنتجات أخرى", relatedGroups.filter(group => !["game","accessory"].includes(describeProduct(group.bestOffer).kind)))}
     ${additionalResultsSection("ألعاب للجهاز", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "game"))}
     ${additionalResultsSection("ملحقات وإكسسوارات", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "accessory"))}
@@ -1064,10 +1073,14 @@ function renderProduct(product, query) {
   els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
     state.category=button.dataset.category; state.comparisonOpen=false; renderProduct(product,query);
   }));
-  els.results.querySelectorAll('.show-category').forEach(button=>button.addEventListener('click',()=>{
+  els.results.querySelectorAll('.show-category').forEach(button=>{
     const category=button.dataset.showCategory;
-    state.visibleCounts[category]=(state.visibleCounts[category] || 10)+10; renderProduct(product,query);
-  }));
+    if(!category)return;
+    button.addEventListener('click',()=>{
+      state.visibleCounts[category]=(state.visibleCounts[category] || 10)+10; renderProduct(product,query);
+    });
+  });
+  $("#loadMoreRemote")?.addEventListener("click",()=>loadMoreRemote(query));
   document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (event.target.isConnected === false) return; if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
   $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
@@ -1147,6 +1160,67 @@ function renderNoMatch(query) {
   }, null, query));
 }
 
+function offerMergeKey(offer = {}) {
+  return offer.sourceUrl || [offer.provider,offer.providerMarket,offer.merchant,offer.title,offer.productPrice].join("|");
+}
+
+function mergeSearchOffers(current = [], incoming = []) {
+  const merged = new Map();
+  for (const offer of [...current,...incoming]) {
+    const key = offerMergeKey(offer);
+    const previous = merged.get(key);
+    if (!previous || String(offer.observedAt || "") >= String(previous.observedAt || "")) merged.set(key,offer);
+  }
+  return [...merged.values()];
+}
+
+async function loadMoreRemote(query) {
+  if (!state.nextCursor || state.remoteLoading || !state.product) return;
+  const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
+  if (!apiBase) return;
+  const requestId = state.requestId;
+  state.remoteLoading = true;
+  renderProduct(state.product, query);
+  els.status.textContent = "نوسّع البحث إلى مصادر ونتائج إضافية…";
+
+  try {
+    let cursor = state.nextCursor;
+    let added = 0;
+    let lastData = null;
+    for (let step=0; step<2 && cursor && added===0; step+=1) {
+      const data = await fetchJsonWithRetry(
+        apiBase + "/api/search?q=" + encodeURIComponent(query) + "&cursor=" + encodeURIComponent(cursor),
+        {headers:{accept:"application/json"}},
+        2
+      );
+      if (requestId !== state.requestId) return;
+      const before = state.product.offers.length;
+      const merged = mergeSearchOffers(state.product.offers, Array.isArray(data.offers) ? data.offers : []);
+      added = merged.length - before;
+      state.product = {...state.product,offers:merged};
+      if (Array.isArray(data.offers)) recordPriceHistory(data.offers);
+      cursor = data.nextCursor || null;
+      lastData = data;
+    }
+    state.nextCursor = cursor;
+    state.remoteExhausted = !cursor;
+    state.visibleCounts = {};
+    renderProduct(state.product,query);
+    els.status.textContent = added > 0
+      ? `أضفنا ${added} عرضًا جديدًا · الإجمالي ${state.product.offers.length} عرضًا`
+      : (state.remoteExhausted ? "اكتمل أعمق نطاق بحث متاح حاليًا" : "لم تظهر نتائج جديدة في هذه الدفعة");
+    if (lastData?.errors?.length) els.status.textContent += " · بعض المصادر أعادت نتائج جزئية";
+  } catch (error) {
+    if (requestId !== state.requestId) return;
+    console.warn("NAWAA remote expansion failed",error);
+    els.status.textContent = error?.status === 429 ? "تم بلوغ حد الطلبات مؤقتًا؛ أعد المحاولة بعد قليل" : "تعذر توسيع البحث حاليًا";
+  } finally {
+    if (requestId === state.requestId) {
+      state.remoteLoading = false;
+      if (state.product) renderProduct(state.product,query);
+    }
+  }
+}
 async function runSearch(rawQuery) {
   const query = String(rawQuery || "").trim();
   if (query.length < 2) {
@@ -1163,6 +1237,9 @@ async function runSearch(rawQuery) {
     state.category = "all"; state.visibleCounts = {}; state.comparisonOpen = false; state.selectedGroupKey = null;
   }
   state.query = query;
+  state.nextCursor = null;
+  state.remoteLoading = false;
+  state.remoteExhausted = false;
   saveRecent(query);
 
   if (isLikelyUrl(query)) {
@@ -1181,13 +1258,24 @@ async function runSearch(rawQuery) {
       if (requestId !== state.requestId) return;
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
-      const data = await fetchJsonWithRetry(
+      let data = await fetchJsonWithRetry(
         apiBase + "/api/search?q=" + encodeURIComponent(query),
         { headers: { accept: "application/json" } },
         3
       );
 
       if (requestId !== state.requestId) return;
+      for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor; step+=1) {
+        els.status.textContent = "لم تظهر نتائج في النطاق الأول؛ نوسّع البحث تلقائيًا…";
+        data = await fetchJsonWithRetry(
+          apiBase + "/api/search?q=" + encodeURIComponent(query) + "&cursor=" + encodeURIComponent(data.nextCursor),
+          { headers: { accept: "application/json" } },
+          2
+        );
+        if (requestId !== state.requestId) return;
+      }
+      state.nextCursor = data.nextCursor || null;
+      state.remoteExhausted = !state.nextCursor;
       if (Array.isArray(data.offers) && data.offers.length) {
         recordPriceHistory(data.offers);
         const liveProduct = {

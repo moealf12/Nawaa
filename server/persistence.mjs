@@ -1,6 +1,15 @@
 let pool, initialized=false, PoolCtor=null;
 export const persistenceConfigured=()=>Boolean(process.env.DATABASE_URL);
-async function db(){ if(!persistenceConfigured()) return null; if(!PoolCtor) PoolCtor=(await import("pg")).default.Pool; return pool ||= new PoolCtor({connectionString:process.env.DATABASE_URL,ssl:process.env.DATABASE_SSL==="false"?false:{rejectUnauthorized:false},max:Number(process.env.DATABASE_POOL_MAX||4)}); }
+async function db(){
+  if(!persistenceConfigured()) return null;
+  if(!PoolCtor) PoolCtor=(await import("pg")).default.Pool;
+  const ssl=process.env.DATABASE_SSL==="false"
+    ? false
+    : process.env.DATABASE_SSL_INSECURE==="true"
+      ? {rejectUnauthorized:false}
+      : {rejectUnauthorized:true};
+  return pool ||= new PoolCtor({connectionString:process.env.DATABASE_URL,ssl,max:Number(process.env.DATABASE_POOL_MAX||4)});
+}
 export async function initPersistence(){const client=await db();if(!client||initialized)return {configured:Boolean(client),ready:initialized};await client.query(`
 create table if not exists nawaa_offers(
 id bigserial primary key,offer_key text not null unique,query text,title text not null,brand text,merchant text,merchant_country_code text,

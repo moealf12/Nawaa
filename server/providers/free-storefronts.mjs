@@ -345,8 +345,10 @@ async function searchLandmarkBloomreach(storeId, query, limit = Infinity) {
   const seen = new Set();
   let start = 0;
   let total = Infinity;
+  const signal = AbortSignal.timeout(6500);
 
   while (start < total && all.length < finiteLimit) {
+    try {
     const params = new URLSearchParams({
       account_id:config.accountId,
       auth_key:config.authKey,
@@ -365,7 +367,7 @@ async function searchLandmarkBloomreach(storeId, query, limit = Infinity) {
         accept:"application/json",
         "user-agent":USER_AGENT,
       },
-      signal:AbortSignal.timeout(10000),
+      signal,
     });
     if (!response.ok) {
       const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 300);
@@ -374,14 +376,20 @@ async function searchLandmarkBloomreach(storeId, query, limit = Infinity) {
     const payload = await response.json();
     total = Math.max(0, Number(payload?.response?.numFound) || 0);
     const batch = parseLandmarkBloomreachPayload(payload, storeId);
+    const before = all.length;
     for (const item of batch) {
       if (seen.has(item.productId)) continue;
       seen.add(item.productId);
       all.push(item);
       if (all.length >= finiteLimit) break;
     }
-    if (batch.length === 0) break;
+    if (batch.length === 0 || all.length === before || signal.aborted) break;
     start += rows;
+    } catch(error) {
+      if(!all.length) throw error;
+      all.paginationError=error.message || String(error);
+      break;
+    }
   }
   return all;
 }
@@ -444,6 +452,7 @@ async function searchLandmarkAlgolia(storeId, query, limit = Infinity) {
   const hitsPerPage = Number.isFinite(finiteLimit) ? Math.max(1, Math.min(100, finiteLimit)) : 100;
   let page = 0;
   let nbPages = 1;
+  const signal = AbortSignal.timeout(6500);
 
   const requestPage = async (pageNumber) => {
     const errors = [];
@@ -465,7 +474,7 @@ async function searchLandmarkAlgolia(storeId, query, limit = Infinity) {
             hitsPerPage,
             attributesToRetrieve:["*"],
           }),
-          signal:AbortSignal.timeout(8000),
+          signal,
         });
         if (!response.ok) {
           const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 220);
@@ -484,7 +493,12 @@ async function searchLandmarkAlgolia(storeId, query, limit = Infinity) {
   };
 
   while (page < nbPages && all.length < finiteLimit) {
-    const payload = await requestPage(page);
+    if(signal.aborted) break;
+    let payload;
+    try {payload = await requestPage(page);} catch(error) {
+      if(!all.length) throw error;
+      all.paginationError=error.message || String(error);break;
+    }
     nbPages = Math.max(1, Number(payload?.nbPages) || 1);
     for (const item of parseLandmarkAlgoliaPayload(payload, storeId)) {
       if (seen.has(item.productId)) continue;
@@ -743,14 +757,23 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
       if(/^https?:/i.test(imgMatch[1])){image=decodeHtml(imgMatch[1]);title=decodeHtml(imgMatch[2]);}
       else {title=decodeHtml(imgMatch[1]);image=decodeHtml(imgMatch[2]);}
     }
+    if(!title) title=stripHtml(block.match(/<h2\b[^>]*>([\s\S]*?)<\/h2>/i)?.[1]||"");
+    if(!image) image=decodeHtml(block.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["']/i)?.[1]||"") || null;
     if(!title) title=decodeHtml(block.match(/aria-label=["']([^"']{8,})["']/i)?.[1]||"");
-    const offscreen=stripHtml(block.match(/class=["'][^"']*a-offscreen[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]||"");
+    // Crossed-out list prices are not the current selling price.
+    const priceMatch=block.match(/<span\b[^>]*class=["'](?=[^"']*\ba-price\b)(?![^"']*\ba-text-price\b)[^"']*["'][^>]*>/i);
+    const priceBlock=priceMatch ? block.slice(priceMatch.index+priceMatch[0].length,priceMatch.index+2000) : "";
+    const offscreen=stripHtml(priceBlock.match(/^\s*<span[^>]*class=["'][^"']*a-offscreen[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]||"");
     const price=Number(offscreen.replace(/[^0-9.]/g,""));
     if(title.length<3||!Number.isFinite(price)||price<=0)continue;
     const haystack=normalizeSearchQuery(title);const hits=tokens.filter(t=>haystack.includes(t)).length;
     if(tokens.length>1&&hits/tokens.length<0.2)continue;
     const direct=block.match(/href=["']([^"']*\/dp\/[A-Z0-9]{10}[^"']*)["']/i)?.[1];
-    const sourceUrl=direct ? new URL(decodeHtml(direct),origin).href : origin+"/dp/"+asin;
+    let sourceUrl=origin+"/dp/"+asin;
+    try {
+      const candidate=new URL(decodeHtml(direct || sourceUrl),origin);
+      if(candidate.origin===new URL(origin).origin && !candidate.username && !candidate.password && candidate.pathname.match(/\/dp\/([A-Z0-9]{10})(?:\/|$)/i)?.[1].toUpperCase()===asin.toUpperCase()) sourceUrl=candidate.href;
+    } catch {}
     seen.add(asin);
     offers.push({productId:asin,title:stripHtml(title),image,price,currency:"SAR",sourceUrl});
   }
@@ -933,18 +956,19 @@ function routeScore(store, intent, normalizedQuery) {
   return { score, reasons, exactCategory, explicitBrand, broad };
 }
 
-export function routeFreeStorefronts(query, limit = Infinity) {
+export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const normalizedQuery = normalizeSearchQuery(query);
   const intent = parseSearchIntent(normalizedQuery);
+  const stable = options.stable === true;
   const routed = STORES
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
-      const skippedForCooldown = sourceReliability.shouldSkip(store.id, { explicit: base.explicitBrand });
+      const skippedForCooldown = stable ? false : sourceReliability.shouldSkip(store.id, { explicit: base.explicitBrand });
       return {
         store,
         ...base,
-        score: base.score + health.adjustment,
+        score: base.score + (stable ? 0 : health.adjustment),
         reliability: health,
         skippedForCooldown,
       };
@@ -952,7 +976,7 @@ export function routeFreeStorefronts(query, limit = Infinity) {
     .filter((entry) => entry.score > 0 && !entry.skippedForCooldown)
     .sort((a,b) =>
       b.score - a.score ||
-      b.reliability.reliability - a.reliability.reliability ||
+      (stable ? 0 : b.reliability.reliability - a.reliability.reliability) ||
       a.store.id.localeCompare(b.store.id)
     );
 
@@ -982,10 +1006,10 @@ export async function searchFreeStorefrontById(storeId, query, options = {}) {
   if (!store) throw new Error("unknown storefront: " + storeId);
   const requestedPerStore = Number(options.perStore);
   const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0 ? requestedPerStore : Infinity;
-  return searchStore(store, query, perStore, options.matchingQuery || query);
+  return searchStore(store, query, perStore, options.matchingQuery || query, options.catalogLimit ?? perStore, options);
 }
 
-async function searchStore(store, query, perStore = Infinity, matchingQuery = query) {
+async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore, options = {}) {
   const started = Date.now();
   const searchUrl = store.search(query);
   try {
@@ -998,9 +1022,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       try { primarySearchOffers = await searchIkeaSik(query); }
       catch (error) { primarySearchError = error instanceof Error ? error.message : String(error); }
     } else if (LANDMARK_BLOOMREACH[store.id]) {
-      try { primarySearchOffers = await searchLandmarkBloomreach(store.id, query, perStore); }
+      try { primarySearchOffers = await searchLandmarkBloomreach(store.id, query, catalogLimit); }
       catch (bloomError) {
-        try { primarySearchOffers = await searchLandmarkAlgolia(store.id, query, perStore); }
+        try { primarySearchOffers = await searchLandmarkAlgolia(store.id, query, catalogLimit); }
         catch (algoliaError) {
           const a = bloomError instanceof Error ? bloomError.message : String(bloomError);
           const b = algoliaError instanceof Error ? algoliaError.message : String(algoliaError);
@@ -1008,13 +1032,16 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
       }
     }
+    primarySearchError ||= primarySearchOffers.paginationError || null;
     if (!primarySearchOffers.length) {
       try {
         if (store.id === "amazon-sa") {
-          const maxPages = Math.max(1, Math.min(8, Number(process.env.AMAZON_SA_SEARCH_PAGES || 5)));
-          const pages = await Promise.allSettled(Array.from({length:maxPages}, async (_,index) => {
+          const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
+          const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
+          const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
+          const pages = await Promise.allSettled(Array.from({length:pageCount}, async (_,index) => {
             const pageUrl = new URL(searchUrl);
-            pageUrl.searchParams.set("page", String(index + 1));
+            pageUrl.searchParams.set("page", String(pageStart + index));
             return fetchText(pageUrl.href);
           }));
           const fulfilled = pages.filter((result) => result.status === "fulfilled").map((result) => result.value);
@@ -1023,7 +1050,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
           searchDiagnostics = {
             ...searchPageDiagnostics(html, searchUrl, searchPageFinalUrl),
-            pagesRequested:maxPages,
+            pageStart,
+            pagesRequested:pageCount,
             pagesFetched:fulfilled.length,
           };
         } else {
@@ -1129,7 +1157,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // silently truncating the merchant to the generic per-store cap.
     const offers = store.id === "amazon-sa"
       ? filteredOffers
-      : filteredOffers.slice(0, perStore);
+      : filteredOffers.slice(0, directSearchOffers.length ? catalogLimit : perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
     sourceReliability.record(store.id, {
@@ -1193,17 +1221,33 @@ export async function searchFreeStorefronts(query, options = {}) {
   // Search a broad merchant set, but bound product-page fan-out per merchant.
   // Diversity comes from more stores, not dozens of serial product resolutions inside one store.
   const requestedStoreLimit = Number(options.storeLimit);
-  const storeLimit = Number.isFinite(requestedStoreLimit) && requestedStoreLimit > 0 ? requestedStoreLimit : 16;
+  const storeLimit = Number.isFinite(requestedStoreLimit) && requestedStoreLimit >= 0 ? Math.floor(requestedStoreLimit) : 16;
+  const storeOffset = Math.max(0, Math.floor(Number(options.storeOffset) || 0));
   const excludedStoreIds = new Set(Array.isArray(options.excludeStoreIds) ? options.excludeStoreIds : []);
-  const routes = routeFreeStorefronts(query, storeLimit + excludedStoreIds.size)
+  const routes = routeFreeStorefronts(
+      query,
+      storeOffset + storeLimit + excludedStoreIds.size,
+      {stable:options.stableRouting === true}
+    )
     .filter((entry) => !excludedStoreIds.has(entry.store.id))
-    .slice(0, storeLimit);
+    .slice(storeOffset, storeOffset + storeLimit);
   const stores = routes.map((entry) => entry.store);
-  const requestedPerStore = Number(options.perStore);
-  const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0
-    ? requestedPerStore
+  const requestedProductPageLimit = Number(options.productPageLimit ?? options.perStore);
+  const productPageLimit = Number.isFinite(requestedProductPageLimit) && requestedProductPageLimit > 0
+    ? Math.min(20, Math.floor(requestedProductPageLimit))
     : 4;
-  const settled = await Promise.allSettled(stores.map((store) => searchStore(store, query, perStore, options.matchingQuery || query)));
+  const requestedCatalogLimit = Number(options.catalogLimit);
+  const catalogLimit = Number.isFinite(requestedCatalogLimit) && requestedCatalogLimit > 0
+    ? Math.floor(requestedCatalogLimit)
+    : Infinity;
+  const storeDeadlineMs = Math.max(1500, Math.min(7500, Number(options.storeDeadlineMs) || 6500));
+  const withDeadline = (promise, storeId) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("store_deadline_exceeded:" + storeId)), storeDeadlineMs)),
+  ]);
+  const settled = await Promise.allSettled(stores.map((store) =>
+    withDeadline(searchStore(store, query, productPageLimit, options.matchingQuery || query, catalogLimit, options), store.id)
+  ));
   const offers = [];
   const errors = [];
   const diagnostics = [];
@@ -1213,6 +1257,7 @@ export async function searchFreeStorefronts(query, options = {}) {
     if (result.status === "fulfilled") {
       offers.push(...result.value.offers);
       diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
+      if(result.value.diagnostics?.primarySearchError) errors.push({market:store.id,error:result.value.diagnostics.primarySearchError});
       if (!result.value.offers.length) errors.push({ market:store.id, error:"No verified structured-price product pages found" });
     } else {
       errors.push({ market:store.id, error:result.reason?.message || String(result.reason) });

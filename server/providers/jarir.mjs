@@ -226,29 +226,64 @@ export function parseJarirSearchHtml(html, limit = 24) {
 }
 
 async function searchViaConstructor(query, limit) {
-  const url = new URL(JARIR_CONSTRUCTOR_BASE + encodeURIComponent(query));
-  url.searchParams.set("key", JARIR_CONSTRUCTOR_KEY);
-  url.searchParams.set("section", "Products");
-  url.searchParams.set("num_results_per_page", String(limit));
-  url.searchParams.set("page", "1");
-  url.searchParams.set("i", CLIENT_ID);
-  url.searchParams.set("s", "1");
-  url.searchParams.set("c", "cio-fe-web-nawaa");
-  url.searchParams.set("origin_referrer", "https://www.jarir.com/sa-en/catalogsearch/result/");
+  const cap = Math.max(1, Math.min(96, Math.floor(Number(limit) || 24)));
+  const pageSize = Math.min(48, cap);
+  const signal = AbortSignal.timeout(6200);
+  const offers = [];
+  const seen = new Set();
+  let paginationError = null;
 
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/141.0 Safari/537.36",
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!response.ok) throw new Error("jarir-constructor: HTTP " + response.status);
+  for (let page = 1; page <= Math.ceil(cap / pageSize) && offers.length < cap; page += 1) {
+    const url = new URL(JARIR_CONSTRUCTOR_BASE + encodeURIComponent(query));
+    url.searchParams.set("key", JARIR_CONSTRUCTOR_KEY);
+    url.searchParams.set("section", "Products");
+    url.searchParams.set("num_results_per_page", String(Math.min(pageSize, cap - offers.length)));
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("i", CLIENT_ID);
+    url.searchParams.set("s", "1");
+    url.searchParams.set("c", "cio-fe-web-nawaa");
+    url.searchParams.set("origin_referrer", "https://www.jarir.com/sa-en/catalogsearch/result/");
 
-  const payload = await response.json();
-  if (!Array.isArray(payload?.response?.results)) throw new Error("jarir-constructor: Malformed product response");
-  if (payload.response.results.length && !parseJarirConstructorPayload(payload, limit).length) throw new Error("jarir-constructor: No valid live products returned");
-  return parseJarirConstructorPayload(payload, limit);
+    let payload;
+    try {
+      const response = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/141.0 Safari/537.36",
+        },
+        signal,
+      });
+      if (!response.ok) throw new Error("jarir-constructor: HTTP " + response.status);
+      payload = await response.json();
+      if (!Array.isArray(payload?.response?.results)) throw new Error("jarir-constructor: Malformed product response");
+    } catch (error) {
+      if (!offers.length) throw error;
+      paginationError = error?.message || String(error);
+      break;
+    }
+
+    const rawCount = payload.response.results.length;
+    const parsed = parseJarirConstructorPayload(payload, rawCount || pageSize);
+    if (rawCount && !parsed.length) {
+      if (!offers.length) throw new Error("jarir-constructor: No valid live products returned");
+      paginationError = "jarir-constructor: page contained no valid live products";
+      break;
+    }
+
+    let added = 0;
+    for (const offer of parsed) {
+      const key = offer.sourceUrl || offer.sourceMeta?.productId;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      offers.push(offer);
+      added += 1;
+      if (offers.length >= cap) break;
+    }
+    if (rawCount < Number(url.searchParams.get("num_results_per_page")) || added === 0) break;
+  }
+
+  offers.paginationError = paginationError;
+  return offers;
 }
 
 async function searchViaHtml(query, limit) {
@@ -297,19 +332,20 @@ export async function refreshJarirPrices(raw, matchingQuery, {resolvePage=resolv
 }
 
 export async function searchJarir(query, limit = 24, matchingQuery = query) {
-  const capped = Math.max(1, Math.min(48, limit));
+  const capped = Math.max(1, Math.min(96, Math.floor(Number(limit) || 24)));
   const errors = [];
 
   try {
     const raw = await searchViaConstructor(query, capped);
     const {offers,errors:pageErrors,queryFilter,pageRefresh} = await refreshJarirPrices(raw,matchingQuery);
+    const paginationErrors=raw.paginationError ? [{market:"jarir-sa",error:raw.paginationError}] : [];
     return {
         provider: "jarir-direct",
         ok: offers.length > 0,
         searchedMarkets: [{ id: "jarir-sa", countryCode: "SA", countryNameAr: "السعودية" }],
         offers,
-        errors: pageErrors,
-        diagnostics: {queryFilter,pageRefresh},
+        errors: [...paginationErrors,...pageErrors],
+        diagnostics: {queryFilter,pageRefresh,pagination:{partial:Boolean(raw.paginationError),error:raw.paginationError || null}},
       };
   } catch (error) {
     errors.push({ market: "jarir-sa", error: error?.message || String(error) });

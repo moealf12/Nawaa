@@ -7,7 +7,7 @@ const CASES = [
   ["newegg-global","gaming laptop"],["bhphoto-us","canon camera"],["walmart-us","airpods"],
   ["bestbuy-us","apple airpods 4"],["nike-sa","nike shoes"],["adidas-sa","adidas shoes"],
   ["sephora-sa","dior perfume"],["namshi-sa","nike v5 runner"],["centrepoint-sa","leather chair"],
-  ["maxfashion-sa","men shoes"],["decathlon-sa","running shoes"],["niceone-sa","dior perfume"],
+  ["maxfashion-sa","shoes"],["decathlon-sa","running shoes"],["niceone-sa","dior perfume"],
   ["netaporter-global","nike shoes"],["mrporter-global","nike shoes"],["mytheresa-global","gucci shoes"],
   ["ssense-global","nike shoes"],["jomashop-global","seiko watch"],["fragrancex-global","dior perfume"],
   ["lookfantastic-global","cerave cleanser"],["cultbeauty-global","niod serum"],["stockx-global","nike shoes"],["goat-global","nike shoes"],
