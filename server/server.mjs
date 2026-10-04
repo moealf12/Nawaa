@@ -370,6 +370,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
   if (req.method === "POST" && url.pathname === "/api/ingest/offers") {
+    if (req.headers.origin) return jsonResponse(res,403,{error:"origin_not_allowed"},origin || "*");
     if (!enforceRateLimit(req,res,"ingest",{capacity:20,refillPerSecond:0.2},origin || "*")) return;
     if (!ingestAuthorized(req)) return jsonResponse(res, 401, { error:"unauthorized" }, origin || "*");
     try {

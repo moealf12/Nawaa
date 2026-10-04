@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import dns from 'node:dns/promises';
 import {fetchHtmlSafe,resolvePublicHttpsTarget} from '../server/url-resolver.mjs';
 import {searchExtraUnbxd} from '../server/providers/extra-unbxd.mjs';
+import {refreshJarirPrices} from '../server/providers/jarir.mjs';
 import {currentSources} from '../server/source-config.mjs';
 import {extractAmazonSearchOffers,configuredFreeStorefronts} from '../server/providers/free-storefronts.mjs';
 
@@ -93,4 +94,13 @@ test("public URL resolution pins the validated DNS address for the transport lay
   assert.equal(target.family,4);
   assert.equal(target.parsed.hostname,'example.com');
  }finally{dns.lookup=old;}
+});
+
+test('Jarir retains a filtered catalog offer when product-page verification fails',async()=>{
+ const raw=[{provider:'jarir-direct',merchant:'Jarir',title:'HP Pavilion Laptop',sourceUrl:'https://www.jarir.com/sa-en/hp.html',productPrice:2000,originalProductPrice:2000,currency:'SAR',originalCurrency:'SAR',condition:'new',specs:{brand:'HP'}}];
+ const result=await refreshJarirPrices(raw,'hp',{maxVerifications:1,verificationTimeoutMs:50,resolvePage:async()=>{throw new Error('fixture unavailable');}});
+ assert.equal(result.offers.length,1);
+ assert.equal(result.offers[0].productPrice,2000);
+ assert.equal(result.offers[0].sourceMeta.priceVerification,'failed');
+ assert.equal(result.pageRefresh.failed,1);
 });
