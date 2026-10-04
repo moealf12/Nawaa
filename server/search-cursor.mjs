@@ -48,10 +48,13 @@ export function decodeSearchCursor(token, query, { now = Date.now(), maxAgeMs = 
 export function acquisitionPlan(depth = 0, storefrontCount = 43) {
   const d = Math.max(0, Math.min(MAX_SEARCH_DEPTH, Math.floor(Number(depth) || 0)));
   const totalStores = Math.max(1, Math.min(64, Math.floor(Number(storefrontCount) || 1)));
+  const firstStores=Math.min(16,totalStores);
+  const secondStores=Math.min(12,Math.max(0,totalStores-firstStores));
+  const thirdOffset=firstStores+secondStores;
   const levels = [
-    { depth:0, amazonPages:5, storefrontLimit:Math.min(16,totalStores), productPageLimit:4, jarirLimit:24, returnLimit:120 },
-    { depth:1, amazonPages:8, storefrontLimit:Math.min(28,totalStores), productPageLimit:6, jarirLimit:48, returnLimit:300 },
-    { depth:2, amazonPages:8, storefrontLimit:totalStores, productPageLimit:8, jarirLimit:48, returnLimit:600 },
+    { depth:0, amazonPageStart:1, amazonPageCount:5, storefrontOffset:0, storefrontLimit:firstStores, productPageLimit:4, jarirLimit:24, returnLimit:120 },
+    { depth:1, amazonPageStart:6, amazonPageCount:3, storefrontOffset:firstStores, storefrontLimit:secondStores, productPageLimit:6, jarirLimit:0, returnLimit:180 },
+    { depth:2, amazonPageStart:0, amazonPageCount:0, storefrontOffset:thirdOffset, storefrontLimit:Math.max(0,totalStores-thirdOffset), productPageLimit:8, jarirLimit:0, returnLimit:300 },
   ];
   return levels[d];
 }

@@ -101,7 +101,9 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
     add("free-storefronts", () => searchFreeStorefronts(providerQuery, {
       matchingQuery,
       excludeStoreIds:["amazon-sa"],
+      storeOffset:plan.storefrontOffset,
       storeLimit:plan.storefrontLimit,
+      stableRouting:true,
       productPageLimit:plan.productPageLimit,
       catalogLimit:Infinity,
       storeDeadlineMs:6500,
@@ -179,9 +181,90 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   return { providers, errors, offers };
 }
 
-async function searchAll(query, { depth = 0 } = {}) {
+async function searchExpansion(query, depth) {
   query = normalizeSearchQuery(query);
   const plan = acquisitionPlan(depth, configuredFreeStorefronts().length);
+  const providerQuery = parseSearchIntent(query).providerQuery;
+  const amazonPromise = plan.amazonPageCount > 0
+    ? searchFreeStorefrontById("amazon-sa", providerQuery, {
+        perStore:Infinity,
+        catalogLimit:Infinity,
+        amazonPageStart:plan.amazonPageStart,
+        amazonPageCount:plan.amazonPageCount,
+        matchingQuery:query,
+      }).catch(error=>({offers:[],error:error instanceof Error?error.message:String(error)}))
+    : Promise.resolve({offers:[],diagnostics:null});
+  const storefrontPromise = plan.storefrontLimit > 0
+    ? searchFreeStorefronts(providerQuery, {
+        matchingQuery:query,
+        excludeStoreIds:["amazon-sa"],
+        storeOffset:plan.storefrontOffset,
+        storeLimit:plan.storefrontLimit,
+        stableRouting:true,
+        productPageLimit:plan.productPageLimit,
+        catalogLimit:Infinity,
+        storeDeadlineMs:6500,
+      }).catch(error=>({provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],errors:[{error:error instanceof Error?error.message:String(error)}],diagnostics:[]}))
+    : Promise.resolve({provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],errors:[],diagnostics:[]});
+
+  const [amazon,storefront] = await Promise.all([amazonPromise,storefrontPromise]);
+  const providers=[];
+  const errors=[];
+  if(plan.amazonPageCount>0) {
+    providers.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",ok:!amazon.error && Boolean(amazon.offers?.length),pass:"expansion",query:providerQuery,returnedOffers:amazon.offers?.length||0,diagnostics:amazon.diagnostics||null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
+    if(amazon.error) errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"expansion",error:amazon.error});
+  }
+  if(plan.storefrontLimit>0) {
+    providers.push({provider:"free-storefronts",sourceId:"free-storefronts",ok:Boolean(storefront.ok),pass:"expansion",query:providerQuery,returnedOffers:storefront.offers?.length||0,diagnostics:storefront.diagnostics||null,searchedMarkets:storefront.searchedMarkets||[]});
+    errors.push(...(storefront.errors||[]).map(error=>({provider:"free-storefronts",sourceId:"free-storefronts",pass:"expansion",...error})));
+  }
+
+  const offers=dedupeNormalizedOffers([...(amazon.offers||[]),...(storefront.offers||[])])
+    .map(offer=>({...offer,...assessOfferMatch(query,offer),dataKind:offer.dataKind||"live"}))
+    .filter(offer=>(offer.matchConfidence||0)>=0.65);
+  const allSelectedOffers=selectDiverseOffers(offers,Infinity);
+  const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
+  void Promise.allSettled([
+    persistOffers(query,selectedOffers.filter(offer=>offer.dataKind==="live")),
+    indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")),
+  ]).catch(()=>{});
+  const sources=currentSources();
+  return {
+    providersConfigured:configuredProviders(),
+    coverage:{
+      ...sourceCoverageSummary(sources),
+      amazonDirectOffers:(amazon.offers||[]).length,
+      returnedOffers:selectedOffers.length,
+      availableOffers:allSelectedOffers.length,
+      returnedMerchants:new Set(selectedOffers.map(offerMerchantKey)).size,
+      truncated:selectedOffers.length<allSelectedOffers.length,
+      exhaustive:false,
+      acquisitionDepth:plan.depth,
+      moreAvailable:plan.depth<MAX_SEARCH_DEPTH,
+      incremental:true,
+      acquisitionLimits:{
+        amazonPageStart:plan.amazonPageStart,
+        amazonPages:plan.amazonPageCount,
+        storefrontOffset:plan.storefrontOffset,
+        storefrontsPerPass:plan.storefrontLimit,
+        productPagesPerStore:plan.productPageLimit,
+        jarirCatalogResults:0,
+        responseOffers:plan.returnLimit,
+      },
+      fallbackUsed:false,
+    },
+    providers,
+    normalizedQuery:query,
+    fallbackQuery:null,
+    offers:selectedOffers,
+    errors,
+  };
+}
+
+async function searchAll(query, { depth = 0 } = {}) {
+  if (Number(depth) > 0) return searchExpansion(query, Number(depth));
+  query = normalizeSearchQuery(query);
+  const plan = acquisitionPlan(0, configuredFreeStorefronts().length);
   const providerQuery = parseSearchIntent(query).providerQuery;
 
   // Amazon Saudi needs an isolated acquisition window on the free web instance.
@@ -189,7 +272,8 @@ async function searchAll(query, { depth = 0 } = {}) {
   const amazon = await searchFreeStorefrontById("amazon-sa", providerQuery, {
     perStore: Infinity,
     catalogLimit: Infinity,
-    amazonPages: plan.amazonPages,
+    amazonPageStart: plan.amazonPageStart,
+    amazonPageCount: plan.amazonPageCount,
     matchingQuery: query,
   }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
   const [primary,indexed,persisted] = await Promise.all([
@@ -287,7 +371,9 @@ async function searchAll(query, { depth = 0 } = {}) {
       acquisitionDepth: plan.depth,
       moreAvailable: plan.depth < MAX_SEARCH_DEPTH,
       acquisitionLimits: {
-        amazonPages:plan.amazonPages,
+        amazonPageStart:plan.amazonPageStart,
+        amazonPages:plan.amazonPageCount,
+        storefrontOffset:plan.storefrontOffset,
         storefrontsPerPass:plan.storefrontLimit,
         productPagesPerStore:plan.productPageLimit,
         jarirCatalogResults:plan.jarirLimit,

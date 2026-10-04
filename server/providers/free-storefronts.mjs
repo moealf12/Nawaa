@@ -956,18 +956,19 @@ function routeScore(store, intent, normalizedQuery) {
   return { score, reasons, exactCategory, explicitBrand, broad };
 }
 
-export function routeFreeStorefronts(query, limit = Infinity) {
+export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const normalizedQuery = normalizeSearchQuery(query);
   const intent = parseSearchIntent(normalizedQuery);
+  const stable = options.stable === true;
   const routed = STORES
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
-      const skippedForCooldown = sourceReliability.shouldSkip(store.id, { explicit: base.explicitBrand });
+      const skippedForCooldown = stable ? false : sourceReliability.shouldSkip(store.id, { explicit: base.explicitBrand });
       return {
         store,
         ...base,
-        score: base.score + health.adjustment,
+        score: base.score + (stable ? 0 : health.adjustment),
         reliability: health,
         skippedForCooldown,
       };
@@ -975,7 +976,7 @@ export function routeFreeStorefronts(query, limit = Infinity) {
     .filter((entry) => entry.score > 0 && !entry.skippedForCooldown)
     .sort((a,b) =>
       b.score - a.score ||
-      b.reliability.reliability - a.reliability.reliability ||
+      (stable ? 0 : b.reliability.reliability - a.reliability.reliability) ||
       a.store.id.localeCompare(b.store.id)
     );
 
@@ -1035,10 +1036,12 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     if (!primarySearchOffers.length) {
       try {
         if (store.id === "amazon-sa") {
-          const maxPages = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5)));
-          const pages = await Promise.allSettled(Array.from({length:maxPages}, async (_,index) => {
+          const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
+          const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
+          const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
+          const pages = await Promise.allSettled(Array.from({length:pageCount}, async (_,index) => {
             const pageUrl = new URL(searchUrl);
-            pageUrl.searchParams.set("page", String(index + 1));
+            pageUrl.searchParams.set("page", String(pageStart + index));
             return fetchText(pageUrl.href);
           }));
           const fulfilled = pages.filter((result) => result.status === "fulfilled").map((result) => result.value);
@@ -1047,7 +1050,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
           searchDiagnostics = {
             ...searchPageDiagnostics(html, searchUrl, searchPageFinalUrl),
-            pagesRequested:maxPages,
+            pageStart,
+            pagesRequested:pageCount,
             pagesFetched:fulfilled.length,
           };
         } else {
@@ -1217,11 +1221,16 @@ export async function searchFreeStorefronts(query, options = {}) {
   // Search a broad merchant set, but bound product-page fan-out per merchant.
   // Diversity comes from more stores, not dozens of serial product resolutions inside one store.
   const requestedStoreLimit = Number(options.storeLimit);
-  const storeLimit = Number.isFinite(requestedStoreLimit) && requestedStoreLimit > 0 ? requestedStoreLimit : 16;
+  const storeLimit = Number.isFinite(requestedStoreLimit) && requestedStoreLimit >= 0 ? Math.floor(requestedStoreLimit) : 16;
+  const storeOffset = Math.max(0, Math.floor(Number(options.storeOffset) || 0));
   const excludedStoreIds = new Set(Array.isArray(options.excludeStoreIds) ? options.excludeStoreIds : []);
-  const routes = routeFreeStorefronts(query, storeLimit + excludedStoreIds.size)
+  const routes = routeFreeStorefronts(
+      query,
+      storeOffset + storeLimit + excludedStoreIds.size,
+      {stable:options.stableRouting === true}
+    )
     .filter((entry) => !excludedStoreIds.has(entry.store.id))
-    .slice(0, storeLimit);
+    .slice(storeOffset, storeOffset + storeLimit);
   const stores = routes.map((entry) => entry.store);
   const requestedProductPageLimit = Number(options.productPageLimit ?? options.perStore);
   const productPageLimit = Number.isFinite(requestedProductPageLimit) && requestedProductPageLimit > 0
