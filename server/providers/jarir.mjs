@@ -303,41 +303,31 @@ async function searchViaHtml(query, limit) {
   return parseJarirSearchHtml(html, limit);
 }
 
-export async function refreshJarirPrices(raw, matchingQuery, {resolvePage=resolveProductUrl,maxVerifications=12,verificationTimeoutMs=2200}={}) {
+export async function refreshJarirPrices(raw, matchingQuery, {resolvePage=resolveProductUrl}={}) {
   const {offers:matches,queryFilter}=filterQueryOffers(matchingQuery,raw);
-  const verifyCount=Math.min(matches.length,Math.max(0,Math.floor(Number(maxVerifications)||0)));
-  const refreshed=matches.map((offer,index)=>index < verifyCount ? null : ({
-    ...offer,
-    sourceMeta:{...offer.sourceMeta,priceSource:'constructor-index',priceVerification:'deferred'}
-  }));
-  const failures=new Array(verifyCount);
-  const pageRefresh={attempted:verifyCount,verified:0,failed:0,deferred:matches.length-verifyCount};
+  const refreshed=new Array(matches.length), failures=new Array(matches.length);
+  const pageRefresh={attempted:matches.length,verified:0,failed:0};
   let cursor=0;
   const worker=async()=>{
-    while(cursor<verifyCount){
+    while(cursor<matches.length){
       const index=cursor++, offer=matches[index];
       try{
-        const page=await Promise.race([
-          resolvePage(offer.sourceUrl),
-          new Promise((_,reject)=>setTimeout(()=>reject(new Error('Product page verification timed out')),verificationTimeoutMs)),
-        ]);
+        const page=await resolvePage(offer.sourceUrl);
         if(!sameOfferIdentity(offer,page)) throw new Error('Product page identity mismatch');
         if(queryMatchReasons(matchingQuery,page).length) throw new Error('Product page query mismatch');
         if(page.currency!=='SAR' || page.originalCurrency!=='SAR') throw new Error('Product page currency mismatch');
         if(typeof page.productPrice!=='number' || !Number.isFinite(page.productPrice) || page.productPrice<=0 || typeof page.originalProductPrice!=='number' || page.originalProductPrice!==page.productPrice) throw new Error('Product page price invalid');
         refreshed[index]={...offer,productPrice:page.productPrice,originalProductPrice:page.originalProductPrice,
           availability:page.availability,observedAt:page.observedAt,
-          sourceMeta:{...offer.sourceMeta,indexPrice:offer.productPrice,priceSource:'product-page',priceVerification:'verified',priceObservedAt:page.observedAt}};
+          sourceMeta:{...offer.sourceMeta,indexPrice:offer.productPrice,priceSource:'product-page',priceObservedAt:page.observedAt}};
         pageRefresh.verified++;
       }catch(error){
-        const message=error?.message || String(error);
-        refreshed[index]={...offer,sourceMeta:{...offer.sourceMeta,priceSource:'constructor-index',priceVerification:'failed',priceVerificationError:message}};
-        failures[index]={market:'jarir-sa',error:message};
+        failures[index]={market:'jarir-sa',error:error?.message || String(error)};
         pageRefresh.failed++;
       }
     }
   };
-  await Promise.all(Array.from({length:Math.min(6,verifyCount)},worker));
+  await Promise.all(Array.from({length:Math.min(6,matches.length)},worker));
   return {offers:refreshed.filter(Boolean),errors:failures.filter(Boolean),queryFilter,pageRefresh};
 }
 
