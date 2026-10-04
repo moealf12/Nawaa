@@ -175,11 +175,13 @@ async function searchAll(query) {
     matchingQuery: query,
   }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
   if ((amazonFirst.offers || []).length) {
-    const amazonOffers = dedupeNormalizedOffers(amazonFirst.offers).map((offer) => ({
-      ...offer,
-      dataKind:"live",
-      matchConfidence:Number.isFinite(offer.matchConfidence) ? offer.matchConfidence : 0.9,
-    }));
+    const amazonOffers = dedupeNormalizedOffers(amazonFirst.offers)
+      .map((offer) => ({
+        ...offer,
+        ...assessOfferMatch(query, offer),
+        dataKind:"live",
+      }))
+      .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
     const selectedOffers = selectDiverseOffers(amazonOffers, Infinity);
     void Promise.allSettled([
       persistOffers(query, selectedOffers),
