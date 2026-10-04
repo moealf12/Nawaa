@@ -10,9 +10,34 @@ function ldProducts($){const out=[];$('script[type="application/ld+json"]').each
 function fromLd(p,url,merchant){const offers=Array.isArray(p?.offers)?p.offers:[p?.offers].filter(Boolean);return offers.map(o=>({title:clean(p.name),brand:typeof p.brand==="string"?p.brand:p.brand?.name||null,merchant,sourceUrl:o.url||url,imageUrl:Array.isArray(p.image)?p.image[0]:typeof p.image==="object"?p.image?.url:p.image||null,currency:first(o.priceCurrency,currency(o.price)),productPrice:num(first(o.price,o.lowPrice,o.highPrice)),sku:first(p.sku,p.mpn,p.gtin13,p.gtin),availability:clean(o.availability||"unknown").split("/").pop().toLowerCase(),condition:clean(o.itemCondition||"new").split("/").pop().toLowerCase(),extractionStrategy:"jsonld"})).filter(x=>x.title.length>=3&&x.productPrice&&x.currency);}
 function fromMeta($,url,merchant){const title=first(meta($,["og:title","twitter:title"]),$("h1").first().text(),$("title").text());const rawPrice=first(meta($,["product:price:amount","og:price:amount"]),$('[itemprop="price"]').first().attr("content"),$('[itemprop="price"]').first().text());const rawCurrency=first(meta($,["product:price:currency","og:price:currency"]),$('[itemprop="priceCurrency"]').first().attr("content"),$('[itemprop="priceCurrency"]').first().text(),currency(rawPrice));const price=num(rawPrice);if(!title||!price||!rawCurrency)return [];return [{title:clean(title),brand:first(meta($,["product:brand"]),$('[itemprop="brand"]').first().text()),merchant,sourceUrl:url,imageUrl:first(meta($,["og:image","twitter:image"]),$('[itemprop="image"]').first().attr("src")),currency:clean(rawCurrency).toUpperCase(),productPrice:price,sku:first(meta($,["product:retailer_item_id"]),$('[itemprop="sku"]').first().attr("content"),$('[itemprop="sku"]').first().text()),availability:clean(first(meta($,["product:availability"]),$('[itemprop="availability"]').first().attr("href"),"unknown")).split("/").pop().toLowerCase(),condition:"new",extractionStrategy:"metadata"}];}
 
+
+function textPriceCandidates($){
+ const selectors=[
+  '[data-price]','[data-product-price]','[class*="price"]','[id*="price"]',
+  '[aria-label*="price" i]','[itemprop="offers"]'
+ ];
+ const out=[];
+ for(const selector of selectors){
+  $(selector).slice(0,80).each((_,el)=>{
+   const node=$(el);const raw=first(node.attr('data-price'),node.attr('data-product-price'),node.attr('content'),node.attr('aria-label'),node.text());
+   const price=num(raw);const cur=currency(raw)||currency(node.parent().text())||currency($('body').text().slice(0,12000));
+   if(price&&cur)out.push({price,currency:cur});
+  });
+ }
+ return out;
+}
+function fromVisibleDom($,url,merchant){
+ const title=clean(first($('h1').first().text(),meta($,['og:title','twitter:title']),$('title').text()));
+ if(title.length<3)return [];
+ const prices=textPriceCandidates($);
+ if(!prices.length)return [];
+ const best=prices.sort((a,b)=>a.price-b.price)[0];
+ return [{title,brand:first(meta($,['product:brand']),$('[itemprop="brand"]').first().text()),merchant,sourceUrl:url,imageUrl:first(meta($,['og:image','twitter:image']),$('main img').first().attr('src')),currency:best.currency,productPrice:best.price,sku:null,availability:'unknown',condition:'new',extractionStrategy:'visible-dom'}];
+}
+
 export function extractOffersFromPage({$,url}){
  const merchant=new URL(url).hostname.replace(/^www\./,"");
- const all=[...ldProducts($).flatMap(p=>fromLd(p,url,merchant)),...fromMeta($,url,merchant)];
+ const all=[...ldProducts($).flatMap(p=>fromLd(p,url,merchant)),...fromMeta($,url,merchant),...fromVisibleDom($,url,merchant)];
  const seen=new Set();
- return all.filter(x=>{const k=[x.sourceUrl,x.sku,x.productPrice,x.currency].join("|");if(seen.has(k))return false;seen.add(k);return true;}).map(x=>({...x,observedAt:new Date().toISOString()}));
+ return all.filter(x=>{const k=[x.sourceUrl,x.productPrice,x.currency].join("|");if(seen.has(k))return false;seen.add(k);return true;}).map(x=>({...x,observedAt:new Date().toISOString()}));
 }
