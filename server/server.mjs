@@ -187,7 +187,13 @@ async function searchAll(query) {
   }));
   const relevantPrimary = primaryAssessed.filter((offer) => (offer.matchConfidence || 0) >= 0.65);
   const primaryMerchants = new Set(relevantPrimary.map(offerMerchantKey)).size;
-  if (relevantPrimary.length < 20 || primaryMerchants < 5) {
+  const intent = parseSearchIntent(query);
+  const broadDiscovery = intent.discoveryMode === "brand" || (!intent.model && !intent.storage && !intent.color && !intent.condition);
+  const minimumUsefulOffers = broadDiscovery ? 20 : 6;
+  const needsRecallExpansion =
+    relevantPrimary.length < minimumUsefulOffers ||
+    (broadDiscovery && primaryMerchants < 5);
+  if (needsRecallExpansion) {
     const fallbackQueries = buildProviderFallbackQueries(query);
     fallbackQuery = fallbackQueries[0] || null;
     // Brand-only searches need breadth across product families. Run up to four
