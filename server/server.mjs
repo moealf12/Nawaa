@@ -85,13 +85,13 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // Core search providers must always get a chance per user request. Reliability
   // still affects diagnostics/routing inside providers, but a temporary cooldown
   // must not collapse the whole public API into an instant empty response.
-  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 12, matchingQuery), { explicit:true });
-  add("jarir-direct", () => searchJarir(providerQuery, 24, matchingQuery), { explicit:true });
-  add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true });
+  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 12, matchingQuery), { explicit:true, deadlineMs:8000 });
+  add("jarir-direct", () => searchJarir(providerQuery, 24, matchingQuery), { explicit:true, deadlineMs:8000 });
+  add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true, deadlineMs:8000 });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
   if (!skipFreeStorefronts) {
-    add("free-storefronts", () => searchFreeStorefronts(providerQuery, { matchingQuery, excludeStoreIds:["amazon-sa"] }), { explicit:true, deadlineMs:6000 });
+    add("free-storefronts", () => searchFreeStorefronts(providerQuery, { matchingQuery, excludeStoreIds:["amazon-sa"] }), { explicit:true, deadlineMs:8000 });
   }
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
   if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
@@ -167,18 +167,16 @@ async function searchAll(query) {
   query = normalizeSearchQuery(query);
   const providerQuery = parseSearchIntent(query).providerQuery;
 
-  // Amazon Saudi is a high-recall direct search-card source. Run it independently
-  // from the broad storefront aggregator so slower stores cannot make Amazon miss
-  // the aggregator deadline and collapse a valid search to zero offers.
-  const amazonSaudi = searchFreeStorefrontById("amazon-sa", providerQuery, {
+  // Amazon Saudi needs an isolated acquisition window on the free web instance.
+  // Fetch it first, then fan out all remaining providers and merge every result.
+  const amazon = await searchFreeStorefrontById("amazon-sa", providerQuery, {
     perStore: Infinity,
     matchingQuery: query,
   }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
-  const [primary,indexed,persisted,amazon] = await Promise.all([
+  const [primary,indexed,persisted] = await Promise.all([
     runProviderPass(providerQuery, "primary", query),
     searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
     searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
-    amazonSaudi,
   ]);
   let providers = primary.providers;
   let errors = primary.errors;
