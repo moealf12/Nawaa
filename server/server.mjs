@@ -196,8 +196,11 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
     const p=executeProviderTask(task,pass,providerQuery).then(chunk=>({task,chunk}));
     inFlight.set(task.id,p);
   };
-  const initial=Math.max(3,Math.min(5,remaining.length));
-  for(let i=0;i<initial;i++) launch(remaining.shift());
+  // Providers already enforce their own deadlines. Start every eligible
+  // provider immediately so a slow source never sits in front of a fast source.
+  // This changes scheduling only: no provider or offer is removed.
+  const initial=remaining.length;
+  while(remaining.length) launch(remaining.shift());
 
   while(inFlight.size){
     const settled=await Promise.race(inFlight.values());
@@ -213,13 +216,7 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
     const merchants=new Set(relevant.map(offerMerchantKey)).size;
     const enough=relevant.length>=usefulThreshold && merchants>=merchantThreshold;
 
-    if(remaining.length && inFlight.size<initial){
-      // Coverage is a latency signal, never a recall cutoff. Even when the first
-      // providers already produced many useful offers, continue launching every
-      // eligible source so the user is not denied cheaper or otherwise better
-      // results that may exist later in the ranked provider list.
-      launch(remaining.shift());
-    }
+
   }
 
   const merged=mergeProviderChunks(chunks);
