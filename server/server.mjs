@@ -242,12 +242,13 @@ async function searchAll(query) {
   const sources = currentSources();
   const selectedOffers = selectDiverseOffers(offers, Infinity);
 
-  // Persistence/indexing are optional production accelerators. Search results
-  // remain available even when either external service is not configured.
-  await Promise.allSettled([
+  // Persistence/indexing are optional accelerators and must never delay the
+  // shopper response. Write-through happens asynchronously after live results
+  // are ready; failures are intentionally isolated from the search request.
+  void Promise.allSettled([
     persistOffers(query, selectedOffers),
     indexOffers(selectedOffers),
-  ]);
+  ]).catch(() => {});
 
   return {
     providersConfigured: configuredProviders(),
