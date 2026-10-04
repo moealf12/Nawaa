@@ -28,7 +28,7 @@ import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { persistOffers } from "./persistence.mjs";
-import { indexOffers } from "./search-index.mjs";
+import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -168,6 +168,11 @@ async function searchAll(query) {
   let errors = primary.errors;
   let offers = primary.offers;
   let fallbackQuery = null;
+
+  // Merge durable catalog recall with fresh provider results. Indexed records
+  // are still re-scored against the current shopper query below.
+  const indexed = await searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] }));
+  offers.push(...(indexed.offers || []));
 
   // Do not let a handful of weak primary hits suppress recall expansion.
   // Expand when the first pass has too few relevant offers or too little merchant diversity.
