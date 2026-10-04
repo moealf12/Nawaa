@@ -1273,8 +1273,11 @@ async function runSearch(rawQuery) {
             if(requestId !== state.requestId) return finish(best || {});
             try {
               const payload=JSON.parse(event.data);
+              // Always retain the newest snapshot, including the final empty/non-empty
+              // canonical result. Partial snapshots are for rendering speed only; the
+              // final snapshot owns cursors, provider diagnostics and completion state.
+              best=payload;
               if(Array.isArray(payload.offers) && payload.offers.length){
-                best=payload;
                 recordPriceHistory(payload.offers);
                 const liveProduct={
                   id:null,brand:"بحث عالمي",model:query,variant:"إلى السعودية",
@@ -1287,7 +1290,7 @@ async function runSearch(rawQuery) {
               }
             } catch {}
           });
-          source.addEventListener("done",()=>finish(best || {}));
+          source.addEventListener("done",()=>finish(best || null));
           source.addEventListener("error",()=>{
             source.close();
             if(state.eventSource===source) state.eventSource=null;
