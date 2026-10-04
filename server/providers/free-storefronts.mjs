@@ -1194,7 +1194,10 @@ export async function searchFreeStorefronts(query, options = {}) {
   // Diversity comes from more stores, not dozens of serial product resolutions inside one store.
   const requestedStoreLimit = Number(options.storeLimit);
   const storeLimit = Number.isFinite(requestedStoreLimit) && requestedStoreLimit > 0 ? requestedStoreLimit : 16;
-  const routes = routeFreeStorefronts(query, storeLimit);
+  const excludedStoreIds = new Set(Array.isArray(options.excludeStoreIds) ? options.excludeStoreIds : []);
+  const routes = routeFreeStorefronts(query, storeLimit + excludedStoreIds.size)
+    .filter((entry) => !excludedStoreIds.has(entry.store.id))
+    .slice(0, storeLimit);
   const stores = routes.map((entry) => entry.store);
   const requestedPerStore = Number(options.perStore);
   const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0
