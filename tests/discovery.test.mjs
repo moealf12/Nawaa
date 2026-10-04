@@ -94,7 +94,7 @@ test('common Arabic brand spellings canonicalize before provider search',()=>{
 test('zero-result fallback broadens provider queries while preserving the original match intent',()=>{
   assert.deepEqual(query.buildProviderFallbackQueries('ايفون 17 512 جيجا اسود').slice(0,2),['iphone 17','phone']);
   assert.ok(query.buildProviderFallbackQueries('hp elitebook 840 g11').includes('hp laptop'));
-  assert.deepEqual(query.buildProviderFallbackQueries('سواروفسكي'),[]);
+  assert.deepEqual(query.buildProviderFallbackQueries('سواروفسكي').slice(0,4),['swarovski jewelry','swarovski watch','swarovski other','swarovski accessory']);
 });
 
 test('broad retail Arabic queries map to universal commerce categories',()=>{
