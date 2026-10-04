@@ -1,4 +1,4 @@
-import { CheerioCrawler, Configuration } from "crawlee";
+import * as cheerio from "cheerio";
 import { parseMoney } from "./provider-utils.mjs";
 import { resolvePublicHttpsTarget } from "./url-resolver.mjs";
 
@@ -121,26 +121,23 @@ function reconcile(candidates, finalUrl){
 }
 
 export async function extractProductWithCrawlee(url,{timeoutMs=12000}={}){
-  await resolvePublicHttpsTarget(url);
-  const storageDir=process.env.CRAWLEE_STORAGE_DIR || "/tmp/nawaa-crawlee";
-  const config=new Configuration({persistStorage:false,storageClientOptions:{localDataDirectory:storageDir}});
-  let result=null;
-  let failure=null;
-  const crawler=new CheerioCrawler({
-    maxConcurrency:1,
-    maxRequestsPerCrawl:1,
-    requestHandlerTimeoutSecs:Math.ceil(timeoutMs/1000),
-    navigationTimeoutSecs:Math.ceil(timeoutMs/1000),
-    maxRequestRetries:1,
-    requestHandler:async({$,request,response})=>{
-      const length=Number(response?.headers?.["content-length"]||0);
-      if(length>MAX_BODY_BYTES) throw new Error("Product page is too large");
-      const candidates=[...jsonLdCandidates($),metaCandidate($)];
-      result=reconcile(candidates,request.loadedUrl||request.url);
+  const { parsed } = await resolvePublicHttpsTarget(url);
+  const response = await fetch(parsed, {
+    redirect:"follow",
+    headers:{
+      accept:"text/html,application/xhtml+xml",
+      "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/141 Safari/537.36",
+      "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
     },
-    failedRequestHandler:async({request,error})=>{ failure=error||new Error("Crawlee request failed: "+request.url); },
-  },config);
-  await crawler.run([url]);
-  if(result) return result;
-  throw failure || new Error("Crawlee extraction failed");
+    signal:AbortSignal.timeout(timeoutMs),
+  });
+  if(!response.ok) throw new Error("Universal acquisition returned "+response.status);
+  const type=response.headers.get("content-type")||"";
+  if(!type.includes("text/html")&&!type.includes("application/xhtml+xml")) throw new Error("URL is not an HTML product page");
+  const declared=Number(response.headers.get("content-length")||0);
+  if(declared>MAX_BODY_BYTES) throw new Error("Product page is too large");
+  const html=await response.text();
+  if(Buffer.byteLength(html,"utf8")>MAX_BODY_BYTES) throw new Error("Product page is too large");
+  const $=cheerio.load(html);
+  return reconcile([...jsonLdCandidates($),metaCandidate($)],response.url||parsed.href);
 }
