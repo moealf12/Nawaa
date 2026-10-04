@@ -84,6 +84,17 @@ export const BRAND_CATEGORY_PRIORITIES = {
   oneplus: ['phone','tablet','audio'], oppo: ['phone','tablet','audio'],
   realme: ['phone','tablet','audio'], nokia: ['phone','tablet'],
   swarovski: ['jewelry','watch','other','accessory'],
+  // Luxury houses need explicit discovery categories so a brand-only query is
+  // routed to beauty/fashion/jewellery specialists instead of generic stores.
+  dior: ['perfume','beauty','clothing','bag','jewelry'],
+  chanel: ['perfume','beauty','bag','clothing','jewelry'],
+  gucci: ['bag','clothing','shoes','perfume','jewelry'],
+  prada: ['bag','clothing','shoes','perfume'],
+  hermes: ['bag','perfume','clothing','jewelry'],
+  cartier: ['jewelry','watch','perfume'],
+  rolex: ['watch'],
+  tiffany: ['jewelry','watch'],
+  bulgari: ['jewelry','watch','perfume'],
   shein: ['clothing','shoes','bag','beauty','home','jewelry'],
   nike: ['shoes','clothing','sports'], adidas: ['shoes','clothing','sports'],
   zara: ['clothing','shoes','bag'], hm: ['clothing','home'], ikea: ['furniture','home','kitchen'],
