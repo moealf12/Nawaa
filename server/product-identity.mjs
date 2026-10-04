@@ -139,7 +139,10 @@ export function compareProductIdentity(leftProduct = {}, rightProduct = {}) {
   let verdict = "uncertain";
   if (strongConflict || score < 0.3) verdict = "different";
   else if (score >= 0.78 || matches.includes("gtin") || matches.includes("sku")) verdict = "same";
-  else if (score >= 0.58) verdict = "likely_same";
+  else if (
+    score >= 0.58 ||
+    (matches.includes("brand") && matches.includes("title") && !conflicts.includes("model"))
+  ) verdict = "likely_same";
 
   return {
     score,
