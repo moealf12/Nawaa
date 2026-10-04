@@ -114,6 +114,21 @@ export function createSourceReliabilityEngine({
     return view(id).adjustment;
   }
 
+  // Routing score combines observed availability, yield and latency. It is
+  // intentionally conservative until enough observations exist.
+  function routingScore(id) {
+    const current = view(id);
+    const latency = current.latencyEwmaMs ?? 1800;
+    const latencyFactor = 1 / (1 + Math.max(0, latency) / 1800);
+    const evidence = 0.35 + (current.confidence * 0.65);
+    const yieldFactor = 0.45 + (current.productiveRate * 0.55);
+    return Number((current.reliability * yieldFactor * latencyFactor * evidence).toFixed(6));
+  }
+
+  function rank(ids = []) {
+    return [...ids].sort((a,b) => routingScore(b) - routingScore(a) || a.localeCompare(b));
+  }
+
   function shouldSkip(id, { explicit = false } = {}) {
     const current = view(id);
     // Explicit user intent always gets one chance, even during cooldown.
@@ -132,7 +147,7 @@ export function createSourceReliabilityEngine({
     else stats.clear();
   }
 
-  return { record, view, adjustment, shouldSkip, snapshot, reset };
+  return { record, view, adjustment, routingScore, rank, shouldSkip, snapshot, reset };
 }
 
 export const sourceReliability = createSourceReliabilityEngine();

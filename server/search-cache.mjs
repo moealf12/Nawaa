@@ -1,34 +1,82 @@
-// Short-lived market snapshots: failures never occupy the cache.
-export function createSearchCache(search, { ttl = 60000, maxEntries = 80, now = Date.now } = {}) {
+// Stale-while-revalidate search snapshots. Fresh hits return immediately; stale
+// hits are served immediately while one coalesced refresh runs in background.
+export function createSearchCache(search, {
+  ttl = 45000,
+  staleTtl = 5 * 60 * 1000,
+  maxEntries = 80,
+  now = Date.now,
+} = {}) {
   const entries = new Map();
   const pending = new Map();
   let generation = 0;
-  const cachedSearch = async function(key) {
-    const entry = entries.get(key);
-    if (entry && now() - entry.at < ttl) {
-      return { ...structuredClone(entry.result), cache: { hit: true, ageMs: now() - entry.at, ttlMs: ttl } };
-    }
+
+  const clone = (value) => structuredClone(value);
+  const cacheMeta = (mode, ageMs) => ({
+    hit: mode !== "miss",
+    mode,
+    stale: mode === "stale",
+    refreshing: mode === "stale",
+    ageMs,
+    ttlMs: ttl,
+    staleTtlMs: staleTtl,
+  });
+
+  function touch(key, entry) {
     entries.delete(key);
-    if (!pending.has(key)) {
-      const task = Promise.resolve().then(async () => {
-        let startedGeneration = generation;
-        let result = await search(key);
-        // If a crawler/import invalidated the catalog while this request was in
-        // flight, transparently refresh once instead of returning an empty result.
-        if (generation !== startedGeneration) {
-          startedGeneration = generation;
-          result = await search(key);
-        }
-        if (generation === startedGeneration && result.offers?.length && !result.errors?.length) {
-          while (entries.size >= maxEntries) entries.delete(entries.keys().next().value);
-          entries.set(key, { at: now(), result: structuredClone(result) });
-        }
-        return result;
-      }).finally(() => { if (pending.get(key) === task) pending.delete(key); });
-      pending.set(key, task);
+    entries.set(key, entry);
+  }
+
+  function startRefresh(key) {
+    if (pending.has(key)) return pending.get(key);
+    const task = Promise.resolve().then(async () => {
+      let startedGeneration = generation;
+      let result = await search(key);
+      if (generation !== startedGeneration) {
+        startedGeneration = generation;
+        result = await search(key);
+      }
+      if (generation === startedGeneration && result.offers?.length) {
+        while (entries.size >= maxEntries) entries.delete(entries.keys().next().value);
+        const entry = { at: now(), result:clone(result) };
+        entries.delete(key);
+        entries.set(key, entry);
+      }
+      return result;
+    }).finally(() => {
+      if (pending.get(key) === task) pending.delete(key);
+    });
+    pending.set(key, task);
+    return task;
+  }
+
+  const cachedSearch = async function(key, { allowStale = true } = {}) {
+    const entry = entries.get(key);
+    if (entry) {
+      const age = Math.max(0, now() - entry.at);
+      if (age < ttl) {
+        touch(key, entry);
+        return { ...clone(entry.result), cache:cacheMeta("fresh", age) };
+      }
+      if (allowStale && age < staleTtl) {
+        touch(key, entry);
+        void startRefresh(key).catch(() => {});
+        return { ...clone(entry.result), cache:cacheMeta("stale", age) };
+      }
+      entries.delete(key);
     }
-    return { ...structuredClone(await pending.get(key)), cache: { hit: false, ageMs: 0, ttlMs: ttl } };
+    const result = await startRefresh(key);
+    return { ...clone(result), cache:cacheMeta("miss", 0) };
   };
+
+  cachedSearch.peek = (key) => {
+    const entry = entries.get(key);
+    if (!entry) return null;
+    const age = Math.max(0, now() - entry.at);
+    if (age >= staleTtl) { entries.delete(key); return null; }
+    return { ...clone(entry.result), cache:cacheMeta(age < ttl ? "fresh" : "stale", age) };
+  };
+  cachedSearch.refresh = (key) => startRefresh(key);
   cachedSearch.clear = () => { generation++; entries.clear(); pending.clear(); };
+  cachedSearch.stats = () => ({ entries:entries.size, pending:pending.size, ttlMs:ttl, staleTtlMs:staleTtl });
   return cachedSearch;
 }
