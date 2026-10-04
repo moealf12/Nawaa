@@ -1023,7 +1023,9 @@ function renderProduct(product, query) {
         <h2>${escapeHtml(product.nameAr)}</h2>
         <p>${intent.discoveryMode === "brand" ? "منتجات الشركة حسب الفئة. اختر منتجًا لمقارنة عروض المتاجر." : "اختر الفئة والمنتج، ثم قارن عروض المتاجر للنسخة نفسها."}</p>
       </div>
-      <div class="identity-pill">${exactGroups.length} منتجات مطابقة · ${relatedGroups.length} بدائل</div>
+      <div class="identity-pill">${intent.discoveryMode === "brand"
+        ? `${exactGroups.length} منتجات من العلامة · ${relatedGroups.length} نتائج أقل صلة`
+        : `${exactGroups.length} منتجات مطابقة · ${relatedGroups.length} بدائل`}</div>
     </section>
 
     <div class="results-toolbar">
