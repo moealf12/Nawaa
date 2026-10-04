@@ -68,6 +68,7 @@ on:
       - "tests/ebay-notifications.test.mjs"
       - "workers/crawler/**"
       - "tests/crawler-extractors.test.mjs"
+      - "tests/amazon-sa-search.test.mjs"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
     paths:
