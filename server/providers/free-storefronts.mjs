@@ -590,6 +590,39 @@ export function extractTemuSearchOffers(html, query) {
   return offers;
 }
 
+
+export function extractAmazonSearchOffers(html, query, baseUrl="https://www.amazon.sa") {
+  const source=String(html||"");
+  const tokens=normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
+  const offers=[]; const seen=new Set();
+  const cardRe=/<div\b[^>]*data-component-type=["']s-search-result["'][^>]*data-asin=["']([A-Z0-9]{10})["'][^>]*>([\s\S]*?)(?=<div\b[^>]*data-component-type=["']s-search-result["']|$)/gi;
+  let m;
+  while((m=cardRe.exec(source))){
+    const asin=m[1], block=m[2];
+    const title=stripHtml(
+      block.match(/<h2\b[^>]*>[\s\S]*?<span\b[^>]*>([\s\S]*?)<\/span>/i)?.[1] ||
+      block.match(/<a\b[^>]*class=["'][^"']*a-link-normal[^"']*s-line-clamp[^"']*["'][^>]*>([\s\S]*?)<\/a>/i)?.[1] || ""
+    );
+    if(title.length<3) continue;
+    const hay=normalizeSearchQuery(title);
+    const hits=tokens.filter(t=>hay.includes(t)).length;
+    if(tokens.length>1 && hits/tokens.length<0.2) continue;
+    const whole=block.match(/<span\b[^>]*class=["'][^"']*a-price-whole[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
+    const fraction=block.match(/<span\b[^>]*class=["'][^"']*a-price-fraction[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
+    const offscreen=stripHtml(block.match(/<span\b[^>]*class=["'][^"']*a-offscreen[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]||"");
+    let price=null;
+    if(whole){const w=Number(stripHtml(whole).replace(/[^0-9]/g,""));const fr=Number(stripHtml(fraction||"0").replace(/[^0-9]/g,"")||0);if(Number.isFinite(w)&&w>0)price=w+(Number.isFinite(fr)?fr/100:0);}
+    if(!price){const n=Number((offscreen.match(/[0-9][0-9,.]*/)?.[0]||"").replace(/,/g,""));if(Number.isFinite(n)&&n>0)price=n;}
+    if(!price) continue;
+    const href=decodeHtml(block.match(/<a\b[^>]*href=["']([^"']*\/dp\/[A-Z0-9]{10}[^"']*)["']/i)?.[1]||"");
+    const img=decodeHtml(block.match(/<img\b[^>]*(?:data-image-latency=["']s-product-image["'][^>]*)?src=["']([^"']+)["']/i)?.[1]||"");
+    if(seen.has(asin)) continue; seen.add(asin);
+    let sourceUrl; try{sourceUrl=new URL(href||("/dp/"+asin),baseUrl).href;}catch{sourceUrl=baseUrl+"/dp/"+asin;}
+    offers.push({productId:asin,title,image:img||null,price,currency:"SAR",sourceUrl});
+  }
+  return offers;
+}
+
 export function extractAliExpressSearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
