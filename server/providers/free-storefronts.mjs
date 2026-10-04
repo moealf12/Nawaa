@@ -748,7 +748,7 @@ export function extractIkeaSearchOffers(html, query) {
     try { sourceUrl=new URL(decodeHtml(String(sourceUrl||"")).replace(/\\u002F/gi,"/").replace(/\\\//g,"/"),"https://www.ikea.com").href; } catch { return; }
     const hay=normalizeSearchQuery(title); const hits=tokens.filter(t=>hay.includes(t)).length;
     if(!productId||!title||!Number.isFinite(price)||price<=0||(tokens.length>1&&hits/tokens.length<0.2)||seen.has(String(productId)))return;
-    seen.add(String(productId)); offers.push({productId:String(productId),title,image:image||null,price,currency:"SAR",sourceUrl});
+    seen.add(String(productId)); offers.push({productId:String(productId),title,productType:title,image:image||null,price,currency:"SAR",sourceUrl});
   };
   // Render receives IKEA's SSR shell with product data serialized inside scripts.
   // Mine local neighborhoods around every Saudi PIP URL instead of depending on DOM card shape.
@@ -1199,6 +1199,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         sourceUrl:item.sourceUrl,
         image:item.image,
         title:item.title,
+        productType:item.productType || null,
         specs:{ modelNumber:item.productId },
         condition:"new",
         availability:"unknown",
