@@ -28,10 +28,10 @@ test('unknown brands retain matching products without inventing a popularity pri
 });
 test('brand metadata can match when titles omit it; requested accessories are never suppressed',()=>{
   assert.equal(query.assessOfferMatch('hp',{title:'Pavilion Laptop',condition:'new',specs:{brand:'HP'}}).exactMatch,true);
-  const mouse=offer('HP USB Mouse',20);
+  const mouse={title:'HP USB Mouse',productPrice:20,condition:'new',availability:'in_stock',merchant:'Store',specs:{brand:'HP'},...query.assessOfferMatch('hp mouse',{title:'HP USB Mouse',condition:'new',specs:{brand:'HP'}})};
   const result=sections('hp mouse',[mouse,offer('HP Pavilion Laptop',3000)]);
-  assert.equal(query.assessOfferMatch('hp mouse',mouse).exactMatch,true);
-  assert.equal(query.assessOfferMatch('hp mouse',mouse).matchConfidence >= .9,true);
+  assert.equal(mouse.exactMatch,true);
+  assert.equal(mouse.matchConfidence >= .9,true);
   assert.deepEqual(result.map(s=>s.key),['accessory']);
 });
 test('brand priorities generalize and empty results remain empty',()=>{
