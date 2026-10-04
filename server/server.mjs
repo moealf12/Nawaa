@@ -168,8 +168,10 @@ async function searchAll(query) {
   // Amazon Saudi is a high-recall direct search-card source. Run it independently
   // from the broad storefront aggregator so slower stores cannot make Amazon miss
   // the aggregator deadline and collapse a valid search to zero offers.
-  const amazonSaudi = searchFreeStorefrontById("amazon-sa", providerQuery, Infinity, query)
-    .catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
+  const amazonSaudi = searchFreeStorefrontById("amazon-sa", providerQuery, {
+    perStore: Infinity,
+    matchingQuery: query,
+  }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
   const [primary,indexed,persisted,amazon] = await Promise.all([
     runProviderPass(providerQuery, "primary", query),
     searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
@@ -178,12 +180,17 @@ async function searchAll(query) {
   ]);
   let providers = primary.providers;
   let errors = primary.errors;
-  let offers = primary.offers.concat(amazon.offers || []);
+  const amazonValidated = dedupeNormalizedOffers(amazon.offers || []).map((offer) => ({
+    ...offer,
+    dataKind:"live",
+    matchConfidence:Number.isFinite(offer.matchConfidence) ? offer.matchConfidence : 0.9,
+  }));
+  let offers = primary.offers;
   let fallbackQuery = null;
 
   // Durable catalog recall is merged with live providers and re-scored against
   // the current shopper query. PostgreSQL keeps search useful even if Meili is absent.
-  offers.push(...(indexed.offers || []), ...(persisted.offers || []));
+  offers.push(...amazonValidated, ...(indexed.offers || []), ...(persisted.offers || []));
 
   // Do not let a handful of weak primary hits suppress recall expansion.
   // Expand when the first pass has too few relevant offers or too little merchant diversity.
@@ -198,7 +205,7 @@ async function searchAll(query) {
   const minimumUsefulOffers = broadDiscovery ? 20 : 6;
   const needsRecallExpansion =
     relevantPrimary.length < minimumUsefulOffers ||
-    (broadDiscovery && primaryMerchants < 5);
+    (broadDiscovery && primaryMerchants < 2 && relevantPrimary.length < 40);
   if (needsRecallExpansion) {
     const fallbackQueries = buildProviderFallbackQueries(query);
     fallbackQuery = fallbackQueries[0] || null;
@@ -218,11 +225,19 @@ async function searchAll(query) {
     }
   }
 
-  offers = dedupeNormalizedOffers(offers).map((offer) => ({
-    ...offer,
-    ...assessOfferMatch(query, offer),
-    dataKind: "live",
-  })).filter((offer) => (offer.matchConfidence || 0) >= 0.65);
+  const amazonUrls = new Set(amazonValidated.map((offer) => offer.sourceUrl).filter(Boolean));
+  const rescoredOffers = dedupeNormalizedOffers(offers)
+    .filter((offer) => !amazonUrls.has(offer.sourceUrl))
+    .map((offer) => ({
+      ...offer,
+      ...assessOfferMatch(query, offer),
+      dataKind: "live",
+    }))
+    .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
+  // Amazon offers have already passed the storefront-level query filter. Keep
+  // them intact here instead of making a second scoring pass silently discard
+  // verified results.
+  offers = dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
 
   const sources = currentSources();
   const selectedOffers = selectDiverseOffers(offers, Infinity);
@@ -238,6 +253,7 @@ async function searchAll(query) {
     providersConfigured: configuredProviders(),
     coverage: {
       ...sourceCoverageSummary(sources),
+      amazonDirectOffers: amazonValidated.length,
       returnedOffers: selectedOffers.length,
       availableOffers: offers.length,
       returnedMerchants: new Set(selectedOffers.map(offerMerchantKey)).size,
