@@ -127,13 +127,23 @@ const SOURCE_ADAPTERS = {
 };
 
 // Configured means enabled in the running service, not guaranteed live results.
-export function buildSourceRegistry({configuredProviders = [], shopifyStores = []} = {}) {
+export function buildSourceRegistry({configuredProviders = [], shopifyStores = [], storefronts = []} = {}) {
   const configured = new Set(configuredProviders);
   const sources = WORLD_SOURCE_REGISTRY.map(source => {
     const adapter = SOURCE_ADAPTERS[source.id] || null;
-    return {...source, adapter, status: adapter ? (configured.has(adapter) ? "configured" : "disabled") : "candidate"};
+    const storefrontId = {"newegg-us":"newegg-global",bhphoto:"bhphoto-us"}[source.id] || source.id;
+    const direct = storefronts.some(store=>store.id===storefrontId) ? "free-storefronts:"+storefrontId : null;
+    const adapters = [...new Set([adapter,direct].filter(Boolean))];
+    const active = adapters.filter(id=>configured.has(id));
+    return {...source, adapter:active[0] || adapter || direct, adapters, status:active.length ? "configured" : adapters.length ? "disabled" : "candidate"};
   });
   const seen = new Set(sources.map(source => source.id));
+  for(const store of storefronts) {
+    const adapter="free-storefronts:"+store.id;
+    if(sources.some(source=>source.adapters?.includes(adapter)) || seen.has(store.id)) continue;
+    seen.add(store.id);
+    sources.push({id:store.id,name:store.name,countryCode:store.countryCode,region:"merchant_network",adapter,adapters:[adapter],status:configured.has(adapter)?"configured":"disabled",saudiDelivery:"offer_dependent"});
+  }
   for(const store of shopifyStores) {
     const id = `shopify:${store.id || store.name}`;
     if(seen.has(id) || !/^[A-Z]{2}$/.test(String(store.countryCode).toUpperCase())) continue;

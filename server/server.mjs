@@ -85,7 +85,7 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // Core search providers must always get a chance per user request. Reliability
   // still affects diagnostics/routing inside providers, but a temporary cooldown
   // must not collapse the whole public API into an instant empty response.
-  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 12, matchingQuery), { explicit:true, deadlineMs:8000 });
+  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, Infinity, matchingQuery), { explicit:true, deadlineMs:8000 });
   add("jarir-direct", () => searchJarir(providerQuery, 24, matchingQuery), { explicit:true, deadlineMs:8000 });
   add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true, deadlineMs:8000 });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
@@ -145,6 +145,8 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
         pass,
         query: providerQuery,
         reliability: sourceReliability.view(sourceId),
+        diagnostics: value.diagnostics || null,
+        returnedOffers: value.offers?.length || 0,
         searchedMarkets: value.searchedMarkets || value.searchedStores || [],
       });
       offers.push(...(value.offers || []));
@@ -180,6 +182,9 @@ async function searchAll(query) {
   ]);
   let providers = primary.providers;
   let errors = primary.errors;
+  const amazonSourceId="free-storefronts:amazon-sa";
+  providers.push({provider:"free-storefronts",sourceId:amazonSourceId,ok:!amazon.error && Boolean(amazon.offers?.length),pass:"primary",query:providerQuery,returnedOffers:amazon.offers?.length || 0,diagnostics:amazon.diagnostics || null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
+  if(amazon.error) errors.push({provider:"free-storefronts",sourceId:amazonSourceId,pass:"primary",error:amazon.error});
   const amazonValidated = dedupeNormalizedOffers(amazon.offers || [])
     .map((offer) => ({
       ...offer,
@@ -233,7 +238,7 @@ async function searchAll(query) {
     .map((offer) => ({
       ...offer,
       ...assessOfferMatch(query, offer),
-      dataKind: "live",
+      dataKind: offer.dataKind || "live",
     }))
     .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
   // Amazon search cards are scored once against the shopper query above.
@@ -247,8 +252,8 @@ async function searchAll(query) {
   // shopper response. Write-through happens asynchronously after live results
   // are ready; failures are intentionally isolated from the search request.
   void Promise.allSettled([
-    persistOffers(query, selectedOffers),
-    indexOffers(selectedOffers),
+    persistOffers(query, selectedOffers.filter(offer=>offer.dataKind === "live")),
+    indexOffers(selectedOffers.filter(offer=>offer.dataKind === "live")),
   ]).catch(() => {});
 
   return {
@@ -260,6 +265,8 @@ async function searchAll(query) {
       availableOffers: offers.length,
       returnedMerchants: new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated: selectedOffers.length < offers.length,
+      exhaustive: false,
+      acquisitionLimits: {amazonPages:Math.max(1,Math.min(8,Math.floor(Number(process.env.AMAZON_SA_SEARCH_PAGES)||5))),storefrontsPerPass:16,productPagesPerStore:4,jarirCatalogResults:24},
       fallbackUsed: Boolean(fallbackQuery),
     },
     providers,

@@ -16,7 +16,7 @@ function isPrivateIpv4(ip) {
   const p = ip.split(".").map(Number);
   if (p.length !== 4 || p.some((n) => !Number.isInteger(n))) return false;
   const a = p[0], b = p[1];
-  return a === 10 || a === 127 || a === 0 ||
+  return a >= 224 || a === 10 || a === 127 || a === 0 ||
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
@@ -24,9 +24,16 @@ function isPrivateIpv4(ip) {
 }
 
 function isPrivateIpv6(ip) {
-  const value = ip.toLowerCase();
-  return value === "::1" || value === "::" ||
-    value.startsWith("fc") || value.startsWith("fd") || value.startsWith("fe80:");
+  // URL canonicalization also normalizes IPv4-mapped dotted addresses to hex.
+  const value = new URL(`https://[${ip}]/`).hostname.slice(1,-1).toLowerCase();
+  if (value.startsWith("::ffff:")) {
+    const parts=value.slice(7).split(":");
+    if(parts.length!==2)return true;
+    const high=parseInt(parts[0],16),low=parseInt(parts[1],16);
+    return isPrivateIpv4([high>>8,high&255,low>>8,low&255].join("."));
+  }
+  // Only global unicast 2000::/3 is eligible; exclude documentation space.
+  return !/^[23][0-9a-f]{3}:/.test(value) || value.startsWith("2001:db8:");
 }
 
 function isPrivateIp(ip) {
@@ -69,6 +76,7 @@ export async function fetchHtmlSafe(url, redirects = 0) {
   });
 
   if ([301,302,303,307,308].includes(response.status)) {
+    await response.body?.cancel();
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without location");

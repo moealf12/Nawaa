@@ -16,5 +16,5 @@ export function configuredProviders() {
     ...(shopifyConfigured() ? ["shopify"] : [])];
 }
 export function currentSources() {
-  return buildSourceRegistry({configuredProviders:configuredProviders(),shopifyStores:configuredShopifyStores()});
+  return buildSourceRegistry({configuredProviders:configuredProviders(),shopifyStores:configuredShopifyStores(),storefronts:configuredFreeStorefronts()});
 }

@@ -6,6 +6,7 @@ import { filterQueryOffers } from "../../src/search-query.mjs";
 
 function firstFinite(...values) {
   for (const value of values) {
+    if (value == null || typeof value === "boolean" || (typeof value === "string" && !value.trim())) continue;
     const n = typeof value === "number" ? value : Number(value);
     if (Number.isFinite(n) && n >= 0) return n;
   }
@@ -133,36 +134,43 @@ function normalizeProduct(product) {
 }
 
 export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query) {
+  const cap = limit === Infinity ? Infinity : Math.max(1, Number(limit) || 12);
   const url = new URL(EXTRA_SEARCH_BASE);
   url.searchParams.set("q", query);
-  url.searchParams.set("rows", String(Math.max(1, Math.min(24, limit))));
-  url.searchParams.set("start", "0");
+  url.searchParams.set("rows", String(Math.min(100, cap)));
   url.searchParams.set("format", "json");
-
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "user-agent": "NAWAA-Search/0.3 (+https://moealf12.github.io/Nawaa/)",
-    },
-    signal: AbortSignal.timeout(10000),
-  });
-
-  if (!response.ok) {
-    throw new Error("extra-unbxd: HTTP " + response.status);
+  const signal = AbortSignal.timeout(6500);
+  const products = [], seen = new Set(), errors = [];
+  let start = 0, total = null, complete = false;
+  while(products.length < cap) {
+    url.searchParams.set("start", String(start));
+    try {
+      const response = await fetch(url, {headers:{accept:"application/json"},signal});
+      if(!response.ok) throw new Error("extra-unbxd: HTTP " + response.status);
+      const data = await response.json();
+      const page = data?.response?.products;
+      if(!Array.isArray(page)) throw new Error("extra-unbxd: Malformed product response");
+      const count = data.response.numberOfProducts;
+      if(Number.isFinite(Number(count)) && count != null) total = Number(count);
+      let added = 0;
+      for(const product of page) {
+        const offer = normalizeProduct(product);
+        if(!offer || seen.has(offer.sourceUrl)) continue;
+        seen.add(offer.sourceUrl); products.push(offer); added++;
+        if(products.length >= cap) break;
+      }
+      start += page.length;
+      if(!page.length || (total !== null && start >= total)) {complete=true;break;}
+      if(!added) {errors.push({market:"extra-sa",error:"pagination_no_progress"});break;}
+      if(total===null && page.length < Number(url.searchParams.get("rows"))) {complete=true;break;}
+      if(signal.aborted) throw new Error("pagination_deadline_exceeded");
+    } catch(error) {
+      if(!products.length) throw error;
+      errors.push({market:"extra-sa",error:error.message}); break;
+    }
   }
-
-  const data = await response.json();
-  if(!Array.isArray(data?.response?.products)) throw new Error("extra-unbxd: Malformed product response");
-  const products = data.response.products;
-  const normalized = products.map(normalizeProduct).filter(Boolean);
-  const {offers,queryFilter} = filterQueryOffers(matchingQuery, normalized);
-
-  return {
-    provider: "extra-unbxd",
-    ok: offers.length > 0,
-    searchedMarkets: [{ id: "extra-sa", countryCode: "SA", countryNameAr: "السعودية" }],
-    offers,
-    errors: products.length && !normalized.length ? [{ market: "extra-sa", error: "No valid live products returned" }] : [],
-    diagnostics: {queryFilter},
-  };
+  const {offers,queryFilter}=filterQueryOffers(matchingQuery,products);
+  return {provider:"extra-unbxd",ok:offers.length>0,
+    searchedMarkets:[{id:"extra-sa",countryCode:"SA",countryNameAr:"السعودية"}],
+    offers, errors, diagnostics:{queryFilter,pagination:{fetched:start,total,complete}}};
 }

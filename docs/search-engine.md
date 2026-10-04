@@ -1,5 +1,33 @@
 # NAWAA Search & Price Comparison Engine
 
+## Verified code update — 2026-10-04
+
+Current code supersedes the older snapshots below. `npm test` discovers every
+`tests/*.test.mjs` file, including Amazon and crawler regressions. CI installs
+locked dependencies before testing.
+
+- Amazon cards support heading-only names, select the current price rather than
+  a crossed-out list price, and keep URLs on the matching Amazon listing.
+- eXtra follows catalog pagination within a shared 6.5-second acquisition budget;
+  collected results survive later-page errors. Missing prices are not zero.
+- Structured-price storefront results are no longer cut to four. Product-page
+  resolution remains bounded separately. This is not exhaustive crawling.
+- Runtime source coverage includes enabled direct storefronts, including Amazon
+  and GCC stores; configured does not mean live-certified.
+- Persisted/indexed recall retains its provenance and observation timestamp and
+  is not written back as a new live observation.
+- Public diagnostics include isolated Amazon failures, per-provider counts and
+  acquisition limits. `coverage.truncated` describes final selection only;
+  `coverage.exhaustive` is false because upstream acquisition is bounded.
+- URL resolution rejects IPv4-mapped private addresses, multicast and non-global
+  IPv6 destinations. This does not constitute a complete security audit.
+
+Remaining: cursor-based remote load-more, Jarir pagination, exhaustive Amazon
+pagination, source-by-source production certification, DNS rebinding protection
+by pinning validated addresses at connection time, and request-level rate limits.
+The UI's load-more reveals already acquired groups, ten at a time per category.
+
+
 ## Current implementation snapshot — 2026-10-01
 
 NAWAA is now beyond the original Sprint 01 demo. The current implementation has a live Saudi search backend, product identity logic, SKU-aware comparison, an interactive configurator, explainable offer intelligence, and a local price-history layer.
