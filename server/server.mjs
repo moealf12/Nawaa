@@ -108,7 +108,7 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   const settled = await Promise.allSettled(tasks.map(async (task) => {
     const started = Date.now();
     try {
-      const value = await withDeadline(Promise.resolve().then(() => task.run()), task.id);
+      const value = await withDeadline(Promise.resolve().then(() => task.run()), task.id, task.deadlineMs);
       sourceReliability.record(task.id, {
         transportOk:true,
         offers:value.offers?.length || 0,
