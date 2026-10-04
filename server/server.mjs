@@ -27,7 +27,7 @@ import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
-import { persistOffers } from "./persistence.mjs";
+import { persistOffers, searchPersistedOffers } from "./persistence.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
 import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
@@ -165,16 +165,19 @@ async function searchAll(query) {
   query = normalizeSearchQuery(query);
   const providerQuery = parseSearchIntent(query).providerQuery;
 
-  const primary = await runProviderPass(providerQuery, "primary", query);
+  const [primary,indexed,persisted] = await Promise.all([
+    runProviderPass(providerQuery, "primary", query),
+    searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
+    searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
+  ]);
   let providers = primary.providers;
   let errors = primary.errors;
   let offers = primary.offers;
   let fallbackQuery = null;
 
-  // Merge durable catalog recall with fresh provider results. Indexed records
-  // are still re-scored against the current shopper query below.
-  const indexed = await searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] }));
-  offers.push(...(indexed.offers || []));
+  // Durable catalog recall is merged with live providers and re-scored against
+  // the current shopper query. PostgreSQL keeps search useful even if Meili is absent.
+  offers.push(...(indexed.offers || []), ...(persisted.offers || []));
 
   // Do not let a handful of weak primary hits suppress recall expansion.
   // Expand when the first pass has too few relevant offers or too little merchant diversity.
