@@ -173,12 +173,21 @@ async function searchAll(query) {
   const relevantPrimary = primaryAssessed.filter((offer) => (offer.matchConfidence || 0) >= 0.65);
   const primaryMerchants = new Set(relevantPrimary.map(offerMerchantKey)).size;
   if (relevantPrimary.length < 20 || primaryMerchants < 5) {
-    fallbackQuery = buildProviderFallbackQueries(query)[0] || null;
-    if (fallbackQuery) {
-      const fallback = await runProviderPass(fallbackQuery, "fallback", query);
-      providers = providers.concat(fallback.providers);
-      errors = errors.concat(fallback.errors);
-      offers = offers.concat(fallback.offers);
+    const fallbackQueries = buildProviderFallbackQueries(query);
+    fallbackQuery = fallbackQueries[0] || null;
+    // Brand-only searches need breadth across product families. Run up to four
+    // distinct category expansions in parallel, while specific searches keep
+    // the single bounded fallback path.
+    const expansionQueries = parseSearchIntent(query).discoveryMode === "brand"
+      ? fallbackQueries.slice(0, 4)
+      : fallbackQueries.slice(0, 1);
+    if (expansionQueries.length) {
+      const expansions = await Promise.all(expansionQueries.map((candidate) => runProviderPass(candidate, "fallback", query)));
+      for (const fallback of expansions) {
+        providers = providers.concat(fallback.providers);
+        errors = errors.concat(fallback.errors);
+        offers = offers.concat(fallback.offers);
+      }
     }
   }
 
