@@ -10,10 +10,16 @@ export function createSearchCache(search, { ttl = 60000, maxEntries = 80, now = 
     }
     entries.delete(key);
     if (!pending.has(key)) {
-      const startedGeneration = generation;
-      const task = Promise.resolve().then(() => search(key)).then((result) => {
-        if (generation !== startedGeneration) return { offers: [], errors: [{ provider: "cache", message: "Search snapshot invalidated; retry" }] };
-        if (result.offers?.length && !result.errors?.length) {
+      const task = Promise.resolve().then(async () => {
+        let startedGeneration = generation;
+        let result = await search(key);
+        // If a crawler/import invalidated the catalog while this request was in
+        // flight, transparently refresh once instead of returning an empty result.
+        if (generation !== startedGeneration) {
+          startedGeneration = generation;
+          result = await search(key);
+        }
+        if (generation === startedGeneration && result.offers?.length && !result.errors?.length) {
           while (entries.size >= maxEntries) entries.delete(entries.keys().next().value);
           entries.set(key, { at: now(), result: structuredClone(result) });
         }
