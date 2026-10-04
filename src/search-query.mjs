@@ -201,8 +201,8 @@ export function buildProviderFallbackQueries(value = "") {
   push(relaxed.replace(/\s+/g, " ").trim());
 
   if (intent.brand && intent.category) push(intent.brand + " " + intent.category + condition);
-  if (intent.brand) push(intent.brand + condition);
-  if (intent.category) push(intent.category + condition);
+  if (intent.brand && (intent.storage || intent.color || intent.category)) push(intent.brand + condition);
+  if (intent.category && (intent.storage || intent.color)) push(intent.category + condition);
   return candidates;
 }
 
