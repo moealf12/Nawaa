@@ -67,6 +67,7 @@ on:
       - "tests/ingestion.test.mjs"
       - "tests/ebay-notifications.test.mjs"
       - "workers/crawler/**"
+      - "tests/crawler-extractors.test.mjs"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
     paths:
