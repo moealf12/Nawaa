@@ -11,3 +11,37 @@ create index if not exists nawaa_offers_brand_idx on nawaa_offers(brand);
 create index if not exists nawaa_offers_observed_idx on nawaa_offers(observed_at desc);`);initialized=true;return {configured:true,ready:true};}
 const keyOf=o=>[o.sourceUrl,o.sku,o.condition].filter(Boolean).join("|");
 export async function persistOffers(query,offers=[]){const client=await db();if(!client||!offers.length)return {configured:Boolean(client),saved:0};await initPersistence();let saved=0;for(const o of offers){if(!o?.sourceUrl||!o?.title)continue;const key=keyOf(o);if(!key)continue;await client.query(`insert into nawaa_offers(offer_key,query,title,brand,merchant,merchant_country_code,source_url,image_url,currency,product_price,total_sar,sku,condition,availability,match_confidence,exact_match,observed_at,payload) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),$17::jsonb) on conflict(offer_key) do update set query=excluded.query,title=excluded.title,brand=excluded.brand,merchant=excluded.merchant,merchant_country_code=excluded.merchant_country_code,image_url=excluded.image_url,currency=excluded.currency,product_price=excluded.product_price,total_sar=excluded.total_sar,availability=excluded.availability,match_confidence=excluded.match_confidence,exact_match=excluded.exact_match,observed_at=now(),payload=excluded.payload`,[key,query,o.title,o.brand||o.specs?.brand||null,o.merchant||null,o.merchantCountryCode||null,o.sourceUrl,o.imageUrl||null,o.currency||null,o.productPrice??null,o.totalSAR??null,o.sku||null,o.condition||null,o.availability||null,o.matchConfidence??null,o.exactMatch===true,JSON.stringify(o)]);saved++;}return {configured:true,saved};}
+
+
+export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}){
+  const client=await db();
+  if(!client||!String(query||"").trim()) return {configured:Boolean(client),offers:[]};
+  await initPersistence();
+  const q=String(query).trim();
+  const result=await client.query(`
+    select payload, observed_at
+    from nawaa_offers
+    where observed_at >= now() - ($2::text || ' hours')::interval
+      and (
+        to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(brand,''))
+          @@ plainto_tsquery('simple',$1)
+        or title ilike '%' || $1 || '%'
+        or brand ilike '%' || $1 || '%'
+      )
+    order by
+      ts_rank(
+        to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(brand,'')),
+        plainto_tsquery('simple',$1)
+      ) desc,
+      observed_at desc
+    limit $3
+  `,[q,String(Math.max(1,Number(maxAgeHours)||168)),Math.max(1,Math.min(500,Number(limit)||120))]);
+  return {
+    configured:true,
+    offers:result.rows.map(row=>({
+      ...(row.payload||{}),
+      dataKind:"persisted",
+      observedAt:row.observed_at instanceof Date ? row.observed_at.toISOString() : row.observed_at
+    }))
+  };
+}
