@@ -22,10 +22,15 @@ locked dependencies before testing.
 - URL resolution rejects IPv4-mapped private addresses, multicast and non-global
   IPv6 destinations. This does not constitute a complete security audit.
 
-Remaining: cursor-based remote load-more, Jarir pagination, exhaustive Amazon
-pagination, source-by-source production certification, DNS rebinding protection
-by pinning validated addresses at connection time, and request-level rate limits.
-The UI's load-more reveals already acquired groups, ten at a time per category.
+Implemented in the 2026-10-04 hardening merge:
+- Signed cursor-based remote expansion now requests progressively deeper acquisition from the backend.
+- Search depth is cache-aware and increases Amazon pages, storefront fanout, product-page verification budget, and response window.
+- Request-level rate limiting protects search, URL resolution, ingest, and source-audit paths.
+- Product-page HTTPS resolution pins the validated public DNS address for the connection and revalidates redirects.
+- The frontend can automatically deepen an empty first pass and exposes a real remote expansion action instead of only revealing already-acquired cards.
+- Public source audit is disabled unless explicitly enabled.
+
+Still intentionally bounded: Amazon/Jarir/storefront acquisition is progressive rather than exhaustive, and each live merchant remains subject to source-by-source production certification because external storefront behavior can change.
 
 
 Saudi-first product discovery, sourcing, and price-comparison prototype.
