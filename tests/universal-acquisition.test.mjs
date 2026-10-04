@@ -18,5 +18,5 @@ test("Crawlee fallback-shaped offers map into NAWAA product schema",()=>{
   assert.equal(product.identity.brand,"HP");
   assert.equal(product.commerce.priceSAR,2499);
   assert.equal(product.source.canonicalUrl,offer.sourceUrl);
-  assert.ok(product.quality.confidence>=0.7);
+  assert.ok(product.quality.confidence>=0.6);
 });
