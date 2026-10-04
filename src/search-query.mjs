@@ -315,7 +315,8 @@ export function assessOfferMatch(query, offer) {
   confidence = Math.max(0, Math.min(1, confidence));
 
   const missingTerms = q.filter((token) => !titleTokens.has(token));
-  const exactMatch = confidence >= 0.92 && hits === q.length &&
+  const structuralTermsMatch = !categoryTokenRequested || (effectiveCategory && offerCategory === effectiveCategory);
+  const exactMatch = confidence >= 0.92 && hits === q.length && structuralTermsMatch &&
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
       !hasUnrequestedVariant && !conditionMismatch && !kindMismatch;
   return {
