@@ -727,28 +727,31 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
   const source=String(html||"");
   const tokens=normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
   const offers=[]; const seen=new Set();
-  const cardRe=/<div[^>]+data-component-type=["']s-search-result["'][^>]*data-asin=["']([A-Z0-9]{10})["'][^>]*>([\s\S]*?)(?=<div[^>]+data-component-type=["']s-search-result["']|$)/gi;
-  let m;
-  while((m=cardRe.exec(source))){
-    const asin=m[1], block=m[2];
+  const asinRe=/data-asin=["']([A-Z0-9]{10})["']/gi;
+  const marks=[]; let m;
+  while((m=asinRe.exec(source))) marks.push({asin:m[1],index:m.index});
+  for(let i=0;i<marks.length;i++){
+    const {asin,index}=marks[i];
     if(seen.has(asin))continue;
-    const href=block.match(/<a[^>]+href=["']([^"']*\/dp\/[A-Z0-9]{10}[^"']*)["']/i)?.[1];
-    const title=stripHtml(
-      block.match(/<h2[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i)?.[1] ||
-      block.match(/<a[^>]+href=["'][^"']*\/dp\/[A-Z0-9]{10}[^"']*["'][^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i)?.[1] || ""
-    );
-    const whole=block.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
-    const frac=block.match(/class=["'][^"']*a-price-fraction[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
+    const block=source.slice(index,Math.min(source.length,marks[i+1]?.index ?? index+30000));
+    const imgMatch=block.match(/<img[^>]+alt=["']([^"']{3,})["'][^>]+(?:data-src|src)=["']([^"']+)["']/i) ||
+      block.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["'][^>]+alt=["']([^"']{3,})["']/i);
+    let title="";
+    let image=null;
+    if(imgMatch){
+      if(/^https?:/i.test(imgMatch[1])){image=decodeHtml(imgMatch[1]);title=decodeHtml(imgMatch[2]);}
+      else {title=decodeHtml(imgMatch[1]);image=decodeHtml(imgMatch[2]);}
+    }
+    if(!title) title=decodeHtml(block.match(/aria-label=["']([^"']{8,})["']/i)?.[1]||"");
     const offscreen=stripHtml(block.match(/class=["'][^"']*a-offscreen[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]||"");
-    let price=Number(String(stripHtml(whole||"")).replace(/[^0-9.]/g,""));
-    if(Number.isFinite(price)&&frac) price+=Number(String(stripHtml(frac)).replace(/[^0-9]/g,""))/100;
-    if((!Number.isFinite(price)||price<=0)&&offscreen) price=Number(offscreen.replace(/[^0-9.]/g,""));
-    if(!href||title.length<3||!Number.isFinite(price)||price<=0)continue;
-    const haystack=normalizeSearchQuery(title); const hits=tokens.filter(t=>haystack.includes(t)).length;
+    const price=Number(offscreen.replace(/[^0-9.]/g,""));
+    if(title.length<3||!Number.isFinite(price)||price<=0)continue;
+    const haystack=normalizeSearchQuery(title);const hits=tokens.filter(t=>haystack.includes(t)).length;
     if(tokens.length>1&&hits/tokens.length<0.2)continue;
-    const img=block.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["']/i)?.[1]||null;
+    const direct=block.match(/href=["']([^"']*\/dp\/[A-Z0-9]{10}[^"']*)["']/i)?.[1];
+    const sourceUrl=direct ? new URL(decodeHtml(direct),origin).href : origin+"/dp/"+asin;
     seen.add(asin);
-    offers.push({productId:asin,title,image:img,price,currency:"SAR",sourceUrl:new URL(href,origin).href});
+    offers.push({productId:asin,title:stripHtml(title),image,price,currency:"SAR",sourceUrl});
   }
   return offers;
 }
