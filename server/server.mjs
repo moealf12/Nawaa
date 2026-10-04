@@ -666,6 +666,11 @@ const server = http.createServer(async (req, res) => {
     const query = String(url.searchParams.get("q") || "").trim() || null;
     try {
       const audit = await auditFreeStorefronts({ storeId, query });
+      // Audits are live diagnostics and must never be served from intermediary caches.
+      res.setHeader("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+      res.setHeader("pragma", "no-cache");
+      res.setHeader("expires", "0");
+      res.setHeader("surrogate-control", "no-store");
       return jsonResponse(res, 200, audit, origin || "*");
     } catch (error) {
       return jsonResponse(res, 400, {
