@@ -510,7 +510,7 @@ const server = http.createServer(async (req, res) => {
     return jsonResponse(res, 200, {
       ok: true,
       service: "nawaa-search",
-      apiVersion: "0.5.0",
+      apiVersion: "0.6.0",
       revision: process.env.RENDER_GIT_COMMIT || null,
       liveProviders: {
         extra: true,
@@ -579,6 +579,53 @@ const server = http.createServer(async (req, res) => {
         error: "url_resolution_failed",
         message: error instanceof Error ? error.message : String(error),
       }, origin || "*");
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/search/stream") {
+    const q = String(url.searchParams.get("q") || "").trim();
+    if (!enforceRateLimit(req,res,"search-stream",{capacity:20,refillPerSecond:0.35},origin || "*")) return;
+    if (q.length < 2 || q.length > 180) return jsonResponse(res,400,{error:"invalid_query"},origin || "*");
+
+    const normalized = normalizeSearchQuery(q);
+    const key = searchCacheKey(normalized,0);
+    const cached = cachedSearch.peek(key);
+    res.writeHead(200,{
+      "content-type":"text/event-stream; charset=utf-8",
+      "cache-control":"no-cache, no-transform",
+      "connection":"keep-alive",
+      "access-control-allow-origin":origin || "*",
+      "x-accel-buffering":"no",
+      "x-content-type-options":"nosniff",
+    });
+    const send=(event,data)=>{
+      if(res.writableEnded)return;
+      res.write("event: "+event+"\n");
+      res.write("data: "+JSON.stringify(data)+"\n\n");
+    };
+    send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString()});
+
+    let closed=false;
+    req.on("close",()=>{closed=true;});
+    try {
+      if (cached) {
+        send("snapshot",cached);
+        if (cached.cache?.mode === "fresh") {
+          send("done",{cache:"fresh",offers:cached.offers?.length || 0});
+          return res.end();
+        }
+      }
+      const result = await cachedSearch.refresh(key);
+      if (closed || res.writableEnded) return;
+      send("snapshot",{...result,cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
+      send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
+      return res.end();
+    } catch(error) {
+      if (!closed && !res.writableEnded) {
+        send("error",{error:"search_failed",message:error instanceof Error?error.message:String(error)});
+        res.end();
+      }
+      return;
     }
   }
 
