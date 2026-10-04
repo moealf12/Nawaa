@@ -21,7 +21,7 @@ import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs"
 import { searchSharafDG } from "./providers/sharafdg.mjs";
 import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarovski.mjs";
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonCreators } from "./providers/amazon-creators.mjs";
-import { configuredFreeStorefronts, searchFreeStorefronts } from "./providers/free-storefronts.mjs";
+import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontById } from "./providers/free-storefronts.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
@@ -165,14 +165,20 @@ async function searchAll(query) {
   query = normalizeSearchQuery(query);
   const providerQuery = parseSearchIntent(query).providerQuery;
 
-  const [primary,indexed,persisted] = await Promise.all([
+  // Amazon Saudi is a high-recall direct search-card source. Run it independently
+  // from the broad storefront aggregator so slower stores cannot make Amazon miss
+  // the aggregator deadline and collapse a valid search to zero offers.
+  const amazonSaudi = searchFreeStorefrontById("amazon-sa", providerQuery, Infinity, query)
+    .catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
+  const [primary,indexed,persisted,amazon] = await Promise.all([
     runProviderPass(providerQuery, "primary", query),
     searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
     searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
+    amazonSaudi,
   ]);
   let providers = primary.providers;
   let errors = primary.errors;
-  let offers = primary.offers;
+  let offers = primary.offers.concat(amazon.offers || []);
   let fallbackQuery = null;
 
   // Durable catalog recall is merged with live providers and re-scored against
