@@ -179,32 +179,57 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   const tasks = providerTasks(providerQuery, matchingQuery, options);
   if (!tasks.length) return {providers:[],errors:[],offers:[]};
 
-  // First wave favors sources with the best observed reliability/yield/latency.
-  // Unknown sources retain a neutral prior and still receive traffic.
   const rankedIds = sourceReliability.rank(tasks.map(task=>task.id));
   const rank = new Map(rankedIds.map((id,index)=>[id,index]));
   const ordered = [...tasks].sort((a,b)=>(rank.get(a.id)??999)-(rank.get(b.id)??999));
-  const firstWaveSize = Math.max(3, Math.min(6, Math.ceil(ordered.length * 0.45)));
-  const firstWave = ordered.slice(0,firstWaveSize);
-  const secondWave = ordered.slice(firstWaveSize);
-
-  const firstChunks = await Promise.all(firstWave.map(task=>executeProviderTask(task,pass,providerQuery)));
-  const first = mergeProviderChunks(firstChunks);
-  const firstRelevant = dedupeNormalizedOffers(first.offers)
-    .map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer)}))
-    .filter(offer=>(offer.matchConfidence || 0)>=0.65);
-  const merchants = new Set(firstRelevant.map(offerMerchantKey)).size;
   const intent = parseSearchIntent(matchingQuery);
   const broad = intent.discoveryMode === "brand" || (!intent.model && !intent.storage && !intent.color && !intent.condition);
-  const enough = firstRelevant.length >= (broad ? 20 : 8) && merchants >= (broad ? 2 : 1);
+  const usefulThreshold = broad ? 20 : 8;
+  const merchantThreshold = broad ? 2 : 1;
 
-  if (enough || !secondWave.length) {
-    return {...first, routing:{mode:"adaptive-two-wave",firstWave:firstWave.map(task=>task.id),secondWaveSkipped:secondWave.map(task=>task.id)}};
+  const chunks=[];
+  let relevant=[];
+  const remaining=[...ordered];
+  const inFlight=new Map();
+  const launch=(task)=>{
+    const p=executeProviderTask(task,pass,providerQuery).then(chunk=>({task,chunk}));
+    inFlight.set(task.id,p);
+  };
+  const initial=Math.max(3,Math.min(5,remaining.length));
+  for(let i=0;i<initial;i++) launch(remaining.shift());
+
+  while(inFlight.size){
+    const settled=await Promise.race(inFlight.values());
+    inFlight.delete(settled.task.id);
+    chunks.push(settled.chunk);
+
+    relevant = dedupeNormalizedOffers(chunks.flatMap(chunk=>chunk.offers || []))
+      .map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer)}))
+      .filter(offer=>(offer.matchConfidence || 0)>=0.65);
+    const merchants=new Set(relevant.map(offerMerchantKey)).size;
+    const enough=relevant.length>=usefulThreshold && merchants>=merchantThreshold;
+
+    if(enough){
+      // Do not start more providers once first-useful-result coverage is reached.
+      // Already-running providers finish naturally and are merged, avoiding unsafe
+      // cancellation of merchant requests that may not support AbortSignal.
+      remaining.length=0;
+    } else if(remaining.length && inFlight.size<initial){
+      launch(remaining.shift());
+    }
   }
 
-  const secondChunks = await Promise.all(secondWave.map(task=>executeProviderTask(task,pass,providerQuery)));
-  const merged = mergeProviderChunks([...firstChunks,...secondChunks]);
-  return {...merged, routing:{mode:"adaptive-two-wave",firstWave:firstWave.map(task=>task.id),secondWave:secondWave.map(task=>task.id)}};
+  const merged=mergeProviderChunks(chunks);
+  return {
+    ...merged,
+    routing:{
+      mode:"adaptive-progressive",
+      ordered:ordered.map(task=>task.id),
+      launched:chunks.map((chunk,index)=>chunk.provider?.sourceId || ordered[index]?.id).filter(Boolean),
+      skipped:remaining.map(task=>task.id),
+      relevantOffers:relevant.length,
+    },
+  };
 }
 
 async function searchExpansion(query, depth) {
@@ -615,7 +640,11 @@ const server = http.createServer(async (req, res) => {
           return res.end();
         }
       }
-      const result = await cachedSearch.refresh(key);
+
+      const refreshPromise=cachedSearch.refresh(key);
+      const heartbeat=setInterval(()=>{ if(!closed&&!res.writableEnded) res.write(": keepalive\n\n"); },5000);
+      let result;
+      try { result=await refreshPromise; } finally { clearInterval(heartbeat); }
       if (closed || res.writableEnded) return;
       send("snapshot",{...result,cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
       send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
