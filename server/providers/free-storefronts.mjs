@@ -1,5 +1,5 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
-import { normalizeSearchQuery, parseSearchIntent, filterQueryOffers } from "../../src/search-query.mjs";
+import { normalizeSearchQuery, parseSearchIntent, filterQueryOffers, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 
@@ -985,7 +985,12 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const relevant = routed.filter((entry) =>
     intent.category
       ? (entry.exactCategory || entry.broad || entry.explicitBrand || entry.reasons.includes("adjacent_category"))
-      : (entry.broad || entry.explicitBrand || entry.reasons.includes("general_specialist"))
+      : intent.discoveryMode === "brand"
+        // A brand-only query must not be trapped inside generic marketplaces.
+        // Category-specialist stores can hold cheaper local or international
+        // stock even when the merchant registry does not explicitly list the brand.
+        ? (entry.broad || entry.explicitBrand || entry.exactCategory || entry.reasons.includes("adjacent_category") || entry.store.categories.some(category => (intent.brand && (BRAND_CATEGORY_PRIORITIES[intent.brand] || []).includes(category))))
+        : (entry.broad || entry.explicitBrand || entry.reasons.includes("general_specialist"))
   );
 
   const ranked = relevant.map((entry, index) => ({
