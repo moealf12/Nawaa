@@ -116,69 +116,95 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   return tasks;
 }
 
+async function executeProviderTask(task, pass, providerQuery) {
+  const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
+  const deadlineMs = task.deadlineMs || providerDeadlineMs;
+  const started = Date.now();
+  try {
+    const value = await Promise.race([
+      Promise.resolve().then(() => task.run()),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + task.id)), deadlineMs)),
+    ]);
+    sourceReliability.record(task.id, {
+      transportOk:true,
+      offers:value.offers?.length || 0,
+      latencyMs:Date.now() - started,
+      relevant:true,
+    });
+    return {
+      provider:{
+        provider:value.provider,
+        sourceId:task.id,
+        ok:value.ok,
+        pass,
+        query:providerQuery,
+        reliability:sourceReliability.view(task.id),
+        diagnostics:value.diagnostics || null,
+        returnedOffers:value.offers?.length || 0,
+        searchedMarkets:value.searchedMarkets || value.searchedStores || [],
+      },
+      offers:value.offers || [],
+      errors:(value.errors || []).map((error)=>({provider:value.provider,sourceId:task.id,pass,...error})),
+    };
+  } catch (error) {
+    sourceReliability.record(task.id, {
+      transportOk:false,
+      offers:0,
+      latencyMs:Date.now() - started,
+      relevant:true,
+    });
+    return {
+      provider:null,
+      offers:[],
+      errors:[{
+        provider:task.id,
+        sourceId:task.id,
+        pass,
+        error:error instanceof Error ? error.message : String(error),
+        reliability:sourceReliability.view(task.id),
+      }],
+    };
+  }
+}
+
+function mergeProviderChunks(chunks) {
+  return {
+    providers:chunks.flatMap(chunk=>chunk.provider ? [chunk.provider] : []),
+    errors:chunks.flatMap(chunk=>chunk.errors || []),
+    offers:chunks.flatMap(chunk=>chunk.offers || []),
+  };
+}
+
 async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery, options = {}) {
   const tasks = providerTasks(providerQuery, matchingQuery, options);
-  const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
-  const withDeadline = (promise, sourceId, deadlineMs = providerDeadlineMs) => Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + sourceId)), deadlineMs)),
-  ]);
-  const settled = await Promise.allSettled(tasks.map(async (task) => {
-    const started = Date.now();
-    try {
-      const value = await withDeadline(Promise.resolve().then(() => task.run()), task.id, task.deadlineMs);
-      sourceReliability.record(task.id, {
-        transportOk:true,
-        offers:value.offers?.length || 0,
-        latencyMs:Date.now() - started,
-        relevant:true,
-      });
-      return { task, value };
-    } catch (error) {
-      sourceReliability.record(task.id, {
-        transportOk:false,
-        offers:0,
-        latencyMs:Date.now() - started,
-        relevant:true,
-      });
-      const wrapped = new Error(error instanceof Error ? error.message : String(error));
-      wrapped.sourceId = task.id;
-      throw wrapped;
-    }
-  }));
-  const providers = [];
-  const errors = [];
-  const offers = [];
+  if (!tasks.length) return {providers:[],errors:[],offers:[]};
 
-  settled.forEach((result, index) => {
-    const sourceId = tasks[index]?.id || "unknown";
-    if (result.status === "fulfilled") {
-      const value = result.value.value;
-      providers.push({
-        provider: value.provider,
-        sourceId,
-        ok: value.ok,
-        pass,
-        query: providerQuery,
-        reliability: sourceReliability.view(sourceId),
-        diagnostics: value.diagnostics || null,
-        returnedOffers: value.offers?.length || 0,
-        searchedMarkets: value.searchedMarkets || value.searchedStores || [],
-      });
-      offers.push(...(value.offers || []));
-      errors.push(...(value.errors || []).map((e) => ({ provider: value.provider, sourceId, pass, ...e })));
-    } else {
-      errors.push({
-        provider: sourceId,
-        sourceId,
-        pass,
-        error: result.reason?.message || String(result.reason),
-        reliability: sourceReliability.view(sourceId),
-      });
-    }
-  });
+  // First wave favors sources with the best observed reliability/yield/latency.
+  // Unknown sources retain a neutral prior and still receive traffic.
+  const rankedIds = sourceReliability.rank(tasks.map(task=>task.id));
+  const rank = new Map(rankedIds.map((id,index)=>[id,index]));
+  const ordered = [...tasks].sort((a,b)=>(rank.get(a.id)??999)-(rank.get(b.id)??999));
+  const firstWaveSize = Math.max(3, Math.min(6, Math.ceil(ordered.length * 0.45)));
+  const firstWave = ordered.slice(0,firstWaveSize);
+  const secondWave = ordered.slice(firstWaveSize);
 
-  return { providers, errors, offers };
+  const firstChunks = await Promise.all(firstWave.map(task=>executeProviderTask(task,pass,providerQuery)));
+  const first = mergeProviderChunks(firstChunks);
+  const firstRelevant = dedupeNormalizedOffers(first.offers)
+    .map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer)}))
+    .filter(offer=>(offer.matchConfidence || 0)>=0.65);
+  const merchants = new Set(firstRelevant.map(offerMerchantKey)).size;
+  const intent = parseSearchIntent(matchingQuery);
+  const broad = intent.discoveryMode === "brand" || (!intent.model && !intent.storage && !intent.color && !intent.condition);
+  const enough = firstRelevant.length >= (broad ? 20 : 8) && merchants >= (broad ? 2 : 1);
+
+  if (enough || !secondWave.length) {
+    return {...first, routing:{mode:"adaptive-two-wave",firstWave:firstWave.map(task=>task.id),secondWaveSkipped:secondWave.map(task=>task.id)}};
+  }
+
+  const secondChunks = await Promise.all(secondWave.map(task=>executeProviderTask(task,pass,providerQuery)));
+  const merged = mergeProviderChunks([...firstChunks,...secondChunks]);
+  return {...merged, routing:{mode:"adaptive-two-wave",firstWave:firstWave.map(task=>task.id),secondWave:secondWave.map(task=>task.id)}};
 }
 
 async function searchExpansion(query, depth) {
