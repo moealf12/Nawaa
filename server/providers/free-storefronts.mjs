@@ -824,6 +824,37 @@ export function extractBestBuySearchOffers(html, query) {
   return offers;
 }
 
+export function extractJsonLdSearchOffers(html, searchUrl, store, query) {
+  const tokens = normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
+  const offers=[]; const seen=new Set();
+  const scripts=String(html||"").match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi)||[];
+  const visit=(node)=>{
+    if(!node)return;
+    if(Array.isArray(node)){ for(const item of node) visit(item); return; }
+    if(typeof node!=="object")return;
+    const type=String(node["@type"]||"").toLowerCase();
+    if(type==="itemlist" && Array.isArray(node.itemListElement)){ for(const item of node.itemListElement) visit(item?.item||item); }
+    if(type==="product"){
+      const title=String(node.name||"").replace(/\s+/g," ").trim();
+      const offer=Array.isArray(node.offers)?node.offers[0]:node.offers;
+      const price=Number(offer?.price ?? offer?.lowPrice);
+      const currency=String(offer?.priceCurrency||"").toUpperCase();
+      let sourceUrl=node.url || offer?.url || null;
+      try { if(sourceUrl) sourceUrl=new URL(sourceUrl,searchUrl).href; } catch { sourceUrl=null; }
+      const hay=normalizeSearchQuery(title); const hits=tokens.filter(t=>hay.includes(t)).length;
+      if(title && sourceUrl && Number.isFinite(price) && price>0 && currency && (tokens.length<=1 || hits/tokens.length>=0.2)){
+        const key=sourceUrl+"|"+price; if(!seen.has(key)){seen.add(key); offers.push({productId:String(node.sku||node.productID||sourceUrl),title,image:Array.isArray(node.image)?node.image[0]:node.image||null,price,currency,sourceUrl});}
+      }
+    }
+    if(Array.isArray(node["@graph"])) visit(node["@graph"]);
+  };
+  for(const script of scripts){
+    const body=script.replace(/^<script\b[^>]*>/i,"").replace(/<\/script>$/i,"").trim();
+    try { visit(JSON.parse(body)); } catch {}
+  }
+  return offers;
+}
+
 export function extractProductLinks(html, searchUrl, store, query, limit = Infinity) {
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
   const out = [];
@@ -1091,13 +1122,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
     const links = html ? extractProductLinks(html, searchUrl, store, query, candidateLimit) : [];
+    const jsonLdOffers = html ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query) : [];
     const directSearchOffers =
       primarySearchOffers.length ? primarySearchOffers :
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
-      [];
+      jsonLdOffers;
     // Search-result offers are already price-verified. Do not fan out into slow product pages.
     const resolutionLinks = directSearchOffers.length ? [] : links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url)));
