@@ -189,17 +189,20 @@ export function buildProviderFallbackQueries(value = "") {
     if (candidate.length >= 2 && candidate !== primary && !candidates.includes(candidate)) candidates.push(candidate);
   };
 
-  if (intent.model && !intent.condition) push(intent.model);
+  // Preserve explicit condition in every relaxation. It is a shopper constraint,
+  // not noise. Relax model/storage/color around it when recall needs expansion.
+  const condition = intent.condition ? " " + intent.condition : "";
+  if (intent.model) push(intent.model + condition);
 
   let relaxed = primary;
-  for (const phrase of [intent.storage, intent.color, intent.condition].filter(Boolean)) {
+  for (const phrase of [intent.storage, intent.color].filter(Boolean)) {
     relaxed = relaxed.replace(new RegExp("(^| )" + escapeRegex(phrase) + "(?= |$)", "g"), " ");
   }
-  if (!intent.condition) push(relaxed.replace(/\s+/g, " ").trim());
+  push(relaxed.replace(/\s+/g, " ").trim());
 
-  if (intent.brand && intent.category && !intent.condition) push(intent.brand + " " + intent.category);
-  if (intent.brand && !intent.condition) push(intent.brand);
-  if (intent.category && !intent.condition) push(intent.category);
+  if (intent.brand && intent.category) push(intent.brand + " " + intent.category + condition);
+  if (intent.brand) push(intent.brand + condition);
+  if (intent.category) push(intent.category + condition);
   return candidates;
 }
 
