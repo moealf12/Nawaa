@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "pg": "^8.16.3",
-    "@supabase/supabase-js": "^2.57.4",
     "meilisearch": "^0.48.2"
   }
 }
