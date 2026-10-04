@@ -1010,10 +1010,28 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }
     if (!primarySearchOffers.length) {
       try {
-        const page = await fetchText(searchUrl);
-        html = page.html;
-        searchPageFinalUrl = page.finalUrl || searchUrl;
-        searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
+        if (store.id === "amazon-sa") {
+          const maxPages = Math.max(1, Math.min(8, Number(process.env.AMAZON_SA_SEARCH_PAGES || 5)));
+          const pages = await Promise.allSettled(Array.from({length:maxPages}, async (_,index) => {
+            const pageUrl = new URL(searchUrl);
+            pageUrl.searchParams.set("page", String(index + 1));
+            return fetchText(pageUrl.href);
+          }));
+          const fulfilled = pages.filter((result) => result.status === "fulfilled").map((result) => result.value);
+          if (!fulfilled.length) throw pages[0]?.reason || new Error("Amazon Saudi search pages unavailable");
+          html = fulfilled.map((page) => page.html).join("\n");
+          searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
+          searchDiagnostics = {
+            ...searchPageDiagnostics(html, searchUrl, searchPageFinalUrl),
+            pagesRequested:maxPages,
+            pagesFetched:fulfilled.length,
+          };
+        } else {
+          const page = await fetchText(searchUrl);
+          html = page.html;
+          searchPageFinalUrl = page.finalUrl || searchUrl;
+          searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
+        }
         if (searchDiagnostics?.blockedReason && !primarySearchError) {
           primarySearchError = "Storefront blocked: " + searchDiagnostics.blockedReason;
         }
