@@ -27,6 +27,8 @@ import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
+import { persistOffers } from "./persistence.mjs";
+import { indexOffers } from "./search-index.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -202,6 +204,14 @@ async function searchAll(query) {
 
   const sources = currentSources();
   const selectedOffers = selectDiverseOffers(offers, Infinity);
+
+  // Persistence/indexing are optional production accelerators. Search results
+  // remain available even when either external service is not configured.
+  await Promise.allSettled([
+    persistOffers(query, selectedOffers),
+    indexOffers(selectedOffers),
+  ]);
+
   return {
     providersConfigured: configuredProviders(),
     coverage: {
