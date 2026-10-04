@@ -180,11 +180,13 @@ async function searchAll(query) {
   ]);
   let providers = primary.providers;
   let errors = primary.errors;
-  const amazonValidated = dedupeNormalizedOffers(amazon.offers || []).map((offer) => ({
-    ...offer,
-    dataKind:"live",
-    matchConfidence:Number.isFinite(offer.matchConfidence) ? offer.matchConfidence : 0.9,
-  }));
+  const amazonValidated = dedupeNormalizedOffers(amazon.offers || [])
+    .map((offer) => ({
+      ...offer,
+      ...assessOfferMatch(query, offer),
+      dataKind:"live",
+    }))
+    .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
   let offers = primary.offers;
   let fallbackQuery = null;
 
@@ -234,9 +236,8 @@ async function searchAll(query) {
       dataKind: "live",
     }))
     .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
-  // Amazon offers have already passed the storefront-level query filter. Keep
-  // them intact here instead of making a second scoring pass silently discard
-  // verified results.
+  // Amazon search cards are scored once against the shopper query above.
+  // Merge those validated offers without scoring them a second time.
   offers = dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
 
   const sources = currentSources();
