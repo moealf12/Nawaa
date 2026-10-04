@@ -22,3 +22,25 @@ test('partial source failures are retried rather than cached', async () => {
   const search=mod.createSearchCache(async()=>{calls++;return {offers:[],errors:[{provider:'jarir'}]};});
   await search('iphone');await search('iphone');assert.equal(calls,2);
 });
+
+
+test('catalog invalidation during an in-flight search refreshes instead of returning empty', async () => {
+  const { createSearchCache } = await import('../server/search-cache.mjs');
+  let release;
+  let calls=0;
+  const gate=new Promise(resolve=>{release=resolve;});
+  const cached=createSearchCache(async()=>{
+    calls++;
+    if(calls===1) await gate;
+    return {offers:[{title:'HP Laptop',call:calls}],errors:[]};
+  });
+  const pending=cached('hp');
+  await new Promise(resolve=>setTimeout(resolve,0));
+  cached.clear();
+  release();
+  const result=await pending;
+  assert.equal(calls,2);
+  assert.equal(result.offers.length,1);
+  assert.equal(result.offers[0].call,2);
+  assert.equal(result.errors.length,0);
+});
