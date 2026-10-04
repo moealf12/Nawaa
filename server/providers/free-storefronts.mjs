@@ -1056,7 +1056,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         };
       }
     }
-    const links = html ? extractProductLinks(html, searchUrl, store, query, perStore) : [];
+    const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
+    const links = html ? extractProductLinks(html, searchUrl, store, query, candidateLimit) : [];
     const directSearchOffers =
       primarySearchOffers.length ? primarySearchOffers :
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
@@ -1122,7 +1123,13 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true },
       };
     }))).filter(Boolean);
-    const {offers,queryFilter} = filterQueryOffers(matchingQuery, [...directOffers, ...resolvedOffers]);
+    const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, [...directOffers, ...resolvedOffers]);
+    // Direct search-card extraction is cheap and already price-verified. Keep the
+    // full Amazon result set so API/UI pagination can expose it instead of
+    // silently truncating the merchant to the generic per-store cap.
+    const offers = store.id === "amazon-sa"
+      ? filteredOffers
+      : filteredOffers.slice(0, perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
     sourceReliability.record(store.id, {
