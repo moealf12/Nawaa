@@ -1,5 +1,6 @@
 import dns from "node:dns/promises";
 import net from "node:net";
+import https from "node:https";
 import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
@@ -43,76 +44,112 @@ function isPrivateIp(ip) {
   return true;
 }
 
-async function assertPublicHttps(url) {
+export async function resolvePublicHttpsTarget(url) {
   const parsed = new URL(url);
   if (parsed.protocol !== "https:") throw new Error("Only HTTPS product URLs are allowed");
   if (!parsed.hostname || parsed.username || parsed.password) throw new Error("Invalid product URL");
   if (parsed.port && parsed.port !== "443") throw new Error("Non-standard ports are not allowed");
 
-  const records = await dns.lookup(parsed.hostname, { all: true, verbatim: true });
+  const lookupHost = parsed.hostname.replace(/^\\[|\\]$/g, "");
+  const records = await dns.lookup(lookupHost, { all: true, verbatim: true });
   if (!records.length) throw new Error("Host could not be resolved");
-  if (records.some((record) => isPrivateIp(record.address))) {
-    throw new Error("Private/internal addresses are not allowed");
-  }
-  return parsed;
+  if (records.some((record) => isPrivateIp(record.address))) throw new Error("Private/internal addresses are not allowed");
+  const pinned = records.find((record) => record.family === 4) || records[0];
+  return { parsed, address:pinned.address, family:pinned.family };
 }
 
-export async function fetchHtmlSafe(url, redirects = 0) {
-  const parsed = await assertPublicHttps(url);
-  const response = await fetch(parsed, {
+const PRODUCT_HEADERS = {
+  accept: "text/html,application/xhtml+xml",
+  "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+  "accept-language": "en-US,en;q=0.9,ar-SA;q=0.8",
+  "cache-control": "no-cache",
+  pragma: "no-cache",
+};
+
+async function fetchHtmlWithMockableFetch(target, redirects) {
+  const response = await fetch(target.parsed, {
     redirect: "manual",
-    headers: {
-      accept: "text/html,application/xhtml+xml",
-      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-      "accept-language": "en-US,en;q=0.9,ar-SA;q=0.8",
-      "cache-control": "no-cache",
-      pragma: "no-cache",
-      "sec-fetch-dest": "document",
-      "sec-fetch-mode": "navigate",
-      "sec-fetch-site": "none",
-      "upgrade-insecure-requests": "1",
-    },
+    headers: PRODUCT_HEADERS,
     signal: AbortSignal.timeout(12000),
   });
-
   if ([301,302,303,307,308].includes(response.status)) {
     await response.body?.cancel();
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without location");
-    return fetchHtmlSafe(new URL(location, parsed).href, redirects + 1);
+    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1);
   }
-
   if (!response.ok) throw new Error("Product page returned " + response.status);
   const type = response.headers.get("content-type") || "";
-  if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) {
-    throw new Error("URL is not an HTML product page");
-  }
-
+  if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("URL is not an HTML product page");
   const reader = response.body && response.body.getReader();
   if (!reader) throw new Error("Product page body unavailable");
-
-  let total = 0;
-  const chunks = [];
-  while (true) {
-    const part = await reader.read();
-    if (part.done) break;
-    total += part.value.byteLength;
-    if (total > MAX_HTML_BYTES) {
-      await reader.cancel();
-      throw new Error("Product page is too large");
-    }
+  let total=0; const chunks=[];
+  while(true){
+    const part=await reader.read();
+    if(part.done)break;
+    total+=part.value.byteLength;
+    if(total>MAX_HTML_BYTES){await reader.cancel();throw new Error("Product page is too large");}
     chunks.push(part.value);
   }
+  const merged=new Uint8Array(total);let offset=0;
+  for(const chunk of chunks){merged.set(chunk,offset);offset+=chunk.byteLength;}
+  return {finalUrl:target.parsed.href,html:new TextDecoder().decode(merged)};
+}
 
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
+function fetchHtmlPinned(target, redirects) {
+  return new Promise((resolve, reject) => {
+    const hostname = target.parsed.hostname.replace(/^\\[|\\]$/g, "");
+    const request = https.request({
+      protocol:"https:",
+      hostname,
+      port:443,
+      path:target.parsed.pathname + target.parsed.search,
+      method:"GET",
+      servername:net.isIP(hostname) ? undefined : hostname,
+      headers:{...PRODUCT_HEADERS,host:target.parsed.host},
+      agent:false,
+      lookup:(_host,_options,callback)=>callback(null,target.address,target.family),
+    }, (response) => {
+      const status = response.statusCode || 0;
+      if ([301,302,303,307,308].includes(status)) {
+        response.resume();
+        if (redirects >= MAX_REDIRECTS) return reject(new Error("Too many redirects"));
+        const location = response.headers.location;
+        if (!location) return reject(new Error("Redirect without location"));
+        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1).then(resolve,reject);
+        return;
+      }
+      if (status < 200 || status >= 300) {
+        response.resume();
+        return reject(new Error("Product page returned " + status));
+      }
+      const type = String(response.headers["content-type"] || "");
+      if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) {
+        response.resume();
+        return reject(new Error("URL is not an HTML product page"));
+      }
+      let total=0; const chunks=[];
+      response.on("data",(chunk)=>{
+        total+=chunk.length;
+        if(total>MAX_HTML_BYTES){response.destroy(new Error("Product page is too large"));return;}
+        chunks.push(chunk);
+      });
+      response.on("error",reject);
+      response.on("end",()=>resolve({finalUrl:target.parsed.href,html:Buffer.concat(chunks,total).toString("utf8")}));
+    });
+    request.setTimeout(12000,()=>request.destroy(new Error("Product page request timed out")));
+    request.on("error",reject);
+    request.end();
+  });
+}
+
+export async function fetchHtmlSafe(url, redirects = 0) {
+  const target = await resolvePublicHttpsTarget(url);
+  if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
+    return fetchHtmlWithMockableFetch(target, redirects);
   }
-
-  return { finalUrl: parsed.href, html: new TextDecoder().decode(merged) };
+  return fetchHtmlPinned(target, redirects);
 }
 
 function decodeHtml(value = "") {

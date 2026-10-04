@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import dns from 'node:dns/promises';
-import {fetchHtmlSafe} from '../server/url-resolver.mjs';
+import {fetchHtmlSafe,resolvePublicHttpsTarget} from '../server/url-resolver.mjs';
 import {searchExtraUnbxd} from '../server/providers/extra-unbxd.mjs';
 import {currentSources} from '../server/source-config.mjs';
 import {extractAmazonSearchOffers,configuredFreeStorefronts} from '../server/providers/free-storefronts.mjs';
@@ -82,4 +82,15 @@ test('later catalog-page failure preserves verified items and exposes partial fa
   assert.equal(result.offers.length,100);
   assert.ok(result.errors.some(e=>/503/.test(e.error)));
  }finally{globalThis.fetch=original;}
+});
+
+test("public URL resolution pins the validated DNS address for the transport layer",async()=>{
+ const old=dns.lookup;
+ try{
+  dns.lookup=async()=>[{address:'93.184.216.34',family:4},{address:'2606:2800:220:1:248:1893:25c8:1946',family:6}];
+  const target=await resolvePublicHttpsTarget('https://example.com/product');
+  assert.equal(target.address,'93.184.216.34');
+  assert.equal(target.family,4);
+  assert.equal(target.parsed.hostname,'example.com');
+ }finally{dns.lookup=old;}
 });
