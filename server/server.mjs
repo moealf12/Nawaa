@@ -90,7 +90,7 @@ function providerTasks(providerQuery, matchingQuery) {
   add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
-  add("free-storefronts", () => searchFreeStorefronts(providerQuery, {matchingQuery}), { explicit:true, deadlineMs:15000 });
+  add("free-storefronts", () => searchFreeStorefronts(providerQuery, { matchingQuery, excludeStoreIds:["amazon-sa"] }), { explicit:true, deadlineMs:6000 });
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
   if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
   if (ebayConfigured()) add("ebay", () => searchEbayWorldwide(providerQuery));
@@ -203,7 +203,7 @@ async function searchAll(query) {
   const intent = parseSearchIntent(query);
   const broadDiscovery = intent.discoveryMode === "brand" || (!intent.model && !intent.storage && !intent.color && !intent.condition);
   const minimumUsefulOffers = broadDiscovery ? 20 : 6;
-  const needsRecallExpansion =
+  const needsRecallExpansion = amazonValidated.length >= 10 ? false :
     relevantPrimary.length < minimumUsefulOffers ||
     (broadDiscovery && primaryMerchants < 2 && relevantPrimary.length < 40);
   if (needsRecallExpansion) {
