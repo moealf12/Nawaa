@@ -195,11 +195,11 @@ export function buildProviderFallbackQueries(value = "") {
   for (const phrase of [intent.storage, intent.color, intent.condition].filter(Boolean)) {
     relaxed = relaxed.replace(new RegExp("(^| )" + escapeRegex(phrase) + "(?= |$)", "g"), " ");
   }
-  push(relaxed.replace(/\s+/g, " ").trim());
+  if (!intent.condition) push(relaxed.replace(/\s+/g, " ").trim());
 
-  if (intent.brand && intent.category) push(intent.brand + " " + intent.category);
-  if (intent.brand) push(intent.brand);
-  if (intent.category) push(intent.category);
+  if (intent.brand && intent.category && !intent.condition) push(intent.brand + " " + intent.category);
+  if (intent.brand && !intent.condition) push(intent.brand);
+  if (intent.category && !intent.condition) push(intent.category);
   return candidates;
 }
 
