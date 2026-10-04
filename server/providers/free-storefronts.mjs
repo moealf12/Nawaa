@@ -855,7 +855,7 @@ export function extractJsonLdSearchOffers(html, searchUrl, store, query) {
   return offers;
 }
 
-function extractProductLinks(html, searchUrl, store, query, limit = Infinity) {
+export function extractProductLinks(html, searchUrl, store, query, limit = Infinity) {
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
   const out = [];
   const seen = new Set();
