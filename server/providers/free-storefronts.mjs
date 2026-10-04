@@ -39,6 +39,11 @@ const STORES = [
   // GCC discovery tier: trusted regional storefronts are searched after Saudi sources
   // and before the wider global catalog. Shipping to Saudi is metadata, never a gate.
   {
+    id:"amazon-sa", name:"Amazon Saudi", countryCode:"SA", countryNameAr:"السعودية", categories:["*"],
+    search:(q)=>"https://www.amazon.sa/s?k="+encodeURIComponent(q),
+    productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
+  },
+  {
     id:"amazon-ae", name:"Amazon UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
     search:(q)=>"https://www.amazon.ae/s?k="+encodeURIComponent(q),
     productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
@@ -850,7 +855,7 @@ async function fetchText(url) {
   return { html:text, finalUrl:response.url || url };
 }
 
-const GENERAL_STORE_IDS = new Set(["aliexpress-cn","temu-global","walmart-us"]);
+const GENERAL_STORE_IDS = new Set(["amazon-sa","amazon-ae","aliexpress-cn","temu-global","walmart-us"]);
 const CATEGORY_NEIGHBORS = {
   phone:["tablet","accessory"], tablet:["phone","laptop","accessory"], laptop:["desktop","monitor","accessory"],
   desktop:["laptop","monitor","accessory"], monitor:["desktop","laptop","accessory"], audio:["accessory","phone"],
