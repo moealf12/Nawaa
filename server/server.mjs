@@ -209,12 +209,11 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
     const merchants=new Set(relevant.map(offerMerchantKey)).size;
     const enough=relevant.length>=usefulThreshold && merchants>=merchantThreshold;
 
-    if(enough){
-      // Do not start more providers once first-useful-result coverage is reached.
-      // Already-running providers finish naturally and are merged, avoiding unsafe
-      // cancellation of merchant requests that may not support AbortSignal.
-      remaining.length=0;
-    } else if(remaining.length && inFlight.size<initial){
+    if(remaining.length && inFlight.size<initial){
+      // Coverage is a latency signal, never a recall cutoff. Even when the first
+      // providers already produced many useful offers, continue launching every
+      // eligible source so the user is not denied cheaper or otherwise better
+      // results that may exist later in the ranked provider list.
       launch(remaining.shift());
     }
   }
@@ -226,7 +225,9 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
       mode:"adaptive-progressive",
       ordered:ordered.map(task=>task.id),
       launched:chunks.map((chunk,index)=>chunk.provider?.sourceId || ordered[index]?.id).filter(Boolean),
-      skipped:remaining.map(task=>task.id),
+      skipped:[],
+      exhaustiveEligibleProviders:true,
+      usefulCoverageReached:relevant.length>=usefulThreshold && new Set(relevant.map(offerMerchantKey)).size>=merchantThreshold,
       relevantOffers:relevant.length,
     },
   };
