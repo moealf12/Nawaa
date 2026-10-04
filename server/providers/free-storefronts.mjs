@@ -738,6 +738,27 @@ async function searchIkeaSik(query) {
   return parseIkeaSikPayload(await response.json(), query);
 }
 
+export function extractIkeaSearchOffers(html, query) {
+  const source=String(html||"");
+  const tokens=normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
+  const offers=[]; const seen=new Set();
+  const linkRe=/<a\b[^>]*href=["']([^"']*\/sa\/en\/p\/[^"'?#]+-(?:s)?(\d{8})\/?[^"']*)["'][^>]*>([\s\S]{0,5000}?)<\/a>/gi;
+  let match;
+  while((match=linkRe.exec(source))){
+    const sourceUrl=new URL(decodeHtml(match[1]),"https://www.ikea.com").href;
+    const productId=match[2];
+    const block=source.slice(Math.max(0,match.index-1500),Math.min(source.length,match.index+9000));
+    const title=stripHtml(match[3]).replace(/\s+/g," ").trim() || stripHtml(block.match(/<h3\b[^>]*>([\s\S]*?)<\/h3>/i)?.[1]||"");
+    const image=decodeHtml(block.match(/<img\b[^>]*(?:src|data-src)=["']([^"']+)["']/i)?.[1]||"")||null;
+    const priceText=stripHtml(block.match(/(?:Price\s*)?(?:SAR|SR|﷼|ر\.س)[^0-9]{0,12}([0-9][0-9,.]*)/i)?.[0]||"");
+    const price=Number((priceText.match(/([0-9][0-9,.]*)/)?.[1]||"").replace(/,/g,""));
+    const hay=normalizeSearchQuery(title); const hits=tokens.filter(t=>hay.includes(t)).length;
+    if(!title||!Number.isFinite(price)||price<=0||(tokens.length>1&&hits/tokens.length<0.2)||seen.has(productId)) continue;
+    seen.add(productId); offers.push({productId,title,image,price,currency:"SAR",sourceUrl});
+  }
+  return offers;
+}
+
 export function extractAmazonSearchOffers(html, query, origin = "https://www.amazon.sa") {
   const source=String(html||"");
   const tokens=normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
@@ -1129,6 +1150,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
+      store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       jsonLdOffers;
     // Search-result offers are already price-verified. Do not fan out into slow product pages.
     const resolutionLinks = directSearchOffers.length ? [] : links;
