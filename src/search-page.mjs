@@ -1262,7 +1262,6 @@ async function runSearch(rawQuery) {
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
       let data = null;
-      let streamUsed = false;
       if (typeof EventSource !== "undefined") {
         data = await new Promise((resolve,reject)=>{
           state.eventSource?.close?.();
@@ -1276,7 +1275,6 @@ async function runSearch(rawQuery) {
               const payload=JSON.parse(event.data);
               if(Array.isArray(payload.offers) && payload.offers.length){
                 best=payload;
-                streamUsed=true;
                 recordPriceHistory(payload.offers);
                 const liveProduct={
                   id:null,brand:"بحث عالمي",model:query,variant:"إلى السعودية",
@@ -1295,7 +1293,8 @@ async function runSearch(rawQuery) {
             if(state.eventSource===source) state.eventSource=null;
             if(best) resolve(best); else reject(new Error("stream_failed"));
           });
-          setTimeout(()=>{ if(best) finish(best); else { source.close(); reject(new Error("stream_timeout")); } },12000);
+          const timeoutId=setTimeout(()=>{ if(best) finish(best); else { source.close(); reject(new Error("stream_timeout")); } },20000);
+          source.addEventListener("done",()=>clearTimeout(timeoutId),{once:true});
         }).catch(()=>null);
       }
       if (!data) {
