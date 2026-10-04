@@ -192,6 +192,16 @@ export function buildProviderFallbackQueries(value = "") {
   // Preserve explicit condition in every relaxation. It is a shopper constraint,
   // not noise. Relax model/storage/color around it when recall needs expansion.
   const condition = intent.condition ? " " + intent.condition : "";
+
+  // Broad brand discovery needs category expansion; otherwise a query such as
+  // "hp" repeatedly asks providers for the same brand string and recall stalls.
+  // Use the brand's known primary categories as distinct provider searches.
+  if (intent.discoveryMode === "brand" && intent.brand && !intent.category && !intent.model) {
+    for (const category of (BRAND_CATEGORY_PRIORITIES[intent.brand] || []).slice(0, 4)) {
+      push(intent.brand + " " + category);
+    }
+  }
+
   if (intent.model && (intent.storage || intent.color)) push(intent.model + condition);
 
   let relaxed = primary;
