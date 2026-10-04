@@ -41,6 +41,7 @@ const state = {
   comparisonOpen: false,
   selectedGroupKey: null,
   nextCursor: null,
+  eventSource: null,
   remoteLoading: false,
   remoteExhausted: false,
   requestId: 0,
@@ -1229,6 +1230,8 @@ async function runSearch(rawQuery) {
     return;
   }
 
+  state.eventSource?.close?.();
+  state.eventSource = null;
   const requestId = ++state.requestId;
   if (state.query !== query) {
     state.availability = "all"; state.merchant = "all";
@@ -1258,11 +1261,49 @@ async function runSearch(rawQuery) {
       if (requestId !== state.requestId) return;
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
-      let data = await fetchJsonWithRetry(
-        apiBase + "/api/search?q=" + encodeURIComponent(query),
-        { headers: { accept: "application/json" } },
-        3
-      );
+      let data = null;
+      if (typeof EventSource !== "undefined") {
+        data = await new Promise((resolve,reject)=>{
+          state.eventSource?.close?.();
+          const source=new EventSource(apiBase + "/api/search/stream?q=" + encodeURIComponent(query));
+          state.eventSource=source;
+          let best=null;
+          const finish=(value)=>{ source.close(); if(state.eventSource===source) state.eventSource=null; resolve(value); };
+          source.addEventListener("snapshot",(event)=>{
+            if(requestId !== state.requestId) return finish(best || {});
+            try {
+              const payload=JSON.parse(event.data);
+              if(Array.isArray(payload.offers) && payload.offers.length){
+                best=payload;
+                recordPriceHistory(payload.offers);
+                const liveProduct={
+                  id:null,brand:"بحث عالمي",model:query,variant:"إلى السعودية",
+                  nameAr:query,nameEn:query,aliases:[],identifiers:[],offers:payload.offers,
+                };
+                state.product=liveProduct;
+                renderProduct(liveProduct,query);
+                const countries=new Set(payload.offers.map(o=>o.merchantCountryCode).filter(Boolean)).size;
+                els.status.textContent=`نتائج فورية: ${payload.offers.length} عرضًا · ${countries} دول` + (payload.cache?.stale ? " · جاري التحديث…" : "");
+              }
+            } catch {}
+          });
+          source.addEventListener("done",()=>finish(best || {}));
+          source.addEventListener("error",()=>{
+            source.close();
+            if(state.eventSource===source) state.eventSource=null;
+            if(best) resolve(best); else reject(new Error("stream_failed"));
+          });
+          const timeoutId=setTimeout(()=>{ if(best) finish(best); else { source.close(); reject(new Error("stream_timeout")); } },20000);
+          source.addEventListener("done",()=>clearTimeout(timeoutId),{once:true});
+        }).catch(()=>null);
+      }
+      if (!data) {
+        data = await fetchJsonWithRetry(
+          apiBase + "/api/search?q=" + encodeURIComponent(query),
+          { headers: { accept: "application/json" } },
+          3
+        );
+      }
 
       if (requestId !== state.requestId) return;
       for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor; step+=1) {

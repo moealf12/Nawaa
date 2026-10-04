@@ -116,69 +116,121 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   return tasks;
 }
 
+async function executeProviderTask(task, pass, providerQuery) {
+  const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
+  const deadlineMs = task.deadlineMs || providerDeadlineMs;
+  const started = Date.now();
+  try {
+    const value = await Promise.race([
+      Promise.resolve().then(() => task.run()),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + task.id)), deadlineMs)),
+    ]);
+    sourceReliability.record(task.id, {
+      transportOk:true,
+      offers:value.offers?.length || 0,
+      latencyMs:Date.now() - started,
+      relevant:true,
+    });
+    return {
+      provider:{
+        provider:value.provider,
+        sourceId:task.id,
+        ok:value.ok,
+        pass,
+        query:providerQuery,
+        reliability:sourceReliability.view(task.id),
+        diagnostics:value.diagnostics || null,
+        returnedOffers:value.offers?.length || 0,
+        searchedMarkets:value.searchedMarkets || value.searchedStores || [],
+      },
+      offers:value.offers || [],
+      errors:(value.errors || []).map((error)=>({provider:value.provider,sourceId:task.id,pass,...error})),
+    };
+  } catch (error) {
+    sourceReliability.record(task.id, {
+      transportOk:false,
+      offers:0,
+      latencyMs:Date.now() - started,
+      relevant:true,
+    });
+    return {
+      provider:null,
+      offers:[],
+      errors:[{
+        provider:task.id,
+        sourceId:task.id,
+        pass,
+        error:error instanceof Error ? error.message : String(error),
+        reliability:sourceReliability.view(task.id),
+      }],
+    };
+  }
+}
+
+function mergeProviderChunks(chunks) {
+  return {
+    providers:chunks.flatMap(chunk=>chunk.provider ? [chunk.provider] : []),
+    errors:chunks.flatMap(chunk=>chunk.errors || []),
+    offers:chunks.flatMap(chunk=>chunk.offers || []),
+  };
+}
+
 async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery, options = {}) {
   const tasks = providerTasks(providerQuery, matchingQuery, options);
-  const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
-  const withDeadline = (promise, sourceId, deadlineMs = providerDeadlineMs) => Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + sourceId)), deadlineMs)),
-  ]);
-  const settled = await Promise.allSettled(tasks.map(async (task) => {
-    const started = Date.now();
-    try {
-      const value = await withDeadline(Promise.resolve().then(() => task.run()), task.id, task.deadlineMs);
-      sourceReliability.record(task.id, {
-        transportOk:true,
-        offers:value.offers?.length || 0,
-        latencyMs:Date.now() - started,
-        relevant:true,
-      });
-      return { task, value };
-    } catch (error) {
-      sourceReliability.record(task.id, {
-        transportOk:false,
-        offers:0,
-        latencyMs:Date.now() - started,
-        relevant:true,
-      });
-      const wrapped = new Error(error instanceof Error ? error.message : String(error));
-      wrapped.sourceId = task.id;
-      throw wrapped;
-    }
-  }));
-  const providers = [];
-  const errors = [];
-  const offers = [];
+  if (!tasks.length) return {providers:[],errors:[],offers:[]};
 
-  settled.forEach((result, index) => {
-    const sourceId = tasks[index]?.id || "unknown";
-    if (result.status === "fulfilled") {
-      const value = result.value.value;
-      providers.push({
-        provider: value.provider,
-        sourceId,
-        ok: value.ok,
-        pass,
-        query: providerQuery,
-        reliability: sourceReliability.view(sourceId),
-        diagnostics: value.diagnostics || null,
-        returnedOffers: value.offers?.length || 0,
-        searchedMarkets: value.searchedMarkets || value.searchedStores || [],
-      });
-      offers.push(...(value.offers || []));
-      errors.push(...(value.errors || []).map((e) => ({ provider: value.provider, sourceId, pass, ...e })));
-    } else {
-      errors.push({
-        provider: sourceId,
-        sourceId,
-        pass,
-        error: result.reason?.message || String(result.reason),
-        reliability: sourceReliability.view(sourceId),
-      });
-    }
-  });
+  const rankedIds = sourceReliability.rank(tasks.map(task=>task.id));
+  const rank = new Map(rankedIds.map((id,index)=>[id,index]));
+  const ordered = [...tasks].sort((a,b)=>(rank.get(a.id)??999)-(rank.get(b.id)??999));
+  const intent = parseSearchIntent(matchingQuery);
+  const broad = intent.discoveryMode === "brand" || (!intent.model && !intent.storage && !intent.color && !intent.condition);
+  const usefulThreshold = broad ? 20 : 8;
+  const merchantThreshold = broad ? 2 : 1;
 
-  return { providers, errors, offers };
+  const chunks=[];
+  let relevant=[];
+  const remaining=[...ordered];
+  const inFlight=new Map();
+  const launch=(task)=>{
+    const p=executeProviderTask(task,pass,providerQuery).then(chunk=>({task,chunk}));
+    inFlight.set(task.id,p);
+  };
+  const initial=Math.max(3,Math.min(5,remaining.length));
+  for(let i=0;i<initial;i++) launch(remaining.shift());
+
+  while(inFlight.size){
+    const settled=await Promise.race(inFlight.values());
+    inFlight.delete(settled.task.id);
+    chunks.push(settled.chunk);
+
+    relevant = dedupeNormalizedOffers(chunks.flatMap(chunk=>chunk.offers || []))
+      .map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer)}))
+      .filter(offer=>(offer.matchConfidence || 0)>=0.65);
+    const merchants=new Set(relevant.map(offerMerchantKey)).size;
+    const enough=relevant.length>=usefulThreshold && merchants>=merchantThreshold;
+
+    if(remaining.length && inFlight.size<initial){
+      // Coverage is a latency signal, never a recall cutoff. Even when the first
+      // providers already produced many useful offers, continue launching every
+      // eligible source so the user is not denied cheaper or otherwise better
+      // results that may exist later in the ranked provider list.
+      launch(remaining.shift());
+    }
+  }
+
+  const merged=mergeProviderChunks(chunks);
+  return {
+    ...merged,
+    routing:{
+      mode:"adaptive-progressive",
+      ordered:ordered.map(task=>task.id),
+      launched:chunks.map((chunk,index)=>chunk.provider?.sourceId || ordered[index]?.id).filter(Boolean),
+      skipped:[],
+      exhaustiveEligibleProviders:true,
+      usefulCoverageReached:relevant.length>=usefulThreshold && new Set(relevant.map(offerMerchantKey)).size>=merchantThreshold,
+      relevantOffers:relevant.length,
+    },
+  };
 }
 
 async function searchExpansion(query, depth) {
@@ -484,7 +536,7 @@ const server = http.createServer(async (req, res) => {
     return jsonResponse(res, 200, {
       ok: true,
       service: "nawaa-search",
-      apiVersion: "0.5.0",
+      apiVersion: "0.6.0",
       revision: process.env.RENDER_GIT_COMMIT || null,
       liveProviders: {
         extra: true,
@@ -553,6 +605,57 @@ const server = http.createServer(async (req, res) => {
         error: "url_resolution_failed",
         message: error instanceof Error ? error.message : String(error),
       }, origin || "*");
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/search/stream") {
+    const q = String(url.searchParams.get("q") || "").trim();
+    if (!enforceRateLimit(req,res,"search-stream",{capacity:20,refillPerSecond:0.35},origin || "*")) return;
+    if (q.length < 2 || q.length > 180) return jsonResponse(res,400,{error:"invalid_query"},origin || "*");
+
+    const normalized = normalizeSearchQuery(q);
+    const key = searchCacheKey(normalized,0);
+    const cached = cachedSearch.peek(key);
+    res.writeHead(200,{
+      "content-type":"text/event-stream; charset=utf-8",
+      "cache-control":"no-cache, no-transform",
+      "connection":"keep-alive",
+      "access-control-allow-origin":origin || "*",
+      "x-accel-buffering":"no",
+      "x-content-type-options":"nosniff",
+    });
+    const send=(event,data)=>{
+      if(res.writableEnded)return;
+      res.write("event: "+event+"\n");
+      res.write("data: "+JSON.stringify(data)+"\n\n");
+    };
+    send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString()});
+
+    let closed=false;
+    req.on("close",()=>{closed=true;});
+    try {
+      if (cached) {
+        send("snapshot",cached);
+        if (cached.cache?.mode === "fresh") {
+          send("done",{cache:"fresh",offers:cached.offers?.length || 0});
+          return res.end();
+        }
+      }
+
+      const refreshPromise=cachedSearch.refresh(key);
+      const heartbeat=setInterval(()=>{ if(!closed&&!res.writableEnded) res.write(": keepalive\n\n"); },5000);
+      let result;
+      try { result=await refreshPromise; } finally { clearInterval(heartbeat); }
+      if (closed || res.writableEnded) return;
+      send("snapshot",{...result,cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
+      send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
+      return res.end();
+    } catch(error) {
+      if (!closed && !res.writableEnded) {
+        send("error",{error:"search_failed",message:error instanceof Error?error.message:String(error)});
+        res.end();
+      }
+      return;
     }
   }
 
