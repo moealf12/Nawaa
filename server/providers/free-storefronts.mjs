@@ -1064,6 +1064,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       [];
+    // Search-result offers are already price-verified. Do not fan out into slow product pages.
     const resolutionLinks = directSearchOffers.length ? [] : links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url)));
     const resolvedOffers = settled
