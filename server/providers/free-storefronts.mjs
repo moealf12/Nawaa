@@ -723,6 +723,36 @@ async function searchIkeaSik(query) {
   return parseIkeaSikPayload(await response.json(), query);
 }
 
+export function extractAmazonSearchOffers(html, query, origin = "https://www.amazon.sa") {
+  const source=String(html||"");
+  const tokens=normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
+  const offers=[]; const seen=new Set();
+  const cardRe=/<div[^>]+data-component-type=["']s-search-result["'][^>]*data-asin=["']([A-Z0-9]{10})["'][^>]*>([\s\S]*?)(?=<div[^>]+data-component-type=["']s-search-result["']|$)/gi;
+  let m;
+  while((m=cardRe.exec(source))){
+    const asin=m[1], block=m[2];
+    if(seen.has(asin))continue;
+    const href=block.match(/<a[^>]+href=["']([^"']*\/dp\/[A-Z0-9]{10}[^"']*)["']/i)?.[1];
+    const title=stripHtml(
+      block.match(/<h2[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i)?.[1] ||
+      block.match(/<a[^>]+href=["'][^"']*\/dp\/[A-Z0-9]{10}[^"']*["'][^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i)?.[1] || ""
+    );
+    const whole=block.match(/class=["'][^"']*a-price-whole[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
+    const frac=block.match(/class=["'][^"']*a-price-fraction[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
+    const offscreen=stripHtml(block.match(/class=["'][^"']*a-offscreen[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]||"");
+    let price=Number(String(stripHtml(whole||"")).replace(/[^0-9.]/g,""));
+    if(Number.isFinite(price)&&frac) price+=Number(String(stripHtml(frac)).replace(/[^0-9]/g,""))/100;
+    if((!Number.isFinite(price)||price<=0)&&offscreen) price=Number(offscreen.replace(/[^0-9.]/g,""));
+    if(!href||title.length<3||!Number.isFinite(price)||price<=0)continue;
+    const haystack=normalizeSearchQuery(title); const hits=tokens.filter(t=>haystack.includes(t)).length;
+    if(tokens.length>1&&hits/tokens.length<0.2)continue;
+    const img=block.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["']/i)?.[1]||null;
+    seen.add(asin);
+    offers.push({productId:asin,title,image:img,price,currency:"SAR",sourceUrl:new URL(href,origin).href});
+  }
+  return offers;
+}
+
 export function extractBestBuySearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
@@ -1010,6 +1040,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
+      store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       [];
     const resolutionLinks = directSearchOffers.length ? [] : links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url)));
