@@ -42,12 +42,14 @@ test('processing failures and public key outages are retryable, unrelated topics
  assert.equal((await request(handler,'POST',other,signed(other))).status,400);
  assert.equal((await request(handler,'POST','x'.repeat(65537),signed(body))).status,413);
 });
-test('invalidation discards cached and in-flight snapshots',async()=>{
+test('invalidation refreshes in-flight snapshots and clears cached state',async()=>{
  let resolve, calls=0;
  const cached=createSearchCache(async()=>{calls++;if(calls===1)await new Promise(r=>resolve=r);return {offers:[{title:'fresh'}],errors:[]};});
  const first=cached('hp');await Promise.resolve();cached.clear();resolve();
- assert.deepEqual((await first).offers,[]);
- await cached('hp');assert.equal(calls,2);cached.clear();await cached('hp');assert.equal(calls,3);
+ assert.deepEqual((await first).offers,[{title:'fresh'}]);
+ assert.equal(calls,2);
+ await cached('hp');assert.equal(calls,2);
+ cached.clear();await cached('hp');assert.equal(calls,3);
 });
 
 test('public signing keys are fetched from eBay only and expire after an hour',async()=>{
