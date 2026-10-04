@@ -18,9 +18,7 @@
   "dependencies": {
     "meilisearch": "^0.48.2",
     "pg": "^8.16.3",
-    "crawlee": "^3.18.2"
-  },
-  "devDependencies": {
     "cheerio": "^1.1.2"
-  }
+  },
+  "devDependencies": {}
 }
