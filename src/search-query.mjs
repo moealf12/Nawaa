@@ -294,8 +294,13 @@ export function assessOfferMatch(query, offer) {
     const offerCategory = productCategory(offer);
     const priorities = BRAND_CATEGORY_PRIORITIES[intent.brand] || [];
     const priorityIndex = priorities.indexOf(offerCategory);
-    if (priorityIndex >= 0) confidence = Math.min(1, confidence + Math.max(0.08, 0.24 - priorityIndex * 0.04));
-    else if (offerCategory) confidence *= 0.3;
+    // Editorial brand priorities apply only to true brand-only discovery.
+    // An explicit category such as "hp mouse" must not be demoted merely
+    // because accessories are intentionally hidden from plain "hp".
+    if (!categoryTokenRequested) {
+      if (priorityIndex >= 0) confidence = Math.min(1, confidence + Math.max(0.08, 0.24 - priorityIndex * 0.04));
+      else if (offerCategory) confidence *= 0.3;
+    }
   }
 
   const queryTokens = new Set(q);
