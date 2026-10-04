@@ -280,7 +280,12 @@ export function assessOfferMatch(query, offer) {
   const categoryTokenRequested = Boolean(matchedCategory);
   const semanticQuery = normalizedQuery.replace(categoryPattern, " ").replace(/\s+/g, " ").trim();
   const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
-  const title = normalizeSearchQuery([offer?.title, offer?.productType, offer?.brand, offer?.vendor, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color].filter(Boolean).join(" "));
+  let urlSemantic = "";
+  try {
+    const parsedUrl = new URL(String(offer?.sourceUrl || ""));
+    urlSemantic = decodeURIComponent(parsedUrl.pathname).replace(/[-_/]+/g, " ");
+  } catch {}
+  const title = normalizeSearchQuery([offer?.title, offer?.productType, offer?.brand, offer?.vendor, offer?.specs?.brand, offer?.specs?.storage, offer?.specs?.color, urlSemantic].filter(Boolean).join(" "));
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
