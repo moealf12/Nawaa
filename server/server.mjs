@@ -28,6 +28,7 @@ import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { persistOffers } from "./persistence.mjs";
+import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
@@ -349,6 +350,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     const result = await extractNawaaProduct(target);
+    if (result.ok && pimConfigured()) {
+      const pim = await upsertPimProduct(result.product).catch(error => ({configured:true,synced:false,error:error instanceof Error?error.message:String(error)}));
+      result.pim = pim;
+    }
     return jsonResponse(res, result.ok ? 200 : 422, result, origin || "*");
   }
 
