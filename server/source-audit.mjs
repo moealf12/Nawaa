@@ -8,6 +8,14 @@ const DEFAULT_QUERIES = {
   "adidas-sa":"running shoes", "nike-sa":"running shoes", "sephora-sa":"dior perfume",
   "namshi-sa":"nike shoes", "centrepoint-sa":"dress", "maxfashion-sa":"dress",
   "decathlon-sa":"running shoes", "niceone-sa":"dior perfume",
+  "amazon-sa":"hp laptop", "amazon-ae":"hp laptop", "noon-ae":"iphone",
+  "sharafdg-ae":"hp laptop", "virgin-ae":"iphone", "xcite-kw":"hp laptop", "lulu-ae":"iphone",
+  "goldenscent-sa":"dior perfume", "ounass-sa":"gucci bag", "sunandsand-sa":"running shoes",
+  "virgin-sa":"iphone", "homecentre-sa":"chair", "mumzworld-sa":"baby stroller",
+  "netaporter-global":"gucci bag", "mrporter-global":"nike shoes", "mytheresa-global":"gucci bag",
+  "ssense-global":"nike shoes", "jomashop-global":"seiko watch", "fragrancex-global":"dior perfume",
+  "lookfantastic-global":"dior perfume", "cultbeauty-global":"dior perfume",
+  "stockx-global":"nike shoes", "goat-global":"nike shoes",
 };
 
 function classify(result) {
