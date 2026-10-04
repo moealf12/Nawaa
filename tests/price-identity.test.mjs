@@ -268,3 +268,14 @@ test('eXtra short and canonical product paths agree only for the same Saudi prod
   }
   assert.equal(sameOfferIdentity(catalog(),{...page(),sourceUrl:'https://www.jarir.com/sa-en/another-'+catalog().sourceMeta.productId+'.html'}),false);
 });
+
+
+test('missing product identifier stays neutral when brand and title agree',()=>{
+ const result=compareProductIdentity(
+  {title:'HP OmniBook 5 Core 5 16GB 512GB 14 OLED',brand:'HP'},
+  {title:'HP OmniBook 5 Core 5 16GB 512GB 14 OLED Laptop',brand:'HP'}
+ );
+ assert.notEqual(result.verdict,'different');
+ assert.ok(result.matches.includes('brand'));
+ assert.ok(result.matches.includes('title'));
+});
