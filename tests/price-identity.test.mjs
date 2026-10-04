@@ -5,6 +5,7 @@ import {resolveProductUrl,extractionCandidates} from '../server/url-resolver.mjs
 import {auditSource} from '../server/audit-contract.mjs';
 import * as jarir from '../server/providers/jarir.mjs';
 import {queryMatchReasons} from '../src/search-query.mjs';
+import {compareProductIdentity} from '../server/product-identity.mjs';
 
 const url='https://fixture.example/products/shirt';
 const pixelData=()=>({shop:{name:'Tentree',paymentSettings:{currencyCode:'USD'},myshopifyDomain:'tentree-development-store.myshopify.com',countryCode:'US',storefrontUrl:'https://fixture.example'},customer:null,cart:null,checkout:null,productVariants:[
