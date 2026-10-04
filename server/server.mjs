@@ -176,6 +176,7 @@ function mergeProviderChunks(chunks) {
 }
 
 async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery, options = {}) {
+  const onChunk = typeof options.onChunk === "function" ? options.onChunk : null;
   const tasks = providerTasks(providerQuery, matchingQuery, options);
   if (!tasks.length) return {providers:[],errors:[],offers:[]};
 
@@ -202,6 +203,9 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
     const settled=await Promise.race(inFlight.values());
     inFlight.delete(settled.task.id);
     chunks.push(settled.chunk);
+    if (onChunk) {
+      try { await onChunk(settled.chunk, { completed:chunks.length, total:ordered.length, pending:remaining.length + inFlight.size }); } catch {}
+    }
 
     relevant = dedupeNormalizedOffers(chunks.flatMap(chunk=>chunk.offers || []))
       .map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer)}))
@@ -311,6 +315,74 @@ async function searchExpansion(query, depth) {
     offers:selectedOffers,
     errors,
   };
+}
+
+function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
+  const assessed=dedupeNormalizedOffers(offers)
+    .map(offer=>({...offer,...assessOfferMatch(query,offer),dataKind:offer.dataKind||"live"}))
+    .filter(offer=>(offer.matchConfidence||0)>=0.65);
+  const selected=selectDiverseOffers(assessed,Infinity).slice(0,acquisitionPlan(0,configuredFreeStorefronts().length).returnLimit);
+  return {
+    providersConfigured:configuredProviders(),
+    normalizedQuery:query,
+    offers:selected,
+    providers,
+    errors,
+    coverage:{
+      ...sourceCoverageSummary(currentSources()),
+      returnedOffers:selected.length,
+      availableOffers:assessed.length,
+      returnedMerchants:new Set(selected.map(offerMerchantKey)).size,
+      partial:true,
+      complete:false,
+      providersCompleted:progress.completed||0,
+      providersPending:progress.pending||0,
+    },
+  };
+}
+
+async function streamSearchProgress(query, onSnapshot) {
+  query=normalizeSearchQuery(query);
+  const plan=acquisitionPlan(0,configuredFreeStorefronts().length);
+  const providerQuery=parseSearchIntent(query).providerQuery;
+  let offers=[],providers=[],errors=[];
+  const emit=(progress={})=>onSnapshot(progressiveSnapshot(query,offers,providers,errors,progress));
+
+  // Local accelerators are allowed to answer first; live recall continues regardless.
+  const local=await Promise.all([
+    searchIndexedOffers(query).catch(()=>({offers:[]})),
+    searchPersistedOffers(query).catch(()=>({offers:[]})),
+  ]);
+  offers.push(...(local[0].offers||[]),...(local[1].offers||[]));
+  if(offers.length) await emit({completed:0,pending:providerTasks(providerQuery,query,{plan}).length+1});
+
+  const amazonPromise=searchFreeStorefrontById("amazon-sa",providerQuery,{
+    perStore:Infinity,catalogLimit:Infinity,amazonPageStart:plan.amazonPageStart,
+    amazonPageCount:plan.amazonPageCount,matchingQuery:query,
+  }).then(value=>({value})).catch(error=>({error}));
+
+  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,onChunk:async(chunk,progress)=>{
+    if(chunk.provider) providers.push(chunk.provider);
+    errors.push(...(chunk.errors||[]));
+    offers.push(...(chunk.offers||[]));
+    await emit({...progress,pending:progress.pending+1});
+  }});
+
+  const amazonResult=await amazonPromise;
+  if(amazonResult.value){
+    const value=amazonResult.value;
+    const sourceId="free-storefronts:amazon-sa";
+    providers.push({provider:"free-storefronts",sourceId,ok:Boolean(value.offers?.length),pass:"primary",query:providerQuery,returnedOffers:value.offers?.length||0,diagnostics:value.diagnostics||null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
+    offers.push(...(value.offers||[]));
+    await emit({completed:providers.length,pending:1});
+  } else {
+    errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:amazonResult.error instanceof Error?amazonResult.error.message:String(amazonResult.error)});
+  }
+  await primaryPromise;
+
+  // Full canonical search still runs to completion so fallback expansion, persistence,
+  // final ranking and every eligible source remain exactly as before.
+  return searchAll(query);
 }
 
 async function searchAll(query, { depth = 0 } = {}) {
@@ -642,12 +714,15 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      const refreshPromise=cachedSearch.refresh(key);
       const heartbeat=setInterval(()=>{ if(!closed&&!res.writableEnded) res.write(": keepalive\n\n"); },5000);
       let result;
-      try { result=await refreshPromise; } finally { clearInterval(heartbeat); }
+      try {
+        result=await streamSearchProgress(normalized,async(snapshot)=>{
+          if(!closed&&!res.writableEnded) send("snapshot",{...snapshot,cache:{hit:false,mode:"progress",stale:false,refreshing:true,ageMs:0}});
+        });
+      } finally { clearInterval(heartbeat); }
       if (closed || res.writableEnded) return;
-      send("snapshot",{...result,cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
+      send("snapshot",{...result,coverage:{...(result.coverage||{}),partial:false,complete:true,providersPending:0},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
       send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
       return res.end();
     } catch(error) {
