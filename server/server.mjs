@@ -90,7 +90,7 @@ function providerTasks(providerQuery, matchingQuery) {
   add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
-  add("free-storefronts", () => searchFreeStorefronts(providerQuery, {matchingQuery}), { explicit:true });
+  add("free-storefronts", () => searchFreeStorefronts(providerQuery, {matchingQuery}), { explicit:true, deadlineMs:15000 });
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
   if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
   if (ebayConfigured()) add("ebay", () => searchEbayWorldwide(providerQuery));
@@ -101,9 +101,9 @@ function providerTasks(providerQuery, matchingQuery) {
 async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery) {
   const tasks = providerTasks(providerQuery, matchingQuery);
   const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
-  const withDeadline = (promise, sourceId) => Promise.race([
+  const withDeadline = (promise, sourceId, deadlineMs = providerDeadlineMs) => Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + sourceId)), providerDeadlineMs)),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + sourceId)), deadlineMs)),
   ]);
   const settled = await Promise.allSettled(tasks.map(async (task) => {
     const started = Date.now();
