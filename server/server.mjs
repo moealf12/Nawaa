@@ -167,49 +167,6 @@ async function searchAll(query) {
   query = normalizeSearchQuery(query);
   const providerQuery = parseSearchIntent(query).providerQuery;
 
-  // Source-by-source live rollout: Amazon Saudi is currently the validated high-recall
-  // source under acceptance testing. Isolate it from all other network providers so
-  // competing requests cannot starve its five-page fetch on the free web instance.
-  const amazonFirst = await searchFreeStorefrontById("amazon-sa", providerQuery, {
-    perStore: Infinity,
-    matchingQuery: query,
-  }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
-  if ((amazonFirst.offers || []).length) {
-    const amazonOffers = dedupeNormalizedOffers(amazonFirst.offers)
-      .map((offer) => ({
-        ...offer,
-        ...assessOfferMatch(query, offer),
-        dataKind:"live",
-      }))
-      .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
-    const selectedOffers = selectDiverseOffers(amazonOffers, Infinity);
-    void Promise.allSettled([
-      persistOffers(query, selectedOffers),
-      indexOffers(selectedOffers),
-    ]).catch(() => {});
-    const sources = currentSources();
-    return {
-      providersConfigured: configuredProviders(),
-      coverage: {
-        ...sourceCoverageSummary(sources),
-        amazonDirectOffers: selectedOffers.length,
-        returnedOffers: selectedOffers.length,
-        availableOffers: selectedOffers.length,
-        returnedMerchants: new Set(selectedOffers.map(offerMerchantKey)).size,
-        truncated: false,
-        fallbackUsed: false,
-      },
-      providers: [{
-        provider:"free-storefronts", sourceId:"amazon-sa", ok:true, pass:"primary",
-        query:providerQuery, searchedMarkets:[{id:"amazon-sa",countryCode:"SA",countryNameAr:"السعودية"}],
-      }],
-      normalizedQuery: query,
-      fallbackQuery: null,
-      offers: selectedOffers,
-      errors: [],
-    };
-  }
-
   // Amazon Saudi is a high-recall direct search-card source. Run it independently
   // from the broad storefront aggregator so slower stores cannot make Amazon miss
   // the aggregator deadline and collapse a valid search to zero offers.
@@ -218,7 +175,7 @@ async function searchAll(query) {
     matchingQuery: query,
   }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
   const [primary,indexed,persisted,amazon] = await Promise.all([
-    runProviderPass(providerQuery, "primary", query, { skipFreeStorefronts:true }),
+    runProviderPass(providerQuery, "primary", query),
     searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
     searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
     amazonSaudi,
