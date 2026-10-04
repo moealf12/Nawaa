@@ -78,8 +78,8 @@ async function serveStaticFile(req, res, pathname) {
 
 function providerTasks(providerQuery, matchingQuery) {
   const tasks = [];
-  const add = (id, run, { explicit = false } = {}) => {
-    if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run });
+  const add = (id, run, { explicit = false, deadlineMs = null } = {}) => {
+    if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run, deadlineMs });
   };
 
   // Core search providers must always get a chance per user request. Reliability
