@@ -192,7 +192,7 @@ export function buildProviderFallbackQueries(value = "") {
   // Preserve explicit condition in every relaxation. It is a shopper constraint,
   // not noise. Relax model/storage/color around it when recall needs expansion.
   const condition = intent.condition ? " " + intent.condition : "";
-  if (intent.model) push(intent.model + condition);
+  if (intent.model && (intent.storage || intent.color)) push(intent.model + condition);
 
   let relaxed = primary;
   for (const phrase of [intent.storage, intent.color].filter(Boolean)) {
