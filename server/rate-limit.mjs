@@ -2,7 +2,8 @@ import net from "node:net";
 
 export function requestClientKey(req, { trustProxy = process.env.TRUST_PROXY === "1" || Boolean(process.env.RENDER_SERVICE_ID) } = {}) {
   if (trustProxy) {
-    const forwarded = String(req?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+    const chain = String(req?.headers?.["x-forwarded-for"] || "").split(",").map(value=>value.trim()).filter(Boolean);
+    const forwarded = chain.at(-1) || "";
     if (net.isIP(forwarded)) return forwarded;
   }
   const direct = String(req?.socket?.remoteAddress || "unknown").replace(/^::ffff:/, "");

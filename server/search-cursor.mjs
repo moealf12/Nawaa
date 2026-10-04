@@ -6,7 +6,6 @@ export const SEARCH_CURSOR_TTL_MS = 15 * 60 * 1000;
 const secretMaterial =
   process.env.NAWAA_CURSOR_SECRET ||
   process.env.NAWAA_INGEST_TOKEN ||
-  process.env.RENDER_SERVICE_ID ||
   randomBytes(32).toString("hex");
 const secret = Buffer.from(secretMaterial);
 

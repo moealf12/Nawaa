@@ -1258,13 +1258,22 @@ async function runSearch(rawQuery) {
       if (requestId !== state.requestId) return;
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
-      const data = await fetchJsonWithRetry(
+      let data = await fetchJsonWithRetry(
         apiBase + "/api/search?q=" + encodeURIComponent(query),
         { headers: { accept: "application/json" } },
         3
       );
 
       if (requestId !== state.requestId) return;
+      for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor; step+=1) {
+        els.status.textContent = "لم تظهر نتائج في النطاق الأول؛ نوسّع البحث تلقائيًا…";
+        data = await fetchJsonWithRetry(
+          apiBase + "/api/search?q=" + encodeURIComponent(query) + "&cursor=" + encodeURIComponent(data.nextCursor),
+          { headers: { accept: "application/json" } },
+          2
+        );
+        if (requestId !== state.requestId) return;
+      }
       state.nextCursor = data.nextCursor || null;
       state.remoteExhausted = !state.nextCursor;
       if (Array.isArray(data.offers) && data.offers.length) {
