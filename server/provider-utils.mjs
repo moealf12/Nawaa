@@ -1,11 +1,16 @@
-export function jsonResponse(res, status, body, origin = "*") {
+export function jsonResponse(res, status, body, origin = "*", extraHeaders = {}) {
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET,OPTIONS",
-    "access-control-allow-headers": "accept,content-type",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "accept,content-type,authorization",
     "vary": "origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "no-referrer",
+    "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    ...extraHeaders,
   });
   res.end(JSON.stringify(body));
 }

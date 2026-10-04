@@ -1005,10 +1005,10 @@ export async function searchFreeStorefrontById(storeId, query, options = {}) {
   if (!store) throw new Error("unknown storefront: " + storeId);
   const requestedPerStore = Number(options.perStore);
   const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0 ? requestedPerStore : Infinity;
-  return searchStore(store, query, perStore, options.matchingQuery || query);
+  return searchStore(store, query, perStore, options.matchingQuery || query, options.catalogLimit ?? perStore, options);
 }
 
-async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore) {
+async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore, options = {}) {
   const started = Date.now();
   const searchUrl = store.search(query);
   try {
@@ -1035,7 +1035,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     if (!primarySearchOffers.length) {
       try {
         if (store.id === "amazon-sa") {
-          const maxPages = Math.max(1, Math.min(8, Number(process.env.AMAZON_SA_SEARCH_PAGES || 5)));
+          const maxPages = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5)));
           const pages = await Promise.allSettled(Array.from({length:maxPages}, async (_,index) => {
             const pageUrl = new URL(searchUrl);
             pageUrl.searchParams.set("page", String(index + 1));
@@ -1223,12 +1223,22 @@ export async function searchFreeStorefronts(query, options = {}) {
     .filter((entry) => !excludedStoreIds.has(entry.store.id))
     .slice(0, storeLimit);
   const stores = routes.map((entry) => entry.store);
-  const requestedPerStore = Number(options.perStore);
-  const perStore = Number.isFinite(requestedPerStore) && requestedPerStore > 0
-    ? requestedPerStore
+  const requestedProductPageLimit = Number(options.productPageLimit ?? options.perStore);
+  const productPageLimit = Number.isFinite(requestedProductPageLimit) && requestedProductPageLimit > 0
+    ? Math.min(20, Math.floor(requestedProductPageLimit))
     : 4;
-  const catalogLimit = Number.isFinite(requestedPerStore) && requestedPerStore > 0 ? requestedPerStore : Infinity;
-  const settled = await Promise.allSettled(stores.map((store) => searchStore(store, query, perStore, options.matchingQuery || query, catalogLimit)));
+  const requestedCatalogLimit = Number(options.catalogLimit);
+  const catalogLimit = Number.isFinite(requestedCatalogLimit) && requestedCatalogLimit > 0
+    ? Math.floor(requestedCatalogLimit)
+    : Infinity;
+  const storeDeadlineMs = Math.max(1500, Math.min(7500, Number(options.storeDeadlineMs) || 6500));
+  const withDeadline = (promise, storeId) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("store_deadline_exceeded:" + storeId)), storeDeadlineMs)),
+  ]);
+  const settled = await Promise.allSettled(stores.map((store) =>
+    withDeadline(searchStore(store, query, productPageLimit, options.matchingQuery || query, catalogLimit, options), store.id)
+  ));
   const offers = [];
   const errors = [];
   const diagnostics = [];

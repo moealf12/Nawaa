@@ -3,6 +3,7 @@ import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import http from "node:http";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
@@ -31,6 +32,8 @@ import { persistOffers, searchPersistedOffers } from "./persistence.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
 import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
+import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
+import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -67,6 +70,10 @@ async function serveStaticFile(req, res, pathname) {
       "content-length": String(info.size),
       "cache-control": filePath.endsWith(".html") ? "no-cache" : "public, max-age=60",
       "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "permissions-policy": "camera=(), microphone=(), geolocation=()",
+      "content-security-policy": "frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
     });
     if (req.method === "HEAD") return res.end(), true;
     createReadStream(filePath).pipe(res);
@@ -76,7 +83,7 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
-function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false } = {}) {
+function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, plan = acquisitionPlan(0, configuredFreeStorefronts().length) } = {}) {
   const tasks = [];
   const add = (id, run, { explicit = false, deadlineMs = null } = {}) => {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run, deadlineMs });
@@ -86,12 +93,19 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // still affects diagnostics/routing inside providers, but a temporary cooldown
   // must not collapse the whole public API into an instant empty response.
   add("extra-unbxd", () => searchExtraUnbxd(providerQuery, Infinity, matchingQuery), { explicit:true, deadlineMs:8000 });
-  add("jarir-direct", () => searchJarir(providerQuery, 24, matchingQuery), { explicit:true, deadlineMs:8000 });
+  add("jarir-direct", () => searchJarir(providerQuery, plan.jarirLimit, matchingQuery), { explicit:true, deadlineMs:8000 });
   add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true, deadlineMs:8000 });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
   if (!skipFreeStorefronts) {
-    add("free-storefronts", () => searchFreeStorefronts(providerQuery, { matchingQuery, excludeStoreIds:["amazon-sa"] }), { explicit:true, deadlineMs:8000 });
+    add("free-storefronts", () => searchFreeStorefronts(providerQuery, {
+      matchingQuery,
+      excludeStoreIds:["amazon-sa"],
+      storeLimit:plan.storefrontLimit,
+      productPageLimit:plan.productPageLimit,
+      catalogLimit:Infinity,
+      storeDeadlineMs:6500,
+    }), { explicit:true, deadlineMs:7500 });
   }
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
   if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
@@ -165,18 +179,21 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   return { providers, errors, offers };
 }
 
-async function searchAll(query) {
+async function searchAll(query, { depth = 0 } = {}) {
   query = normalizeSearchQuery(query);
+  const plan = acquisitionPlan(depth, configuredFreeStorefronts().length);
   const providerQuery = parseSearchIntent(query).providerQuery;
 
   // Amazon Saudi needs an isolated acquisition window on the free web instance.
   // Fetch it first, then fan out all remaining providers and merge every result.
   const amazon = await searchFreeStorefrontById("amazon-sa", providerQuery, {
     perStore: Infinity,
+    catalogLimit: Infinity,
+    amazonPages: plan.amazonPages,
     matchingQuery: query,
   }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
   const [primary,indexed,persisted] = await Promise.all([
-    runProviderPass(providerQuery, "primary", query),
+    runProviderPass(providerQuery, "primary", query, { plan }),
     searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
     searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
   ]);
@@ -223,7 +240,7 @@ async function searchAll(query) {
       ? fallbackQueries.slice(0, 4)
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
-      const expansions = await Promise.all(expansionQueries.map((candidate) => runProviderPass(candidate, "fallback", query)));
+      const expansions = await Promise.all(expansionQueries.map((candidate) => runProviderPass(candidate, "fallback", query, { plan })));
       for (const fallback of expansions) {
         providers = providers.concat(fallback.providers);
         errors = errors.concat(fallback.errors);
@@ -246,7 +263,8 @@ async function searchAll(query) {
   offers = dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
 
   const sources = currentSources();
-  const selectedOffers = selectDiverseOffers(offers, Infinity);
+  const allSelectedOffers = selectDiverseOffers(offers, Infinity);
+  const selectedOffers = allSelectedOffers.slice(0, plan.returnLimit);
 
   // Persistence/indexing are optional accelerators and must never delay the
   // shopper response. Write-through happens asynchronously after live results
@@ -262,11 +280,19 @@ async function searchAll(query) {
       ...sourceCoverageSummary(sources),
       amazonDirectOffers: amazonValidated.length,
       returnedOffers: selectedOffers.length,
-      availableOffers: offers.length,
+      availableOffers: allSelectedOffers.length,
       returnedMerchants: new Set(selectedOffers.map(offerMerchantKey)).size,
-      truncated: selectedOffers.length < offers.length,
+      truncated: selectedOffers.length < allSelectedOffers.length,
       exhaustive: false,
-      acquisitionLimits: {amazonPages:Math.max(1,Math.min(8,Math.floor(Number(process.env.AMAZON_SA_SEARCH_PAGES)||5))),storefrontsPerPass:16,productPagesPerStore:4,jarirCatalogResults:24},
+      acquisitionDepth: plan.depth,
+      moreAvailable: plan.depth < MAX_SEARCH_DEPTH,
+      acquisitionLimits: {
+        amazonPages:plan.amazonPages,
+        storefrontsPerPass:plan.storefrontLimit,
+        productPagesPerStore:plan.productPageLimit,
+        jarirCatalogResults:plan.jarirLimit,
+        responseOffers:plan.returnLimit,
+      },
       fallbackUsed: Boolean(fallbackQuery),
     },
     providers,
@@ -277,7 +303,25 @@ async function searchAll(query) {
   };
 }
 
-const cachedSearch = createSearchCache(searchAll);
+const searchCacheKey = (query, depth) => JSON.stringify([query, depth]);
+const cachedSearch = createSearchCache(async (key) => {
+  const parsed = JSON.parse(key);
+  if (!Array.isArray(parsed) || typeof parsed[0] !== "string") throw new Error("invalid_search_cache_key");
+  return searchAll(parsed[0], { depth:Number(parsed[1]) || 0 });
+}, { ttl:45000, maxEntries:48 });
+const rateLimit = createRateLimiter();
+
+function enforceRateLimit(req, res, scope, policy, origin = "*") {
+  const key = requestClientKey(req) + ":" + scope;
+  const verdict = rateLimit(key, policy);
+  if (verdict.ok) return true;
+  jsonResponse(res, 429, { error:"rate_limited", retryAfterMs:verdict.retryAfterMs }, origin || "*", {
+    "retry-after": String(Math.max(1, Math.ceil(verdict.retryAfterMs / 1000))),
+    "x-ratelimit-limit": String(verdict.limit),
+    "x-ratelimit-remaining": "0",
+  });
+  return false;
+}
 const ebayDeletion = createEbayDeletionHandler({
   token: process.env.EBAY_DELETION_VERIFICATION_TOKEN,
   endpoint: process.env.EBAY_DELETION_ENDPOINT,
@@ -294,7 +338,9 @@ function ingestAuthorized(req){
   const expected=process.env.NAWAA_INGEST_TOKEN;
   if(!expected)return false;
   const auth=String(req.headers.authorization||"");
-  return auth===`Bearer ${expected}`;
+  const actualHash=createHash("sha256").update(auth).digest();
+  const expectedHash=createHash("sha256").update(`Bearer ${expected}`).digest();
+  return timingSafeEqual(actualHash,expectedHash);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -324,6 +370,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
   if (req.method === "POST" && url.pathname === "/api/ingest/offers") {
+    if (!enforceRateLimit(req,res,"ingest",{capacity:20,refillPerSecond:0.2},origin || "*")) return;
     if (!ingestAuthorized(req)) return jsonResponse(res, 401, { error:"unauthorized" }, origin || "*");
     try {
       const body=await readJsonBody(req);
@@ -370,6 +417,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/source-audit") {
+    if (process.env.NAWAA_ENABLE_PUBLIC_SOURCE_AUDIT !== "1") return jsonResponse(res,404,{error:"not_found"},origin || "*");
+    if (!enforceRateLimit(req,res,"source-audit",{capacity:2,refillPerSecond:1/600},origin || "*")) return;
     const storeId = String(url.searchParams.get("store") || "").trim() || null;
     const query = String(url.searchParams.get("q") || "").trim() || null;
     try {
@@ -384,6 +433,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/extract") {
+    if (!enforceRateLimit(req,res,"url-resolution",{capacity:10,refillPerSecond:0.1},origin || "*")) return;
     const target = String(url.searchParams.get("url") || "").trim();
     if (!target || target.length > 2000) {
       return jsonResponse(res, 400, { error: "invalid_url" }, origin || "*");
@@ -398,6 +448,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/resolve-url") {
+    if (!enforceRateLimit(req,res,"url-resolution",{capacity:10,refillPerSecond:0.1},origin || "*")) return;
     const target = String(url.searchParams.get("url") || "").trim();
     if (!target || target.length > 2000) {
       return jsonResponse(res, 400, { error: "invalid_url" }, origin || "*");
@@ -421,6 +472,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/search") {
     const q = String(url.searchParams.get("q") || "").trim();
     const productUrl = String(url.searchParams.get("url") || "").trim();
+    const cursorToken = String(url.searchParams.get("cursor") || "").trim();
+    if (!enforceRateLimit(req,res,"search",{capacity:30,refillPerSecond:0.5,cost:cursorToken?2:1},origin || "*")) return;
     if (productUrl ? productUrl.length > 2000 : q.length < 2 || q.length > 180) {
       return jsonResponse(res, 400, { error: "invalid_query" }, origin || "*");
     }
@@ -430,8 +483,15 @@ const server = http.createServer(async (req, res) => {
       const resolvedOffer = productUrl ? await resolveProductUrl(productUrl) : null;
       const comparisonQuery = resolvedOffer ? buildComparisonQuery(resolvedOffer) : q;
       if (comparisonQuery.length < 2) throw new Error("Product identity could not be extracted");
-      const result = await cachedSearch(normalizeSearchQuery(comparisonQuery));
+      const normalizedComparisonQuery = normalizeSearchQuery(comparisonQuery);
+      let depth = 0;
+      if (cursorToken) {
+        try { depth = decodeSearchCursor(cursorToken, normalizedComparisonQuery).depth; }
+        catch { return jsonResponse(res,400,{error:"invalid_search_cursor"},origin || "*"); }
+      }
+      const result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth));
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
+      const nextCursor = depth < MAX_SEARCH_DEPTH ? encodeSearchCursor(normalizedComparisonQuery, depth + 1) : null;
       return jsonResponse(res, 200, {
         query: productUrl || q,
         comparisonQuery: resolvedOffer ? comparisonQuery : null,
@@ -439,6 +499,7 @@ const server = http.createServer(async (req, res) => {
         destinationCountry: "SA",
         observedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
+        nextCursor,
         ...result,
       }, origin || "*");
     } catch (error) {
@@ -453,6 +514,11 @@ const server = http.createServer(async (req, res) => {
 
   return jsonResponse(res, 404, { error: "not_found" }, origin || "*");
 });
+
+server.headersTimeout = 10000;
+server.requestTimeout = 15000;
+server.keepAliveTimeout = 5000;
+server.maxRequestsPerSocket = 100;
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`NAWAA search backend listening on :${PORT}`);
