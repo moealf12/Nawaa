@@ -67,3 +67,12 @@ test('NiceOne resolved page output removes perfume accessories rather than surfa
     assert.deepEqual(r.diagnostics.queryFilter,{input:2,retained:1,removed:1});
   });}finally{dns.lookup=oldLookup;}
 });
+
+
+test('Amazon Saudi participates as a broad local marketplace',()=>{
+ const routes=storefronts.routeFreeStorefronts('HP',Infinity);
+ const amazon=routes.find(x=>x.store.id==='amazon-sa');
+ assert.ok(amazon);
+ assert.equal(amazon.store.countryCode,'SA');
+ assert.ok(amazon.reasons.includes('general_marketplace'));
+});
