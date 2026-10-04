@@ -270,7 +270,7 @@ export function assessOfferMatch(query, offer) {
   if (categoryTokenRequested && effectiveCategory && offerCategory === effectiveCategory) {
     // The category term itself was removed from semanticQuery, so a matching
     // structural category is equivalent to that requested term matching.
-    confidence = q.length ? Math.min(1, confidence + (1 / (q.length + 1))) : 1;
+    confidence = q.length ? Math.min(1, (hits + 1) / (q.length + 1)) : 1;
   }
   const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
