@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm ci --ignore-scripts
       - name: Probe expanded storefronts
         run: npm run validate:sources
       - name: Upload validation evidence
