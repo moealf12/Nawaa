@@ -78,12 +78,15 @@ function providerTasks(providerQuery, matchingQuery) {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run });
   };
 
-  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 12, matchingQuery));
-  add("jarir-direct", () => searchJarir(providerQuery, 24, matchingQuery));
-  add("sharafdg-algolia", () => searchSharafDG(providerQuery));
+  // Core search providers must always get a chance per user request. Reliability
+  // still affects diagnostics/routing inside providers, but a temporary cooldown
+  // must not collapse the whole public API into an instant empty response.
+  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 12, matchingQuery), { explicit:true });
+  add("jarir-direct", () => searchJarir(providerQuery, 24, matchingQuery), { explicit:true });
+  add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
-  add("free-storefronts", () => searchFreeStorefronts(providerQuery, {matchingQuery}));
+  add("free-storefronts", () => searchFreeStorefronts(providerQuery, {matchingQuery}), { explicit:true });
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
   if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
   if (ebayConfigured()) add("ebay", () => searchEbayWorldwide(providerQuery));
