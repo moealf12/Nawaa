@@ -69,6 +69,7 @@ on:
       - "workers/crawler/**"
       - "tests/crawler-extractors.test.mjs"
       - "tests/amazon-sa-search.test.mjs"
+      - "tests/source-remediation.test.mjs"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
     paths:
