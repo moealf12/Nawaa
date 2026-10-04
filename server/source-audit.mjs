@@ -20,8 +20,10 @@ function classify(result) {
 export async function auditFreeStorefronts({ storeId = null, query = null } = {}) {
   const stores = configuredFreeStorefronts().filter(store => !storeId || store.id === storeId);
   if (storeId && stores.length === 0) throw new Error("unknown storefront: " + storeId);
-  const results = [];
-  for (const store of stores) {
+
+  // Audit every configured storefront concurrently. Each store remains isolated,
+  // so a blocked or slow merchant cannot delay starting measurements for others.
+  const results = await Promise.all(stores.map(async (store) => {
     const probeQuery = query || DEFAULT_QUERIES[store.id] || store.name;
     const started = Date.now();
     try {
@@ -29,8 +31,8 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
       const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
         ? "FAILING"
         : classify(result);
-      results.push({
-        id:store.id, name:store.name, query:probeQuery, status,
+      return {
+        id:store.id, name:store.name, countryCode:store.countryCode, query:probeQuery, status,
         candidates:result.candidates, verifiedOffers:result.offers.length, failures:result.failures,
         durationMs:Date.now()-started,
         diagnostics:result.diagnostics || null,
@@ -38,19 +40,23 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
           title:offer.title, price:offer.productPrice, currency:offer.currency,
           merchant:offer.merchant, sourceUrl:offer.sourceUrl,
         })),
-      });
+      };
     } catch (error) {
-      results.push({
-        id:store.id, name:store.name, query:probeQuery, status:"FAILING",
+      return {
+        id:store.id, name:store.name, countryCode:store.countryCode, query:probeQuery, status:"FAILING",
         candidates:0, verifiedOffers:0, failures:1, durationMs:Date.now()-started,
         error:error instanceof Error ? error.message : String(error),
-      });
+      };
     }
-  }
+  }));
+
   return {
     observedAt:new Date().toISOString(),
     audited:results.length,
     liveVerified:results.filter(item=>item.status==="LIVE_VERIFIED").length,
+    failing:results.filter(item=>item.status==="FAILING").length,
+    totalVerifiedOffers:results.reduce((sum,item)=>sum+(item.verifiedOffers||0),0),
+    slowest:[...results].sort((a,b)=>b.durationMs-a.durationMs).slice(0,10).map(({id,durationMs,status})=>({id,durationMs,status})),
     results,
   };
 }
