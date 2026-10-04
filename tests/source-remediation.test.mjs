@@ -3,7 +3,7 @@ import test from 'node:test';
 import dns from 'node:dns/promises';
 import {searchJarir,parseJarirSearchHtml,parseJarirConstructorPayload} from '../server/providers/jarir.mjs';
 import {searchExtraUnbxd} from '../server/providers/extra-unbxd.mjs';
-import {searchFreeStorefrontById} from '../server/providers/free-storefronts.mjs';
+import {searchFreeStorefrontById,routeFreeStorefronts} from '../server/providers/free-storefronts.mjs';
 import {auditSource} from '../server/audit-contract.mjs';
 
 const jarirItem=(title,id='1')=>({value:title,data:{id,url:`product-${id}.html`,price:3000,metadata:{}}});
@@ -70,7 +70,7 @@ test('NiceOne resolved page output removes perfume accessories rather than surfa
 
 
 test('Amazon Saudi participates as a broad local marketplace',()=>{
- const routes=storefronts.routeFreeStorefronts('HP',Infinity);
+ const routes=routeFreeStorefronts('HP',Infinity);
  const amazon=routes.find(x=>x.store.id==='amazon-sa');
  assert.ok(amazon);
  assert.equal(amazon.store.countryCode,'SA');
