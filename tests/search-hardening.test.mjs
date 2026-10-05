@@ -4,7 +4,7 @@ import dns from 'node:dns/promises';
 import {fetchHtmlSafe,resolvePublicHttpsTarget} from '../server/url-resolver.mjs';
 import {searchExtraUnbxd} from '../server/providers/extra-unbxd.mjs';
 import {currentSources} from '../server/source-config.mjs';
-import {extractAmazonSearchOffers,configuredFreeStorefronts} from '../server/providers/free-storefronts.mjs';
+import {extractAmazonSearchOffers,configuredFreeStorefronts,fetchAmazonSearchPages} from '../server/providers/free-storefronts.mjs';
 
 for(const address of ['::ffff:127.0.0.1','::ffff:7f00:1','fe90::1','ff02::1','224.0.0.1']) test('resolver rejects non-public address '+address,async()=>{
  const oldLookup=dns.lookup,oldFetch=globalThis.fetch;
@@ -41,6 +41,35 @@ test('Amazon never attributes an external URL or another ASIN to a search card',
  const html='<div data-asin="B0ABC12345"><h2>HP Laptop</h2><a href="'+href+'">HP Laptop</a><img alt="HP Laptop" src="https://img.example/x"><span class="a-price"><span class="a-offscreen">SAR 2,999</span></span></div>';
  assert.equal(extractAmazonSearchOffers(html,'HP')[0]?.sourceUrl,'https://www.amazon.sa/dp/B0ABC12345');
  }
+});
+
+test('Amazon page acquisition retries one transient failure and preserves successful siblings',async()=>{
+ const attempts=new Map();
+ const result=await fetchAmazonSearchPages('https://www.amazon.sa/s?k=hp',{
+  pageStart:1,
+  pageCount:2,
+  wait:async()=>{},
+  fetchPage:async url=>{
+   const page=new URL(url).searchParams.get('page');
+   attempts.set(page,(attempts.get(page)||0)+1);
+   if(page==='1'&&attempts.get(page)===1){const error=new Error('timed out');error.name='TimeoutError';throw error;}
+   return {html:'page-'+page,finalUrl:url};
+  },
+ });
+ assert.equal(attempts.get('1'),2);
+ assert.equal(attempts.get('2'),1);
+ assert.deepEqual(result.map(page=>page.html),['page-1','page-2']);
+});
+
+test('Amazon page acquisition does not retry permanent HTTP failures',async()=>{
+ let attempts=0;
+ await assert.rejects(()=>fetchAmazonSearchPages('https://www.amazon.sa/s?k=hp',{
+   pageStart:1,
+   pageCount:1,
+   wait:async()=>{},
+   fetchPage:async()=>{attempts+=1;throw new Error('HTTP 404');},
+  }),/HTTP 404/);
+ assert.equal(attempts,1);
 });
 
 test('eXtra follows catalog pages instead of silently dropping products after 24',async()=>{
@@ -94,4 +123,3 @@ test("public URL resolution pins the validated DNS address for the transport lay
   assert.equal(target.parsed.hostname,'example.com');
  }finally{dns.lookup=old;}
 });
-
