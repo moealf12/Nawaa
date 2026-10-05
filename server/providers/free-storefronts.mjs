@@ -1117,19 +1117,41 @@ function isRetryableAmazonSearchError(error){
   return /^HTTP (?:408|425|429|5\d\d)\b/.test(String(error?.message||error||""));
 }
 
-export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,fetchPage=fetchText,wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
-  const pages=await Promise.allSettled(Array.from({length:pageCount},async(_,index)=>{
+export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,deadlineMs=10000,fetchPage=fetchText,wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+  const deadlineAt=Date.now()+Math.max(50,Math.min(15000,Number(deadlineMs)||10000));
+  const pageUrls=Array.from({length:pageCount},(_,index)=>{
     const pageUrl=new URL(searchUrl);
     pageUrl.searchParams.set("page",String(pageStart+index));
-    try{return await fetchPage(pageUrl.href);}
-    catch(error){
-      if(!isRetryableAmazonSearchError(error))throw error;
-      await wait(200*(index+1));
-      return fetchPage(pageUrl.href);
-    }
-  }));
-  const fulfilled=pages.filter(result=>result.status==="fulfilled").map(result=>result.value);
-  if(!fulfilled.length)throw pages.find(result=>result.status==="rejected")?.reason||new Error("Amazon Saudi search pages unavailable");
+    return {index,url:pageUrl.href};
+  });
+  const settleBeforeDeadline=async(operation)=>{
+    const remaining=deadlineAt-Date.now();
+    if(remaining<=0){const error=new Error("amazon_page_deadline_exceeded");error.name="TimeoutError";return {status:"rejected",reason:error};}
+    let timeoutId;
+    const timeout=new Promise(resolve=>{timeoutId=setTimeout(()=>{const error=new Error("amazon_page_deadline_exceeded");error.name="TimeoutError";resolve({status:"rejected",reason:error});},remaining);});
+    try{
+      return await Promise.race([
+        Promise.resolve().then(operation).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason})),
+        timeout,
+      ]);
+    }finally{clearTimeout(timeoutId);}
+  };
+  const first=await Promise.all(pageUrls.map(page=>settleBeforeDeadline(()=>fetchPage(page.url))));
+  const results=first.map((result,index)=>({index,result}));
+  const retryable=results.filter(({result})=>result.status==="rejected"&&isRetryableAmazonSearchError(result.reason));
+  if(retryable.length&&Date.now()<deadlineAt){
+    const retried=await Promise.all(retryable.map(async({index})=>{
+      const delay=Math.min(200*(index+1),Math.max(0,deadlineAt-Date.now()));
+      if(delay)await wait(delay);
+      return {index,result:await settleBeforeDeadline(()=>fetchPage(pageUrls[index].url))};
+    }));
+    for(const replacement of retried)results[replacement.index]=replacement;
+  }
+  const fulfilled=results
+    .filter(({result})=>result.status==="fulfilled")
+    .sort((a,b)=>a.index-b.index)
+    .map(({result})=>result.value);
+  if(!fulfilled.length)throw results.find(({result})=>result.status==="rejected")?.result.reason||new Error("Amazon Saudi search pages unavailable");
   return fulfilled;
 }
 
