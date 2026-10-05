@@ -1145,6 +1145,9 @@ function routeScore(store, intent, normalizedQuery) {
   else if (GCC_COUNTRIES.has(store.countryCode)) { score += 5; reasons.push("geo_gcc"); }
   else { score += 2; reasons.push("geo_global"); }
   if (GENERAL_STORE_IDS.has(store.id)) score += 8;
+  // Keep a strong Saudi general marketplace in the first acquisition wave. Health
+  // may reorder sources, but must not hide a productive broad source behind a cursor.
+  if (GENERAL_STORE_IDS.has(store.id) && store.countryCode === "SA") { score += 24; reasons.push("local_marketplace"); }
 
   // Unknown/general queries should still have useful broad-market coverage,
   // but specialist stores are not queried just to fill a quota.
@@ -1164,13 +1167,15 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
-      const skippedForCooldown = stable ? false : sourceReliability.shouldSkip(store.id, { explicit: base.explicitBrand });
+      // Reliability changes order only. It must never omit a relevant source: a
+      // temporarily unhealthy merchant can recover and may hold the best offer.
+      const healthAdjustment = stable ? 0 : Math.max(-20, Math.min(20, health.adjustment));
       return {
         store,
         ...base,
-        score: base.score + (stable ? 0 : health.adjustment),
+        score: base.score + healthAdjustment,
         reliability: health,
-        skippedForCooldown,
+        skippedForCooldown:false,
       };
     })
     .filter((entry) => entry.score > 0 && !entry.skippedForCooldown)
