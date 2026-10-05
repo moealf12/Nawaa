@@ -1090,22 +1090,51 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     let searchDiagnostics = null;
     let primarySearchOffers = [];
     let primarySearchError = null;
-    if (store.id === "ikea-sa") {
-      try { primarySearchOffers = await searchIkeaSik(query); }
-      catch (error) { primarySearchError = error instanceof Error ? error.message : String(error); }
-    } else if (LANDMARK_BLOOMREACH[store.id]) {
-      try { primarySearchOffers = await searchLandmarkBloomreach(store.id, query, catalogLimit); }
-      catch (bloomError) {
-        try { primarySearchOffers = await searchLandmarkAlgolia(store.id, query, catalogLimit); }
-        catch (algoliaError) {
-          const a = bloomError instanceof Error ? bloomError.message : String(bloomError);
-          const b = algoliaError instanceof Error ? algoliaError.message : String(algoliaError);
-          primarySearchError = a + " | fallback: " + b;
+    // HTML is the universal first acquisition layer. It is cheap, cache-friendly,
+    // and often contains JSON-LD/SSR state with complete product cards.
+    // Store-specific APIs are fallbacks only when the HTML path yields no offers.
+    let htmlFirstAttempted = false;
+    try {
+      const page = await fetchText(searchUrl);
+      htmlFirstAttempted = true;
+      html = page.html;
+      searchPageFinalUrl = page.finalUrl || searchUrl;
+      searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
+      if (searchDiagnostics?.blockedReason) primarySearchError = "Storefront blocked: " + searchDiagnostics.blockedReason;
+    } catch (error) {
+      htmlFirstAttempted = true;
+      primarySearchError = error instanceof Error ? error.message : String(error);
+    }
+    const htmlFirstOffers =
+      store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
+      store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
+      store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
+      store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
+      store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
+      extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+    if (!htmlFirstOffers.length) {
+      if (store.id === "ikea-sa") {
+        try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
+        catch (error) { primarySearchError ||= error instanceof Error ? error.message : String(error); }
+      } else if (LANDMARK_BLOOMREACH[store.id]) {
+        try { primarySearchOffers = await searchLandmarkBloomreach(store.id, query, catalogLimit); primarySearchError = null; }
+        catch (bloomError) {
+          try { primarySearchOffers = await searchLandmarkAlgolia(store.id, query, catalogLimit); primarySearchError = null; }
+          catch (algoliaError) {
+            const a = bloomError instanceof Error ? bloomError.message : String(bloomError);
+            const b = algoliaError instanceof Error ? algoliaError.message : String(algoliaError);
+            primarySearchError = primarySearchError ? primarySearchError + " | fallback: " + a + " | " + b : a + " | fallback: " + b;
+          }
         }
       }
     }
     primarySearchError ||= primarySearchOffers.paginationError || null;
-    if (!primarySearchOffers.length) {
+    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html) {
+      // A failed HTML-first transport remains a real provider failure unless a
+      // fallback produced verified offers. Never mask it as an empty catalog.
+      if (primarySearchError && store.id !== "ikea-sa" && !LANDMARK_BLOOMREACH[store.id]) {
+        throw new Error(primarySearchError);
+      }
       try {
         if (store.id === "amazon-sa") {
           const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
@@ -1159,14 +1188,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
     const links = html ? extractProductLinks(html, searchUrl, store, query, candidateLimit) : [];
     const jsonLdOffers = html ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query) : [];
-    const directSearchOffers =
-      primarySearchOffers.length ? primarySearchOffers :
-      store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
-      store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
-      store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
-      store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
-      store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
-      jsonLdOffers;
+    const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
     // Search-result offers are already price-verified. Do not fan out into slow product pages.
     const resolutionLinks = directSearchOffers.length ? [] : links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url)));
