@@ -68,6 +68,36 @@ test('Amazon transport failures are visible in public API diagnostics',async()=>
  assert.ok(result.providers.some(p=>p.sourceId==='free-storefronts:amazon-sa'&&p.ok===false));
 });
 
+test('public search returns partial results within its request deadline',async()=>{
+ const script=`
+ import http from 'node:http';
+ process.env.PORT='0';
+ process.env.SEARCH_REQUEST_DEADLINE_MS='150';
+ globalThis.fetch=async url=>{
+  if(new URL(url).hostname==='www.amazon.sa')return new Promise(()=>{});
+  if(String(url).startsWith('https://search.unbxd.io/'))return Response.json({response:{products:[]}});
+  if(String(url).startsWith('https://ac.cnstrc.com/'))return Response.json({response:{results:[]}});
+  return new Response('',{headers:{'content-type':'text/html'}});
+ };
+ const listen=http.Server.prototype.listen;
+ http.Server.prototype.listen=function(...args){this.once('listening',()=>{
+  const started=Date.now();
+  http.get({host:'127.0.0.1',port:this.address().port,path:'/api/search?q=hp+laptop'},res=>{
+   let body='';res.on('data',x=>body+=x);res.on('end',()=>{
+    console.log('RESULT '+JSON.stringify({status:res.statusCode,elapsed:Date.now()-started,body:JSON.parse(body)}));
+    this.close(()=>process.exit(0));
+   });
+  });
+ });return listen.apply(this,args);};
+ await import('./server/server.mjs');`;
+ const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',script],{cwd:new URL('..',import.meta.url),timeout:3000});
+ const result=JSON.parse(stdout.split('\n').find(x=>x.startsWith('RESULT ')).slice(7));
+ assert.equal(result.status,200);
+ assert.ok(result.elapsed<1000,`search took ${result.elapsed}ms`);
+ assert.ok(result.body.errors.some(e=>e.error==='search_deadline_exceeded'));
+ assert.equal(result.body.coverage.deadlineExceeded,true);
+});
+
 test('cached recall retains provenance and is never written back as a fresh observation',async()=>{
  const cached={provider:'fixture',merchant:'Fixture',title:'HP Laptop',sourceUrl:'https://fixture.example/hp',productPrice:1000,currency:'SAR',originalProductPrice:1000,originalCurrency:'SAR',dataKind:'persisted',observedAt:'2026-01-01T00:00:00Z'};
  const fakePersistence=`export async function persistOffers(q,offers){globalThis.savedOffers=offers;return {saved:offers.length};} export async function recordOffer(){return {recorded:true};} export async function searchPersistedOffers(){return {configured:true,offers:[${JSON.stringify(cached)}]};}`;
