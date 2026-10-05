@@ -1228,11 +1228,32 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // Store-specific APIs are fallbacks only when the HTML path yields no offers.
     let htmlFirstAttempted = false;
     try {
-      const page = await fetchText(searchUrl);
+      if (store.id === "amazon-sa") {
+        const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
+        const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
+        const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
+        const pages = await Promise.allSettled(Array.from({length:pageCount}, async (_, index) => {
+          const pageUrl = new URL(searchUrl);
+          pageUrl.searchParams.set("page", String(pageStart + index));
+          return fetchText(pageUrl.href);
+        }));
+        const fulfilled = pages.filter(result => result.status === "fulfilled").map(result => result.value);
+        if (!fulfilled.length) throw pages[0]?.reason || new Error("Amazon Saudi search pages unavailable");
+        html = fulfilled.map(page => page.html).join("\n");
+        searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
+        searchDiagnostics = {
+          ...searchPageDiagnostics(html, searchUrl, searchPageFinalUrl),
+          pageStart,
+          pagesRequested:pageCount,
+          pagesFetched:fulfilled.length,
+        };
+      } else {
+        const page = await fetchText(searchUrl);
+        html = page.html;
+        searchPageFinalUrl = page.finalUrl || searchUrl;
+        searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
+      }
       htmlFirstAttempted = true;
-      html = page.html;
-      searchPageFinalUrl = page.finalUrl || searchUrl;
-      searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
       if (searchDiagnostics?.blockedReason) primarySearchError = "Storefront blocked: " + searchDiagnostics.blockedReason;
     } catch (error) {
       htmlFirstAttempted = true;
