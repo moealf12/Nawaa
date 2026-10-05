@@ -893,6 +893,58 @@ export function extractBestBuySearchOffers(html, query) {
   return offers;
 }
 
+async function searchSamsungStructured(query, requestCount = 30) {
+  const endpoint = "https://sribsrch.ecom.samsung.com/estoresearch-api/v1/scom/search";
+  const body = new URLSearchParams({
+    clientCode:"b2c", storeID:"sa_en", countryCode:"sa_en", startIndex:"0",
+    requestCount:String(Math.max(15, Math.min(60, Number(requestCount) || 30))),
+    clientName:"scom", projection:'["*"]', keyword:String(query || "").slice(0,150),
+    siteCd:"sa_en", version:"v2", inVokeAISummary:"false", firstSearchYN:"true",
+  });
+  const response = await fetch(endpoint, {
+    method:"POST",
+    headers:{
+      "content-type":"application/x-www-form-urlencoded",
+      accept:"application/json",
+      origin:"https://www.samsung.com",
+      referer:"https://www.samsung.com/sa_en/aisearch/",
+      "user-agent":USER_AGENT,
+    },
+    body:body.toString(),
+    signal:AbortSignal.timeout(8000),
+  });
+  if (!response.ok) throw new Error("Samsung search HTTP " + response.status);
+  const data = await response.json();
+  return extractSamsungStructuredOffers(data, query);
+}
+
+export function extractSamsungStructuredOffers(data, query) {
+  const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
+  const offers = []; const seen = new Set();
+  const visit = (node, depth = 0) => {
+    if (!node || depth > 16) return;
+    if (Array.isArray(node)) { for (const item of node) visit(item, depth + 1); return; }
+    if (typeof node !== "object") return;
+    const title = String(node.displayName ?? node.productName ?? node.name ?? node.title ?? node.modelName ?? "").replace(/<[^>]*>/g," ").replace(/\\s+/g," ").trim();
+    const productId = String(node.modelCode ?? node.modelcode ?? node.skuCode ?? node.sku ?? node.id ?? "").trim();
+    const rawPrice = node.sale_price ?? node.salePrice ?? node.currentPrice ?? node.price ?? node.priceValue ?? node.finalPrice ?? node?.priceInfo?.salePrice ?? node?.priceInfo?.price;
+    const price = Number(typeof rawPrice === "object" ? (rawPrice?.value ?? rawPrice?.amount ?? rawPrice?.price) : String(rawPrice ?? "").replace(/[^0-9.]/g,""));
+    const rawUrl = node.pdpUrl ?? node.productUrl ?? node.url ?? node.linkUrl ?? node.buyUrl ?? node.ctaUrl ?? null;
+    let sourceUrl = null;
+    try { if (rawUrl) sourceUrl = canonicalizeCandidateUrl(new URL(String(rawUrl), "https://www.samsung.com").href); } catch {}
+    const image = node?.images?.smImage ?? node?.images?.medium ?? node?.images?.imageUrl ?? node.imageUrl ?? node.image ?? node.thumbnail ?? null;
+    const hay = normalizeSearchQuery(title + " " + productId + " " + (sourceUrl || ""));
+    const hits = tokens.filter(t => hay.includes(t)).length;
+    if (title && productId && sourceUrl && Number.isFinite(price) && price > 0 && (tokens.length <= 1 || hits / tokens.length >= 0.2)) {
+      const key = productId + "|" + price;
+      if (!seen.has(key)) { seen.add(key); offers.push({productId,title,image:typeof image === "string" ? image : null,price,currency:"SAR",sourceUrl}); }
+    }
+    for (const value of Object.values(node)) if (value && typeof value === "object") visit(value, depth + 1);
+  };
+  visit(data);
+  return offers;
+}
+
 export function extractSamsungSearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
@@ -1259,12 +1311,22 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       htmlFirstAttempted = true;
       primarySearchError = error instanceof Error ? error.message : String(error);
     }
+    let samsungStructuredOffers = [];
+    if (store.id === "samsung-sa") {
+      try {
+        samsungStructuredOffers = await searchSamsungStructured(query, Math.max(30, Number(catalogLimit) || 30));
+        if (samsungStructuredOffers.length) primarySearchError = null;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        primarySearchError = primarySearchError ? primarySearchError + " | structured: " + message : "structured: " + message;
+      }
+    }
     const htmlFirstOffers =
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "carrefour-ae" ? extractCarrefourSearchOffers(html, query) :
-      store.id === "samsung-sa" ? extractSamsungSearchOffers(html, query) :
+      store.id === "samsung-sa" ? [...samsungStructuredOffers, ...extractSamsungSearchOffers(html, query)].filter((offer,index,array)=>array.findIndex(x=>x.productId===offer.productId && x.price===offer.price)===index) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       (() => {
