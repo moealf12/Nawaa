@@ -893,6 +893,35 @@ export function extractBestBuySearchOffers(html, query) {
   return offers;
 }
 
+export function extractSamsungSearchOffers(html, query) {
+  const source = String(html || "");
+  const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
+  const offers = []; const seen = new Set();
+  const itemRe = /<li class="aisearch__item">([\s\S]*?)(?=<li class="aisearch__item">|<\/ul>)/gi;
+  let item;
+  while ((item = itemRe.exec(source))) {
+    const block = item[1];
+    const link = block.match(/<a[^>]+class="aisearch-product__(?:image|name)"[^>]+href="([^"]+)"[^>]*data-modelcode="([^"]+)"[^>]*(?:aria-label="([^"]+)"|)[^>]*>/i)
+      || block.match(/<a[^>]+href="([^"]+)"[^>]*data-modelcode="([^"]+)"[^>]*aria-label="([^"]+)"/i);
+    const name = block.match(/class="aisearch-product__name"[^>]*>([\s\S]*?)<\/a>/i);
+    const priceMatch = block.match(/data-modelprice="([\d.]+)"/i) || block.match(/aisearch-product__price-save[^>]*>[^\d]*([\d,]+(?:\.\d+)?)/i);
+    if (!link || !priceMatch) continue;
+    let sourceUrl;
+    try { sourceUrl = canonicalizeCandidateUrl(new URL(decodeHtml(link[1]), "https://www.samsung.com").href); } catch { continue; }
+    const title = stripHtml(name?.[1] || link[3] || "");
+    const productId = String(link[2] || "").trim();
+    const price = Number(String(priceMatch[1]).replace(/,/g, ""));
+    const imageMatch = block.match(/(?:data-desktop-src|data-src)="([^"]+)"/i);
+    const hay = normalizeSearchQuery(title + " " + productId + " " + sourceUrl);
+    const hits = tokens.filter(t => hay.includes(t)).length;
+    const key = productId + "|" + price;
+    if (!title || !productId || !Number.isFinite(price) || price <= 0 || (tokens.length > 1 && hits / tokens.length < 0.2) || seen.has(key)) continue;
+    seen.add(key);
+    offers.push({ productId, title, image:imageMatch ? decodeHtml(imageMatch[1]) : null, price, currency:"SAR", sourceUrl });
+  }
+  return offers;
+}
+
 export function extractCarrefourSearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
@@ -1214,6 +1243,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "carrefour-ae" ? extractCarrefourSearchOffers(html, query) :
+      store.id === "samsung-sa" ? extractSamsungSearchOffers(html, query) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       (() => {
