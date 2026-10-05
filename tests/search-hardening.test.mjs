@@ -16,6 +16,26 @@ for(const address of ['::ffff:127.0.0.1','::ffff:7f00:1','fe90::1','ff02::1','22
   assert.equal(fetched,false);
  }finally{dns.lookup=oldLookup;globalThis.fetch=oldFetch;}
 });
+test('product resolver forwards cancellation to the active transport',async()=>{
+ const oldLookup=dns.lookup,oldFetch=globalThis.fetch;
+ const controller=new AbortController();
+ let transportSignal;
+ let markTransportStarted;
+ const transportStarted=new Promise(resolve=>{markTransportStarted=resolve;});
+ try{
+  dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+  globalThis.fetch=async(_url,options)=>{
+   transportSignal=options.signal;
+   markTransportStarted();
+   return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}));
+  };
+  const pending=fetchHtmlSafe('https://fixture.example/product',0,{signal:controller.signal});
+  await transportStarted;
+  controller.abort(new Error('store_deadline_exceeded:fixture'));
+  await assert.rejects(pending,/store_deadline_exceeded:fixture/);
+  assert.equal(transportSignal.aborted,true);
+ }finally{dns.lookup=oldLookup;globalThis.fetch=oldFetch;}
+});
 test('every enabled storefront is represented as configured in runtime coverage',()=>{
  const sources=currentSources();
  for(const store of configuredFreeStorefronts()){
@@ -74,19 +94,24 @@ test('Amazon page acquisition does not retry permanent HTTP failures',async()=>{
 
 test('Amazon page acquisition returns successful siblings by its shared deadline',async()=>{
  const started=Date.now();
+ let stalledSignal;
  const result=await fetchAmazonSearchPages('https://www.amazon.sa/s?k=hp',{
   pageStart:1,
   pageCount:2,
   deadlineMs:50,
   wait:async()=>{},
-  fetchPage:async url=>{
+  fetchPage:async (url,{signal}={})=>{
    const page=new URL(url).searchParams.get('page');
-   if(page==='2')return new Promise(()=>{});
+   if(page==='2'){
+    stalledSignal=signal;
+    return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}));
+   }
    return {html:'page-'+page,finalUrl:url};
   },
  });
  assert.ok(Date.now()-started<500);
  assert.deepEqual(result.map(page=>page.html),['page-1']);
+ assert.equal(stalledSignal.aborted,true);
 });
 
 test('eXtra follows catalog pages instead of silently dropping products after 24',async()=>{
