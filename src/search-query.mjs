@@ -145,7 +145,12 @@ export const PRODUCT_CATEGORIES = [
 export function productCategory(offer = {}) {
   const gaming = describeProduct(offer);
   if (gaming.kind !== 'product') return gaming.kind;
-  const text = normalizeSearchQuery([offer.title,offer.productType,offer.specs?.deviceType,offer.specs?.series].filter(Boolean).join(' ')).replace(/\b(?:backlit|integrated|built in) keyboard\b/g, '');
+  let urlSemantic = "";
+  try {
+    const parsedUrl = new URL(String(offer?.sourceUrl || ""));
+    urlSemantic = decodeURIComponent(parsedUrl.pathname).replace(/[-_/]+/g, " ");
+  } catch {}
+  const text = normalizeSearchQuery([offer.title,offer.productType,offer.specs?.deviceType,offer.specs?.series,urlSemantic].filter(Boolean).join(' ')).replace(/\b(?:backlit|integrated|built in) keyboard\b/g, '');
   const explicitTypes = ['accessory','printer','desktop'].map(key=>PRODUCT_CATEGORIES.find(([id])=>id===key));
   return explicitTypes.find(([, , pattern])=>pattern.test(text))?.[0] || PRODUCT_CATEGORIES.find(([, , pattern])=>pattern.test(text))?.[0] || 'other';
 }
