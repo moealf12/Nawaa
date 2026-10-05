@@ -1429,9 +1429,13 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // Direct search-card extraction is cheap and already price-verified. Keep the
     // full Amazon result set so API/UI pagination can expose it instead of
     // silently truncating the merchant to the generic per-store cap.
-    const offers = store.id === "amazon-sa"
+    // Search-card extraction is already cheap and price-verified. Preserve the full
+    // result set for every storefront so UI/API pagination can expose all relevant
+    // offers instead of silently truncating recall after successful HTML extraction.
+    // Generic per-store limits remain relevant only to expensive PDP resolution.
+    const offers = directSearchOffers.length
       ? filteredOffers
-      : filteredOffers.slice(0, directSearchOffers.length ? catalogLimit : perStore);
+      : filteredOffers.slice(0, perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
     sourceReliability.record(store.id, {
