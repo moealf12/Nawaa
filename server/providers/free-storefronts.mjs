@@ -74,6 +74,31 @@ const STORES = [
     productPath:/\/[^?#]+\/p\/\d+(?:[/?#]|$)|\/product\/[^/?#]+(?:[/?#]|$)/i,
   },
   {
+    id:"lulu-sa", name:"LuLu Saudi", countryCode:"SA", countryNameAr:"السعودية", categories:["*"],
+    search:(q)=>"https://gcc.luluhypermarket.com/en-sa/list/?search_text="+encodeURIComponent(q),
+    productPath:/\/[^?#]+\/p\/\d+(?:[/?#]|$)|\/product\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"samsung-sa", name:"Samsung Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["samsung"], categories:["phone","tablet","tv","monitor","audio","appliance","accessory"],
+    search:(q)=>"https://www.samsung.com/sa_en/search/?searchvalue="+encodeURIComponent(q),
+    productPath:/\/sa_en\/[^?#]+\/buy\/(?:[?#]|$)|\/sa_en\/[^?#]+(?:[?#].*)?$/i,
+  },
+  {
+    id:"carrefour-ae", name:"Carrefour UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
+    search:(q)=>"https://www.carrefouruae.com/mafuae/en/search?keyword="+encodeURIComponent(q),
+    productPath:/\/mafuae\/en\/[^?#]+\/p\/\d+(?:[/?#]|$)|\/p\/\d+(?:[/?#]|$)/i,
+  },
+  {
+    id:"microless-ae", name:"Microless UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","desktop","monitor","audio","camera","tv","console","game","accessory","network","appliance"],
+    search:(q)=>"https://uae.microless.com/search/?query="+encodeURIComponent(q),
+    productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+  },
+  {
+    id:"jumbo-ae", name:"Jumbo Electronics UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","desktop","monitor","audio","camera","tv","console","game","accessory","network","appliance"],
+    search:(q)=>"https://www.jumbo.ae/search/"+encodeURIComponent(q),
+    productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)|\/[^/?#]+-\d+(?:[/?#]|$)/i,
+  },
+  {
     id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", brands:["farfetch"], categories:["clothing","shoes","bag","jewelry","watch"],
     search:(q)=>"https://www.farfetch.com/sa/shopping/items.aspx?q="+encodeURIComponent(q),
     productPath:/\/shopping\/[^?#]+\/item-\d+\.aspx(?:[?#]|$)/i,
