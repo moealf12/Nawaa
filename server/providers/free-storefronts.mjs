@@ -761,7 +761,10 @@ export function extractIkeaSearchOffers(html, query) {
     const typeMatches=[...block.matchAll(/"(?:typeName|productType)"\s*:\s*"((?:\\.|[^"\\]){2,100})"/gi)];
     const priceMatches=[...block.matchAll(/"(?:numeral|price|currentPrice)"\s*:\s*"?([0-9]+(?:\.[0-9]+)?)"?/gi)];
     const imageMatches=[...block.matchAll(/"(?:mainImageUrl|imageUrl|src)"\s*:\s*"((?:\\.|[^"\\])+?)"/gi)];
-    const title=[nameMatches.at(-1)?.[1],typeMatches.at(-1)?.[1]].filter(Boolean).join(" ");
+    const pathTitle=decodeHtml(rawUrl).replace(/\\u002F/gi,"/").replace(/\\\//g,"/").match(/\/p\/([^/?#]+?)-(?:s?\d{8})\/?(?:[?#]|$)/i)?.[1]?.replace(/[-_]+/g," ") || "";
+    const structuredTitle=[nameMatches.at(-1)?.[1],typeMatches.at(-1)?.[1]].filter(Boolean).join(" ");
+    const structuredRelevant=tokens.some(token=>normalizeSearchQuery(structuredTitle).includes(token));
+    const title=structuredRelevant ? structuredTitle : pathTitle || structuredTitle;
     add(productId,title,imageMatches.at(-1)?.[1]||null,priceMatches.at(-1)?.[1],rawUrl);
   }
   return offers;
