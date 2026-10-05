@@ -275,6 +275,10 @@ function searchPageDiagnostics(html, searchUrl, finalUrl = searchUrl) {
       /login_scene/i.test(final.search)
     )) blockedReason = "temu_search_redirect";
     if (host.endsWith("walmart.com") && /\/blocked(?:\/|$)/i.test(final.pathname)) blockedReason = "walmart_blocked";
+    if (host.endsWith("mytheresa.com") && (
+      /\/failover\//i.test(source) ||
+      /failstyles\.css/i.test(source)
+    )) blockedReason = "mytheresa_failover";
   } catch {}
   return {
     htmlBytes:new TextEncoder().encode(source).byteLength,
