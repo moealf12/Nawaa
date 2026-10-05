@@ -177,7 +177,7 @@ const STORES = [
   },
   {
     id:"mytheresa-global", name:"Mytheresa", countryCode:"DE", countryNameAr:"ألمانيا", categories:["clothing","shoes","bag","jewelry","watch"],
-    search:(q)=>"https://www.mytheresa.com/sa/en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)/i,
+    search:(q)=>{ const terms=normalizeSearchQuery(q).split(" ").filter(Boolean); const brand=terms.find(term=>["gucci","prada","fendi","loewe","balenciaga","burberry","valentino"].includes(term)); const category=terms.some(term=>/^(bag|bags|handbag|handbags|tote|shoulder)$/.test(term)) ? "bags" : null; return brand && category ? `https://www.mytheresa.com/me/en/women/designers/${encodeURIComponent(brand)}/bags` : brand ? `https://www.mytheresa.com/me/en/women/designers/${encodeURIComponent(brand)}` : category ? "https://www.mytheresa.com/me/en/women/bags" : "https://www.mytheresa.com/me/en/women"; }, productPath:/\/[^?#]+\.html(?:[?#]|$)/i,
   },
   {
     id:"ssense-global", name:"SSENSE", countryCode:"CA", countryNameAr:"كندا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
