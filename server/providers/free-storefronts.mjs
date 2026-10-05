@@ -860,7 +860,43 @@ export function extractBestBuySearchOffers(html, query) {
   return offers;
 }
 
-export function extractJsonLdSearchOffers(html, searchUrl, store, query) {
+export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
+  const source = String(html || "");
+  const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
+  const offers = []; const seen = new Set();
+  const scripts = source.match(/<script\b[^>]*>([\s\S]*?)<\/script>/gi) || [];
+  const visit = (node, depth = 0) => {
+    if (!node || depth > 12 || offers.length >= 300) return;
+    if (Array.isArray(node)) { for (const item of node) visit(item, depth + 1); return; }
+    if (typeof node !== "object") return;
+    const title = String(node.name ?? node.title ?? node.productName ?? node.displayName ?? "").replace(/\s+/g," ").trim();
+    const rawPrice = node.price ?? node.currentPrice ?? node.salePrice ?? node.finalPrice ?? node.priceValue ?? node?.offers?.price ?? node?.price?.value ?? node?.price?.amount;
+    const price = Number(typeof rawPrice === "object" ? (rawPrice?.value ?? rawPrice?.amount) : String(rawPrice ?? "").replace(/[^0-9.]/g,""));
+    const currency = String(node.currency ?? node.currencyCode ?? node.priceCurrency ?? node?.offers?.priceCurrency ?? node?.price?.currency ?? "SAR").toUpperCase();
+    const rawUrl = node.url ?? node.productUrl ?? node.canonicalUrl ?? node.pdpUrl ?? node.productDetailUrl ?? node.seoUrl ?? node?.offers?.url;
+    let sourceUrl = null;
+    try { if (rawUrl) sourceUrl = new URL(String(rawUrl).replace(/\\u002F/gi,"/").replace(/\\\//g,"/"), searchUrl).href; } catch {}
+    const image = node.image ?? node.imageUrl ?? node.mainImageUrl ?? node.thumbnail ?? node?.images?.[0]?.url ?? null;
+    if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && store.productPath.test(sourceUrl) && Number.isFinite(price) && price > 0) {
+      const hay = normalizeSearchQuery(title + " " + sourceUrl);
+      const hits = tokens.filter(t => hay.includes(t)).length;
+      const key = canonicalizeCandidateUrl(sourceUrl) + "|" + price;
+      if ((tokens.length <= 1 || hits / tokens.length >= 0.2) && !seen.has(key)) {
+        seen.add(key);
+        offers.push({ productId:String(node.id ?? node.productId ?? node.sku ?? node.skuId ?? sourceUrl), title, image:typeof image === "string" ? image : null, price, currency, sourceUrl:canonicalizeCandidateUrl(sourceUrl) });
+      }
+    }
+    for (const value of Object.values(node)) if (value && typeof value === "object") visit(value, depth + 1);
+  };
+  for (const script of scripts) {
+    const body = script.replace(/^<script\b[^>]*>/i,"").replace(/<\/script>$/i,"").trim();
+    if (!body || (body[0] !== "{" && body[0] !== "[")) continue;
+    try { visit(JSON.parse(body)); } catch {}
+  }
+  return offers;
+}
+
+function extractJsonLdSearchOffers(html, searchUrl, store, query) {
   const tokens = normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
   const offers=[]; const seen=new Set();
   const scripts=String(html||"").match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi)||[];
@@ -1111,7 +1147,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
-      extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+      (() => { const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query); return embedded.length ? embedded : extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query); })();
     if (!htmlFirstOffers.length) {
       if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
