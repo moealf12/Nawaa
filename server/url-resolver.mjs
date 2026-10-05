@@ -66,18 +66,18 @@ const PRODUCT_HEADERS = {
   pragma: "no-cache",
 };
 
-async function fetchHtmlWithMockableFetch(target, redirects) {
+async function fetchHtmlWithMockableFetch(target, redirects, signal) {
   const response = await fetch(target.parsed, {
     redirect: "manual",
     headers: PRODUCT_HEADERS,
-    signal: AbortSignal.timeout(12000),
+    signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
   });
   if ([301,302,303,307,308].includes(response.status)) {
     await response.body?.cancel();
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without location");
-    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1);
+    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal});
   }
   if (!response.ok) throw new Error("Product page returned " + response.status);
   const type = response.headers.get("content-type") || "";
@@ -97,8 +97,9 @@ async function fetchHtmlWithMockableFetch(target, redirects) {
   return {finalUrl:target.parsed.href,html:new TextDecoder().decode(merged)};
 }
 
-function fetchHtmlPinned(target, redirects) {
+function fetchHtmlPinned(target, redirects, signal) {
   return new Promise((resolve, reject) => {
+    if(signal?.aborted)return reject(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
     const hostname = target.parsed.hostname.replace(/^\\[|\\]$/g, "");
     const request = https.request({
       protocol:"https:",
@@ -120,7 +121,7 @@ function fetchHtmlPinned(target, redirects) {
         if (redirects >= MAX_REDIRECTS) return reject(new Error("Too many redirects"));
         const location = response.headers.location;
         if (!location) return reject(new Error("Redirect without location"));
-        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1).then(resolve,reject);
+        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal}).then(resolve,reject);
         return;
       }
       if (status < 200 || status >= 300) {
@@ -141,18 +142,22 @@ function fetchHtmlPinned(target, redirects) {
       response.on("error",reject);
       response.on("end",()=>resolve({finalUrl:target.parsed.href,html:Buffer.concat(chunks,total).toString("utf8")}));
     });
+    const abort=()=>request.destroy(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
+    signal?.addEventListener("abort",abort,{once:true});
+    request.once("close",()=>signal?.removeEventListener("abort",abort));
     request.setTimeout(12000,()=>request.destroy(new Error("Product page request timed out")));
     request.on("error",reject);
     request.end();
   });
 }
 
-export async function fetchHtmlSafe(url, redirects = 0) {
+export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
   const target = await resolvePublicHttpsTarget(url);
+  if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
-    return fetchHtmlWithMockableFetch(target, redirects);
+    return fetchHtmlWithMockableFetch(target, redirects, signal);
   }
-  return fetchHtmlPinned(target, redirects);
+  return fetchHtmlPinned(target, redirects, signal);
 }
 
 function decodeHtml(value = "") {
@@ -487,8 +492,8 @@ function merchantName(url) {
 }
 
 
-export async function extractProductDocument(url) {
-  const fetched = await fetchHtmlSafe(url);
+export async function extractProductDocument(url, options = {}) {
+  const fetched = await fetchHtmlSafe(url, 0, options);
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
   return {
     finalUrl:fetched.finalUrl,
@@ -504,8 +509,8 @@ export async function extractProductDocument(url) {
   };
 }
 
-export async function resolveProductUrl(url) {
-  const extracted = await extractProductDocument(url);
+export async function resolveProductUrl(url, options = {}) {
+  const extracted = await extractProductDocument(url, options);
   const finalUrl = extracted.finalUrl;
   const requested = new URL(url);
   const resolved = new URL(finalUrl);
