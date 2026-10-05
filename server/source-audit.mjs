@@ -10,6 +10,8 @@ const DEFAULT_QUERIES = {
   "decathlon-sa":"running shoes", "niceone-sa":"dior perfume",
   "amazon-sa":"hp laptop", "amazon-ae":"hp laptop", "noon-ae":"iphone",
   "sharafdg-ae":"hp laptop", "virgin-ae":"iphone", "xcite-kw":"hp laptop", "lulu-ae":"iphone",
+  "lulu-sa":"iphone 17", "samsung-sa":"galaxy s25", "carrefour-ae":"iphone 17",
+  "microless-ae":"iphone 17", "jumbo-ae":"iphone 17",
   "goldenscent-sa":"dior perfume", "ounass-sa":"gucci bag", "sunandsand-sa":"running shoes",
   "virgin-sa":"iphone", "homecentre-sa":"chair", "mumzworld-sa":"baby stroller",
   "netaporter-global":"gucci bag", "mrporter-global":"nike shoes", "mytheresa-global":"gucci bag",
