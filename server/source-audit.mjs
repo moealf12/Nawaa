@@ -41,12 +41,13 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
       const store = stores[index];
     const probeQuery = query || DEFAULT_QUERIES[store.id] || store.name;
     const started = Date.now();
+    let resultItem;
     try {
       const result = await searchFreeStorefrontById(store.id, probeQuery, { perStore:100 });
       const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
         ? "FAILING"
         : classify(result);
-      const resultItem = {
+      resultItem = {
         id:store.id, name:store.name, countryCode:store.countryCode, query:probeQuery, status,
         candidates:result.candidates, verifiedOffers:result.offers.length, failures:result.failures,
         durationMs:Date.now()-started,
@@ -57,7 +58,7 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
         })),
       };
     } catch (error) {
-      const resultItem = {
+      resultItem = {
         id:store.id, name:store.name, countryCode:store.countryCode, query:probeQuery, status:"FAILING",
         candidates:0, verifiedOffers:0, failures:1, durationMs:Date.now()-started,
         error:error instanceof Error ? error.message : String(error),
