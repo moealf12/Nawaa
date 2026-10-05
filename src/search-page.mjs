@@ -13,6 +13,7 @@ import {
   buildOfferIntelligence,
   offerVariantDimensions,
 } from "./search-core.mjs";
+import {selectSearchStreamResult} from "./search-stream.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -1268,6 +1269,7 @@ async function runSearch(rawQuery) {
           const source=new EventSource(apiBase + "/api/search/stream?q=" + encodeURIComponent(query));
           state.eventSource=source;
           let best=null;
+          let bestWithOffers=null;
           const finish=(value)=>{ source.close(); if(state.eventSource===source) state.eventSource=null; resolve(value); };
           source.addEventListener("snapshot",(event)=>{
             if(requestId !== state.requestId) return finish(best || {});
@@ -1278,6 +1280,7 @@ async function runSearch(rawQuery) {
               // final snapshot owns cursors, provider diagnostics and completion state.
               best=payload;
               if(Array.isArray(payload.offers) && payload.offers.length){
+                bestWithOffers=payload;
                 recordPriceHistory(payload.offers);
                 const liveProduct={
                   id:null,brand:"بحث عالمي",model:query,variant:"إلى السعودية",
@@ -1290,13 +1293,17 @@ async function runSearch(rawQuery) {
               }
             } catch {}
           });
-          source.addEventListener("done",()=>finish(best || null));
+          // A late empty diagnostic snapshot must never erase offers already
+          // rendered from an earlier live snapshot. Keep its final cursor and
+          // diagnostics while carrying forward the newest verified offers.
+          source.addEventListener("done",()=>finish(selectSearchStreamResult(best,bestWithOffers)));
           source.addEventListener("error",()=>{
             source.close();
             if(state.eventSource===source) state.eventSource=null;
-            if(best) resolve(best); else reject(new Error("stream_failed"));
+            const result=selectSearchStreamResult(best,bestWithOffers);
+            if(result) resolve(result); else reject(new Error("stream_failed"));
           });
-          const timeoutId=setTimeout(()=>{ if(best) finish(best); else { source.close(); reject(new Error("stream_timeout")); } },20000);
+          const timeoutId=setTimeout(()=>{ const result=selectSearchStreamResult(best,bestWithOffers); if(result) finish(result); else { source.close(); reject(new Error("stream_timeout")); } },30000);
           source.addEventListener("done",()=>clearTimeout(timeoutId),{once:true});
         }).catch(()=>null);
       }
