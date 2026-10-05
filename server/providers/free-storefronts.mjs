@@ -899,18 +899,18 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
   const offers = []; const seen = new Set();
   const scripts = source.match(/<script\b[^>]*>([\s\S]*?)<\/script>/gi) || [];
   const visit = (node, depth = 0) => {
-    if (!node || depth > 12 || offers.length >= 300) return;
+    if (!node || depth > 20) return;
     if (Array.isArray(node)) { for (const item of node) visit(item, depth + 1); return; }
     if (typeof node !== "object") return;
     const title = String(node.name ?? node.title ?? node.productName ?? node.displayName ?? "").replace(/\s+/g," ").trim();
     const rawPrice = node.price ?? node.currentPrice ?? node.salePrice ?? node.finalPrice ?? node.priceValue ?? node?.offers?.price ?? node?.price?.value ?? node?.price?.amount;
     const price = Number(typeof rawPrice === "object" ? (rawPrice?.value ?? rawPrice?.amount) : String(rawPrice ?? "").replace(/[^0-9.]/g,""));
-    const currency = String(node.currency ?? node.currencyCode ?? node.priceCurrency ?? node?.offers?.priceCurrency ?? node?.price?.currency ?? "SAR").toUpperCase();
+    const currency = String(node.currency ?? node.currencyCode ?? node.priceCurrency ?? node?.offers?.priceCurrency ?? node?.price?.currency ?? "").trim().toUpperCase();
     const rawUrl = node.url ?? node.productUrl ?? node.canonicalUrl ?? node.pdpUrl ?? node.productDetailUrl ?? node.seoUrl ?? node?.offers?.url;
     let sourceUrl = null;
     try { if (rawUrl) sourceUrl = new URL(String(rawUrl).replace(/\\u002F/gi,"/").replace(/\\\//g,"/"), searchUrl).href; } catch {}
     const image = node.image ?? node.imageUrl ?? node.mainImageUrl ?? node.thumbnail ?? node?.images?.[0]?.url ?? null;
-    if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && store.productPath.test(sourceUrl) && Number.isFinite(price) && price > 0) {
+    if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && store.productPath.test(sourceUrl) && Number.isFinite(price) && price > 0 && /^[A-Z]{3}$/.test(currency)) {
       const hay = normalizeSearchQuery(title + " " + sourceUrl);
       const hits = tokens.filter(t => hay.includes(t)).length;
       const key = canonicalizeCandidateUrl(sourceUrl) + "|" + price;
@@ -1193,7 +1193,16 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
-      (() => { const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query); return embedded.length ? embedded : extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query); })();
+      (() => {
+        const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+        const jsonLd = extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+        const merged = []; const seen = new Set();
+        for (const offer of [...embedded, ...jsonLd]) {
+          const key = canonicalizeCandidateUrl(offer.sourceUrl || "") + "|" + Number(offer.price) + "|" + String(offer.currency || "");
+          if (!seen.has(key)) { seen.add(key); merged.push(offer); }
+        }
+        return merged;
+      })();
     if (!htmlFirstOffers.length) {
       if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
