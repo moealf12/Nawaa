@@ -21,3 +21,11 @@ test("ingestion bounds batch size",()=>{
   const rows=Array.from({length:INGEST_BATCH_LIMIT+20},(_,i)=>({title:"Product "+i,sourceUrl:"https://example.com/"+i,productPrice:i+1}));
   assert.equal(normalizeIngestBatch(rows).length,INGEST_BATCH_LIMIT);
 });
+
+
+test("ingestion preserves crawler observation metadata",()=>{
+  const observedAt="2026-10-05T01:02:03.000Z";
+  const o=normalizeIngestOffer({title:"HP Laptop",sourceUrl:"https://example.com/p",productPrice:2499,currency:"sar",observedAt,healthStatus:"healthy"});
+  assert.equal(o.observedAt,observedAt);
+  assert.equal(o.healthStatus,"healthy");
+});
