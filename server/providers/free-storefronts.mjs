@@ -1130,6 +1130,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }
     primarySearchError ||= primarySearchOffers.paginationError || null;
     if (!htmlFirstOffers.length && !primarySearchOffers.length && !html) {
+      // A failed HTML-first transport remains a real provider failure unless a
+      // fallback produced verified offers. Never mask it as an empty catalog.
+      if (primarySearchError && store.id !== "ikea-sa" && !LANDMARK_BLOOMREACH[store.id]) {
+        throw new Error(primarySearchError);
+      }
       try {
         if (store.id === "amazon-sa") {
           const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
