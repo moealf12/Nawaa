@@ -864,7 +864,8 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
   const offers = []; const seen = new Set();
-  const scripts = source.match(/<script\b[^>]*>([\s\S]*?)<\/script>/gi) || [];
+  const scripts = source.match(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi) || [];
+  const parseCandidates = [];
   const visit = (node, depth = 0) => {
     if (!node || depth > 12 || offers.length >= 300) return;
     if (Array.isArray(node)) { for (const item of node) visit(item, depth + 1); return; }
@@ -890,8 +891,21 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
   };
   for (const script of scripts) {
     const body = script.replace(/^<script\b[^>]*>/i,"").replace(/<\/script>$/i,"").trim();
-    if (!body || (body[0] !== "{" && body[0] !== "[")) continue;
-    try { visit(JSON.parse(body)); } catch {}
+    if (!body) continue;
+    if (body[0] === "{" || body[0] === "[") parseCandidates.push(body);
+    // Common hydration wrappers: window.__STATE__ = {...}; self.__NEXT_DATA__ = {...}
+    const assignment = body.match(/(?:window\\.|self\\.)?[A-Za-z0-9_$.[\\]"']+\\s*=\\s*([\\[{][\\s\\S]*[\\]}])\\s*;?\\s*$/);
+    if (assignment?.[1]) parseCandidates.push(assignment[1]);
+    // Next.js / Nuxt payloads may HTML-escape JSON characters.
+    if (/__NEXT_DATA__|__NUXT__|hydration|preloadedState|initialState/i.test(body)) {
+      const decoded = body.replace(/&quot;/g,'"').replace(/&#34;/g,'"').replace(/&amp;/g,'&').replace(/\\u002F/gi,'/');
+      const first = Math.min(...["{","["].map(ch=>decoded.indexOf(ch)).filter(i=>i>=0));
+      if (Number.isFinite(first)) parseCandidates.push(decoded.slice(first).replace(/;\\s*$/,""));
+    }
+  }
+  for (const raw of parseCandidates) {
+    try { visit(JSON.parse(raw)); } catch {}
+  }
   }
   return offers;
 }
