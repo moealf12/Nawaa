@@ -890,7 +890,20 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
   };
   for (const script of scripts) {
     const body = script.replace(/^<script\b[^>]*>/i,"").replace(/<\/script>$/i,"").trim();
-    if (!body || (body[0] !== "{" && body[0] !== "[")) continue;
+    if (!body) continue;
+    const candidates = [];
+    if (body[0] === "{" || body[0] === "[") candidates.push(body);
+    // Common SSR/hydration shapes: window.__STATE__ = {...},
+    // self.__NEXT_DATA__ = {...}, __APOLLO_STATE__ = {...}.
+    const assignment = body.match(/(?:window\.|self\.)?__[A-Z0-9_$]+__\s*=\s*([\[{][\s\S]*[\]}])\s*;?$/i);
+    if (assignment?.[1]) candidates.push(assignment[1]);
+    for (const candidate of candidates) {
+      try { visit(JSON.parse(candidate)); } catch {}
+    }
+  }
+  // Some frameworks HTML-escape hydration JSON inside script/template payloads.
+  for (const match of source.matchAll(/(?:__NEXT_DATA__|__INITIAL_STATE__|__APOLLO_STATE__)[^>]*>([\s\S]{20,200000}?)<\//gi)) {
+    const body = decodeHtml(match[1]).trim();
     try { visit(JSON.parse(body)); } catch {}
   }
   return offers;
