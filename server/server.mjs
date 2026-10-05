@@ -28,7 +28,7 @@ import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
-import { persistOffers, searchPersistedOffers } from "./persistence.mjs";
+import { persistOffers, recordOffer, searchPersistedOffers } from "./persistence.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
 import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
@@ -619,11 +619,19 @@ const server = http.createServer(async (req, res) => {
       const body=await readJsonBody(req);
       const valid=normalizeIngestBatch(body.offers);
       if(!valid.length)return jsonResponse(res,422,{error:"no_valid_offers"},origin||"*");
-      const [stored,indexed]=await Promise.all([persistOffers(String(body.source||"crawler"),valid),indexOffers(valid)]);
+      const source=String(body.source||"crawler").trim()||"crawler";
+      const records=[];
+      for(const offer of valid) records.push(await recordOffer({...offer,sourceName:source,query:source}));
       cachedSearch.clear();
-      return jsonResponse(res,202,{accepted:valid.length,stored,indexed},origin||"*");
+      return jsonResponse(res,201,{accepted:valid.length,recorded:records.length},origin||"*");
     } catch(error) {
-      return jsonResponse(res,error?.message==="payload_too_large"?413:400,{error:"ingest_failed",message:error instanceof Error?error.message:String(error)},origin||"*");
+      const message=error instanceof Error?error.message:String(error);
+      const status=error?.message==="payload_too_large"?413
+        : error?.message==="persistence_not_configured"?503
+        : error?.message==="invalid_offer_record"||error?.message==="invalid_observed_at"?422
+        : 500;
+      const publicMessage=status===500?"persistence_failed":message;
+      return jsonResponse(res,status,{error:"ingest_failed",message:publicMessage},origin||"*");
     }
   }
 
