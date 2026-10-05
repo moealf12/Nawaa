@@ -372,11 +372,15 @@ assert.ok(fashionRoutes.every((route) =>
 ));
 
 const laptopRoutes = routeFreeStorefronts("لابتوب hp", 8);
-assert.ok(laptopRoutes.some((route) => route.store.id === "newegg-global"));
-assert.ok(laptopRoutes.some((route) => route.store.id === "bestbuy-us"));
-assert.ok(laptopRoutes.some((route) => route.store.id === "bhphoto-us"));
+assert.ok(laptopRoutes.some((route) => ["microless-ae","jumbo-ae","newegg-global","bestbuy-us","bhphoto-us"].includes(route.store.id)));
 assert.ok(!laptopRoutes.some((route) => route.store.id === "sephora-sa"));
 assert.ok(laptopRoutes.length <= 8);
+// Expanded routing must preserve established global recall even as higher-priority
+// Saudi/GCC electronics sources are added ahead of them.
+const expandedLaptopRoutes = routeFreeStorefronts("لابتوب hp", 16);
+assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "newegg-global"));
+assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bestbuy-us"));
+assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bhphoto-us"));
 
 const perfumeRoutes = routeFreeStorefronts("عطر", 12);
 assert.ok(["sephora-sa","niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0].store.id));
