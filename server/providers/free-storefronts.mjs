@@ -1180,6 +1180,10 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
     })
     .filter((entry) => entry.score > 0 && !entry.skippedForCooldown)
     .sort((a,b) =>
+      // Productive Saudi broad marketplaces must stay in the first acquisition wave.
+      // This is a routing priority, not an early-stop rule: all other relevant
+      // sources remain available through subsequent cursor passes.
+      (Number(GENERAL_STORE_IDS.has(b.store.id) && b.store.countryCode === "SA") - Number(GENERAL_STORE_IDS.has(a.store.id) && a.store.countryCode === "SA")) ||
       b.score - a.score ||
       (stable ? 0 : b.reliability.reliability - a.reliability.reliability) ||
       a.store.id.localeCompare(b.store.id)
