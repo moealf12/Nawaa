@@ -220,10 +220,14 @@ const menuBtn=document.getElementById('menuBtn');menuBtn.addEventListener('click
 
 const searchForm=document.getElementById('nawaaSearchForm');
 searchForm.addEventListener('submit',e=>{
+ e.preventDefault();
  const input=document.getElementById('nawaaSearchInput');
- input.value=input.value.trim();
- if(input.value.length<2){e.preventDefault();input.focus();return}
- searchForm.action=window.NAWAA_SEARCH_URL||'./search.html';
+ const query=input.value.trim();
+ input.value=query;
+ if(query.length<2){input.focus();return}
+ const destination=new URL(window.NAWAA_SEARCH_URL||'./search.html',location.href);
+ destination.searchParams.set('q',query);
+ location.assign(destination.href);
 });
 
 </script>
