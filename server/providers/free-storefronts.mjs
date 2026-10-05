@@ -1180,6 +1180,13 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
     })
     .filter((entry) => entry.score > 0 && !entry.skippedForCooldown)
     .sort((a,b) =>
+      // An explicitly named merchant is the shopper's strongest routing signal.
+      // Preserve that intent before applying the local-marketplace safety net.
+      (Number(b.explicitBrand) - Number(a.explicitBrand)) ||
+      // Category specialists remain ahead of broad marketplaces. The safety net
+      // prevents Amazon Saudi from falling behind lower-relevance sources; it
+      // does not replace stores purpose-built for the requested category.
+      (Number(b.exactCategory) - Number(a.exactCategory)) ||
       // Productive Saudi broad marketplaces must stay in the first acquisition wave.
       // This is a routing priority, not an early-stop rule: all other relevant
       // sources remain available through subsequent cursor passes.
