@@ -338,9 +338,15 @@ export function assessOfferMatch(query, offer) {
   }
 
   const queryTokens = new Set(q);
+  const offeredModels = explicitModels([offer?.title,offer?.specs?.deviceType,offer?.specs?.series].filter(Boolean).join(' '));
+  // Accessories commonly list several compatible device generations. Treat the
+  // requested model as a compatibility requirement: extra compatible models do
+  // not make the listing a different product, as long as the requested model is
+  // explicitly present. Device searches remain strict.
+  const accessoryModelCompatible = Boolean(intent.model && intent.category === "accessory" && offeredModels.includes(intent.model));
   const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
     intent.model && intent.category === 'accessory'
-      ? explicitModels([offer?.title,offer?.specs?.deviceType,offer?.specs?.series].filter(Boolean).join(' ')).some(model=>model!==intent.model)
+      ? !accessoryModelCompatible
       : UNREQUESTED_VARIANT_TERMS.some((term) => titleTokens.has(term) && !queryTokens.has(term))
   );
   if (hasUnrequestedVariant) confidence *= 0.82;
@@ -389,7 +395,8 @@ export function queryMatchReasons(query, offer) {
   const models = [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
     .filter(Boolean).flatMap(explicitModels);
   const titleModels = [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels);
-  if (model && models.some(value => value !== model)) reasons.push('model_conflict');
+  const accessoryCompatibility = Boolean(model && parseSearchIntent(query).category === "accessory" && models.includes(model));
+  if (model && !accessoryCompatibility && models.some(value => value !== model)) reasons.push('model_conflict');
   const storageText = normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
     .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ');
   const capacities = storageText.match(/\b\d+(?:gb|tb)\b/g) || [];
