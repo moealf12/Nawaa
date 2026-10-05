@@ -1,5 +1,5 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
-import { normalizeSearchQuery, parseSearchIntent, filterQueryOffers, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
+import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 
