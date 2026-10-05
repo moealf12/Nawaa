@@ -274,6 +274,14 @@ function searchPageDiagnostics(html, searchUrl, finalUrl = searchUrl) {
       /"originUrl":"\\u002F(?:login|c)\.html"/i.test(source) ||
       /login_scene/i.test(final.search)
     )) blockedReason = "temu_search_redirect";
+    // A successful HTTP response can still be an anti-bot/bootstrap shell.
+    // Treat abnormally small search HTML with no product evidence as a
+    // transport/acquisition failure, never as a legitimate empty catalogue.
+    const htmlBytes = new TextEncoder().encode(source).byteLength;
+    const productEvidence = Object.values(hints).reduce((sum, count) => sum + Number(count || 0), 0);
+    if (!blockedReason && /(?:temu\.com|aliexpress\.)$/i.test(host.replace(/^www\./, "")) && htmlBytes < 15000 && productEvidence === 0) {
+      blockedReason = "thin_search_shell";
+    }
     if (host.endsWith("walmart.com") && /\/blocked(?:\/|$)/i.test(final.pathname)) blockedReason = "walmart_blocked";
     if (host.endsWith("mytheresa.com") && (
       /\/failover\//i.test(source) ||
