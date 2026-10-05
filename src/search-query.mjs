@@ -343,7 +343,8 @@ export function assessOfferMatch(query, offer) {
   // requested model as a compatibility requirement: extra compatible models do
   // not make the listing a different product, as long as the requested model is
   // explicitly present. Device searches remain strict.
-  const accessoryModelCompatible = Boolean(intent.model && intent.category === "accessory" && offeredModels.includes(intent.model));
+  const accessoryModelCompatible = Boolean(intent.model && intent.category === "accessory" &&
+    offeredModels.length > 1 && offeredModels[0] === intent.model && offeredModels.includes(intent.model));
   const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
     intent.model && intent.category === 'accessory'
       ? !accessoryModelCompatible
@@ -395,7 +396,8 @@ export function queryMatchReasons(query, offer) {
   const models = [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
     .filter(Boolean).flatMap(explicitModels);
   const titleModels = [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels);
-  const accessoryCompatibility = Boolean(model && parseSearchIntent(query).category === "accessory" && models.includes(model));
+  const accessoryCompatibility = Boolean(model && parseSearchIntent(query).category === "accessory" &&
+    models.length > 1 && models[0] === model && models.includes(model));
   if (model && !accessoryCompatibility && models.some(value => value !== model)) reasons.push('model_conflict');
   const storageText = normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
     .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ');
