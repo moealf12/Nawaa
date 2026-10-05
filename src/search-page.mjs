@@ -1268,6 +1268,7 @@ async function runSearch(rawQuery) {
           const source=new EventSource(apiBase + "/api/search/stream?q=" + encodeURIComponent(query));
           state.eventSource=source;
           let best=null;
+          let bestWithOffers=null;
           const finish=(value)=>{ source.close(); if(state.eventSource===source) state.eventSource=null; resolve(value); };
           source.addEventListener("snapshot",(event)=>{
             if(requestId !== state.requestId) return finish(best || {});
@@ -1278,6 +1279,7 @@ async function runSearch(rawQuery) {
               // final snapshot owns cursors, provider diagnostics and completion state.
               best=payload;
               if(Array.isArray(payload.offers) && payload.offers.length){
+                bestWithOffers=payload;
                 recordPriceHistory(payload.offers);
                 const liveProduct={
                   id:null,brand:"بحث عالمي",model:query,variant:"إلى السعودية",
@@ -1290,13 +1292,16 @@ async function runSearch(rawQuery) {
               }
             } catch {}
           });
-          source.addEventListener("done",()=>finish(best || null));
+          // A late empty diagnostic snapshot must never erase offers already
+          // rendered from an earlier live snapshot. Prefer the newest non-empty
+          // snapshot; REST remains the fallback when the stream found nothing.
+          source.addEventListener("done",()=>finish(bestWithOffers || best || null));
           source.addEventListener("error",()=>{
             source.close();
             if(state.eventSource===source) state.eventSource=null;
-            if(best) resolve(best); else reject(new Error("stream_failed"));
+            if(bestWithOffers || best) resolve(bestWithOffers || best); else reject(new Error("stream_failed"));
           });
-          const timeoutId=setTimeout(()=>{ if(best) finish(best); else { source.close(); reject(new Error("stream_timeout")); } },20000);
+          const timeoutId=setTimeout(()=>{ if(bestWithOffers || best) finish(bestWithOffers || best); else { source.close(); reject(new Error("stream_timeout")); } },30000);
           source.addEventListener("done",()=>clearTimeout(timeoutId),{once:true});
         }).catch(()=>null);
       }
