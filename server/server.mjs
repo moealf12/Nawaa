@@ -418,21 +418,59 @@ async function searchAll(query, { depth = 0 } = {}) {
   query = normalizeSearchQuery(query);
   const plan = acquisitionPlan(0, configuredFreeStorefronts().length);
   const providerQuery = parseSearchIntent(query).providerQuery;
+  const configuredRequestDeadline = Number(process.env.SEARCH_REQUEST_DEADLINE_MS);
+  const requestDeadlineMs = Number.isFinite(configuredRequestDeadline)
+    ? Math.max(100, Math.min(25000, Math.floor(configuredRequestDeadline)))
+    : 12000;
+  const requestDeadlineAt = Date.now() + requestDeadlineMs;
+  let deadlineExceeded = false;
+  const beforeRequestDeadline = async (operation, fallback) => {
+    const remaining = requestDeadlineAt - Date.now();
+    if (remaining <= 0) {
+      deadlineExceeded = true;
+      return fallback();
+    }
+    const timeout = Symbol("search-request-deadline");
+    let timeoutId;
+    try {
+      const result = await Promise.race([
+        Promise.resolve().then(operation),
+        new Promise((resolve) => { timeoutId = setTimeout(() => resolve(timeout), remaining); }),
+      ]);
+      if (result !== timeout) return result;
+      deadlineExceeded = true;
+      return fallback();
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   // Local + GCC + global acquisition starts together. Amazon must never block
   // the rest of the world before other providers get a chance to answer.
-  const amazonPromise = searchFreeStorefrontById("amazon-sa", providerQuery, {
-    perStore: Infinity,
-    catalogLimit: Infinity,
-    amazonPageStart: plan.amazonPageStart,
-    amazonPageCount: plan.amazonPageCount,
-    matchingQuery: query,
-  }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) }));
+  const amazonPromise = beforeRequestDeadline(
+    () => searchFreeStorefrontById("amazon-sa", providerQuery, {
+      perStore: Infinity,
+      catalogLimit: Infinity,
+      amazonPageStart: plan.amazonPageStart,
+      amazonPageCount: plan.amazonPageCount,
+      matchingQuery: query,
+    }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) })),
+    () => ({ offers:[], error:"search_deadline_exceeded" }),
+  );
   const [amazon,primary,indexed,persisted] = await Promise.all([
     amazonPromise,
-    runProviderPass(providerQuery, "primary", query, { plan }),
-    searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
-    searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
+    beforeRequestDeadline(
+      () => runProviderPass(providerQuery, "primary", query, { plan }),
+      () => ({ providers:[], errors:[{provider:"search",sourceId:"search",pass:"primary",error:"search_deadline_exceeded"}], offers:[] }),
+    ),
+    beforeRequestDeadline(
+      () => searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
+      () => ({ configured:false, offers:[] }),
+    ),
+    beforeRequestDeadline(
+      () => searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
+      () => ({ configured:false, offers:[] }),
+    ),
   ]);
   let providers = primary.providers;
   let errors = primary.errors;
@@ -480,7 +518,10 @@ async function searchAll(query, { depth = 0 } = {}) {
       ? fallbackQueries.slice(0, 4)
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
-      const expansions = await Promise.all(expansionQueries.map((candidate) => runProviderPass(candidate, "fallback", query, { plan })));
+      const expansions = await Promise.all(expansionQueries.map((candidate) => beforeRequestDeadline(
+        () => runProviderPass(candidate, "fallback", query, { plan }),
+        () => ({ providers:[], errors:[], offers:[] }),
+      )));
       for (const fallback of expansions) {
         providers = providers.concat(fallback.providers);
         errors = errors.concat(fallback.errors);
@@ -536,6 +577,8 @@ async function searchAll(query, { depth = 0 } = {}) {
         responseOffers:plan.returnLimit,
       },
       fallbackUsed: Boolean(fallbackQuery),
+      deadlineExceeded,
+      requestDeadlineMs,
     },
     providers,
     normalizedQuery: query,
