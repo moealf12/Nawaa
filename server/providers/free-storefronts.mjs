@@ -1235,7 +1235,16 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         const pages = await Promise.allSettled(Array.from({length:pageCount}, async (_, index) => {
           const pageUrl = new URL(searchUrl);
           pageUrl.searchParams.set("page", String(pageStart + index));
-          return fetchText(pageUrl.href);
+          // Amazon intermittently stalls individual search pages under concurrent
+          // production load. Retry each page once instead of turning a transient
+          // timeout into an empty shopper result. Successful sibling pages are
+          // still preserved by Promise.allSettled, so recall degrades gracefully.
+          try {
+            return await fetchText(pageUrl.href);
+          } catch (error) {
+            await new Promise(resolve => setTimeout(resolve, 200 * (index + 1)));
+            return fetchText(pageUrl.href);
+          }
         }));
         const fulfilled = pages.filter(result => result.status === "fulfilled").map(result => result.value);
         if (!fulfilled.length) throw pages[0]?.reason || new Error("Amazon Saudi search pages unavailable");
@@ -1308,7 +1317,16 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           const pages = await Promise.allSettled(Array.from({length:pageCount}, async (_,index) => {
             const pageUrl = new URL(searchUrl);
             pageUrl.searchParams.set("page", String(pageStart + index));
+            // Amazon intermittently stalls individual search pages under concurrent
+          // production load. Retry each page once instead of turning a transient
+          // timeout into an empty shopper result. Successful sibling pages are
+          // still preserved by Promise.allSettled, so recall degrades gracefully.
+          try {
+            return await fetchText(pageUrl.href);
+          } catch (error) {
+            await new Promise(resolve => setTimeout(resolve, 200 * (index + 1)));
             return fetchText(pageUrl.href);
+          }
           }));
           const fulfilled = pages.filter((result) => result.status === "fulfilled").map((result) => result.value);
           if (!fulfilled.length) throw pages[0]?.reason || new Error("Amazon Saudi search pages unavailable");
