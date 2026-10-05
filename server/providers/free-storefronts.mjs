@@ -1222,7 +1222,19 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true },
       };
     }))).filter(Boolean);
-    const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, [...directOffers, ...resolvedOffers]);
+    const allOffers = [...directOffers, ...resolvedOffers];
+    const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, allOffers);
+    const queryFilterSamples = allOffers
+      .filter((offer) => !filteredOffers.includes(offer))
+      .slice(0,5)
+      .map((offer) => ({
+        title:offer.title || null,
+        productType:offer.productType || null,
+        sourceUrl:offer.sourceUrl || null,
+        productPrice:offer.productPrice ?? null,
+        reasons:queryMatchReasons(matchingQuery, offer),
+        assessment:assessOfferMatch(matchingQuery, offer),
+      }));
     // Direct search-card extraction is cheap and already price-verified. Keep the
     // full Amazon result set so API/UI pagination can expose it instead of
     // silently truncating the merchant to the generic per-store cap.
@@ -1245,6 +1257,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       failures,
       diagnostics:{
         queryFilter,
+        queryFilterSamples,
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         candidateSamples:(directSearchOffers.length
