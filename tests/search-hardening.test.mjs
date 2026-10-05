@@ -72,6 +72,23 @@ test('Amazon page acquisition does not retry permanent HTTP failures',async()=>{
  assert.equal(attempts,1);
 });
 
+test('Amazon page acquisition returns successful siblings by its shared deadline',async()=>{
+ const started=Date.now();
+ const result=await fetchAmazonSearchPages('https://www.amazon.sa/s?k=hp',{
+  pageStart:1,
+  pageCount:2,
+  deadlineMs:50,
+  wait:async()=>{},
+  fetchPage:async url=>{
+   const page=new URL(url).searchParams.get('page');
+   if(page==='2')return new Promise(()=>{});
+   return {html:'page-'+page,finalUrl:url};
+  },
+ });
+ assert.ok(Date.now()-started<500);
+ assert.deepEqual(result.map(page=>page.html),['page-1']);
+});
+
 test('eXtra follows catalog pages instead of silently dropping products after 24',async()=>{
  const original=globalThis.fetch;
  try {
