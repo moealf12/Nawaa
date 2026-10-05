@@ -1088,7 +1088,7 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
 
-async function fetchText(url) {
+async function fetchText(url,{signal}={}) {
   const response = await fetch(url, {
     headers:{
       accept:"text/html,application/xhtml+xml",
@@ -1102,7 +1102,7 @@ async function fetchText(url) {
       "user-agent":USER_AGENT,
     },
     redirect:"follow",
-    signal:AbortSignal.timeout(8000),
+    signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),
   });
   if (!response.ok) throw new Error("HTTP " + response.status);
   const type = response.headers.get("content-type") || "";
@@ -1119,6 +1119,7 @@ function isRetryableAmazonSearchError(error){
 
 export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,deadlineMs=10000,fetchPage=fetchText,wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
   const deadlineAt=Date.now()+Math.max(50,Math.min(15000,Number(deadlineMs)||10000));
+  const controller=new AbortController();
   const pageUrls=Array.from({length:pageCount},(_,index)=>{
     const pageUrl=new URL(searchUrl);
     pageUrl.searchParams.set("page",String(pageStart+index));
@@ -1128,7 +1129,7 @@ export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,
     const remaining=deadlineAt-Date.now();
     if(remaining<=0){const error=new Error("amazon_page_deadline_exceeded");error.name="TimeoutError";return {status:"rejected",reason:error};}
     let timeoutId;
-    const timeout=new Promise(resolve=>{timeoutId=setTimeout(()=>{const error=new Error("amazon_page_deadline_exceeded");error.name="TimeoutError";resolve({status:"rejected",reason:error});},remaining);});
+    const timeout=new Promise(resolve=>{timeoutId=setTimeout(()=>{const error=new Error("amazon_page_deadline_exceeded");error.name="TimeoutError";controller.abort(error);resolve({status:"rejected",reason:error});},remaining);});
     try{
       return await Promise.race([
         Promise.resolve().then(operation).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason})),
@@ -1136,14 +1137,14 @@ export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,
       ]);
     }finally{clearTimeout(timeoutId);}
   };
-  const first=await Promise.all(pageUrls.map(page=>settleBeforeDeadline(()=>fetchPage(page.url))));
+  const first=await Promise.all(pageUrls.map(page=>settleBeforeDeadline(()=>fetchPage(page.url,{signal:controller.signal}))));
   const results=first.map((result,index)=>({index,result}));
   const retryable=results.filter(({result})=>result.status==="rejected"&&isRetryableAmazonSearchError(result.reason));
   if(retryable.length&&Date.now()<deadlineAt){
     const retried=await Promise.all(retryable.map(async({index})=>{
       const delay=Math.min(200*(index+1),Math.max(0,deadlineAt-Date.now()));
       if(delay)await wait(delay);
-      return {index,result:await settleBeforeDeadline(()=>fetchPage(pageUrls[index].url))};
+      return {index,result:await settleBeforeDeadline(()=>fetchPage(pageUrls[index].url,{signal:controller.signal}))};
     }));
     for(const replacement of retried)results[replacement.index]=replacement;
   }
@@ -1301,7 +1302,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           pagesFetched:fulfilled.length,
         };
       } else {
-        const page = await fetchText(searchUrl);
+        const page = await fetchText(searchUrl,{signal:options.signal});
         html = page.html;
         searchPageFinalUrl = page.finalUrl || searchUrl;
         searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
@@ -1368,7 +1369,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             pagesFetched:fulfilled.length,
           };
         } else {
-          const page = await fetchText(searchUrl);
+          const page = await fetchText(searchUrl,{signal:options.signal});
           html = page.html;
           searchPageFinalUrl = page.finalUrl || searchUrl;
           searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
@@ -1403,7 +1404,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
     // Search-result offers are already price-verified. Do not fan out into slow product pages.
     const resolutionLinks = directSearchOffers.length ? [] : links;
-    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url)));
+    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
     const resolvedOffers = settled
       .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
       .map((result) => ({
@@ -1567,12 +1568,21 @@ export async function searchFreeStorefronts(query, options = {}) {
     ? Math.floor(requestedCatalogLimit)
     : Infinity;
   const storeDeadlineMs = Math.max(1500, Math.min(7500, Number(options.storeDeadlineMs) || 6500));
-  const withDeadline = (promise, storeId) => Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("store_deadline_exceeded:" + storeId)), storeDeadlineMs)),
-  ]);
+  const withDeadline = (operation, storeId) => {
+    const controller=new AbortController();
+    let timeoutId;
+    const deadline=new Promise((_,reject)=>{
+      timeoutId=setTimeout(()=>{
+        const error=new Error("store_deadline_exceeded:"+storeId);
+        controller.abort(error);
+        reject(error);
+      },storeDeadlineMs);
+    });
+    return Promise.race([Promise.resolve().then(()=>operation(controller.signal)),deadline])
+      .finally(()=>clearTimeout(timeoutId));
+  };
   const settled = await Promise.allSettled(stores.map((store) =>
-    withDeadline(searchStore(store, query, productPageLimit, options.matchingQuery || query, catalogLimit, options), store.id)
+    withDeadline((signal)=>searchStore(store, query, productPageLimit, options.matchingQuery || query, catalogLimit, {...options,signal}), store.id)
   ));
   const offers = [];
   const errors = [];
