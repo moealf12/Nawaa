@@ -1112,6 +1112,27 @@ async function fetchText(url) {
   return { html:text, finalUrl:response.url || url };
 }
 
+function isRetryableAmazonSearchError(error){
+  if(error?.name==="TimeoutError"||error?.name==="AbortError"||error instanceof TypeError)return true;
+  return /^HTTP (?:408|425|429|5\d\d)\b/.test(String(error?.message||error||""));
+}
+
+export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,fetchPage=fetchText,wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+  const pages=await Promise.allSettled(Array.from({length:pageCount},async(_,index)=>{
+    const pageUrl=new URL(searchUrl);
+    pageUrl.searchParams.set("page",String(pageStart+index));
+    try{return await fetchPage(pageUrl.href);}
+    catch(error){
+      if(!isRetryableAmazonSearchError(error))throw error;
+      await wait(200*(index+1));
+      return fetchPage(pageUrl.href);
+    }
+  }));
+  const fulfilled=pages.filter(result=>result.status==="fulfilled").map(result=>result.value);
+  if(!fulfilled.length)throw pages.find(result=>result.status==="rejected")?.reason||new Error("Amazon Saudi search pages unavailable");
+  return fulfilled;
+}
+
 const GENERAL_STORE_IDS = new Set(["amazon-sa","amazon-ae","aliexpress-cn","temu-global","walmart-us"]);
 const CATEGORY_NEIGHBORS = {
   phone:["tablet","accessory"], tablet:["phone","laptop","accessory"], laptop:["desktop","monitor","accessory"],
@@ -1248,13 +1269,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
         const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
-        const pages = await Promise.allSettled(Array.from({length:pageCount}, async (_, index) => {
-          const pageUrl = new URL(searchUrl);
-          pageUrl.searchParams.set("page", String(pageStart + index));
-          return fetchText(pageUrl.href);
-        }));
-        const fulfilled = pages.filter(result => result.status === "fulfilled").map(result => result.value);
-        if (!fulfilled.length) throw pages[0]?.reason || new Error("Amazon Saudi search pages unavailable");
+        const fulfilled = await fetchAmazonSearchPages(searchUrl,{pageStart,pageCount});
         html = fulfilled.map(page => page.html).join("\n");
         searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
         searchDiagnostics = {
@@ -1321,13 +1336,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
           const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
           const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
-          const pages = await Promise.allSettled(Array.from({length:pageCount}, async (_,index) => {
-            const pageUrl = new URL(searchUrl);
-            pageUrl.searchParams.set("page", String(pageStart + index));
-            return fetchText(pageUrl.href);
-          }));
-          const fulfilled = pages.filter((result) => result.status === "fulfilled").map((result) => result.value);
-          if (!fulfilled.length) throw pages[0]?.reason || new Error("Amazon Saudi search pages unavailable");
+          const fulfilled = await fetchAmazonSearchPages(searchUrl,{pageStart,pageCount});
           html = fulfilled.map((page) => page.html).join("\n");
           searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
           searchDiagnostics = {
