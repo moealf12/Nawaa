@@ -46,6 +46,7 @@ const STATIC_FILES = new Map([
   ["/src/search-page.mjs", "src/search-page.mjs"],
   ["/src/search-core.mjs", "src/search-core.mjs"],
   ["/src/search-query.mjs", "src/search-query.mjs"],
+  ["/src/search-stream.mjs", "src/search-stream.mjs"],
   ["/src/product-page.mjs", "src/product-page.mjs"],
   ["/src/source-registry.mjs", "src/source-registry.mjs"],
 ]);
