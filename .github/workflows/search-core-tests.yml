@@ -34,6 +34,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Refresh dependency lock for Crawlee integration
+        run: npm install --package-lock-only --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crawlee-package-lock
+          path: package-lock.json
       - run: npm ci --ignore-scripts
       - name: Run test suite
         run: npm test
