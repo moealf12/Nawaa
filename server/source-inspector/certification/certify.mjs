@@ -1,2 +1,18 @@
 import { evaluateCertification, SOURCE_STATES } from "./rules.mjs";
-export function certifySource({profile,verification={},strategyScore=0}={}){const evidence={reachable:true,strategyScore,criticalFieldCoverage:verification.criticalFieldCoverage??0,priceValidity:verification.priceValidity??0,currencyVerified:verification.currencyVerified===true,marketVerified:verification.marketVerified===true,searchPassed:verification.searchPassed===true,paginationPassed:verification.paginationPassed===true,variantAccuracy:verification.variantAccuracy??0,semanticCriticalIssues:verification.semanticCriticalIssues??Infinity,repeatabilityPassed:verification.repeatabilityPassed===true};const result=evaluateCertification(evidence);return {...result,sourceId:profile?.sourceId??null,profileVersion:profile?.profileVersion??null,certifiedAt:result.state===SOURCE_STATES.CERTIFIED?new Date().toISOString():null,evidence};}
+export function certifySource({profile,verification={},strategyScore=0,reachable=false}={}){
+ const evidence={
+  reachable:reachable===true,
+  strategyScore,
+  criticalFieldCoverage:verification.criticalFieldCoverage??0,
+  priceValidity:verification.priceValidity??0,
+  currencyVerified:verification.currencyVerified===true,
+  marketVerified:verification.marketVerified===true,
+  searchPassed:verification.searchPassed===true,
+  paginationPassed:verification.paginationPassed===true,
+  variantAccuracy:verification.variantAccuracy??0,
+  semanticCriticalIssues:verification.semanticCriticalIssues??Infinity,
+  repeatabilityPassed:verification.repeatabilityPassed===true
+ };
+ const result=evaluateCertification(evidence);
+ return {...result,sourceId:profile?.sourceId??null,profileVersion:profile?.profileVersion??null,certifiedAt:result.state===SOURCE_STATES.CERTIFIED?new Date().toISOString():null,evidence};
+}
