@@ -178,7 +178,10 @@ export function parseSearchIntent(value = "") {
   const categoryDefinition = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const kind = queryProductKind(normalizedQuery);
   const category = kind === 'console' || kind === 'game' ? kind : categoryDefinition?.[0] || (kind === 'accessory' ? 'accessory' : null);
-  const residual = normalizedQuery.replace(categoryDefinition?.[2] || /$^/, ' ').split(' ').filter(token => token && token !== brand);
+  // Remove structural category phrases globally before deciding whether a query
+  // is broad discovery. This prevents multi-word families (Apple Watch, Galaxy
+  // Tab, MacBook, etc.) from being misread as overly-specific free text.
+  const residual = normalizedQuery.replace(categoryDefinition?.[2] || /$^/g, ' ').split(' ').filter(token => token && token !== brand);
   const discoveryMode = !kind && !/\b\d+(?:gb|tb)\b/.test(normalizedQuery) && (residual.length === 0 || (!brand && !category && residual.length === 1)) ? (brand ? 'brand' : category ? 'category' : 'general') : 'specific';
   const condition = normalizedQuery.match(/\b(refurbished|used|new)\b/)?.[1] || null;
   return {
