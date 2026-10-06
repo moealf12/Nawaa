@@ -160,3 +160,30 @@ export async function extractProductWithCrawlee(url,{timeoutMs=12000}={}){
   if(extracted) return extracted;
   throw failure||new Error("Crawlee did not extract a product");
 }
+
+export async function discoverProductUrlsWithCrawlee(url,{limit=24,timeoutMs=12000,allowedHost=null}={}){
+  const { parsed }=await resolvePublicHttpsTarget(url);
+  const timeoutSecs=Math.max(1,Math.ceil(timeoutMs/1000));
+  const cap=Math.max(1,Math.min(96,Math.floor(Number(limit)||24)));
+  const config=new Configuration({persistStorage:false,purgeOnStart:true});
+  const discovered=[]; const seen=new Set(); let failure=null;
+  const crawler=new CheerioCrawler({maxConcurrency:1,maxRequestsPerCrawl:1,maxRequestRetries:1,navigationTimeoutSecs:timeoutSecs,requestHandlerTimeoutSecs:timeoutSecs+2,
+    async requestHandler({$,request}){
+      const base=request.loadedUrl||request.url;
+      $("a[href]").each((_,el)=>{
+        if(discovered.length>=cap) return false;
+        const href=$(el).attr("href"); let absoluteUrl;
+        try{absoluteUrl=new URL(href,base);}catch{return;}
+        if(absoluteUrl.protocol!=="https:") return;
+        if(allowedHost && absoluteUrl.hostname!==allowedHost) return;
+        if(!/\.html(?:$|[?#])/i.test(absoluteUrl.href)) return;
+        const key=absoluteUrl.origin+absoluteUrl.pathname;
+        if(seen.has(key)) return; seen.add(key); discovered.push(absoluteUrl.href);
+      });
+    },
+    async failedRequestHandler({request},error){failure=error instanceof Error?error:new Error(String(error||request.errorMessages?.at(-1)||"Crawlee discovery failed"));}
+  },config);
+  await crawler.run([{url:parsed.href,uniqueKey:parsed.href}]); await crawler.teardown();
+  if(!discovered.length && failure) throw failure;
+  return discovered;
+}
