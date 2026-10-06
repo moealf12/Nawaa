@@ -1,0 +1,6 @@
+import {fieldCoverage} from "../mapping/fields.mjs";import {validateSemanticPrice} from "./semantics.mjs";import {verifyVariantIntegrity} from "./variants.mjs";
+export function verifyProducts(products=[]){
+ const issues=[],variants=[];let valid=0;
+ for(const product of products){const coverage=fieldCoverage(product);const semantic=validateSemanticPrice({label:product.priceLabel||"",text:product.priceText||""});if(coverage.coverage<1)issues.push({type:"field-coverage",id:product.sourceProductId,coverage:coverage.coverage});if(!(Number(product.price)>0))issues.push({type:"invalid-price",id:product.sourceProductId});if(!semantic.validProductPrice)issues.push({type:"semantic-price",id:product.sourceProductId,model:semantic.model});if(coverage.coverage===1&&Number(product.price)>0&&semantic.validProductPrice)valid++;variants.push({...product,capacity:product.variant?.capacity??product.capacity,size:product.variant?.size??product.size,concentration:product.variant?.concentration??product.concentration,edition:product.variant?.edition??product.edition})}
+ const variant=verifyVariantIntegrity(variants);return {passed:products.length>0&&valid===products.length&&variant.passed,products:products.length,valid,priceValidity:products.length?valid/products.length:0,variantAccuracy:variant.variantAccuracy,issues:[...issues,...variant.issues]};
+}
