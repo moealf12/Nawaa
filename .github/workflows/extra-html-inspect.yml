@@ -14,3 +14,4 @@ jobs:
       - run: npm ci
       - run: node scripts/inspect-extra-html.mjs
       - run: node scripts/inspect-extra-search-config.mjs
+      - run: node scripts/probe-extra-unbxd.mjs
