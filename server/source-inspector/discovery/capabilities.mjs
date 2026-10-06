@@ -24,7 +24,7 @@ export function detectCapabilities({ html = "", url = "", headers = {} } = {}) {
     jsonLd: /<script[^>]+type=["']application\/ld\+json["']/i.test(text),
     embeddedJson: /__NEXT_DATA__|__NUXT__|application\/json|window\.__/i.test(text),
     sitemapHint: /sitemap/i.test(lower) || /\/sitemap(?:\.xml)?$/i.test(url),
-    searchHint: /search|query|q=|searchbox|type=["']search["']/i.test(text),
+    searchHint: /search|query|q=|searchbox|type=["']search["']/i.test(text) || /[?&](?:q|query|search|text)=/i.test(String(url)),
     productHint: /product|sku|gtin|mpn|price/i.test(lower),
   };
 }
