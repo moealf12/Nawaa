@@ -62,9 +62,18 @@ export function createSearchCache(search, {
         void startRefresh(key).catch(() => {});
         return { ...clone(entry.result), cache:cacheMeta("stale", age) };
       }
-      entries.delete(key);
+      // Keep the expired snapshot until refresh succeeds; it can rescue a
+      // transient provider/deadline failure instead of flashing zero results.
     }
+    const previous = entry ? clone(entry.result) : null;
     const result = await startRefresh(key);
+    if ((!result.offers?.length) && previous?.offers?.length) {
+      touch(key, entry);
+      return {
+        ...previous,
+        cache:{...cacheMeta("stale-if-error", Math.max(0, now() - entry.at)), hit:true, stale:true, refreshing:false},
+      };
+    }
     return { ...clone(result), cache:cacheMeta("miss", 0) };
   };
 
