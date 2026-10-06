@@ -1,0 +1,2 @@
+export const HEALTH=Object.freeze({HEALTHY:"HEALTHY",DEGRADED:"DEGRADED",CIRCUIT_OPEN:"CIRCUIT_OPEN",QUARANTINED:"QUARANTINED"});
+export function evaluateSourceHealth(m={}){if(m.quarantined)return {status:HEALTH.QUARANTINED,ingest:false};const failures=Number(m.consecutiveFailures||0),success=Number(m.successRate??1),price=Number(m.priceValidity??1);if(failures>=3||success<.5||price<.9)return {status:HEALTH.CIRCUIT_OPEN,ingest:false};if(failures>0||success<.9||price<.99)return {status:HEALTH.DEGRADED,ingest:true};return {status:HEALTH.HEALTHY,ingest:true};}
