@@ -300,7 +300,10 @@ export function findDomainAdapter(urlOrHost) {
   try { host = new URL(urlOrHost).hostname.toLowerCase(); } catch {}
   host = host.replace(/^www\./, "");
   return DOMAIN_ADAPTERS.find((adapter) =>
-    adapter.hosts.some((domain) => host === domain || host.endsWith("." + domain))
+    adapter.hosts.some((domain) => {
+      const normalizedDomain = String(domain).toLowerCase().replace(/^www\./, "");
+      return host === normalizedDomain || host.endsWith("." + normalizedDomain);
+    })
   ) || null;
 }
 
