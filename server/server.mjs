@@ -177,6 +177,17 @@ async function executeProviderTask(task, pass, providerQuery) {
   }
 }
 
+
+function retainRelatedOffers(query, offers = []) {
+  return dedupeNormalizedOffers(offers)
+    .map(offer => ({ ...offer, ...assessOfferMatch(query, offer), dataKind:offer.dataKind || "live" }))
+    // Keep strong matches first, but do not erase useful cross-merchant alternatives.
+    // A 0.35 floor still rejects unrelated/category-mismatched noise because those
+    // are heavily penalized by assessOfferMatch (0.2x / 0.12x).
+    .filter(offer => (offer.matchConfidence || 0) >= 0.35)
+    .sort((a,b) => (b.matchConfidence || 0) - (a.matchConfidence || 0));
+}
+
 function mergeProviderChunks(chunks) {
   return {
     providers:chunks.flatMap(chunk=>chunk.provider ? [chunk.provider] : []),
@@ -220,9 +231,7 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
       try { await onChunk(settled.chunk, { completed:chunks.length, total:ordered.length, pending:remaining.length + inFlight.size }); } catch {}
     }
 
-    relevant = dedupeNormalizedOffers(chunks.flatMap(chunk=>chunk.offers || []))
-      .map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer)}))
-      .filter(offer=>(offer.matchConfidence || 0)>=0.65);
+    relevant = retainRelatedOffers(matchingQuery, chunks.flatMap(chunk=>chunk.offers || []));
     const merchants=new Set(relevant.map(offerMerchantKey)).size;
     const enough=relevant.length>=usefulThreshold && merchants>=merchantThreshold;
 
@@ -282,9 +291,7 @@ async function searchExpansion(query, depth) {
     errors.push(...(storefront.errors||[]).map(error=>({provider:"free-storefronts",sourceId:"free-storefronts",pass:"expansion",...error})));
   }
 
-  const offers=dedupeNormalizedOffers([...(amazon.offers||[]),...(storefront.offers||[])])
-    .map(offer=>({...offer,...assessOfferMatch(query,offer),dataKind:offer.dataKind||"live"}))
-    .filter(offer=>(offer.matchConfidence||0)>=0.65);
+  const offers=retainRelatedOffers(query, [...(amazon.offers||[]),...(storefront.offers||[])]);
   const allSelectedOffers=selectDiverseOffers(offers,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
   void Promise.allSettled([
@@ -325,9 +332,7 @@ async function searchExpansion(query, depth) {
 }
 
 function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
-  const assessed=dedupeNormalizedOffers(offers)
-    .map(offer=>({...offer,...assessOfferMatch(query,offer),dataKind:offer.dataKind||"live"}))
-    .filter(offer=>(offer.matchConfidence||0)>=0.65);
+  const assessed=retainRelatedOffers(query, offers);
   const selected=selectDiverseOffers(assessed,Infinity).slice(0,acquisitionPlan(0,configuredFreeStorefronts().length).returnLimit);
   return {
     providersConfigured:configuredProviders(),
@@ -394,9 +399,7 @@ async function streamSearchProgress(query, onSnapshot) {
   // same providers a second time. Canonical search remains available to the JSON
   // endpoint and deeper cursor passes; the stream returns the accumulated recall
   // immediately and the UI can request deeper pages without losing any source.
-  const assessed=dedupeNormalizedOffers(offers)
-    .map(offer=>({...offer,...assessOfferMatch(query,offer),dataKind:offer.dataKind||"live"}))
-    .filter(offer=>(offer.matchConfidence||0)>=0.65);
+  const assessed=retainRelatedOffers(query, offers);
   const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
   void Promise.allSettled([
