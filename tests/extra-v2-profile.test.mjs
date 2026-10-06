@@ -1,0 +1,2 @@
+import test from "node:test";import assert from "node:assert/strict";import {createExtractionProfile} from "../server/source-inspector/profiling/profile-schema.mjs";import {verifyMarketContext} from "../server/source-inspector/verification/market.mjs";
+test("eXtra Saudi profile identity is KSA/SAR",()=>{const p=createExtractionProfile({sourceId:"extra-sa",sourceUrl:"https://www.extra.com/en-sa"});p.market="KSA";p.currency="SAR";const r=verifyMarketContext({market:p.market,currency:p.currency,host:p.host});assert.equal(r.passed,true);assert.equal(p.sourceId,"extra-sa")});
