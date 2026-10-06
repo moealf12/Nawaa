@@ -1,14 +1,23 @@
-import { discoverProductUrlsWithCrawlee, extractProductWithCrawlee } from "../server/universal-acquisition.mjs";
+import { searchViaConstructor } from "../server/providers/jarir.mjs";
 
-const searchUrl="https://www.jarir.com/sa-en/catalogsearch/result/?q=iphone%2017";
+const query=process.argv.slice(2).join(" ")||"iPhone 17";
 const started=Date.now();
-const urls=await discoverProductUrlsWithCrawlee(searchUrl,{limit:12,timeoutMs:15000,allowedHost:"www.jarir.com"});
-const candidates=urls.filter(url=>/iphone|smartphones/i.test(url)).slice(0,6);
-const results=[];
-for(const url of candidates){
-  const t=Date.now();
-  try{const o=await extractProductWithCrawlee(url,{timeoutMs:15000});results.push({ok:true,elapsedMs:Date.now()-t,title:o.title,price:o.productPrice,currency:o.originalCurrency,sku:o.sku,modelNumber:o.modelNumber,availability:o.availability,sourceUrl:o.sourceUrl,confidence:o.extraction?.confidence});}
-  catch(error){results.push({ok:false,elapsedMs:Date.now()-t,url,error:error instanceof Error?error.message:String(error)});}
+try{
+  const offers=await searchViaConstructor(query,96);
+  const valid=offers.filter(o=>o.title&&Number.isFinite(o.productPrice)&&o.productPrice>0&&o.sourceUrl);
+  const withImage=valid.filter(o=>o.image).length;
+  const withModel=valid.filter(o=>o.specs?.modelNumber).length;
+  const unique=new Set(valid.map(o=>o.sourceUrl)).size;
+  const prices=valid.map(o=>o.productPrice);
+  console.log("JARIR_SEARCH_RESULTS_FIRST "+JSON.stringify({
+    ok:valid.length>0,query,elapsedMs:Date.now()-started,
+    returned:offers.length,valid:valid.length,unique,withImage,withModel,
+    minPrice:prices.length?Math.min(...prices):null,maxPrice:prices.length?Math.max(...prices):null,
+    paginationError:offers.paginationError||null,
+    sample:valid.slice(0,10).map(o=>({title:o.title,price:o.productPrice,currency:o.currency,image:Boolean(o.image),productId:o.sourceMeta?.productId,model:o.specs?.modelNumber,url:o.sourceUrl}))
+  }));
+  if(!valid.length) process.exitCode=1;
+}catch(error){
+  console.log("JARIR_SEARCH_RESULTS_FIRST "+JSON.stringify({ok:false,query,elapsedMs:Date.now()-started,error:error instanceof Error?error.message:String(error)}));
+  process.exitCode=1;
 }
-console.log("CRAWLEE_JARIR_DISCOVERY_RESULT "+JSON.stringify({searchUrl,elapsedMs:Date.now()-started,discovered:urls.length,candidates:candidates.length,succeeded:results.filter(x=>x.ok).length,failed:results.filter(x=>!x.ok).length,urls,results}));
-if(!urls.length||!results.some(x=>x.ok)) process.exitCode=1;
