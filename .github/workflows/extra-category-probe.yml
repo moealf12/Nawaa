@@ -1,0 +1,18 @@
+name: eXtra Category Probe
+on:
+  push:
+    branches: [feature/source-inspector-phase1-20261007]
+    paths: [.github/workflows/extra-category-probe.yml]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Inspect eXtra iPhone category
+        run: node scripts/onboard-source-v2.mjs --id extra-sa-iphone17 --url "https://www.extra.com/en-sa/iphone-17-series/c/All-iPhone-17/facet/citySelectionForm"
