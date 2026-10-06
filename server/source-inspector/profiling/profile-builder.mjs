@@ -7,7 +7,7 @@ export function applyInspectorEvidence(profile, inspection) {
   const now=inspection?.observedAt || new Date().toISOString();
   next.platform=inspection?.capabilities?.platform || next.platform;
   const host=String(next.host||"").toLowerCase();
-  if(host.endsWith(".sa")||host==="extra.com"&&/\/en-sa|\/ar-sa/.test(next.sourceUrl)){next.market=next.market||"KSA";next.currency=next.currency||"SAR";next.requirements.geo=next.requirements.geo==="unknown"?"market-path":next.requirements.geo;}
+  if(host.endsWith(".sa")||/\/(?:en|ar)-sa(?:\/|$)/i.test(new URL(next.sourceUrl).pathname)){next.market=next.market||"KSA";next.currency=next.currency||"SAR";next.requirements.geo=next.requirements.geo==="unknown"?"market-path":next.requirements.geo;}
   next.requirements.javascript=inspection?.capabilities?.embeddedJson ? "possible" : next.requirements.javascript;
   next.mechanisms.product=inspection?.capabilities?.jsonLd ? "json-ld" : inspection?.capabilities?.productHint ? "html" : next.mechanisms.product;
   next.mechanisms.search=inspection?.capabilities?.searchHint ? "discovered" : next.mechanisms.search;
