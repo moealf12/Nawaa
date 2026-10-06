@@ -1,5 +1,9 @@
 import { probeHtml } from "./probes/html.mjs";
 import { probeJsonLd } from "./probes/jsonld.mjs";
+import { probeEmbeddedState } from "./probes/embedded-state.mjs";
+import { probeJsonCandidates } from "./probes/json.mjs";
+import { probeFeedHints } from "./probes/feed.mjs";
+import { probeSitemap } from "./probes/sitemap.mjs";
 import { detectCapabilities } from "./discovery/capabilities.mjs";
 import { rankStrategies } from "./scoring/extraction-score.mjs";
 import { evaluateCertification } from "./certification/rules.mjs";
@@ -19,8 +23,20 @@ export async function inspectSource(storeUrl, options = {}) {
     headers: htmlProbe.headers,
   });
   const jsonLd = probeJsonLd(htmlProbe.html);
+  const embeddedState = probeEmbeddedState(htmlProbe.html);
+  const jsonXhr = probeJsonCandidates(htmlProbe.html, htmlProbe.finalUrl || source.url);
+  const feed = probeFeedHints(htmlProbe.finalUrl || source.url, htmlProbe.html);
+  const sitemap = await probeSitemap(htmlProbe.finalUrl || source.url, options);
 
   const candidates = rankStrategies([
+    {
+      id: "json-xhr", available: jsonXhr.ok,
+      metrics:{correctness:.9,completeness:.85,stability:.82,speed:.95,repeatability:.88,maintainability:.85,resourceCost:1}, evidence:jsonXhr,
+    },
+    {
+      id: "embedded-state", available: embeddedState.ok,
+      metrics:{correctness:.86,completeness:.8,stability:.78,speed:.98,repeatability:.9,maintainability:.8,resourceCost:1}, evidence:{count:embeddedState.count},
+    },
     {
       id: "jsonld",
       available: jsonLd.ok,
@@ -77,6 +93,10 @@ export async function inspectSource(storeUrl, options = {}) {
         error: htmlProbe.error,
       },
       jsonLd,
+      embeddedState: { ok:embeddedState.ok, count:embeddedState.count },
+      jsonXhr,
+      feed,
+      sitemap,
     },
     strategies: candidates,
     selectedStrategy: best ? { id:best.id, score:best.score } : null,
