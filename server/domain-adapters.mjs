@@ -362,10 +362,10 @@ function extractVirginMegastoreHtmlProduct(html, url) {
     source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] || null;
   const pricePatterns = [
-    /(?:AED|د\\.?إ\\.?|Dhs?)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)/i,
-    /([0-9][0-9,]*(?:\\.[0-9]{1,2})?)\\s*(?:AED|د\\.?إ\\.?|Dhs?)/i,
-    /["'](?:formattedValue|formattedPrice)["']\\s*:\\s*["'][^"'0-9]*(?:AED\\s*)?([0-9][0-9,]*(?:\\.[0-9]{1,2})?)/i,
-    /["'](?:value|priceValue|salePrice|sellingPrice|finalPrice|currentPrice)["']\\s*:\\s*["']?([0-9][0-9,]*(?:\\.[0-9]{1,2})?)/i,
+    /(?:AED|د\.?إ\.?|Dhs?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
+    /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:AED|د\.?إ\.?|Dhs?)/i,
+    /["'](?:formattedValue|formattedPrice)["']\s*:\s*["'][^"'0-9]*(?:AED\s*)?([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
+    /["'](?:value|priceValue|salePrice|sellingPrice|finalPrice|currentPrice)["']\s*:\s*["']?([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
   ];
   let price = null;
   for (const pattern of pricePatterns) {
@@ -377,7 +377,7 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   return {
     name: decodeHtmlText(title),
     image: image || null,
-    brand: /\\bapple\\b/i.test(decodeHtmlText(title)) ? "Apple" : null,
+    brand: /\bapple\b/i.test(decodeHtmlText(title)) ? "Apple" : null,
     sku: productIdFromUrl(url, "virginmegastore"),
     offers: { price, priceCurrency:"AED", availability:"" },
   };
