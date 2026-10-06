@@ -1,5 +1,4 @@
 import { resolveProductUrl } from "./url-resolver.mjs";
-import { extractProductWithCrawlee } from "./universal-acquisition.mjs";
 
 const EXTRACTOR_VERSION = "2.0.0";
 
@@ -166,6 +165,7 @@ export async function extractNawaaProduct(url) {
     });
     const fallbackStarted=Date.now();
     try {
+      const { extractProductWithCrawlee }=await import("./universal-acquisition.mjs");
       const offer=await extractProductWithCrawlee(url);
       const product=toNawaaProduct(offer,url);
       attempts.push({
