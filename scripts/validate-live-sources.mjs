@@ -5,7 +5,7 @@ const CASES = [
   // increase shopper recall before the wider global validation matrix.
   ["amazon-sa","iphone 17"],["lulu-sa","iphone 17"],["samsung-sa","galaxy s25"],
   ["virgin-sa","airpods"],["amazon-ae","iphone 17"],["noon-ae","iphone 17"],
-  ["sharafdg-ae","hp laptop"],["virgin-ae","iphone 17"],["xcite-kw","hp laptop"],
+  ["sharafdg-ae","hp laptop"],["virgin-ae","iphone 17"],["virgin-ae","airpods"],["virgin-ae","apple watch"],["virgin-ae","macbook"],["virgin-ae","playstation 5"],["xcite-kw","hp laptop"],
   ["lulu-ae","iphone 17"],["carrefour-ae","iphone 17"],["microless-ae","iphone 17"],["jumbo-ae","iphone 17"],
   ["goldenscent-sa","dior sauvage"],["ounass-sa","nike shoes"],["sunandsand-sa","nike shoes"],
   ["virgin-sa","airpods"],["homecentre-sa","office chair"],["mumzworld-sa","stroller"],
