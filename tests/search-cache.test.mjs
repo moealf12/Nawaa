@@ -44,3 +44,21 @@ test('catalog invalidation during an in-flight search refreshes instead of retur
   assert.equal(result.offers[0].call,2);
   assert.equal(result.errors.length,0);
 });
+
+
+test('expired good results survive a transient empty refresh', async () => {
+  const { createSearchCache } = await import('../server/search-cache.mjs');
+  let now=0,calls=0;
+  const cached=createSearchCache(async()=>{
+    calls++;
+    return calls===1 ? {offers:[{title:'iPhone 17'}],errors:[]} : {offers:[],errors:[{provider:'jarir',error:'temporary provider timeout'}]};
+  },{ttl:10,staleTtl:20,now:()=>now});
+  assert.equal((await cached('iphone')).offers.length,1);
+  now=25;
+  const rescued=await cached('iphone');
+  assert.equal(calls,2);
+  assert.equal(rescued.offers.length,1);
+  assert.equal(rescued.offers[0].title,'iPhone 17');
+  assert.equal(rescued.cache.mode,'stale-if-error');
+  assert.equal(rescued.cache.stale,true);
+});
