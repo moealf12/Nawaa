@@ -31,12 +31,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - run: npm ci --ignore-scripts
       - name: Run test suite
         run: npm test
+      - name: Live Crawlee smoke test against Jarir Saudi
+        if: github.head_ref == 'feature/crawlee-local-ingestion-20261006'
+        continue-on-error: true
+        run: node scripts/test-crawlee-local.mjs
       - name: Syntax check browser and server modules
         run: |
           node --check src/search-query.mjs

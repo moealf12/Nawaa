@@ -180,7 +180,7 @@ test('redirect cannot discard or change an explicit requested variant',async()=>
 
 const catalog=()=>({provider:'jarir-direct',providerMarket:'jarir-sa',merchant:'Jarir',merchantCountryCode:'SA',title:'HP Laptop',sourceUrl:'https://www.jarir.com/sa-en/hp-678436.html',productPrice:4599,originalProductPrice:4599,currency:'SAR',originalCurrency:'SAR',condition:'new',shipping:null,tax:null,deliveryDays:null,specs:{brand:'HP',modelNumber:'D80WREAA2N'},sourceMeta:{productId:'678436',parsedFrom:'jarir-constructor-search'}});
 const page=()=>({...catalog(),productPrice:3199,originalProductPrice:3199,availability:'in_stock',observedAt:'2026-10-03T13:00:00.000Z'});
-test('Jarir public search uses current product page price instead of stale index',async()=>{
+test('Jarir public search trusts structured search price without per-result PDP blocking',async()=>{
   const oldFetch=globalThis.fetch,oldLookup=dns.lookup;
   try{
     dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
@@ -188,12 +188,12 @@ test('Jarir public search uses current product page price instead of stale index
       ? Response.json({response:{results:[{value:'HP Laptop',data:{id:'678436',url:'hp-678436.html',price:4599,metadata:{brand:'HP',mpn:'D80WREAA2N'}}}]}})
       :new Response('<script type="application/ld+json">'+JSON.stringify({'@type':'Product',name:'HP Laptop',brand:'HP',mpn:'D80WREAA2N',offers:{price:3199,priceCurrency:'SAR',availability:'https://schema.org/InStock',url:String(u)}})+'</script>',{headers:{'content-type':'text/html'}});
     const r=await jarir.searchJarir('HP laptop');
-    assert.equal(r.offers[0].productPrice,3199);
-    assert.equal(r.offers[0].originalProductPrice,3199);
-    assert.equal(r.offers[0].sourceMeta.indexPrice,4599);
-    assert.equal(r.offers[0].sourceMeta.priceSource,'product-page');
+    assert.equal(r.offers[0].productPrice,4599);
+    assert.equal(r.offers[0].originalProductPrice,4599);
+    assert.equal(r.offers[0].sourceMeta.parsedFrom,'jarir-constructor-search');
     assert.equal(r.offers[0].shipping,null);assert.equal(r.offers[0].tax,null);
-    assert.deepEqual(r.diagnostics.pageRefresh,{attempted:1,verified:1,failed:0});
+    assert.equal(r.diagnostics.acquisition.strategy,'search-results-first');
+    assert.deepEqual(r.diagnostics.acquisition.pdpFallback,{attempted:0,verified:0,failed:0});
   }finally{globalThis.fetch=oldFetch;dns.lookup=oldLookup;}
 });
 test('Jarir failed, mismatched and invalid pages never return stale prices',async()=>{

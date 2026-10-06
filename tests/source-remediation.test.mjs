@@ -29,11 +29,14 @@ test('successful empty Jarir Constructor search never returns HTML recommendatio
     assert.deepEqual(r.offers,[]);assert.deepEqual(r.errors,[]);
   });
 });
-test('Jarir filters recommended wrong variants and records upstream output counts',async()=>{
+test('Jarir retains and classifies variants instead of dropping discovered results',async()=>{
   await withFetch(async url=>String(url).startsWith('https://ac.cnstrc.com/')?Response.json({response:{results:[jarirItem('Apple iPhone 17 256GB','1'),jarirItem('Apple iPhone 17 Pro 256GB','2'),jarirItem('Apple iPhone 17 512GB','3')]}}):new Response(`<script type="application/ld+json">${JSON.stringify({'@type':'Product',name:'Apple iPhone 17 256GB',offers:{price:3000,priceCurrency:'SAR',url:String(url)}})}</script>`,{headers:{'content-type':'text/html'}}),async()=>{
     const r=await searchJarir('ايفون ١٧ ٢٥٦ جيجا');
-    assert.deepEqual(r.offers.map(x=>x.sourceMeta.productId),['1']);
-    assert.deepEqual(r.diagnostics.queryFilter,{input:3,retained:1,removed:2});
+    assert.deepEqual(r.offers.map(x=>x.sourceMeta.productId),['1','2','3']);
+    assert.equal(r.diagnostics.acquisition.discovered,3);
+    assert.equal(r.diagnostics.acquisition.classified,3);
+    assert.equal(r.diagnostics.acquisition.dropped,0);
+    assert.equal(r.offers[0].exactMatch,true);
   });
 });
 test('Jarir malformed payload and failed fallback cannot pass a negative control',async()=>{

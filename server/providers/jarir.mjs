@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { filterQueryOffers, queryMatchReasons } from "../../src/search-query.mjs";
+import { assessOfferMatch, productCategory, filterQueryOffers, queryMatchReasons } from "../../src/search-query.mjs";
 import { resolveProductUrl } from "../url-resolver.mjs";
 import { sameOfferIdentity } from "../product-identity.mjs";
 
@@ -225,7 +225,7 @@ export function parseJarirSearchHtml(html, limit = 24) {
   return offers;
 }
 
-async function searchViaConstructor(query, limit) {
+export async function searchViaConstructor(query, limit) {
   const cap = Math.max(1, Math.min(96, Math.floor(Number(limit) || 24)));
   const pageSize = Math.min(48, cap);
   const signal = AbortSignal.timeout(6200);
@@ -332,48 +332,24 @@ export async function refreshJarirPrices(raw, matchingQuery, {resolvePage=resolv
 }
 
 export async function searchJarir(query, limit = 24, matchingQuery = query) {
-  const capped = Math.max(1, Math.min(96, Math.floor(Number(limit) || 24)));
-  const errors = [];
-
-  try {
-    const raw = await searchViaConstructor(query, capped);
-    const {offers,errors:pageErrors,queryFilter,pageRefresh} = await refreshJarirPrices(raw,matchingQuery);
-    const paginationErrors=raw.paginationError ? [{market:"jarir-sa",error:raw.paginationError}] : [];
-    return {
-        provider: "jarir-direct",
-        ok: offers.length > 0,
-        searchedMarkets: [{ id: "jarir-sa", countryCode: "SA", countryNameAr: "السعودية" }],
-        offers,
-        errors: [...paginationErrors,...pageErrors],
-        diagnostics: {queryFilter,pageRefresh,pagination:{partial:Boolean(raw.paginationError),error:raw.paginationError || null}},
-      };
-  } catch (error) {
-    errors.push({ market: "jarir-sa", error: error?.message || String(error) });
-  }
-
-  try {
-    const raw = await searchViaHtml(query, capped);
-    const {offers,errors:pageErrors,queryFilter,pageRefresh} = await refreshJarirPrices(raw,matchingQuery);
-    if (raw.length) {
-      return {
-        provider: "jarir-direct",
-        ok: offers.length > 0,
-        searchedMarkets: [{ id: "jarir-sa", countryCode: "SA", countryNameAr: "السعودية" }],
-        offers,
-        errors:[...errors,...pageErrors],
-        diagnostics: {queryFilter,pageRefresh},
-      };
-    }
-    errors.push({ market: "jarir-sa", error: "HTML fallback returned no products" });
-  } catch (error) {
-    errors.push({ market: "jarir-sa", error: error?.message || String(error) });
-  }
-
-  return {
-    provider: "jarir-direct",
-    ok: false,
-    searchedMarkets: [{ id: "jarir-sa", countryCode: "SA", countryNameAr: "السعودية" }],
-    offers: [],
-    errors,
+  const capped=Math.max(1,Math.min(96,Math.floor(Number(limit)||24))), errors=[];
+  const classify=(raw)=>{
+    const offers=raw.map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer),category:productCategory(offer)}));
+    const categories={}; for(const offer of offers) categories[offer.category]=(categories[offer.category]||0)+1;
+    offers.sort((a,b)=>Number(b.exactMatch)-Number(a.exactMatch)||b.matchConfidence-a.matchConfidence||a.productPrice-b.productPrice);
+    return {offers,categories,exactMatches:offers.filter(o=>o.exactMatch).length};
   };
+  try {
+    const raw=await searchViaConstructor(query,capped), {offers,categories,exactMatches}=classify(raw);
+    const paginationErrors=raw.paginationError?[{market:"jarir-sa",error:raw.paginationError}]:[];
+    return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors:paginationErrors,
+      diagnostics:{acquisition:{strategy:"search-results-first",discovered:raw.length,classified:offers.length,dropped:0,pdpFallback:{attempted:0,verified:0,failed:0}},classification:{categories,exactMatches},pagination:{partial:Boolean(raw.paginationError),error:raw.paginationError||null}}};
+  } catch(error){errors.push({market:"jarir-sa",error:error?.message||String(error)});}
+  try {
+    const raw=await searchViaHtml(query,capped), {offers,categories,exactMatches}=classify(raw);
+    if(raw.length) return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors,
+      diagnostics:{acquisition:{strategy:"html-search-results",discovered:raw.length,classified:offers.length,dropped:0,pdpFallback:{attempted:0,verified:0,failed:0}},classification:{categories,exactMatches}}};
+    errors.push({market:"jarir-sa",error:"HTML fallback returned no products"});
+  } catch(error){errors.push({market:"jarir-sa",error:error?.message||String(error)});}
+  return {provider:"jarir-direct",ok:false,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers:[],errors};
 }

@@ -1,4 +1,4 @@
-import * as cheerio from "cheerio";
+import { CheerioCrawler, Configuration } from "crawlee";
 import { parseMoney } from "./provider-utils.mjs";
 import { resolvePublicHttpsTarget } from "./url-resolver.mjs";
 
@@ -122,22 +122,68 @@ function reconcile(candidates, finalUrl){
 
 export async function extractProductWithCrawlee(url,{timeoutMs=12000}={}){
   const { parsed } = await resolvePublicHttpsTarget(url);
-  const response = await fetch(parsed, {
-    redirect:"follow",
-    headers:{
-      accept:"text/html,application/xhtml+xml",
-      "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/141 Safari/537.36",
-      "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
+  const timeoutSecs=Math.max(1,Math.ceil(timeoutMs/1000));
+  const config=new Configuration({persistStorage:false,purgeOnStart:true});
+  let extracted=null;
+  let failure=null;
+  const crawler=new CheerioCrawler({
+    maxConcurrency:1,
+    maxRequestsPerCrawl:1,
+    maxRequestRetries:1,
+    maxRequestsPerMinute:30,
+    navigationTimeoutSecs:timeoutSecs,
+    requestHandlerTimeoutSecs:timeoutSecs+2,
+    preNavigationHooks:[async (_ctx,gotOptions)=>{
+      gotOptions.headers={
+        ...gotOptions.headers,
+        accept:"text/html,application/xhtml+xml",
+        "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
+      };
+    }],
+    async requestHandler({$,request,response}){
+      const contentType=String(response?.headers?.["content-type"]||"");
+      if(contentType&&!contentType.includes("text/html")&&!contentType.includes("application/xhtml+xml")){
+        throw new Error("URL is not an HTML product page");
+      }
+      const declared=Number(response?.headers?.["content-length"]||0);
+      if(declared>MAX_BODY_BYTES) throw new Error("Product page is too large");
+      const finalUrl=request.loadedUrl||request.url;
+      extracted=reconcile([...jsonLdCandidates($),metaCandidate($)],finalUrl);
+      extracted.extraction={...extracted.extraction,crawlee:true,crawler:"cheerio",requestRetries:request.retryCount||0};
     },
-    signal:AbortSignal.timeout(timeoutMs),
-  });
-  if(!response.ok) throw new Error("Universal acquisition returned "+response.status);
-  const type=response.headers.get("content-type")||"";
-  if(!type.includes("text/html")&&!type.includes("application/xhtml+xml")) throw new Error("URL is not an HTML product page");
-  const declared=Number(response.headers.get("content-length")||0);
-  if(declared>MAX_BODY_BYTES) throw new Error("Product page is too large");
-  const html=await response.text();
-  if(Buffer.byteLength(html,"utf8")>MAX_BODY_BYTES) throw new Error("Product page is too large");
-  const $=cheerio.load(html);
-  return reconcile([...jsonLdCandidates($),metaCandidate($)],response.url||parsed.href);
+    async failedRequestHandler({request},error){
+      failure=error instanceof Error?error:new Error(String(error||request.errorMessages?.at(-1)||"Crawlee request failed"));
+    },
+  },config);
+  await crawler.run([{url:parsed.href,uniqueKey:parsed.href}]);
+  await crawler.teardown();
+  if(extracted) return extracted;
+  throw failure||new Error("Crawlee did not extract a product");
+}
+
+export async function discoverProductUrlsWithCrawlee(url,{limit=24,timeoutMs=12000,allowedHost=null}={}){
+  const { parsed }=await resolvePublicHttpsTarget(url);
+  const timeoutSecs=Math.max(1,Math.ceil(timeoutMs/1000));
+  const cap=Math.max(1,Math.min(96,Math.floor(Number(limit)||24)));
+  const config=new Configuration({persistStorage:false,purgeOnStart:true});
+  const discovered=[]; const seen=new Set(); let failure=null;
+  const crawler=new CheerioCrawler({maxConcurrency:1,maxRequestsPerCrawl:1,maxRequestRetries:1,navigationTimeoutSecs:timeoutSecs,requestHandlerTimeoutSecs:timeoutSecs+2,
+    async requestHandler({$,request}){
+      const base=request.loadedUrl||request.url;
+      $("a[href]").each((_,el)=>{
+        if(discovered.length>=cap) return false;
+        const href=$(el).attr("href"); let absoluteUrl;
+        try{absoluteUrl=new URL(href,base);}catch{return;}
+        if(absoluteUrl.protocol!=="https:") return;
+        if(allowedHost && absoluteUrl.hostname!==allowedHost) return;
+        if(!/\.html(?:$|[?#])/i.test(absoluteUrl.href)) return;
+        const key=absoluteUrl.origin+absoluteUrl.pathname;
+        if(seen.has(key)) return; seen.add(key); discovered.push(absoluteUrl.href);
+      });
+    },
+    async failedRequestHandler({request},error){failure=error instanceof Error?error:new Error(String(error||request.errorMessages?.at(-1)||"Crawlee discovery failed"));}
+  },config);
+  await crawler.run([{url:parsed.href,uniqueKey:parsed.href}]); await crawler.teardown();
+  if(!discovered.length && failure) throw failure;
+  return discovered;
 }
