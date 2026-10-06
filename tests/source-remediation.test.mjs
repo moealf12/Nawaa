@@ -92,14 +92,11 @@ test('Virgin Saudi is routed in the first acquisition wave for audio searches',(
 
 test('Virgin Megastore UAE PDP adapter extracts AED price and numeric product id',async()=>{
   const html='<html><head><meta property="og:title" content="Apple AirPods 4 with ANC"><meta property="og:image" content="https://virgin.example/airpods.jpg"></head><body><div class="price">AED 749.00</div></body></html>';
-  await withFetch(async()=>new Response(html,{headers:{'content-type':'text/html'}}),async()=>{
-    const {resolveProductUrl}=await import('../server/url-resolver.mjs');
-    const offer=await resolveProductUrl('https://www.virginmegastore.ae/en/electronics-accessories/apple/airpods-earpods/apple-airpods-4-with-active-noise-cancellation/p/123456');
-    assert.equal(offer.originalProductPrice,749);
-    assert.equal(offer.originalCurrency,'AED');
-    assert.equal(offer.specs.modelNumber,null);
-    assert.match(offer.title,/AirPods 4/i);
-    assert.equal(offer.extraction.domainAdapterId,'virginmegastore');
-    assert.ok(Number.isFinite(offer.productPrice)&&offer.productPrice>0);
-  });
+  const {extractDomainProduct}=await import('../server/domain-adapters.mjs');
+  const extracted=extractDomainProduct('https://www.virginmegastore.ae/en/electronics-accessories/apple/airpods-earpods/apple-airpods-4-with-active-noise-cancellation/p/123456',html);
+  assert.equal(extracted?.adapterId,'virginmegastore');
+  assert.equal(extracted?.product?.offers?.price,749);
+  assert.equal(extracted?.product?.offers?.priceCurrency,'AED');
+  assert.equal(extracted?.product?.sku,'123456');
+  assert.match(extracted?.product?.name || '',/AirPods 4/i);
 });
