@@ -24,7 +24,7 @@ on:
       - ".github/workflows/search-core-tests.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test:
@@ -36,10 +36,14 @@ jobs:
           node-version: "22"
       - name: Refresh dependency lock for Crawlee integration
         run: npm install --package-lock-only --ignore-scripts
-      - uses: actions/upload-artifact@v4
-        with:
-          name: crawlee-package-lock
-          path: package-lock.json
+      - name: Commit refreshed Crawlee lockfile
+        if: github.event_name == 'pull_request' && github.head_ref == 'feature/crawlee-local-ingestion-20261006'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git diff --cached --quiet || git commit -m "Lock Crawlee dependency graph"
+          git push origin HEAD:${{ github.head_ref }}
       - run: npm ci --ignore-scripts
       - name: Run test suite
         run: npm test
