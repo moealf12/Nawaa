@@ -225,7 +225,7 @@ export function parseJarirSearchHtml(html, limit = 24) {
   return offers;
 }
 
-async function searchViaConstructor(query, limit) {
+export async function searchViaConstructor(query, limit) {
   const cap = Math.max(1, Math.min(96, Math.floor(Number(limit) || 24)));
   const pageSize = Math.min(48, cap);
   const signal = AbortSignal.timeout(6200);
