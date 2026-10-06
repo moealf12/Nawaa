@@ -6,6 +6,7 @@ import { probeFeedHints } from "./probes/feed.mjs";
 import { probeSitemap } from "./probes/sitemap.mjs";
 import { detectCapabilities } from "./discovery/capabilities.mjs";
 import { discoverPagination } from "./discovery/pagination.mjs";
+import { detectPageModel } from "./discovery/page-model.mjs";
 import { rankStrategies } from "./scoring/extraction-score.mjs";
 import { evaluateCertification } from "./certification/rules.mjs";
 
@@ -27,7 +28,9 @@ export async function inspectSource(storeUrl, options = {}) {
   const embeddedState = probeEmbeddedState(htmlProbe.html);
   const jsonXhr = probeJsonCandidates(htmlProbe.html, htmlProbe.finalUrl || source.url);
   const feed = probeFeedHints(htmlProbe.finalUrl || source.url, htmlProbe.html);
-  const pagination = discoverPagination(htmlProbe.html, htmlProbe.finalUrl || source.url);
+  const discoveredPagination = discoverPagination(htmlProbe.html, htmlProbe.finalUrl || source.url);
+  const pageModel = detectPageModel(htmlProbe.html);
+  const pagination = discoveredPagination.ok ? discoveredPagination : {...pageModel,count:pageModel.ok?1:0,candidates:[]};
   const sitemap = await probeSitemap(htmlProbe.finalUrl || source.url, options);
 
   const candidates = rankStrategies([
