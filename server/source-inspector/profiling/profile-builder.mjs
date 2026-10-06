@@ -11,6 +11,10 @@ export function applyInspectorEvidence(profile, inspection) {
   next.mechanisms.search=inspection?.capabilities?.searchHint ? "discovered" : next.mechanisms.search;
   next.strategies.candidates=(inspection?.strategies || []).map(({id,score})=>({id,score}));
   next.strategies.primary=inspection?.selectedStrategy || next.strategies.primary;
+  const xhrCandidates=inspection?.probes?.jsonXhr?.candidates || [];
+  next.endpoints.observed=unique([...(next.endpoints.observed || []),...xhrCandidates.map(candidate=>candidate.url)]);
+  next.endpoints.search=unique([...(next.endpoints.search || []),...xhrCandidates.filter(candidate=>candidate.type==="search").map(candidate=>candidate.url)]);
+  next.endpoints.product=unique([...(next.endpoints.product || []),...xhrCandidates.filter(candidate=>candidate.type==="product").map(candidate=>candidate.url)]);
   next.evidence=[...next.evidence,{
     kind:"fast-probe",
     observedAt:now,
