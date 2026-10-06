@@ -353,7 +353,7 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   const title =
     source.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1] ||
-    source.match(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/i)?.[1] || null;
+    source.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] || null;
   const image =
     source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] || null;
