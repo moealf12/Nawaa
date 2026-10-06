@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { assessOfferMatch, productCategory } from "../../src/search-query.mjs";
+import { assessOfferMatch, productCategory, filterQueryOffers, queryMatchReasons } from "../../src/search-query.mjs";
 import { resolveProductUrl } from "../url-resolver.mjs";
 import { sameOfferIdentity } from "../product-identity.mjs";
 
