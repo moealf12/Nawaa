@@ -95,6 +95,15 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // must not collapse the whole public API into an instant empty response.
   add("extra-unbxd", () => searchExtraUnbxd(providerQuery, Infinity, matchingQuery), { explicit:true, deadlineMs:8000 });
   add("jarir-direct", () => searchJarir(providerQuery, plan.jarirLimit, matchingQuery), { explicit:true, deadlineMs:8000 });
+  // Virgin UAE is a certified core comparison source. Run it explicitly in the
+  // first wave so Jarir cannot be the only merchant visible to the shopper.
+  add("virgin-ae", () => searchFreeStorefrontById("virgin-ae", providerQuery, {
+    matchingQuery,
+    perStore:Infinity,
+    catalogLimit:Infinity,
+    productPageLimit:8,
+    storeDeadlineMs:7000,
+  }), { explicit:true, deadlineMs:8000 });
   add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true, deadlineMs:8000 });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
