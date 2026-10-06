@@ -9,6 +9,7 @@ export function applyInspectorEvidence(profile, inspection) {
   next.requirements.javascript=inspection?.capabilities?.embeddedJson ? "possible" : next.requirements.javascript;
   next.mechanisms.product=inspection?.capabilities?.jsonLd ? "json-ld" : inspection?.capabilities?.productHint ? "html" : next.mechanisms.product;
   next.mechanisms.search=inspection?.capabilities?.searchHint ? "discovered" : next.mechanisms.search;
+  next.mechanisms.pagination=inspection?.probes?.pagination?.model || next.mechanisms.pagination;
   next.strategies.candidates=(inspection?.strategies || []).map(({id,score})=>({id,score}));
   next.strategies.primary=inspection?.selectedStrategy || next.strategies.primary;
   const xhrCandidates=inspection?.probes?.jsonXhr?.candidates || [];
