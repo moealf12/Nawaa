@@ -1,0 +1,10 @@
+import {studySource} from "../server/source-inspector/pipeline.mjs";import {verifyCatalogPage} from "../server/source-inspector/verification/catalog.mjs";import {probeHtml} from "../server/source-inspector/probes/html.mjs";import {validateSemanticPrice} from "../server/source-inspector/verification/semantics.mjs";
+const home="https://www.extra.com/en-sa";const catalog="https://www.extra.com/en-sa/iphone-17-series/c/All-iPhone-17/facet/citySelectionForm";const pdp="https://www.extra.com/en-sa/mobiles-tablets/mobiles/smartphone/apple-iphone-17e-5g-6-1-512gb-soft-pink/p/100462492";
+const studied=await studySource(home,{sourceId:"extra-sa"});
+const catalogEvidence=await verifyCatalogPage(catalog);
+const pdpProbe=await probeHtml(pdp);const text=pdpProbe.html.replace(/<[^>]+>/g," ").replace(/\s+/g," ");
+const full=text.match(/SAR\s*([\d,]{3,})/i);const monthly=text.match(/SAR\s*([\d,]+)\s*\/\s*month/i);
+const semantic={fullPrice:full?Number(full[1].replace(/,/g,"")):null,monthlyPrice:monthly?Number(monthly[1].replace(/,/g,"")):null,monthlyClassification:monthly?validateSemanticPrice({text:monthly[0]}):null,has256:/256\s*GB/i.test(text),has512:/512\s*GB/i.test(text),currency:/\bSAR\b/i.test(text)?"SAR":null};
+const output={home:{status:studied.inspection.probes.html.status,platform:studied.inspection.capabilities.platform,selectedStrategy:studied.inspection.selectedStrategy,jsonXhrCandidates:studied.inspection.probes.jsonXhr.count},catalog:catalogEvidence,pdp:{status:pdpProbe.status,...semantic},gates:{market:catalogEvidence.currency==="SAR",paginationEvidence:catalogEvidence.hasMore&&catalogEvidence.pageSize<catalogEvidence.total,semanticPrice:Boolean(semantic.fullPrice)&&semantic.monthlyClassification?.validProductPrice===false,variantEvidence:semantic.has256&&semantic.has512}};
+console.log(JSON.stringify(output,null,2));
+if(!output.gates.market||!output.gates.paginationEvidence||!output.gates.semanticPrice||!output.gates.variantEvidence)process.exitCode=1;
