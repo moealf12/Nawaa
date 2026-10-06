@@ -79,3 +79,24 @@ test('Amazon Saudi participates as a broad local marketplace',()=>{
  assert.equal(amazon.store.countryCode,'SA');
  assert.ok(amazon.reasons.includes('general_marketplace'));
 });
+
+
+test('Virgin Saudi is routed in the first acquisition wave for audio searches',()=>{
+  const routes=routeFreeStorefronts('AirPods',16,{stable:true});
+  const virgin=routes.find(x=>x.store.id==='virgin-sa');
+  assert.ok(virgin,'Virgin Saudi should be searched on the initial AirPods request');
+  assert.equal(virgin.store.countryCode,'SA');
+  assert.ok(virgin.reasons.includes('category'));
+});
+
+
+test('Virgin Megastore UAE PDP adapter extracts AED price and numeric product id',async()=>{
+  const html='<html><head><meta property="og:title" content="Apple AirPods 4 with ANC"><meta property="og:image" content="https://virgin.example/airpods.jpg"></head><body><div class="price">AED 749.00</div></body></html>';
+  const {extractDomainProduct}=await import('../server/domain-adapters.mjs');
+  const extracted=extractDomainProduct('https://www.virginmegastore.ae/en/electronics-accessories/apple/airpods-earpods/apple-airpods-4-with-active-noise-cancellation/p/123456',html);
+  assert.equal(extracted?.adapterId,'virginmegastore');
+  assert.equal(extracted?.product?.offers?.price,749);
+  assert.equal(extracted?.product?.offers?.priceCurrency,'AED');
+  assert.equal(extracted?.product?.sku,'123456');
+  assert.match(extracted?.product?.name || '',/AirPods 4/i);
+});

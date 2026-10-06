@@ -60,7 +60,10 @@ const STORES = [
   },
   {
     id:"virgin-ae", name:"Virgin Megastore UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","audio","console","game","book","toy","accessory","other"],
-    search:(q)=>"https://www.virginmegastore.ae/en/search/?text="+encodeURIComponent(q),
+    // The app host exposes the same public catalog with materially better server-side
+    // rendering/reachability than the www search endpoint. Keep query search generic;
+    // category pages are used as deterministic fallbacks for major product families.
+    search:(q)=>"https://app.virginmegastore.ae/en/search/?text="+encodeURIComponent(q),
     productPath:/\/p\/\d+(?:[/?#]|$)|\/[^?#]+\/p(?:[/?#]|$)/i,
   },
   {
@@ -1274,6 +1277,16 @@ export async function searchFreeStorefrontById(storeId, query, options = {}) {
   return searchStore(store, query, perStore, options.matchingQuery || query, options.catalogLimit ?? perStore, options);
 }
 
+function virginAeCatalogUrl(query) {
+  const q = normalizeSearchQuery(query);
+  if (/\b(?:iphone|ايفون|آيفون)\b/.test(q)) return "https://app.virginmegastore.ae/en/tech/apple/iphone";
+  if (/\b(?:airpods?|earpods?)\b/.test(q)) return "https://app.virginmegastore.ae/en/electronics-accessories/apple/airpods-earpods/c/n010808";
+  if (/\b(?:apple watch|watch series|watch ultra)\b/.test(q)) return "https://app.virginmegastore.ae/en/electronics-accessories/apple/apple-watch/c/n010803";
+  if (/\b(?:macbook|mac book)\b/.test(q)) return "https://app.virginmegastore.ae/en/selection/tech-selection/13-14-inch-macbooks/c/n996307";
+  if (/\b(?:playstation|ps5|ps 5)\b/.test(q)) return "https://app.virginmegastore.ae/en/gaming/playstation-hardware-accessories/playstation-consoles/c/n050102";
+  return null;
+}
+
 async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore, options = {}) {
   const started = Date.now();
   const searchUrl = store.search(query);
@@ -1312,6 +1325,23 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     } catch (error) {
       htmlFirstAttempted = true;
       primarySearchError = error instanceof Error ? error.message : String(error);
+      // Virgin's generic search endpoint can reject server-side clients while its
+      // public category catalog remains rendered and price-bearing. Fall back to a
+      // deterministic family catalog before declaring the provider unavailable.
+      if (store.id === "virgin-ae") {
+        const catalogUrl = virginAeCatalogUrl(query);
+        if (catalogUrl) {
+          try {
+            const page = await fetchText(catalogUrl,{signal:options.signal});
+            html = page.html;
+            searchPageFinalUrl = page.finalUrl || catalogUrl;
+            searchDiagnostics = { ...searchPageDiagnostics(html, catalogUrl, searchPageFinalUrl), acquisitionFallback:"virgin-category-catalog" };
+            primarySearchError = null;
+          } catch (catalogError) {
+            primarySearchError += " | category fallback: " + (catalogError instanceof Error ? catalogError.message : String(catalogError));
+          }
+        }
+      }
     }
     const htmlFirstOffers =
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
