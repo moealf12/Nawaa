@@ -79,3 +79,12 @@ test('Amazon Saudi participates as a broad local marketplace',()=>{
  assert.equal(amazon.store.countryCode,'SA');
  assert.ok(amazon.reasons.includes('general_marketplace'));
 });
+
+
+test('Virgin Saudi is routed in the first acquisition wave for audio searches',()=>{
+  const routes=routeFreeStorefronts('AirPods',16,{stable:true});
+  const virgin=routes.find(x=>x.store.id==='virgin-sa');
+  assert.ok(virgin,'Virgin Saudi should be searched on the initial AirPods request');
+  assert.equal(virgin.store.countryCode,'SA');
+  assert.ok(virgin.reasons.includes('category'));
+});
