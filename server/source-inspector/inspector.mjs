@@ -5,6 +5,7 @@ import { probeJsonCandidates } from "./probes/json.mjs";
 import { probeFeedHints } from "./probes/feed.mjs";
 import { probeSitemap } from "./probes/sitemap.mjs";
 import { detectCapabilities } from "./discovery/capabilities.mjs";
+import { discoverPagination } from "./discovery/pagination.mjs";
 import { rankStrategies } from "./scoring/extraction-score.mjs";
 import { evaluateCertification } from "./certification/rules.mjs";
 
@@ -26,6 +27,7 @@ export async function inspectSource(storeUrl, options = {}) {
   const embeddedState = probeEmbeddedState(htmlProbe.html);
   const jsonXhr = probeJsonCandidates(htmlProbe.html, htmlProbe.finalUrl || source.url);
   const feed = probeFeedHints(htmlProbe.finalUrl || source.url, htmlProbe.html);
+  const pagination = discoverPagination(htmlProbe.html, htmlProbe.finalUrl || source.url);
   const sitemap = await probeSitemap(htmlProbe.finalUrl || source.url, options);
 
   const candidates = rankStrategies([
@@ -97,6 +99,7 @@ export async function inspectSource(storeUrl, options = {}) {
       jsonXhr,
       feed,
       sitemap,
+      pagination,
     },
     strategies: candidates,
     selectedStrategy: best ? { id:best.id, score:best.score } : null,
