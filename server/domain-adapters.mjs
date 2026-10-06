@@ -166,6 +166,9 @@ function productIdFromUrl(url, adapterId) {
   if (adapterId === "asos") {
     return href.match(/\/prd\/(\d+)/i)?.[1] || null;
   }
+  if (adapterId === "virginmegastore") {
+    return href.match(/\/p\/(\d+)(?:[/?#]|$)/i)?.[1] || null;
+  }
   return null;
 }
 
@@ -345,6 +348,37 @@ function extractAsosHtmlProduct(html, url) {
   };
 }
 
+function extractVirginMegastoreHtmlProduct(html, url) {
+  const source = String(html || "");
+  const title =
+    source.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1] ||
+    source.match(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/i)?.[1] || null;
+  const image =
+    source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] || null;
+  const pricePatterns = [
+    /(?:AED|د\\.?إ\\.?|Dhs?)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)/i,
+    /([0-9][0-9,]*(?:\\.[0-9]{1,2})?)\\s*(?:AED|د\\.?إ\\.?|Dhs?)/i,
+    /["'](?:formattedValue|formattedPrice)["']\\s*:\\s*["'][^"'0-9]*(?:AED\\s*)?([0-9][0-9,]*(?:\\.[0-9]{1,2})?)/i,
+    /["'](?:value|priceValue|salePrice|sellingPrice|finalPrice|currentPrice)["']\\s*:\\s*["']?([0-9][0-9,]*(?:\\.[0-9]{1,2})?)/i,
+  ];
+  let price = null;
+  for (const pattern of pricePatterns) {
+    const match = source.match(pattern);
+    const parsed = parseMoney(match?.[1]);
+    if (parsed !== null && parsed > 0) { price = parsed; break; }
+  }
+  if (!title || price === null) return null;
+  return {
+    name: decodeHtmlText(title),
+    image: image || null,
+    brand: /\\bapple\\b/i.test(decodeHtmlText(title)) ? "Apple" : null,
+    sku: productIdFromUrl(url, "virginmegastore"),
+    offers: { price, priceCurrency:"AED", availability:"" },
+  };
+}
+
 function extractNeweggHtmlProduct(html) {
   const source = String(html || "");
   const title =
@@ -384,6 +418,10 @@ export function extractDomainProduct(url, html) {
   }
   if (adapter.id === "newegg") {
     const htmlProduct = extractNeweggHtmlProduct(html);
+    if (htmlProduct) candidates.push(htmlProduct);
+  }
+  if (adapter.id === "virginmegastore") {
+    const htmlProduct = extractVirginMegastoreHtmlProduct(html, url);
     if (htmlProduct) candidates.push(htmlProduct);
   }
   for (const payload of parseScriptJson(html)) {
