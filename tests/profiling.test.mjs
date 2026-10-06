@@ -16,3 +16,11 @@ test("profile diff and versioning preserve history semantics",()=>{const a=creat
 test("profile store persists a valid source-specific profile",async()=>{const store=createProfileStore();const p=createExtractionProfile({sourceId:"extra-sa",sourceUrl:"https://www.extra.com"});await saveExtractionProfile(p,{store});const loaded=await loadExtractionProfile("extra-sa",{store});assert.equal(loaded.sourceId,"extra-sa");});
 
 test("profile diff detects nested mechanism changes",()=>{const a=createExtractionProfile({sourceUrl:"https://shop.example"});const b=structuredClone(a);b.mechanisms.product="json-xhr";const d=diffExtractionProfiles(a,b);assert.equal(d.changed,true);assert.equal(d.changes.some(x=>x.field==="mechanisms"),true);});
+
+test("inspector evidence persists discovered XHR endpoints",()=>{
+ const p=createExtractionProfile({sourceId:"extra-sa",sourceUrl:"https://www.extra.com/en-sa"});
+ const next=applyInspectorEvidence(p,{observedAt:"2026-10-07T00:00:00.000Z",capabilities:{searchHint:true},strategies:[],probes:{jsonXhr:{candidates:[{type:"search",url:"https://www.extra.com/search?q=iphone"},{type:"product",url:"https://www.extra.com/product/1"}]}}});
+ assert.deepEqual(next.endpoints.search,["https://www.extra.com/search?q=iphone"]);
+ assert.deepEqual(next.endpoints.product,["https://www.extra.com/product/1"]);
+ assert.equal(next.endpoints.observed.length,2);
+});
