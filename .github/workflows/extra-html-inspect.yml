@@ -13,3 +13,4 @@ jobs:
         with: {node-version: 22, cache: npm}
       - run: npm ci
       - run: node scripts/inspect-extra-html.mjs
+      - run: node scripts/inspect-extra-search-config.mjs
