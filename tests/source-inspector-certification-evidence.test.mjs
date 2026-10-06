@@ -1,0 +1,4 @@
+import test from "node:test";import assert from "node:assert/strict";import {certifySource} from "../server/source-inspector/certification/certify.mjs";
+const verification={criticalFieldCoverage:1,priceValidity:1,currencyVerified:true,marketVerified:true,searchPassed:true,paginationPassed:true,variantAccuracy:1,semanticCriticalIssues:0,repeatabilityPassed:true};
+test("certification cannot fake reachability",()=>{const r=certifySource({profile:{sourceId:"x",profileVersion:1},verification,strategyScore:100,reachable:false});assert.equal(r.passed,false);assert.equal(r.checks.reachable,false)});
+test("certification accepts reachability only when explicitly observed",()=>{const r=certifySource({profile:{sourceId:"x",profileVersion:1},verification,strategyScore:100,reachable:true});assert.equal(r.passed,true)});
