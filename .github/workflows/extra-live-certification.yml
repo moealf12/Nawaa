@@ -1,0 +1,27 @@
+name: eXtra Live Certification
+on:
+  push:
+    branches: [feature/source-inspector-phase1-20261007]
+    paths: [.github/workflows/extra-live-certification.yml]
+  workflow_dispatch:
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Live search verification
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/certify-extra-live.mjs | tee extra-live-certification.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extra-live-certification
+          path: extra-live-certification.json
