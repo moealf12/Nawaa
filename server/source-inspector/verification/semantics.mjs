@@ -1,4 +1,4 @@
-const INSTALLMENT=/\b(?:per\s*month|\/\s*month|monthly|installment|قسط|شهري)\b/i;
+const INSTALLMENT=/(?:\bper\s*month\b|\/\s*month\b|\bmonthly\b|\binstallments?\b|قسط|شهري)/i;
 const STARTING=/\b(?:starting\s*(?:at|from)|from)\b|ابتداء(?:ً|ا)?\s*من/i;
 const MEMBER=/\bmember|members?|عضو|أعضاء/i;
 const TRADE=/trade[- ]?in|استبدال/i;
