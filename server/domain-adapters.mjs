@@ -275,6 +275,7 @@ export const DOMAIN_ADAPTERS = [
   {
     id: "virginmegastore",
     hosts: ["virginmegastore.ae","virginmegastore.sa"],
+    pageIdKeys: ["code","sku","productId","product_id","id"],
     titleKeys: ["productName","product_name","name","title"],
     priceKeys: ["formattedValue","value","priceValue","salePrice","sellingPrice","finalPrice","currentPrice","price"],
     currencyKeys: ["currencyIso","currencyCode","priceCurrency","currency"],
