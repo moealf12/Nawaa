@@ -78,9 +78,6 @@ jobs:
           - { case: "16", source: ikea-sa, query: "chair" }
           - { case: "17", source: ikea-sa, query: "table" }
           - { case: "18", source: ikea-sa, query: "nawaa-unfindable-943271-20261003" }
-          - { case: "19", source: adidas-sa, query: "Samba" }
-          - { case: "20", source: adidas-sa, query: "Ultraboost" }
-          - { case: "21", source: adidas-sa, query: "nawaa-unfindable-943271-20261003" }
           - { case: "22", source: nike-sa, query: "shoes" }
           - { case: "23", source: nike-sa, query: "shirt" }
           - { case: "24", source: nike-sa, query: "nawaa-unfindable-943271-20261003" }
@@ -117,7 +114,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/audit-sources.mjs source-audit-results.json
       - name: Assert quarantined sources stay out of active routing
-        run: node --input-type=module -e "import {configuredFreeStorefronts,quarantinedFreeStorefronts} from './server/providers/free-storefronts.mjs'; const active=configuredFreeStorefronts(); const quarantined=quarantinedFreeStorefronts(); if(active.some(s=>s.id==='shein-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='shein-sa'&&s.disabledReason==='unstable_shein_risk_challenge')) process.exit(1);"
+        run: node --input-type=module -e "import {configuredFreeStorefronts,quarantinedFreeStorefronts} from './server/providers/free-storefronts.mjs'; const active=configuredFreeStorefronts(); const quarantined=quarantinedFreeStorefronts(); if(active.some(s=>s.id==='shein-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='shein-sa'&&s.disabledReason==='unstable_shein_risk_challenge')) process.exit(1); if(active.some(s=>s.id==='adidas-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='adidas-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1);"
       - name: Probe Temu public search endpoints
         run: node scripts/probe-temu.mjs "iphone 17 case"
       - name: Probe SHEIN public search endpoints
