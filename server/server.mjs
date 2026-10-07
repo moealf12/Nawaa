@@ -34,6 +34,7 @@ import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
+import { proveExtraPersistence } from "./runtime-proof.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -689,6 +690,13 @@ const server = http.createServer(async (req, res) => {
       const publicMessage=status===500?"persistence_failed":message;
       return jsonResponse(res,status,{error:"ingest_failed",message:publicMessage},origin||"*");
     }
+  }
+
+  if (req.method === "POST" && url.pathname === "/internal/prove-extra-persistence") {
+    if (req.headers.origin) return jsonResponse(res,403,{error:"origin_not_allowed"},"*");
+    if (!ingestAuthorized(req)) return jsonResponse(res,401,{error:"unauthorized"},"*");
+    try { const proof=await proveExtraPersistence(); cachedSearch.clear(); return jsonResponse(res,proof.passed?200:503,proof,"*"); }
+    catch(error){ return jsonResponse(res,503,{passed:false,error:error instanceof Error?error.message:String(error)},"*"); }
   }
 
   if (req.method === "GET" && url.pathname === "/api/sources") {
