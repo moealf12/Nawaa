@@ -50,6 +50,7 @@ const STATIC_FILES = new Map([
   ["/src/product-page.mjs", "src/product-page.mjs"],
   ["/src/source-registry.mjs", "src/source-registry.mjs"],
 ]);
+const STATIC_ASSET_PREFIX = "/assets/";
 
 function contentTypeFor(filePath) {
   if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
@@ -59,7 +60,11 @@ function contentTypeFor(filePath) {
 
 async function serveStaticFile(req, res, pathname) {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
-  const relative = STATIC_FILES.get(pathname);
+  let relative = STATIC_FILES.get(pathname);
+  if (!relative && pathname.startsWith(STATIC_ASSET_PREFIX)) {
+    const assetName = pathname.slice(STATIC_ASSET_PREFIX.length);
+    if (/^[A-Za-z0-9._-]+$/.test(assetName)) relative = `assets/${assetName}`;
+  }
   if (!relative) return false;
 
   const filePath = path.join(STATIC_ROOT, relative);
@@ -655,7 +660,12 @@ const server = http.createServer(async (req, res) => {
 
   if (!origin && req.headers.origin) return jsonResponse(res, 403, { error: "origin_not_allowed" }, "null");
 
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  let url;
+  try {
+    url = new URL(req.url || "/", "http://nawaa.local");
+  } catch {
+    return jsonResponse(res, 400, { error:"invalid_request_url" }, origin || "*");
+  }
 
   if (req.method === "POST" && url.pathname === "/api/ingest/offers") {
     if (req.headers.origin) return jsonResponse(res,403,{error:"origin_not_allowed"},origin || "*");
