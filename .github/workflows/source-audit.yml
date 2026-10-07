@@ -51,9 +51,6 @@ jobs:
           - { case: "10", source: swarovski-sa, query: "pendant" }
           - { case: "11", source: swarovski-sa, query: "bracelet" }
           - { case: "12", source: swarovski-sa, query: "nawaa-unfindable-943271-20261003" }
-          - { case: "13", source: shein-sa, query: "dress" }
-          - { case: "14", source: shein-sa, query: "shirt" }
-          - { case: "15", source: shein-sa, query: "nawaa-unfindable-943271-20261003" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -80,6 +77,8 @@ jobs:
           node-version: "22"
       - run: npm ci --ignore-scripts
       - run: node scripts/audit-sources.mjs source-audit-results.json
+      - name: Assert quarantined sources stay out of active routing
+        run: node --input-type=module -e "import {configuredFreeStorefronts,quarantinedFreeStorefronts} from './server/providers/free-storefronts.mjs'; const active=configuredFreeStorefronts(); const quarantined=quarantinedFreeStorefronts(); if(active.some(s=>s.id==='shein-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='shein-sa'&&s.disabledReason==='unstable_shein_risk_challenge')) process.exit(1);"
       - name: Probe Temu public search endpoints
         run: node scripts/probe-temu.mjs "iphone 17 case"
       - name: Probe SHEIN public search endpoints
