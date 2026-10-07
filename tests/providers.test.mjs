@@ -383,8 +383,9 @@ assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bestbuy-us"))
 assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bhphoto-us"));
 
 const perfumeRoutes = routeFreeStorefronts("عطر", 12);
-assert.ok(["sephora-sa","niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0].store.id));
-assert.ok(perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
+assert.ok(["niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0].store.id));
+assert.ok(!perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
+assert.ok(quarantinedFreeStorefronts().some((store) => store.id === "sephora-sa" && store.disabledReason === "http_403_live_search"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "niceone-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "goldenscent-sa"));
 assert.ok(!perfumeRoutes.some((route) => route.store.id === "newegg-global"));
