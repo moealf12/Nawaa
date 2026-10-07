@@ -139,13 +139,16 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query)
   url.searchParams.set("q", query);
   url.searchParams.set("rows", String(Math.min(100, cap)));
   url.searchParams.set("format", "json");
-  const signal = AbortSignal.timeout(6500);
   const products = [], seen = new Set(), errors = [];
+  const startedAt = Date.now();
+  const overallDeadlineMs = 7200;
   let start = 0, total = null, complete = false;
   while(products.length < cap) {
     url.searchParams.set("start", String(start));
     try {
-      const response = await fetch(url, {headers:{accept:"application/json"},signal});
+      const remainingMs = overallDeadlineMs - (Date.now() - startedAt);
+      if (remainingMs <= 0) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
+      const response = await fetch(url, {headers:{accept:"application/json"},signal:AbortSignal.timeout(Math.min(3000, remainingMs))});
       if(!response.ok) throw new Error("extra-unbxd: HTTP " + response.status);
       const data = await response.json();
       const page = data?.response?.products;
@@ -163,7 +166,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query)
       if(!page.length || (total !== null && start >= total)) {complete=true;break;}
       if(!added) {errors.push({market:"extra-sa",error:"pagination_no_progress"});break;}
       if(total===null && page.length < Number(url.searchParams.get("rows"))) {complete=true;break;}
-      if(signal.aborted) throw new Error("pagination_deadline_exceeded");
+      if(Date.now() - startedAt >= overallDeadlineMs) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
     } catch(error) {
       if(!products.length) throw error;
       errors.push({market:"extra-sa",error:error.message}); break;
