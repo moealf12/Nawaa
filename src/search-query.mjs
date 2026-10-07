@@ -352,7 +352,11 @@ export function assessOfferMatch(query, offer) {
   const titleSignalsRefurbished = /\b(?:refurbished|renewed|remanufactured)\b/.test(title);
   const inferredTitleCondition = titleSignalsRefurbished ? "refurbished" : titleSignalsUsed ? "used" : null;
   const effectiveCondition = inferredTitleCondition || offer?.condition || null;
-  const conditionMismatch = intent.condition ? effectiveCondition !== intent.condition : effectiveCondition && effectiveCondition !== "new";
+  // Unknown condition is not evidence of a mismatch. Only penalize an explicitly
+  // non-new condition when the shopper did not request it.
+  const conditionMismatch = intent.condition
+    ? Boolean(effectiveCondition && effectiveCondition !== "unknown" && effectiveCondition !== intent.condition)
+    : Boolean(effectiveCondition && effectiveCondition !== "unknown" && effectiveCondition !== "new");
   if (conditionMismatch) confidence -= 0.15;
   confidence = Math.max(0, Math.min(1, confidence));
 
