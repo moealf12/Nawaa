@@ -362,7 +362,7 @@ async function streamSearchProgress(query, onSnapshot) {
   const localPromise=Promise.all([
     searchIndexedOffers(query).catch(()=>({offers:[]})),
   ]).then(async local=>{
-    offers.push(...(local[0].offers||[]),...(local[1].offers||[]));
+    offers.push(...(local[0]?.offers||[]));
     if(offers.length) await emit({completed:providers.length,pending:providerTasks(providerQuery,query,{plan}).length+1});
     return local;
   });
