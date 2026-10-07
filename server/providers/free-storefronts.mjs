@@ -132,7 +132,7 @@ const STORES = [
     productPath:/\/(?:site\/[^?#]+\/\d+\.p|product\/[^?#]+\/[^/?#]+\/sku\/\d+)(?:[?#]|$)/i,
   },
   {
-    id:"adidas-sa", name:"adidas Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["adidas"], categories:["clothing","shoes","sports","bag"],
+    id:"adidas-sa", name:"adidas Saudi", countryCode:"SA", countryNameAr:"السعودية", enabled:false, disabledReason:"http_403_live_search", brands:["adidas"], categories:["clothing","shoes","sports","bag"],
     search:(q)=>"https://www.adidas.sa/en/search?q="+encodeURIComponent(q),
     productPath:/\/[A-Z0-9_-]+\.html(?:[?#]|$)/i,
   },
