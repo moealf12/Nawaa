@@ -135,15 +135,16 @@ function normalizeProduct(product) {
 
 export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query) {
   const cap = limit === Infinity ? Infinity : Math.max(1, Number(limit) || 12);
+  const fetchCap = cap === Infinity ? 100 : Math.min(100, cap);
   const url = new URL(EXTRA_SEARCH_BASE);
   url.searchParams.set("q", query);
-  url.searchParams.set("rows", String(Math.min(100, cap)));
+  url.searchParams.set("rows", String(fetchCap));
   url.searchParams.set("format", "json");
   const products = [], seen = new Set(), errors = [];
   const startedAt = Date.now();
   const overallDeadlineMs = 7200;
   let start = 0, total = null, complete = false;
-  while(products.length < cap) {
+  while(products.length < fetchCap) {
     url.searchParams.set("start", String(start));
     try {
       const remainingMs = overallDeadlineMs - (Date.now() - startedAt);
@@ -160,7 +161,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query)
         const offer = normalizeProduct(product);
         if(!offer || seen.has(offer.sourceUrl)) continue;
         seen.add(offer.sourceUrl); products.push(offer); added++;
-        if(products.length >= cap) break;
+        if(products.length >= fetchCap) break;
       }
       start += page.length;
       if(!page.length || (total !== null && start >= total)) {complete=true;break;}
