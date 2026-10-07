@@ -164,6 +164,9 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query)
         if(products.length >= fetchCap) break;
       }
       start += page.length;
+      // Live search requests at most one bounded UNBXD page. Return it immediately;
+      // deeper recall belongs to cursor expansion, never the first interactive wave.
+      if (start >= fetchCap) { complete = total !== null ? start >= total : page.length < fetchCap; break; }
       if(!page.length || (total !== null && start >= total)) {complete=true;break;}
       if(!added) {errors.push({market:"extra-sa",error:"pagination_no_progress"});break;}
       if(total===null && page.length < Number(url.searchParams.get("rows"))) {complete=true;break;}
