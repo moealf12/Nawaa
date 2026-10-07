@@ -7,7 +7,7 @@ const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 
 const STORES = [
   {
-    id:"shein-sa", name:"SHEIN", countryCode:"SA", countryNameAr:"السعودية", brands:["shein"], categories:["clothing","shoes","bag","beauty","jewelry","home","toy"],
+    id:"shein-sa", name:"SHEIN", countryCode:"SA", countryNameAr:"السعودية", enabled:false, disabledReason:"unstable_shein_risk_challenge", brands:["shein"], categories:["clothing","shoes","bag","beauty","jewelry","home","toy"],
     search:(q)=>"https://ar.shein.com/pdsearch/"+encodeURIComponent(q).replace(/%20/g,"-")+"/",
     productPath:/-p-\d+\.html(?:[?#]|$)/i,
   },
@@ -1211,6 +1211,7 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const intent = parseSearchIntent(normalizedQuery);
   const stable = options.stable === true;
   const routed = STORES
+    .filter((store)=>store.enabled !== false)
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
@@ -1571,7 +1572,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
 }
 
 export function configuredFreeStorefronts() {
-  return STORES.map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
+  return STORES
+    .filter((store)=>store.enabled !== false)
+    .map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
+}
+
+export function quarantinedFreeStorefronts() {
+  return STORES
+    .filter((store)=>store.enabled === false)
+    .map(({id,name,countryCode,countryNameAr,disabledReason}) => ({id,name,countryCode,countryNameAr,disabledReason}));
 }
 
 export async function searchFreeStorefronts(query, options = {}) {
