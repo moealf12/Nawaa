@@ -894,4 +894,9 @@ server.requestTimeout = 15000;
 server.keepAliveTimeout = 5000;
 server.maxRequestsPerSocket = 100;
 
-server.listen(PORT, "0.0.0.0", () => {\n  console.log(`NAWAA search backend listening on :${PORT}`);\n  if(process.env.NAWAA_RUN_EXTRA_PERSISTENCE_PROOF_ON_START==="true"){\n    proveExtraPersistence().then(proof=>console.log("EXTRA_PERSISTENCE_PROOF "+JSON.stringify(proof))).catch(error=>console.error("EXTRA_PERSISTENCE_PROOF_FAILED "+(error instanceof Error?error.message:String(error))));\n  }\n});
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`NAWAA search backend listening on :${PORT}`);
+  if(process.env.NAWAA_RUN_EXTRA_PERSISTENCE_PROOF_ON_START==="true"){
+    proveExtraPersistence().then(proof=>console.log("EXTRA_PERSISTENCE_PROOF "+JSON.stringify(proof))).catch(error=>console.error("EXTRA_PERSISTENCE_PROOF_FAILED "+(error instanceof Error?error.message:String(error))));
+  }
+});
