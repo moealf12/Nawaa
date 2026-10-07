@@ -178,6 +178,80 @@ jobs:
           name: phase3-${{ matrix.source }}-${{ matrix.case }}
           path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
 
+
+  phase3-batch5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { case: "61", source: iherb-sa, query: "vitamin" }
+          - { case: "62", source: iherb-sa, query: "magnesium" }
+          - { case: "63", source: iherb-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "64", source: asos-global, query: "dress" }
+          - { case: "65", source: asos-global, query: "shirt" }
+          - { case: "66", source: asos-global, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "67", source: farfetch-sa, query: "shoes" }
+          - { case: "68", source: farfetch-sa, query: "bag" }
+          - { case: "69", source: farfetch-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "70", source: aliexpress-cn, query: "charger" }
+          - { case: "71", source: aliexpress-cn, query: "cable" }
+          - { case: "72", source: aliexpress-cn, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "73", source: temu-global, query: "charger" }
+          - { case: "74", source: temu-global, query: "cable" }
+          - { case: "75", source: temu-global, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 5 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
+  phase3-batch6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { case: "76", source: "shopify:native-union", query: "charger" }
+          - { case: "77", source: "shopify:native-union", query: "cable" }
+          - { case: "78", source: "shopify:native-union", query: "nawaa-unfindable-943271-20261003" }
+          - { case: "79", source: "shopify:spigen-us", query: "iPhone 17 case" }
+          - { case: "80", source: "shopify:spigen-us", query: "charger" }
+          - { case: "81", source: "shopify:spigen-us", query: "nawaa-unfindable-943271-20261003" }
+          - { case: "82", source: "shopify:death-wish-coffee", query: "coffee" }
+          - { case: "83", source: "shopify:death-wish-coffee", query: "espresso" }
+          - { case: "84", source: "shopify:death-wish-coffee", query: "nawaa-unfindable-943271-20261003" }
+          - { case: "85", source: "shopify:tentree", query: "shirt" }
+          - { case: "86", source: "shopify:tentree", query: "hoodie" }
+          - { case: "87", source: "shopify:tentree", query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 6 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 30
