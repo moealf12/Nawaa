@@ -1,0 +1,5 @@
+import test from "node:test";import assert from "node:assert/strict";import {limitedIngest} from "../server/source-inspector/limited-ingestion.mjs";
+const offer=i=>({sourceProductId:String(i),title:"Phone "+i,price:100+i,currency:"SAR",productUrl:"https://www.extra.com/en-sa/p/"+i,sku:String(i),observedAt:new Date().toISOString()});
+test("limited ingestion persists every validated canary offer",async()=>{const seen=[];const r=await limitedIngest({offers:[offer(1),offer(2)],record:async o=>{seen.push(o);return {recorded:true}}});assert.equal(r.passed,true);assert.equal(r.saved,2);assert.equal(seen[0].sourceName,"extra-sa")});
+test("limited ingestion is hard capped at 200 offers",async()=>{let n=0;const r=await limitedIngest({offers:Array.from({length:250},(_,i)=>offer(i)),maxOffers:250,record:async()=>{n++;return {recorded:true}}});assert.equal(r.attempted,200);assert.equal(n,200)});
+test("limited ingestion fails closed on persistence error",async()=>{const r=await limitedIngest({offers:[offer(1)],record:async()=>{throw new Error("db-down")}});assert.equal(r.passed,false);assert.equal(r.failed,1)});
