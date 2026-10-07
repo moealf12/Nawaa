@@ -1,3 +1,4 @@
+import { persistOffers, recordOffer, searchPersistedOffers } from "./persistence.mjs";
 import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
 import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
@@ -473,7 +474,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       () => ({ configured:false, offers:[] }),
     ),
     beforeRequestDeadline(
-      () => searchPersistedOffers(query).catch(() => ({ configured:false, offers:[] })),
+      () => Promise.resolve({ configured:false, offers:[] }),
       () => ({ configured:false, offers:[] }),
     ),
   ]);
@@ -555,10 +556,7 @@ async function searchAll(query, { depth = 0 } = {}) {
   // Persistence/indexing are optional accelerators and must never delay the
   // shopper response. Write-through happens asynchronously after live results
   // are ready; failures are intentionally isolated from the search request.
-  void Promise.allSettled([
-    persistOffers(query, selectedOffers.filter(offer=>offer.dataKind === "live")),
-    indexOffers(selectedOffers.filter(offer=>offer.dataKind === "live")),
-  ]).catch(() => {});
+  void indexOffers(selectedOffers.filter(offer=>offer.dataKind === "live")).catch(() => {});
 
   return {
     providersConfigured: configuredProviders(),
