@@ -1,5 +1,5 @@
 import { CheerioCrawler, Configuration } from "crawlee";
-import { parseMoney } from "./provider-utils.mjs";
+import { parseMoney, normalizeAvailability } from "./provider-utils.mjs";
 import { resolvePublicHttpsTarget, fetchHtmlSafe } from "./url-resolver.mjs";
 
 const MAX_BODY_BYTES = 8_000_000;
@@ -8,13 +8,6 @@ function text(value){ return typeof value === "string" ? value.trim() : value; }
 function absolute(base, value){
   if(!value) return null;
   try { return new URL(value, base).href; } catch { return null; }
-}
-function normalizeAvailability(value=""){
-  const v=String(value).toLowerCase();
-  if(v.includes("instock")||v.includes("in stock")||v.includes("available")) return "in_stock";
-  if(v.includes("outofstock")||v.includes("out of stock")||v.includes("sold out")) return "out_of_stock";
-  if(v.includes("preorder")||v.includes("pre-order")) return "preorder";
-  return "unknown";
 }
 function first(...values){ return values.find(v=>v!==null&&v!==undefined&&v!=="") ?? null; }
 
