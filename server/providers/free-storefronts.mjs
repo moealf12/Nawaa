@@ -1344,7 +1344,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
       }
     }
-    const htmlFirstOffers =
+    let htmlFirstOffers =
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
@@ -1376,6 +1376,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             acquisitionFallback:"namshi-shoes-category",
           };
           primarySearchError = null;
+          const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+          const jsonLd = extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+          const merged = []; const seen = new Set();
+          for (const offer of [...embedded, ...jsonLd]) {
+            const key = canonicalizeCandidateUrl(offer.sourceUrl || "") + "|" + Number(offer.price) + "|" + String(offer.currency || "");
+            if (!seen.has(key)) { seen.add(key); merged.push(offer); }
+          }
+          htmlFirstOffers = merged;
         } catch (categoryError) {
           primarySearchError ||= categoryError instanceof Error ? categoryError.message : String(categoryError);
         }
