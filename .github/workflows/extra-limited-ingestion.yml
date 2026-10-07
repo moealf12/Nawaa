@@ -1,0 +1,42 @@
+name: eXtra Limited Ingestion
+on:
+  push:
+    branches:
+      - feature/source-inspector-phase1-20261007
+    paths:
+      - .github/workflows/extra-limited-ingestion.yml
+  workflow_dispatch:
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Require persistence configuration
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL is not configured; refusing to fake the persistence gate."
+            exit 2
+          fi
+      - name: Limited ingest certified eXtra offers
+        run: |
+          node --input-type=module <<'NODE'
+          import {searchExtraAll} from "./server/adapters/sa/extra.mjs";
+          import {limitedIngest} from "./server/source-inspector/limited-ingestion.mjs";
+          import {searchPersistedOffers} from "./server/persistence.mjs";
+          const live=await searchExtraAll("iPhone",{maxResults:50});
+          const ingest=await limitedIngest({offers:live.offers,query:"iPhone",maxOffers:50});
+          if(!ingest.passed) throw new Error("limited_ingestion_failed");
+          const persisted=await searchPersistedOffers("iPhone",{limit:100,maxAgeHours:1});
+          const extra=persisted.offers.filter(o=>o.sourceName==="extra-sa"||o.merchant==="eXtra Saudi");
+          const proof={liveOffers:live.offers.length,ingest:{passed:ingest.passed,attempted:ingest.attempted,saved:ingest.saved,failed:ingest.failed},persistedExtraOffers:extra.length,readBackPassed:extra.length>0};
+          console.log("EXTRA_PERSISTENCE_E2E "+JSON.stringify(proof));
+          if(!proof.readBackPassed) process.exitCode=1;
+          NODE

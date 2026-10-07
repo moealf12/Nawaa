@@ -1,0 +1,34 @@
+import {studySource} from "./pipeline.mjs";
+import {planDeepProbe} from "./browser/deep-probe.mjs";
+import {finalizeExtractionProfile} from "./profiling/profile-builder.mjs";
+import {certifySource} from "./certification/certify.mjs";
+import {generateCandidateAdapter} from "./generator/adapter.mjs";
+import {evaluateCanary} from "./canary.mjs";
+import {evaluateEndToEnd} from "./e2e-gate.mjs";
+import {verifyProducts} from "./verification/product.mjs";
+import {verifyPaginationLive} from "./verification/pagination-live.mjs";
+
+export async function onboardSource(storeUrl,{sourceId,profilePatch={},verification={},canaryOffers=[],e2eEvidence={},verificationProducts=[],paginationUrl=null,runLivePagination=false,...options}={}){
+ const studied=await studySource(storeUrl,{sourceId,...options});
+ const deepProbe=planDeepProbe({inspection:studied.inspection,profile:studied.profile});
+ if(deepProbe.required)return {stage:"DEEP_PROBE_REQUIRED",...studied,deepProbe,productionEligible:false};
+ const profile=finalizeExtractionProfile(studied.profile,profilePatch);
+ const productVerification=verifyProducts(verificationProducts);
+ const paginationVerification=runLivePagination&&paginationUrl?await verifyPaginationLive(paginationUrl,options):null;
+ const observedVerification={
+  ...verification,
+  criticalFieldCoverage:verification.criticalFieldCoverage??(productVerification.products?productVerification.valid/productVerification.products:0),
+  priceValidity:verification.priceValidity??productVerification.priceValidity,
+  variantAccuracy:verification.variantAccuracy??productVerification.variantAccuracy,
+  semanticCriticalIssues:verification.semanticCriticalIssues??productVerification.issues.filter(issue=>issue.type==="semantic-price").length,
+  paginationPassed:verification.paginationPassed??paginationVerification?.passed??false
+ };
+ const strategyScore=profile.strategies?.primary?.score||0;
+ const certification=certifySource({profile,verification:observedVerification,strategyScore,reachable:studied.inspection?.probes?.html?.ok===true});
+ if(!certification.passed)return {stage:"VERIFICATION_FAILED",profile,certification,productVerification,paginationVerification,productionEligible:false};
+ const adapter=generateCandidateAdapter(profile);
+ const canary=evaluateCanary({offers:canaryOffers});
+ if(!canary.passed)return {stage:"CANARY_FAILED",profile,certification,adapter,canary,productionEligible:false};
+ const e2e=evaluateEndToEnd(e2eEvidence);
+ return {stage:e2e.passed?"READY_FOR_REGISTRY":"E2E_FAILED",profile,certification,adapter,canary,e2e,productionEligible:e2e.passed};
+}

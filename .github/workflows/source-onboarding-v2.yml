@@ -1,0 +1,32 @@
+name: Source Onboarding v2
+on:
+  workflow_dispatch:
+    inputs:
+      source_id:
+        description: Source ID
+        required: true
+        default: extra-sa
+      store_url:
+        description: Store URL
+        required: true
+        default: https://www.extra.com/en-sa
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/source-inspector-phase1-20261007
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run Architecture v2 onboarding
+        run: node scripts/onboard-source-v2.mjs --id "${{ inputs.source_id }}" --url "${{ inputs.store_url }}" | tee source-onboarding.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-onboarding-${{ inputs.source_id }}
+          path: source-onboarding.json

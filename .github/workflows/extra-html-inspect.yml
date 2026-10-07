@@ -1,0 +1,17 @@
+name: eXtra Raw HTML Inspect
+on:
+  push:
+    branches: [feature/source-inspector-phase1-20261007]
+    paths: [.github/workflows/extra-html-inspect.yml]
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - run: node scripts/inspect-extra-html.mjs
+      - run: node scripts/inspect-extra-search-config.mjs
+      - run: node scripts/probe-extra-unbxd.mjs

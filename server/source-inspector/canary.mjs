@@ -1,0 +1,1 @@
+export function evaluateCanary({offers=[],minOffers=1,maxOffers=200}={}){const sample=offers.slice(0,maxOffers);const valid=sample.filter(o=>o&&o.title&&Number(o.price)>0&&o.currency&&o.productUrl);const validity=sample.length?valid.length/sample.length:0;return {passed:sample.length>=minOffers&&validity>=.99,sampled:sample.length,valid:valid.length,validity,limited:true};}
