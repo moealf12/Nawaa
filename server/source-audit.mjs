@@ -8,7 +8,7 @@ const DIRECT_STORES = [
   { id:"jarir", name:"Jarir", countryCode:"SA", search:(q)=>searchJarir(q,100,q) },
   { id:"extra", name:"eXtra", countryCode:"SA", search:(q)=>searchExtraUnbxd(q,100,q) },
   { id:"sharafdg-sa", name:"Sharaf DG Saudi", countryCode:"SA", search:(q)=>searchSharafDG(q) },
-  { id:"swarovski-sa", name:"Swarovski Saudi", countryCode:"SA", search:(q)=>searchSwarovskiSaudi(q) },
+  { id:"swarovski-sa", name:"Swarovski Saudi", countryCode:"SA", search:(q)=>searchSwarovskiSaudi(/\\bswarovski\\b/i.test(q)?q:`Swarovski ${q}`) },
 ];
 
 const DEFAULT_QUERIES = {
