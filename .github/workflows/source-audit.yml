@@ -39,21 +39,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { source: jarir, query: "iPhone 17 256GB" }
-          - { source: jarir, query: "HP laptop" }
-          - { source: jarir, query: "nawaa-unfindable-943271-20261003" }
-          - { source: extra, query: "iPhone 17 256GB" }
-          - { source: extra, query: "HP laptop" }
-          - { source: extra, query: "nawaa-unfindable-943271-20261003" }
-          - { source: sharafdg-sa, query: "iPhone 17 256GB" }
-          - { source: sharafdg-sa, query: "Samsung Galaxy S25" }
-          - { source: sharafdg-sa, query: "nawaa-unfindable-943271-20261003" }
-          - { source: swarovski-sa, query: "pendant" }
-          - { source: swarovski-sa, query: "bracelet" }
-          - { source: swarovski-sa, query: "nawaa-unfindable-943271-20261003" }
-          - { source: shein-sa, query: "dress" }
-          - { source: shein-sa, query: "shirt" }
-          - { source: shein-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "1", source: jarir, query: "iPhone 17 256GB" }
+          - { case: "2", source: jarir, query: "HP laptop" }
+          - { case: "3", source: jarir, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "4", source: extra, query: "iPhone 17 256GB" }
+          - { case: "5", source: extra, query: "HP laptop" }
+          - { case: "6", source: extra, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "7", source: sharafdg-sa, query: "iPhone 17 256GB" }
+          - { case: "8", source: sharafdg-sa, query: "Samsung Galaxy S25" }
+          - { case: "9", source: sharafdg-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "10", source: swarovski-sa, query: "pendant" }
+          - { case: "11", source: swarovski-sa, query: "bracelet" }
+          - { case: "12", source: swarovski-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "13", source: shein-sa, query: "dress" }
+          - { case: "14", source: shein-sa, query: "shirt" }
+          - { case: "15", source: shein-sa, query: "nawaa-unfindable-943271-20261003" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,12 +63,12 @@ jobs:
       - name: Phase III batch 1 live source probe
         env:
           NAWAA_AUDIT_CONCURRENCY: "1"
-        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ strategy.job-index }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: phase3-${{ matrix.source }}-${{ strategy.job-index }}
-          path: phase3-${{ matrix.source }}-${{ strategy.job-index }}.json
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
 
   audit:
     runs-on: ubuntu-latest
