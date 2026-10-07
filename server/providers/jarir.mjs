@@ -340,13 +340,15 @@ export async function searchJarir(query, limit = 24, matchingQuery = query) {
     return {offers,categories,exactMatches:offers.filter(o=>o.exactMatch).length};
   };
   try {
-    const raw=await searchViaConstructor(query,capped), {offers,categories,exactMatches}=classify(raw);
+    const raw=await searchViaConstructor(query,capped), classified=classify(raw);
+    const offers=classified.offers.filter(offer=>offer.exactMatch || offer.matchConfidence>=0.45), categories=classified.categories, exactMatches=classified.exactMatches;
     const paginationErrors=raw.paginationError?[{market:"jarir-sa",error:raw.paginationError}]:[];
     return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors:paginationErrors,
       diagnostics:{acquisition:{strategy:"search-results-first",discovered:raw.length,classified:offers.length,dropped:0,pdpFallback:{attempted:0,verified:0,failed:0}},classification:{categories,exactMatches},pagination:{partial:Boolean(raw.paginationError),error:raw.paginationError||null}}};
   } catch(error){errors.push({market:"jarir-sa",error:error?.message||String(error)});}
   try {
-    const raw=await searchViaHtml(query,capped), {offers,categories,exactMatches}=classify(raw);
+    const raw=await searchViaHtml(query,capped), classified=classify(raw);
+    const offers=classified.offers.filter(offer=>offer.exactMatch || offer.matchConfidence>=0.45), categories=classified.categories, exactMatches=classified.exactMatches;
     if(raw.length) return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors,
       diagnostics:{acquisition:{strategy:"html-search-results",discovered:raw.length,classified:offers.length,dropped:0,pdpFallback:{attempted:0,verified:0,failed:0}},classification:{categories,exactMatches}}};
     errors.push({market:"jarir-sa",error:"HTML fallback returned no products"});
