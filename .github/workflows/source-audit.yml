@@ -81,9 +81,6 @@ jobs:
           - { case: "22", source: nike-sa, query: "shoes" }
           - { case: "23", source: nike-sa, query: "shirt" }
           - { case: "24", source: nike-sa, query: "nawaa-unfindable-943271-20261003" }
-          - { case: "25", source: sephora-sa, query: "perfume" }
-          - { case: "26", source: sephora-sa, query: "lipstick" }
-          - { case: "27", source: sephora-sa, query: "nawaa-unfindable-943271-20261003" }
           - { case: "28", source: namshi-sa, query: "shoes" }
           - { case: "29", source: namshi-sa, query: "shirt" }
           - { case: "30", source: namshi-sa, query: "nawaa-unfindable-943271-20261003" }
@@ -114,7 +111,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/audit-sources.mjs source-audit-results.json
       - name: Assert quarantined sources stay out of active routing
-        run: node --input-type=module -e "import {configuredFreeStorefronts,quarantinedFreeStorefronts} from './server/providers/free-storefronts.mjs'; const active=configuredFreeStorefronts(); const quarantined=quarantinedFreeStorefronts(); if(active.some(s=>s.id==='shein-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='shein-sa'&&s.disabledReason==='unstable_shein_risk_challenge')) process.exit(1); if(active.some(s=>s.id==='adidas-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='adidas-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1);"
+        run: node --input-type=module -e "import {configuredFreeStorefronts,quarantinedFreeStorefronts} from './server/providers/free-storefronts.mjs'; const active=configuredFreeStorefronts(); const quarantined=quarantinedFreeStorefronts(); if(active.some(s=>s.id==='shein-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='shein-sa'&&s.disabledReason==='unstable_shein_risk_challenge')) process.exit(1); if(active.some(s=>s.id==='adidas-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='adidas-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1); if(active.some(s=>s.id==='sephora-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='sephora-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1);"
       - name: Probe Temu public search endpoints
         run: node scripts/probe-temu.mjs "iphone 17 case"
       - name: Probe SHEIN public search endpoints
