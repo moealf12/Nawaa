@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - "server/source-audit.mjs"
+      - "server/audit-matrix.mjs"
       - "server/providers/free-storefronts.mjs"
       - "server/url-resolver.mjs"
       - "server/domain-adapters.mjs"
@@ -23,12 +24,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        source:
-          - jarir
-          - extra
-          - sharafdg-sa
-          - swarovski-sa
-          - shein-sa
+        include:
+          - { source: jarir, query: "iPhone 17 256GB" }
+          - { source: jarir, query: "HP laptop" }
+          - { source: jarir, query: "nawaa-unfindable-943271-20261003" }
+          - { source: extra, query: "iPhone 17 256GB" }
+          - { source: extra, query: "HP laptop" }
+          - { source: extra, query: "nawaa-unfindable-943271-20261003" }
+          - { source: sharafdg-sa, query: "iPhone 17 256GB" }
+          - { source: sharafdg-sa, query: "Samsung Galaxy S25" }
+          - { source: sharafdg-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { source: swarovski-sa, query: "pendant" }
+          - { source: swarovski-sa, query: "bracelet" }
+          - { source: swarovski-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { source: shein-sa, query: "dress" }
+          - { source: shein-sa, query: "shirt" }
+          - { source: shein-sa, query: "nawaa-unfindable-943271-20261003" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,12 +49,12 @@ jobs:
       - name: Phase III batch 1 live source probe
         env:
           NAWAA_AUDIT_CONCURRENCY: "1"
-        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}.json" --store "${{ matrix.source }}"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ strategy.job-index }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: phase3-${{ matrix.source }}
-          path: phase3-${{ matrix.source }}.json
+          name: phase3-${{ matrix.source }}-${{ strategy.job-index }}
+          path: phase3-${{ matrix.source }}-${{ strategy.job-index }}.json
 
   audit:
     runs-on: ubuntu-latest
