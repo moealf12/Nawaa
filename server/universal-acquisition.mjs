@@ -1,6 +1,6 @@
 import { CheerioCrawler, Configuration } from "crawlee";
 import { parseMoney } from "./provider-utils.mjs";
-import { resolvePublicHttpsTarget } from "./url-resolver.mjs";
+import { resolvePublicHttpsTarget, fetchHtmlSafe } from "./url-resolver.mjs";
 
 const MAX_BODY_BYTES = 8_000_000;
 
@@ -121,44 +121,18 @@ function reconcile(candidates, finalUrl){
 }
 
 export async function extractProductWithCrawlee(url,{timeoutMs=12000}={}){
-  const { parsed } = await resolvePublicHttpsTarget(url);
-  const timeoutSecs=Math.max(1,Math.ceil(timeoutMs/1000));
-  const config=new Configuration({persistStorage:false,purgeOnStart:true});
-  let extracted=null;
-  let failure=null;
-  const crawler=new CheerioCrawler({
-    maxConcurrency:1,
-    maxRequestsPerCrawl:1,
-    maxRequestRetries:1,
-    maxRequestsPerMinute:30,
-    navigationTimeoutSecs:timeoutSecs,
-    requestHandlerTimeoutSecs:timeoutSecs+2,
-    preNavigationHooks:[async (_ctx,gotOptions)=>{
-      gotOptions.headers={
-        ...gotOptions.headers,
-        accept:"text/html,application/xhtml+xml",
-        "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
-      };
-    }],
-    async requestHandler({$,request,response}){
-      const contentType=String(response?.headers?.["content-type"]||"");
-      if(contentType&&!contentType.includes("text/html")&&!contentType.includes("application/xhtml+xml")){
-        throw new Error("URL is not an HTML product page");
-      }
-      const declared=Number(response?.headers?.["content-length"]||0);
-      if(declared>MAX_BODY_BYTES) throw new Error("Product page is too large");
-      const finalUrl=request.loadedUrl||request.url;
-      extracted=reconcile([...jsonLdCandidates($),metaCandidate($)],finalUrl);
-      extracted.extraction={...extracted.extraction,crawlee:true,crawler:"cheerio",requestRetries:request.retryCount||0};
-    },
-    async failedRequestHandler({request},error){
-      failure=error instanceof Error?error:new Error(String(error||request.errorMessages?.at(-1)||"Crawlee request failed"));
-    },
-  },config);
-  await crawler.run([{url:parsed.href,uniqueKey:parsed.href}]);
-  await crawler.teardown();
-  if(extracted) return extracted;
-  throw failure||new Error("Crawlee did not extract a product");
+  // Network acquisition is delegated to the same pinned-DNS, redirect-validated,
+  // streaming byte-limited transport used by the primary resolver. Crawlee is
+  // retained as the structured parsing fallback, not as a second network policy.
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(new Error("Crawlee fallback timed out")),Math.max(1,timeoutMs));
+  try {
+    const {finalUrl,html}=await fetchHtmlSafe(url,0,{signal:controller.signal});
+    const $=(await import("cheerio")).load(html);
+    const extracted=reconcile([...jsonLdCandidates($),metaCandidate($)],finalUrl);
+    extracted.extraction={...extracted.extraction,crawlee:true,crawler:"cheerio-safe-transport",requestRetries:0};
+    return extracted;
+  } finally { clearTimeout(timer); }
 }
 
 export async function discoverProductUrlsWithCrawlee(url,{limit=24,timeoutMs=12000,allowedHost=null}={}){
