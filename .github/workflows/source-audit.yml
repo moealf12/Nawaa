@@ -100,6 +100,45 @@ jobs:
           name: phase3-${{ matrix.source }}-${{ matrix.case }}
           path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
 
+
+  phase3-batch3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { case: "31", source: centrepoint-sa, query: "dress" }
+          - { case: "32", source: centrepoint-sa, query: "shirt" }
+          - { case: "33", source: centrepoint-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "34", source: maxfashion-sa, query: "dress" }
+          - { case: "35", source: maxfashion-sa, query: "shirt" }
+          - { case: "36", source: maxfashion-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "37", source: decathlon-sa, query: "shoes" }
+          - { case: "38", source: decathlon-sa, query: "backpack" }
+          - { case: "39", source: decathlon-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "40", source: niceone-sa, query: "perfume" }
+          - { case: "41", source: niceone-sa, query: "lipstick" }
+          - { case: "42", source: niceone-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "43", source: ebay, query: "iPhone 17 256GB" }
+          - { case: "44", source: ebay, query: "Canon camera" }
+          - { case: "45", source: ebay, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 3 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 30
