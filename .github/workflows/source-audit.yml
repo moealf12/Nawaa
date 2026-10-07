@@ -17,6 +17,34 @@ on:
       - ".github/workflows/source-audit.yml"
 
 jobs:
+  phase3-batch1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        source:
+          - jarir
+          - extra
+          - sharafdg-sa
+          - swarovski-sa
+          - shein-sa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 1 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}.json" --store "${{ matrix.source }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}
+          path: phase3-${{ matrix.source }}.json
+
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 30
