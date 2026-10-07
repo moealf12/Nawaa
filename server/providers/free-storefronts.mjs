@@ -17,12 +17,12 @@ const STORES = [
     productPath:/\/item\/\d+\.html(?:[?#]|$)/i,
   },
   {
-    id:"temu-global", name:"Temu", countryCode:"CN", countryNameAr:"الصين", categories:["*"],
+    id:"temu-global", name:"Temu", countryCode:"CN", countryNameAr:"الصين", enabled:false, disabledReason:"no_product_candidates_live_search", categories:["*"],
     search:(q)=>"https://www.temu.com/search_result.html?search_key="+encodeURIComponent(q)+"&search_method=user",
     productPath:/\/(?:goods|item)\.html(?:[?#]|$)|-g-\d+\.html/i,
   },
   {
-    id:"iherb-sa", name:"iHerb", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["beauty","grocery","pet","baby","other"],
+    id:"iherb-sa", name:"iHerb", countryCode:"US", countryNameAr:"الولايات المتحدة", enabled:false, disabledReason:"http_403_live_search", categories:["beauty","grocery","pet","baby","other"],
     search:(q)=>"https://sa.iherb.com/search?kw="+encodeURIComponent(q),
     productPath:/\/pr\/[^?#]+\/\d+(?:[/?#]|$)/i,
   },
@@ -102,12 +102,12 @@ const STORES = [
     productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)|\/[^/?#]+-\d+(?:[/?#]|$)/i,
   },
   {
-    id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", brands:["farfetch"], categories:["clothing","shoes","bag","jewelry","watch"],
+    id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", enabled:false, disabledReason:"http_403_live_search", brands:["farfetch"], categories:["clothing","shoes","bag","jewelry","watch"],
     search:(q)=>"https://www.farfetch.com/sa/shopping/items.aspx?q="+encodeURIComponent(q),
     productPath:/\/shopping\/[^?#]+\/item-\d+\.aspx(?:[?#]|$)/i,
   },
   {
-    id:"etsy-global", name:"Etsy", countryCode:"US", countryNameAr:"الولايات المتحدة", brands:["etsy"], categories:["jewelry","clothing","bag","home","furniture","toy","office","other"],
+    id:"etsy-global", name:"Etsy", countryCode:"US", countryNameAr:"الولايات المتحدة", enabled:false, disabledReason:"http_403_live_search", brands:["etsy"], categories:["jewelry","clothing","bag","home","furniture","toy","office","other"],
     search:(q)=>"https://www.etsy.com/search?q="+encodeURIComponent(q),
     productPath:/\/listing\/\d+(?:[/?#]|$)/i,
   },
@@ -122,7 +122,7 @@ const STORES = [
     productPath:/\/c\/product\/\d+(?:-[A-Z0-9_-]+)?(?:[/?#]|$)/i,
   },
   {
-    id:"walmart-us", name:"Walmart", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["*"],
+    id:"walmart-us", name:"Walmart", countryCode:"US", countryNameAr:"الولايات المتحدة", enabled:false, disabledReason:"walmart_blocked", categories:["*"],
     search:(q)=>"https://www.walmart.com/search?q="+encodeURIComponent(q),
     productPath:/\/ip\/[^?#]+\/\d+(?:[/?#]|$)/i,
   },
