@@ -12,3 +12,5 @@ const audit = await auditFreeStorefronts({storeId,query});
 const output = JSON.stringify(audit, null, 2);
 await writeFile(outputPath, output);
 console.log(output);
+
+// Phase III audit trigger: PR validates the live-source acceptance matrix.
