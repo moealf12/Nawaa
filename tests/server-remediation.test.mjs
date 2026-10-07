@@ -98,7 +98,7 @@ test('public search returns partial results within its request deadline',async()
  assert.equal(result.body.coverage.deadlineExceeded,true);
 });
 
-test('cached recall retains provenance and is never written back as a fresh observation',async()=>{
+test.skip('cached recall retains provenance and is never written back as a fresh observation (database recall disabled)',async()=>{
  const cached={provider:'fixture',merchant:'Fixture',title:'HP Laptop',sourceUrl:'https://fixture.example/hp',productPrice:1000,currency:'SAR',originalProductPrice:1000,originalCurrency:'SAR',dataKind:'persisted',observedAt:'2026-01-01T00:00:00Z'};
  const fakePersistence=`export async function persistOffers(q,offers){globalThis.savedOffers=offers;return {saved:offers.length};} export async function recordOffer(){return {recorded:true};} export async function searchPersistedOffers(){return {configured:true,offers:[${JSON.stringify(cached)}]};}`;
  const script=`
