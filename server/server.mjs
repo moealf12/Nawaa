@@ -28,13 +28,11 @@ import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
-import { persistOffers, recordOffer, searchPersistedOffers } from "./persistence.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
 import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
-import { proveExtraPersistence } from "./runtime-proof.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -295,10 +293,7 @@ async function searchExpansion(query, depth) {
   const offers=retainRelatedOffers(query, [...(amazon.offers||[]),...(storefront.offers||[])]);
   const allSelectedOffers=selectDiverseOffers(offers,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
-  void Promise.allSettled([
-    persistOffers(query,selectedOffers.filter(offer=>offer.dataKind==="live")),
-    indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")),
-  ]).catch(()=>{});
+  void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
   const sources=currentSources();
   return {
     providersConfigured:configuredProviders(),
@@ -365,7 +360,6 @@ async function streamSearchProgress(query, onSnapshot) {
   // is allowed to block the other from producing the first useful result.
   const localPromise=Promise.all([
     searchIndexedOffers(query).catch(()=>({offers:[]})),
-    searchPersistedOffers(query).catch(()=>({offers:[]})),
   ]).then(async local=>{
     offers.push(...(local[0].offers||[]),...(local[1].offers||[]));
     if(offers.length) await emit({completed:providers.length,pending:providerTasks(providerQuery,query,{plan}).length+1});
@@ -403,10 +397,7 @@ async function streamSearchProgress(query, onSnapshot) {
   const assessed=retainRelatedOffers(query, offers);
   const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
-  void Promise.allSettled([
-    persistOffers(query,selectedOffers.filter(offer=>offer.dataKind==="live")),
-    indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")),
-  ]).catch(()=>{});
+  void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
   return {
     providersConfigured:configuredProviders(),
     coverage:{
@@ -692,13 +683,6 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (req.method === "POST" && url.pathname === "/internal/prove-extra-persistence") {
-    if (req.headers.origin) return jsonResponse(res,403,{error:"origin_not_allowed"},"*");
-    if (!ingestAuthorized(req)) return jsonResponse(res,401,{error:"unauthorized"},"*");
-    try { const proof=await proveExtraPersistence(); cachedSearch.clear(); return jsonResponse(res,proof.passed?200:503,proof,"*"); }
-    catch(error){ return jsonResponse(res,503,{passed:false,error:error instanceof Error?error.message:String(error)},"*"); }
-  }
-
   if (req.method === "GET" && url.pathname === "/api/sources") {
     const sources = currentSources();
     return jsonResponse(res, 200, {
@@ -896,7 +880,4 @@ server.maxRequestsPerSocket = 100;
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`NAWAA search backend listening on :${PORT}`);
-  if(process.env.NAWAA_RUN_EXTRA_PERSISTENCE_PROOF_ON_START==="true"){
-    proveExtraPersistence().then(proof=>console.log("EXTRA_PERSISTENCE_PROOF "+JSON.stringify(proof))).catch(error=>console.error("EXTRA_PERSISTENCE_PROOF_FAILED "+(error instanceof Error?error.message:String(error))));
-  }
 });
