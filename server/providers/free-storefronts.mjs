@@ -142,7 +142,7 @@ const STORES = [
     productPath:/\/[^?#]+(?:[?#].*)?$/i,
   },
   {
-    id:"sephora-sa", name:"Sephora Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["sephora"], categories:["beauty","perfume"],
+    id:"sephora-sa", name:"Sephora Saudi", countryCode:"SA", countryNameAr:"السعودية", enabled:false, disabledReason:"http_403_live_search", brands:["sephora"], categories:["beauty","perfume"],
     search:(q)=>"https://www.sephora.me/sa-en/search?q="+encodeURIComponent(q),
     productPath:/\/p\/[^?#]+(?:[?#]|$)/i,
   },
@@ -1363,6 +1363,23 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         return merged;
       })();
     if (!htmlFirstOffers.length) {
+      if (store.id === "namshi-sa" && /\bshoes?\b/i.test(normalizeSearchQuery(query))) {
+        try {
+          const pages = await Promise.all([
+            fetchText("https://www.namshi.com/saudi-en/women-shoes/?page=1",{signal:options.signal}),
+            fetchText("https://www.namshi.com/saudi-en/men-shoes/?page=1",{signal:options.signal}),
+          ]);
+          html = pages.map(page=>page.html).join("\n");
+          searchPageFinalUrl = pages[0]?.finalUrl || searchUrl;
+          searchDiagnostics = {
+            ...searchPageDiagnostics(html, searchUrl, searchPageFinalUrl),
+            acquisitionFallback:"namshi-shoes-category",
+          };
+          primarySearchError = null;
+        } catch (categoryError) {
+          primarySearchError ||= categoryError instanceof Error ? categoryError.message : String(categoryError);
+        }
+      }
       if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
         catch (error) { primarySearchError ||= error instanceof Error ? error.message : String(error); }
