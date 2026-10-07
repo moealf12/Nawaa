@@ -12,6 +12,10 @@ on:
       - "tests/domain-adapters.test.mjs"
       - "scripts/audit-sources.mjs"
       - ".github/workflows/source-audit.yml"
+      - "server/providers/jarir.mjs"
+      - "server/providers/extra-unbxd.mjs"
+      - "server/providers/sharafdg.mjs"
+      - "server/providers/swarovski.mjs"
   push:
     paths:
       - "server/source-audit.mjs"
