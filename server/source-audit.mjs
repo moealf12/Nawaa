@@ -83,7 +83,7 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
         : classify(result);
       resultItem = {
         id:store.id, name:store.name, countryCode:store.countryCode, query:probeQuery, status,
-        candidates:result.candidates, verifiedOffers:result.offers.length, failures:result.failures,
+        candidates:Number.isFinite(result.candidates) ? result.candidates : result.offers.length, verifiedOffers:result.offers.length, failures:Number.isFinite(result.failures) ? result.failures : (Array.isArray(result.errors) ? result.errors.length : 0),
         durationMs:Date.now()-started,
         diagnostics:result.diagnostics || null,
         sampleOffers:result.offers.slice(0,3).map(offer=>({
