@@ -3,12 +3,23 @@ import { searchJarir } from "./providers/jarir.mjs";
 import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
 import { searchSharafDG } from "./providers/sharafdg.mjs";
 import { searchSwarovskiSaudi } from "./providers/swarovski.mjs";
+import { searchEbayWorldwide, ebayConfigured } from "./providers/ebay.mjs";
+import { configuredShopifyStores, searchShopifyStore } from "./providers/shopify.mjs";
+
+const FREE_STORE_ALIASES = new Map([["newegg-us","newegg-global"],["bhphoto","bhphoto-us"]]);
 
 const DIRECT_STORES = [
   { id:"jarir", name:"Jarir", countryCode:"SA", search:(q)=>searchJarir(q,100,q) },
   { id:"extra", name:"eXtra", countryCode:"SA", search:(q)=>searchExtraUnbxd(q,100,q) },
   { id:"sharafdg-sa", name:"Sharaf DG Saudi", countryCode:"SA", search:(q)=>searchSharafDG(q) },
   { id:"swarovski-sa", name:"Swarovski Saudi", countryCode:"SA", search:(q)=>searchSwarovskiSaudi(/\\bswarovski\\b/i.test(q)?q:`Swarovski ${q}`) },
+  ...(ebayConfigured() ? [{ id:"ebay", name:"eBay", countryCode:"US", search:(q)=>searchEbayWorldwide(q,{marketLimit:4,perMarket:5}) }] : []),
+  ...configuredShopifyStores().map((store)=>({
+    id:`shopify:${store.id || store.name}`,
+    name:store.name,
+    countryCode:String(store.countryCode || "").toUpperCase(),
+    search:(q)=>searchShopifyStore(q,store,{limit:5}),
+  })),
 ];
 
 const DEFAULT_QUERIES = {
@@ -39,7 +50,11 @@ function classify(result) {
 }
 
 export async function auditFreeStorefronts({ storeId = null, query = null } = {}) {
-  const stores = [...DIRECT_STORES, ...configuredFreeStorefronts()]
+  const aliasedFreeStores = configuredFreeStorefronts().flatMap((store)=>{
+    const aliases=[...FREE_STORE_ALIASES.entries()].filter(([,target])=>target===store.id).map(([alias])=>({...store,id:alias}));
+    return [store,...aliases];
+  });
+  const stores = [...DIRECT_STORES, ...aliasedFreeStores]
     .filter((store,index,all)=>all.findIndex((candidate)=>candidate.id===store.id)===index)
     .filter(store => !storeId || store.id === storeId);
   if (storeId && stores.length === 0) throw new Error("unknown storefront: " + storeId);
@@ -59,9 +74,10 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
     let resultItem;
     try {
       const direct = DIRECT_STORES.find((entry)=>entry.id===store.id);
+      const freeStoreId = FREE_STORE_ALIASES.get(store.id) || store.id;
       const result = direct
         ? await direct.search(probeQuery)
-        : await searchFreeStorefrontById(store.id, probeQuery, { perStore:100 });
+        : await searchFreeStorefrontById(freeStoreId, probeQuery, { perStore:100 });
       const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
         ? "FAILING"
         : classify(result);
