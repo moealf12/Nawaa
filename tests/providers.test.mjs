@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { extractProductLinks, extractAliExpressSearchOffers, extractTemuSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, parseLandmarkBloomreachPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractProductLinks, extractAliExpressSearchOffers, extractTemuSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, parseLandmarkBloomreachPayload, selectedStores, configuredFreeStorefronts, quarantinedFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 import { extractEmbeddedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
@@ -358,13 +358,13 @@ assert.equal(temuStructuredLinks.length, 2);
 assert.ok(temuStructuredLinks.every((entry) => entry.url.includes("temu.com/sa-en/")));
 assert.ok(temuStructuredLinks.some((entry) => entry.url.includes("601100089500228")));
 assert.ok(temuStructuredLinks.some((entry) => entry.url.includes("601100089500229")));
-assert.ok(selectedStores("فستان شي ان", 8).some((store) => store.id === "shein-sa"));
+assert.ok(!selectedStores("فستان شي ان", 8).some((store) => store.id === "shein-sa"));
+assert.ok(quarantinedFreeStorefronts().some((store) => store.id === "shein-sa" && store.disabledReason === "unstable_shein_risk_challenge"));
 assert.ok(selectedStores("لابتوب", 8).some((store) => store.id === "newegg-global"));
 assert.ok(configuredFreeStorefronts().length >= 15);
 
 const fashionRoutes = routeFreeStorefronts("فستان شي ان", 8);
-assert.equal(fashionRoutes[0].store.id, "shein-sa");
-assert.ok(fashionRoutes[0].reasons.includes("brand"));
+assert.ok(!fashionRoutes.some((route) => route.store.id === "shein-sa"));
 assert.ok(fashionRoutes.every((route) =>
   route.store.categories.includes("clothing") ||
   route.store.categories.includes("*") ||
