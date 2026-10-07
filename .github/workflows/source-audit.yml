@@ -67,6 +67,45 @@ jobs:
           name: phase3-${{ matrix.source }}-${{ matrix.case }}
           path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
 
+
+  phase3-batch2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { case: "16", source: ikea-sa, query: "chair" }
+          - { case: "17", source: ikea-sa, query: "table" }
+          - { case: "18", source: ikea-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "19", source: adidas-sa, query: "Samba" }
+          - { case: "20", source: adidas-sa, query: "Ultraboost" }
+          - { case: "21", source: adidas-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "22", source: nike-sa, query: "shoes" }
+          - { case: "23", source: nike-sa, query: "shirt" }
+          - { case: "24", source: nike-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "25", source: sephora-sa, query: "perfume" }
+          - { case: "26", source: sephora-sa, query: "lipstick" }
+          - { case: "27", source: sephora-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "28", source: namshi-sa, query: "shoes" }
+          - { case: "29", source: namshi-sa, query: "shirt" }
+          - { case: "30", source: namshi-sa, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 2 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 30
