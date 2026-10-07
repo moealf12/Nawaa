@@ -132,6 +132,8 @@ jobs:
       - name: Phase III batch 3 live source probe
         env:
           NAWAA_AUDIT_CONCURRENCY: "1"
+          EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
         run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -153,15 +155,9 @@ jobs:
           - { case: "49", source: bhphoto, query: "Canon camera" }
           - { case: "50", source: bhphoto, query: "Sony camera" }
           - { case: "51", source: bhphoto, query: "nawaa-unfindable-943271-20261003" }
-          - { case: "52", source: walmart-us, query: "laptop" }
-          - { case: "53", source: walmart-us, query: "coffee" }
-          - { case: "54", source: walmart-us, query: "nawaa-unfindable-943271-20261003" }
           - { case: "55", source: bestbuy-us, query: "laptop" }
           - { case: "56", source: bestbuy-us, query: "headphones" }
           - { case: "57", source: bestbuy-us, query: "nawaa-unfindable-943271-20261003" }
-          - { case: "58", source: etsy-global, query: "necklace" }
-          - { case: "59", source: etsy-global, query: "ring" }
-          - { case: "60", source: etsy-global, query: "nawaa-unfindable-943271-20261003" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -186,21 +182,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { case: "61", source: iherb-sa, query: "vitamin" }
-          - { case: "62", source: iherb-sa, query: "magnesium" }
-          - { case: "63", source: iherb-sa, query: "nawaa-unfindable-943271-20261003" }
           - { case: "64", source: asos-global, query: "dress" }
           - { case: "65", source: asos-global, query: "shirt" }
           - { case: "66", source: asos-global, query: "nawaa-unfindable-943271-20261003" }
-          - { case: "67", source: farfetch-sa, query: "shoes" }
-          - { case: "68", source: farfetch-sa, query: "bag" }
-          - { case: "69", source: farfetch-sa, query: "nawaa-unfindable-943271-20261003" }
           - { case: "70", source: aliexpress-cn, query: "charger" }
           - { case: "71", source: aliexpress-cn, query: "cable" }
           - { case: "72", source: aliexpress-cn, query: "nawaa-unfindable-943271-20261003" }
-          - { case: "73", source: temu-global, query: "charger" }
-          - { case: "74", source: temu-global, query: "cable" }
-          - { case: "75", source: temu-global, query: "nawaa-unfindable-943271-20261003" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -245,6 +232,7 @@ jobs:
       - name: Phase III batch 6 live source probe
         env:
           NAWAA_AUDIT_CONCURRENCY: "1"
+          SHOPIFY_STORES_JSON: ${{ secrets.SHOPIFY_STORES_JSON }}
         run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -263,7 +251,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/audit-sources.mjs source-audit-results.json
       - name: Assert quarantined sources stay out of active routing
-        run: node --input-type=module -e "import {configuredFreeStorefronts,quarantinedFreeStorefronts} from './server/providers/free-storefronts.mjs'; const active=configuredFreeStorefronts(); const quarantined=quarantinedFreeStorefronts(); if(active.some(s=>s.id==='shein-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='shein-sa'&&s.disabledReason==='unstable_shein_risk_challenge')) process.exit(1); if(active.some(s=>s.id==='adidas-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='adidas-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1); if(active.some(s=>s.id==='sephora-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='sephora-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1);"
+        run: node --input-type=module -e "import {configuredFreeStorefronts,quarantinedFreeStorefronts} from './server/providers/free-storefronts.mjs'; const active=configuredFreeStorefronts(); const quarantined=quarantinedFreeStorefronts(); if(active.some(s=>s.id==='shein-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='shein-sa'&&s.disabledReason==='unstable_shein_risk_challenge')) process.exit(1); if(active.some(s=>s.id==='adidas-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='adidas-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1); if(active.some(s=>s.id==='sephora-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='sephora-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1); for(const [id,reason] of [['iherb-sa','http_403_live_search'],['farfetch-sa','http_403_live_search'],['etsy-global','http_403_live_search'],['walmart-us','walmart_blocked'],['temu-global','no_product_candidates_live_search']]){ if(active.some(s=>s.id===id)) process.exit(1); if(!quarantined.some(s=>s.id===id&&s.disabledReason===reason)) process.exit(1); }"
       - name: Probe Temu public search endpoints
         run: node scripts/probe-temu.mjs "iphone 17 case"
       - name: Probe SHEIN public search endpoints
