@@ -1,4 +1,15 @@
 import { searchFreeStorefrontById, configuredFreeStorefronts } from "./providers/free-storefronts.mjs";
+import { searchJarir } from "./providers/jarir.mjs";
+import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
+import { searchSharafDG } from "./providers/sharafdg.mjs";
+import { searchSwarovskiSaudi } from "./providers/swarovski.mjs";
+
+const DIRECT_STORES = [
+  { id:"jarir", name:"Jarir", countryCode:"SA", search:(q)=>searchJarir(q,100,q) },
+  { id:"extra", name:"eXtra", countryCode:"SA", search:(q)=>searchExtraUnbxd(q,100,q) },
+  { id:"sharafdg-sa", name:"Sharaf DG Saudi", countryCode:"SA", search:(q)=>searchSharafDG(q) },
+  { id:"swarovski-sa", name:"Swarovski Saudi", countryCode:"SA", search:(q)=>searchSwarovskiSaudi(q) },
+];
 
 const DEFAULT_QUERIES = {
   "shein-sa":"dress", "aliexpress-cn":"iphone 17 case", "temu-global":"iphone 17 case",
@@ -28,7 +39,9 @@ function classify(result) {
 }
 
 export async function auditFreeStorefronts({ storeId = null, query = null } = {}) {
-  const stores = configuredFreeStorefronts().filter(store => !storeId || store.id === storeId);
+  const stores = [...DIRECT_STORES, ...configuredFreeStorefronts()]
+    .filter((store,index,all)=>all.findIndex((candidate)=>candidate.id===store.id)===index)
+    .filter(store => !storeId || store.id === storeId);
   if (storeId && stores.length === 0) throw new Error("unknown storefront: " + storeId);
 
   // Keep full source coverage while bounding simultaneous network-heavy probes.
@@ -45,7 +58,10 @@ export async function auditFreeStorefronts({ storeId = null, query = null } = {}
     const started = Date.now();
     let resultItem;
     try {
-      const result = await searchFreeStorefrontById(store.id, probeQuery, { perStore:100 });
+      const direct = DIRECT_STORES.find((entry)=>entry.id===store.id);
+      const result = direct
+        ? await direct.search(probeQuery)
+        : await searchFreeStorefrontById(store.id, probeQuery, { perStore:100 });
       const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
         ? "FAILING"
         : classify(result);
