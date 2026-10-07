@@ -93,7 +93,7 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // Core search providers must always get a chance per user request. Reliability
   // still affects diagnostics/routing inside providers, but a temporary cooldown
   // must not collapse the whole public API into an instant empty response.
-  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, Infinity, matchingQuery), { explicit:true, deadlineMs:8000 });
+  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 100, matchingQuery), { explicit:true, deadlineMs:8000 });
   add("jarir-direct", () => searchJarir(providerQuery, plan.jarirLimit, matchingQuery), { explicit:true, deadlineMs:8000 });
   // Virgin UAE is a certified core comparison source. Run it explicitly in the
   // first wave so Jarir cannot be the only merchant visible to the shopper.
