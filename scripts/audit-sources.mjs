@@ -9,8 +9,16 @@ for(let i=0;i<args.length;i++){
   if(!args[i].startsWith("--") && outputPath==="source-audit-results.json") outputPath=args[i];
 }
 const audit = await auditFreeStorefronts({storeId,query});
-const output = JSON.stringify(audit, null, 2);
+const NEGATIVE_QUERY="nawaa-unfindable-943271-20261003";
+const rows=Array.isArray(audit?.results)?audit.results:[];
+const failures=[];
+for(const row of rows){
+  if(query===NEGATIVE_QUERY && Number(row?.offers||0)!==0) failures.push(`${row.storeId}: negative control returned ${row.offers} offers`);
+  if(query && query!==NEGATIVE_QUERY && (row?.status==="ERROR" || Number(row?.offers||0)===0)) failures.push(`${row.storeId}: positive query produced no usable offers (${row?.error||row?.status||"unknown"})`);
+}
+const output = JSON.stringify({...audit,acceptance:{passed:failures.length===0,failures}}, null, 2);
 await writeFile(outputPath, output);
 console.log(output);
+if(failures.length) process.exitCode=1;
 
 // Phase III audit trigger: PR validates the live-source acceptance matrix.
