@@ -2,7 +2,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import https from "node:https";
 import { moneyToSAR } from "./fx.mjs";
-import { normalizeCondition, parseMoney } from "./provider-utils.mjs";
+import { normalizeCondition, normalizeAvailability, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
@@ -559,7 +559,7 @@ export async function resolveProductUrl(url, options = {}) {
     : null;
 
   const country = inferCountry(finalUrl, originalCurrency);
-  const rawCondition = product && product.itemCondition || "new";
+  const rawCondition = product && product.itemCondition || "";
   const condition = normalizeCondition(rawCondition);
 
   return {
@@ -583,8 +583,8 @@ export async function resolveProductUrl(url, options = {}) {
       modelNumber: product?.mpn || null,
       barcode: product?.gtin13 || product?.gtin14 || product?.gtin || null,
     },
-    condition: condition === "unknown" ? "new" : condition,
-    availability: offer && offer.availability.includes("instock") ? "in_stock" : "unknown",
+    condition,
+    availability: normalizeAvailability(offer?.availability || ""),
     canShipToSaudi: country.countryCode === "SA" ? true : null,
     productPrice: (priceSAR && priceSAR.value) ?? null,
     originalProductPrice: originalPrice,
@@ -593,7 +593,7 @@ export async function resolveProductUrl(url, options = {}) {
     tax: null,
     mandatoryFees: 0,
     discount: 0,
-    currency: "SAR",
+    currency: priceSAR ? "SAR" : null,
     originalCurrency: originalCurrency,
     exactMatch: true,
     matchConfidence: title ? 0.98 : 0.7,
