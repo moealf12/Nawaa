@@ -147,3 +147,67 @@ test('ingestion returns a stable error without exposing database details',async(
  assert.equal(result.status,500);
  assert.deepEqual(result.body,{error:'ingest_failed',message:'persistence_failed'});
 });
+
+
+test('invalid Host cannot crash the server and health remains available',async()=>{
+ const script=`
+ import http from 'node:http';
+ process.env.PORT='0';
+ const listen=http.Server.prototype.listen;
+ http.Server.prototype.listen=function(...args){this.once('listening',()=>{
+   const port=this.address().port;
+   const req=http.request({host:'127.0.0.1',port,path:'/health',headers:{host:'['}},res=>{
+     let body='';res.on('data',x=>body+=x);res.on('end',()=>{
+       console.log('RESULT '+JSON.stringify({status:res.statusCode,body:JSON.parse(body)}));
+       this.close(()=>process.exit(0));
+     });
+   });req.on('error',()=>process.exit(1));req.end();
+ });return listen.apply(this,args);};
+ await import('./server/server.mjs');`;
+ const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',script],{cwd:new URL('..',import.meta.url),timeout:10000});
+ const result=JSON.parse(stdout.split('\n').find(x=>x.startsWith('RESULT ')).slice(7));
+ assert.equal(result.status,200);
+ assert.equal(result.body.ok,true);
+});
+
+test('search SSE reaches done without error under mocked providers',async()=>{
+ const script=`
+ import http from 'node:http';
+ process.env.PORT='0';
+ globalThis.fetch=async url=>{
+   if(String(url).startsWith('https://search.unbxd.io/'))return Response.json({response:{products:[]}});
+   if(String(url).startsWith('https://ac.cnstrc.com/'))return Response.json({response:{results:[]}});
+   return new Response('',{headers:{'content-type':'text/html'}});
+ };
+ const listen=http.Server.prototype.listen;
+ http.Server.prototype.listen=function(...args){this.once('listening',()=>{
+   http.get({host:'127.0.0.1',port:this.address().port,path:'/api/search/stream?q=iphone'},res=>{
+     let body='';res.on('data',x=>body+=x);res.on('end',()=>{
+       console.log('RESULT '+JSON.stringify({status:res.statusCode,body}));
+       this.close(()=>process.exit(0));
+     });
+   });
+ });return listen.apply(this,args);};
+ await import('./server/server.mjs');`;
+ const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',script],{cwd:new URL('..',import.meta.url),timeout:20000});
+ const result=JSON.parse(stdout.split('\n').find(x=>x.startsWith('RESULT ')).slice(7));
+ assert.equal(result.status,200);
+ assert.match(result.body,/event: done/);
+ assert.doesNotMatch(result.body,/event: error/);
+});
+
+test('Node server serves homepage assets from the bounded assets directory',async()=>{
+ const script=`
+ import http from 'node:http';
+ process.env.PORT='0';
+ const listen=http.Server.prototype.listen;
+ http.Server.prototype.listen=function(...args){this.once('listening',()=>{
+   http.get({host:'127.0.0.1',port:this.address().port,path:'/assets/nawaa-hero-sculpture.png'},res=>{
+     res.resume();res.on('end',()=>{console.log('RESULT '+JSON.stringify({status:res.statusCode,type:res.headers['content-type']}));this.close(()=>process.exit(0));});
+   });
+ });return listen.apply(this,args);};
+ await import('./server/server.mjs');`;
+ const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',script],{cwd:new URL('..',import.meta.url),timeout:10000});
+ const result=JSON.parse(stdout.split('\n').find(x=>x.startsWith('RESULT ')).slice(7));
+ assert.equal(result.status,200);
+});
