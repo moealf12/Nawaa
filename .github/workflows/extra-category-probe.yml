@@ -1,8 +1,11 @@
 name: eXtra Category Probe
 on:
   push:
-    branches: [feature/source-inspector-phase1-20261007]
-    paths: [.github/workflows/extra-category-probe.yml]
+    branches:
+      - feature/source-inspector-phase1-20261007
+    paths:
+      - .github/workflows/extra-category-probe.yml
+  workflow_dispatch:
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -15,4 +18,20 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Inspect eXtra iPhone category
-        run: node scripts/onboard-source-v2.mjs --id extra-sa-iphone17 --url "https://www.extra.com/en-sa/iphone-17-series/c/All-iPhone-17/facet/citySelectionForm"
+        run: |
+          node --input-type=module <<'NODE'
+          import {inspectSource} from "./server/source-inspector/inspector.mjs";
+          import {createExtractionProfile} from "./server/source-inspector/profiling/profile-schema.mjs";
+          import {applyInspectorEvidence} from "./server/source-inspector/profiling/profile-builder.mjs";
+          const url="https://www.extra.com/en-sa/iphone-17-series/c/All-iPhone-17/facet/citySelectionForm";
+          const inspection=await inspectSource(url);
+          const profile=applyInspectorEvidence(createExtractionProfile({sourceId:"extra-sa",sourceUrl:url}),inspection);
+          console.log(JSON.stringify({
+            pagination:inspection.probes.pagination,
+            selectedStrategy:inspection.selectedStrategy,
+            deepProbeRequired:inspection.deepProbeRequired,
+            market:profile.market,
+            currency:profile.currency,
+            mechanisms:profile.mechanisms
+          },null,2));
+          NODE
