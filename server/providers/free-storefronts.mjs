@@ -1503,9 +1503,13 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       let verifiedUrl;
       try {
         verifiedUrl = new URL(item.sourceUrl);
-        if (!["https:","http:"].includes(verifiedUrl.protocol) ||
-            !sameHost(verifiedUrl.href,searchUrl) ||
-            !store.productPath.test(verifiedUrl.href)) return null;
+        if (!["https:","http:"].includes(verifiedUrl.protocol)) return null;
+        // The storefront's public HTML is untrusted discovery data. Strictly
+        // require its canonical PDP pattern; trusted first-party API adapters
+        // have their own verified URLs and may use different catalog paths.
+        if (htmlFirstOffers.length &&
+            (!sameHost(verifiedUrl.href,searchUrl) ||
+             !store.productPath.test(verifiedUrl.href))) return null;
       } catch { return null; }
       const rawPrice = Number(item.price);
       const currency = String(item.currency || "").toUpperCase();
