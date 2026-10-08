@@ -37,6 +37,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         include:
           - { case: "1", source: jarir, query: "iPhone 17 256GB" }
@@ -73,6 +74,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         include:
           - { case: "16", source: ikea-sa, query: "chair" }
@@ -106,6 +108,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         include:
           - { case: "31", source: centrepoint-sa, query: "dress" }
@@ -120,9 +123,6 @@ jobs:
           - { case: "40", source: niceone-sa, query: "perfume" }
           - { case: "41", source: niceone-sa, query: "lipstick" }
           - { case: "42", source: niceone-sa, query: "nawaa-unfindable-943271-20261003" }
-          - { case: "43", source: ebay, query: "iPhone 17 256GB" }
-          - { case: "44", source: ebay, query: "Canon camera" }
-          - { case: "45", source: ebay, query: "nawaa-unfindable-943271-20261003" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -147,6 +147,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         include:
           - { case: "46", source: newegg-us, query: "SSD" }
@@ -180,6 +181,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         include:
           - { case: "64", source: asos-global, query: "dress" }
@@ -205,10 +207,12 @@ jobs:
           path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
 
   phase3-batch6:
+    if: ${{ vars.NAWAA_SHOPIFY_CI_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         include:
           - { case: "76", source: "shopify:native-union", query: "charger" }
@@ -239,6 +243,37 @@ jobs:
         with:
           name: phase3-${{ matrix.source }}-${{ matrix.case }}
           path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
+
+  phase3-ebay-configured:
+    if: ${{ vars.NAWAA_EBAY_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - { case: "43", source: ebay, query: "iPhone 17 256GB" }
+          - { case: "44", source: ebay, query: "Canon camera" }
+          - { case: "45", source: ebay, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Audit configured eBay source
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+          EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+        run: node scripts/audit-sources.mjs "phase3-ebay-${{ matrix.case }}.json" --store "ebay" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-ebay-${{ matrix.case }}
+          path: phase3-ebay-${{ matrix.case }}.json
 
   audit:
     runs-on: ubuntu-latest
