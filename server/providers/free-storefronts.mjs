@@ -1498,7 +1498,19 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         },
       }));
     const directOffers = (await Promise.all(directSearchOffers.map(async (item) => {
-      const converted = await moneyToSAR(item.price, item.currency).catch(() => null);
+      // Discovery is not certification: only accept an offer when its source
+      // URL is a merchant-owned product page and its price/currency are explicit.
+      let verifiedUrl;
+      try {
+        verifiedUrl = new URL(item.sourceUrl);
+        if (!["https:","http:"].includes(verifiedUrl.protocol) ||
+            !sameHost(verifiedUrl.href,searchUrl) ||
+            !store.productPath.test(verifiedUrl.href)) return null;
+      } catch { return null; }
+      const rawPrice = Number(item.price);
+      const currency = String(item.currency || "").toUpperCase();
+      if (!Number.isFinite(rawPrice) || rawPrice <= 0 || !/^[A-Z]{3}$/.test(currency)) return null;
+      const converted = await moneyToSAR(rawPrice, currency).catch(() => null);
       if (!converted) return null;
       return {
         provider:"free-storefronts",
@@ -1510,7 +1522,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         isLocal:store.countryCode === "SA",
         exactMatch:false,
         matchConfidence:0.9,
-        sourceUrl:item.sourceUrl,
+        sourceUrl:verifiedUrl.href,
         image:item.image,
         title:item.title,
         productType:item.productType || null,
@@ -1530,7 +1542,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         observedAt:new Date().toISOString(),
         dataKind:"live",
         fx:{ rate:converted.rate, source:converted.source, observedAt:converted.observedAt },
-        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true },
+        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true, acquisitionFallback:searchDiagnostics?.acquisitionFallback || null, verifiedProductPageUrl:true, verifiedPriceCurrency:true },
       };
     }))).filter(Boolean);
     const allOffers = [...directOffers, ...resolvedOffers];
