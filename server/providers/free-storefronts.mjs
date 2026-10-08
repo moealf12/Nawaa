@@ -690,7 +690,7 @@ export function extractAliExpressSearchOffers(html, query) {
     // than the merchant's canonical PDP. Build the documented item URL only
     // from a numeric productId already present in the priced product card.
     let sourceUrl = sourceRaw ? decodeJsonString(sourceRaw).replace(/&amp;/g, "&") : "";
-    if (!/^https?:\\/\\/[^/]*aliexpress\\.com\\/item\\/\\d+\\.html/i.test(sourceUrl)) {
+    if (!(new URL(sourceUrl || "https://www.aliexpress.com/").hostname.endsWith("aliexpress.com") && /\/item\/\d+\.html(?:[?#]|$)/i.test(sourceUrl))) {
       sourceUrl = "https://www.aliexpress.com/item/" + productId + ".html";
     }
     offers.push({ productId, title, image, price, currency, sourceUrl });
