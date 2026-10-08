@@ -14,12 +14,12 @@ on:
       - "server/providers/free-storefronts.mjs"
 
 jobs:
-  live-certification:
+  batch-1:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 3
       matrix:
         include:
           - { source: "aliexpress-cn", q1: "charger", q2: "cable" }
@@ -27,36 +27,204 @@ jobs:
           - { source: "asos-global", q1: "dress", q2: "shirt" }
           - { source: "amazon-sa", q1: "iphone 17", q2: "hp laptop" }
           - { source: "amazon-ae", q1: "iphone 17", q2: "airpods" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Certify source within ordered batch 1
+        run: node scripts/certify-active-source.mjs "${{ matrix.source }}" "${{ matrix.q1 }}" "${{ matrix.q2 }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: active-certification-${{ matrix.source }}
+          path: active-source-${{ matrix.source }}.json
+
+  batch-2:
+    needs: batch-1
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
           - { source: "noon-ae", q1: "iphone 17", q2: "airpods" }
           - { source: "sharafdg-ae", q1: "hp laptop", q2: "airpods" }
           - { source: "virgin-ae", q1: "airpods", q2: "playstation 5" }
           - { source: "xcite-kw", q1: "hp laptop", q2: "airpods" }
           - { source: "lulu-ae", q1: "iphone 17", q2: "airpods" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Certify source within ordered batch 2
+        run: node scripts/certify-active-source.mjs "${{ matrix.source }}" "${{ matrix.q1 }}" "${{ matrix.q2 }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: active-certification-${{ matrix.source }}
+          path: active-source-${{ matrix.source }}.json
+
+  batch-3:
+    needs: batch-2
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
           - { source: "lulu-sa", q1: "iphone 17", q2: "samsung" }
           - { source: "samsung-sa", q1: "galaxy s25", q2: "television" }
           - { source: "carrefour-ae", q1: "iphone 17", q2: "laptop" }
           - { source: "microless-ae", q1: "iphone 17", q2: "laptop" }
           - { source: "jumbo-ae", q1: "iphone 17", q2: "airpods" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Certify source within ordered batch 3
+        run: node scripts/certify-active-source.mjs "${{ matrix.source }}" "${{ matrix.q1 }}" "${{ matrix.q2 }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: active-certification-${{ matrix.source }}
+          path: active-source-${{ matrix.source }}.json
+
+  batch-4:
+    needs: batch-3
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
           - { source: "newegg-global", q1: "SSD", q2: "laptop" }
           - { source: "bestbuy-us", q1: "laptop", q2: "headphones" }
           - { source: "nike-sa", q1: "shoes", q2: "shirt" }
           - { source: "namshi-sa", q1: "shoes", q2: "shirt" }
           - { source: "centrepoint-sa", q1: "dress", q2: "shirt" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Certify source within ordered batch 4
+        run: node scripts/certify-active-source.mjs "${{ matrix.source }}" "${{ matrix.q1 }}" "${{ matrix.q2 }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: active-certification-${{ matrix.source }}
+          path: active-source-${{ matrix.source }}.json
+
+  batch-5:
+    needs: batch-4
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
           - { source: "maxfashion-sa", q1: "dress", q2: "shirt" }
           - { source: "decathlon-sa", q1: "shoes", q2: "backpack" }
           - { source: "niceone-sa", q1: "perfume", q2: "lipstick" }
           - { source: "goldenscent-sa", q1: "perfume", q2: "lipstick" }
           - { source: "ounass-sa", q1: "bag", q2: "shoes" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Certify source within ordered batch 5
+        run: node scripts/certify-active-source.mjs "${{ matrix.source }}" "${{ matrix.q1 }}" "${{ matrix.q2 }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: active-certification-${{ matrix.source }}
+          path: active-source-${{ matrix.source }}.json
+
+  batch-6:
+    needs: batch-5
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
           - { source: "sunandsand-sa", q1: "shoes", q2: "shirt" }
           - { source: "virgin-sa", q1: "airpods", q2: "iphone" }
           - { source: "homecentre-sa", q1: "chair", q2: "table" }
           - { source: "mumzworld-sa", q1: "stroller", q2: "baby" }
           - { source: "netaporter-global", q1: "dress", q2: "bag" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Certify source within ordered batch 6
+        run: node scripts/certify-active-source.mjs "${{ matrix.source }}" "${{ matrix.q1 }}" "${{ matrix.q2 }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: active-certification-${{ matrix.source }}
+          path: active-source-${{ matrix.source }}.json
+
+  batch-7:
+    needs: batch-6
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
           - { source: "mrporter-global", q1: "shoes", q2: "shirt" }
           - { source: "mytheresa-global", q1: "bag", q2: "shoes" }
           - { source: "ssense-global", q1: "shirt", q2: "shoes" }
           - { source: "jomashop-global", q1: "watch", q2: "seiko" }
           - { source: "fragrancex-global", q1: "perfume", q2: "dior" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Certify source within ordered batch 7
+        run: node scripts/certify-active-source.mjs "${{ matrix.source }}" "${{ matrix.q1 }}" "${{ matrix.q2 }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: active-certification-${{ matrix.source }}
+          path: active-source-${{ matrix.source }}.json
+
+  batch-8:
+    needs: batch-7
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
           - { source: "lookfantastic-global", q1: "cleanser", q2: "serum" }
           - { source: "cultbeauty-global", q1: "serum", q2: "cleanser" }
           - { source: "stockx-global", q1: "shoes", q2: "sneakers" }
@@ -67,10 +235,11 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci --ignore-scripts
-      - name: Certify real product search for one source
+      - name: Certify source within ordered batch 8
         run: node scripts/certify-active-source.mjs "${{ matrix.source }}" "${{ matrix.q1 }}" "${{ matrix.q2 }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: active-certification-${{ matrix.source }}
           path: active-source-${{ matrix.source }}.json
+
