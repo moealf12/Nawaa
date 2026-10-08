@@ -380,7 +380,8 @@ assert.ok(laptopRoutes.length <= 8);
 const expandedLaptopRoutes = routeFreeStorefronts("لابتوب hp", 16);
 assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "newegg-global"));
 assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bestbuy-us"));
-assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bhphoto-us"));
+assert.ok(!expandedLaptopRoutes.some((route) => route.store.id === "bhphoto-us"));
+assert.ok(quarantinedFreeStorefronts().some((store) => store.id === "bhphoto-us" && store.disabledReason === "http_403_live_search"));
 
 const perfumeRoutes = routeFreeStorefronts("عطر", 12);
 assert.ok(["niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0].store.id));
