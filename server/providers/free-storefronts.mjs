@@ -676,7 +676,7 @@ export function extractAliExpressSearchOffers(html, query) {
     const price = Number(priceBlock?.match(/"minPrice":([0-9]+(?:\.[0-9]+)?)/)?.[1]);
     const sourceRaw = block.match(/"productDetailUrl":"((?:\\.|[^"\\])*)"/)?.[1] || null;
 
-    if (!productId || !titleRaw || !currency || !Number.isFinite(price) || price <= 0 || !sourceRaw) continue;
+    if (!productId || !titleRaw || !currency || !Number.isFinite(price) || price <= 0) continue;
     const title = decodeJsonString(titleRaw);
     const haystack = normalizeSearchQuery(title);
     const hits = tokens.filter((token) => haystack.includes(token)).length;
@@ -686,7 +686,13 @@ export function extractAliExpressSearchOffers(html, query) {
 
     let image = imageRaw ? decodeJsonString(imageRaw) : null;
     if (image?.startsWith("//")) image = "https:" + image;
-    const sourceUrl = decodeJsonString(sourceRaw).replace(/&amp;/g, "&");
+    // Search cards sometimes provide only an SSR bundle-deals link rather
+    // than the merchant's canonical PDP. Build the documented item URL only
+    // from a numeric productId already present in the priced product card.
+    let sourceUrl = sourceRaw ? decodeJsonString(sourceRaw).replace(/&amp;/g, "&") : "";
+    if (!/^https?:\\/\\/[^/]*aliexpress\\.com\\/item\\/\\d+\\.html/i.test(sourceUrl)) {
+      sourceUrl = "https://www.aliexpress.com/item/" + productId + ".html";
+    }
     offers.push({ productId, title, image, price, currency, sourceUrl });
   }
   return offers;
