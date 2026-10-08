@@ -1362,6 +1362,22 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
         return merged;
       })();
+    // Specialized search parsers are preferred. When a public search page is
+    // readable but its layout has changed, fall back to standards-based HTML
+    // metadata (JSON-LD) and embedded SSR state. Downstream offer validation
+    // still applies; never manufacture a price from links alone.
+    if (!htmlFirstOffers.length && html) {
+      const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+      const jsonLd = extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+      const seen = new Set();
+      for (const offer of [...embedded, ...jsonLd]) {
+        const key = canonicalizeCandidateUrl(offer.sourceUrl || "") + "|" + Number(offer.price) + "|" + String(offer.currency || "");
+        if (!seen.has(key)) { seen.add(key); htmlFirstOffers.push(offer); }
+      }
+      if (htmlFirstOffers.length) {
+        searchDiagnostics = { ...(searchDiagnostics || {}), acquisitionFallback:"html-structured-metadata" };
+      }
+    }
     if (!htmlFirstOffers.length) {
       if (store.id === "namshi-sa" && /\bshoes?\b/i.test(normalizeSearchQuery(query))) {
         try {
