@@ -1092,21 +1092,35 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
 }
 
 async function fetchText(url,{signal}={}) {
-  const response = await fetch(url, {
-    headers:{
-      accept:"text/html,application/xhtml+xml",
-      "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
-      "cache-control":"no-cache",
-      pragma:"no-cache",
-      "sec-fetch-dest":"document",
-      "sec-fetch-mode":"navigate",
-      "sec-fetch-site":"none",
-      "upgrade-insecure-requests":"1",
-      "user-agent":USER_AGENT,
-    },
-    redirect:"follow",
-    signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),
-  });
+  const combinedSignal=signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000);
+  let response;
+  // A single bounded retry handles transient origin 503s. Never retry
+  // access-denied responses (401/403), 429 rate limits, or challenge pages.
+  for (let attempt=0;attempt<2;attempt++){
+    combinedSignal.throwIfAborted();
+    response=await fetch(url, {
+      headers:{
+        accept:"text/html,application/xhtml+xml",
+        "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
+        "cache-control":"no-cache",
+        pragma:"no-cache",
+        "sec-fetch-dest":"document",
+        "sec-fetch-mode":"navigate",
+        "sec-fetch-site":"none",
+        "upgrade-insecure-requests":"1",
+        "user-agent":USER_AGENT,
+      },
+      redirect:"follow",
+      signal:combinedSignal,
+    });
+    if(response.status!==503 || attempt===1)break;
+    await response.body?.cancel().catch(()=>{});
+    await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{combinedSignal.removeEventListener("abort",onAbort);resolve();},350);
+      const onAbort=()=>{clearTimeout(timer);reject(combinedSignal.reason);};
+      combinedSignal.addEventListener("abort",onAbort,{once:true});
+    });
+  }
   if (!response.ok) throw new Error("HTTP " + response.status);
   const type = response.headers.get("content-type") || "";
   if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("non-html response");
