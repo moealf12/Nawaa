@@ -1,0 +1,36 @@
+import {writeFile} from "node:fs/promises";
+import {configuredFreeStorefronts,searchFreeStorefrontById} from "../server/providers/free-storefronts.mjs";
+
+// One isolated source per CI job. This tests its real extraction path, not
+// an in-memory fixture or a count of registry entries.
+const [id,...queries]=process.argv.slice(2);
+const active=configuredFreeStorefronts();
+if(!id || queries.length!==2 || !active.some(s=>s.id===id)) {
+  console.error("invalid_source_or_queries"); process.exit(2);
+}
+const negative="nawaa-unfindable-943271-20261003";
+const cases=[...queries,negative];
+const report={source:id,observedAt:new Date().toISOString(),cases:[],passed:false};
+for(const query of cases){
+  const started=Date.now();
+  try{
+    const result=await searchFreeStorefrontById(id,query,{perStore:10});
+    const offers=Array.isArray(result?.offers)?result.offers:[];
+    const valid=offers.filter(o=>
+      typeof o.title==="string" && o.title.trim().length>=3 &&
+      typeof o.sourceUrl==="string" && /^https:\/\//i.test(o.sourceUrl) &&
+      typeof o.image==="string" && /^https?:\/\//i.test(o.image) &&
+      Number.isFinite(o.productPrice) && o.productPrice>0 &&
+      o.currency==="SAR");
+    const pass=query===negative ? offers.length===0 : valid.length>0;
+    report.cases.push({query,pass,offerCount:offers.length,validCount:valid.length,
+      ms:Date.now()-started,error:result?.diagnostics?.primarySearchError||null,
+      examples:valid.slice(0,2).map(o=>({title:o.title,price:o.productPrice,url:o.sourceUrl}))});
+  }catch(error){
+    report.cases.push({query,pass:false,ms:Date.now()-started,error:error?.message||String(error)});
+  }
+}
+report.passed=report.cases.every(c=>c.pass);
+await writeFile("active-source-"+id+".json",JSON.stringify(report,null,2)+"\n");
+console.log(JSON.stringify(report,null,2));
+if(!report.passed)process.exitCode=1;
