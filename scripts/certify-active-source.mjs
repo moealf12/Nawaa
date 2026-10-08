@@ -23,8 +23,19 @@ for(const query of cases){
       Number.isFinite(o.productPrice) && o.productPrice>0 &&
       o.currency==="SAR");
     const pass=query===negative ? offers.length===0 : valid.length>0;
+    const diagnostic=result?.diagnostics || {};
+    const extraction=diagnostic.searchPage || diagnostic.searchDiagnostics || {};
+    const failureKind=pass?null:
+      query===negative?"NEGATIVE_FALSE_POSITIVE":
+      Number(result?.candidates||0)>0?"CANDIDATES_WITHOUT_VALID_OFFERS":
+      diagnostic.primarySearchError?"SEARCH_TRANSPORT_OR_API_FAILED":"NO_PRODUCT_CANDIDATES";
     report.cases.push({query,pass,offerCount:offers.length,validCount:valid.length,
-      ms:Date.now()-started,error:result?.diagnostics?.primarySearchError||null,
+      candidates:result?.candidates??null,failedProductPages:result?.failures??null,
+      failureKind,ms:Date.now()-started,error:diagnostic.primarySearchError||null,
+      acquisitionFallback:diagnostic.acquisitionFallback||null,
+      searchDiagnostics:diagnostic.searchPageDiagnostics||diagnostic.searchDiagnostics||null,
+      candidateSamples:(diagnostic.candidateSamples||[]).slice(0,3),
+      failureSamples:(diagnostic.failureSamples||[]).slice(0,3),
       examples:valid.slice(0,2).map(o=>({title:o.title,price:o.productPrice,url:o.sourceUrl}))});
   }catch(error){
     report.cases.push({query,pass:false,ms:Date.now()-started,error:error?.message||String(error)});
