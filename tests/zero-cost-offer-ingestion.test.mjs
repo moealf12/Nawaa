@@ -4,13 +4,13 @@ import {OFFER_INGESTION_QUEUE,createOfferIngestionHandler,enqueueVerifiedOffer,r
 const offer={title:"HP Pavilion 15 Laptop",sourceUrl:"https://example.com/item/15",productPrice:2100,currency:"SAR",merchant:"Verified Store"};
 test("background ingestion records verified positive-price offers through ACID persistence hook",async()=>{
  let recorded=null;
- const handler=createOfferIngestionHandler({record:async offer=>{recorded=offer;return {recorded:true,observationId:10};}});
+ const handler=createOfferIngestionHandler({verify:async ({sourceId,offer})=>sourceId==="ikea-sa"&&offer.productPrice===2100,record:async offer=>{recorded=offer;return {recorded:true,observationId:10};}});
  const outcome=await handler({data:{sourceId:"ikea-sa",verifiedBySource:"ikea-sa",offer}});
  assert.equal(outcome.observationId,10);assert.equal(recorded.sourceName,"ikea-sa");assert.equal(recorded.productPrice,2100);
 });
 test("background ingestion rejects unverified or malformed offers before persistence",async()=>{
  let called=0;
- const handler=createOfferIngestionHandler({record:async()=>{called++;return {recorded:true};}});
+ const handler=createOfferIngestionHandler({verify:async()=>true,record:async()=>{called++;return {recorded:true};}});
  const base={sourceId:"ikea-sa",verifiedBySource:"ikea-sa",offer};
  for(const bad of [{...base,verifiedBySource:"unknown"},{...base,offer:{...offer,productPrice:0}},{...base,offer:{...offer,sourceUrl:"http://example.com/item"}},{...base,offer:{...offer,merchant:undefined}},{...base,sourceId:"../../etc"}]){
   await assert.rejects(handler({data:bad}));
@@ -29,4 +29,12 @@ test("worker registers explicit bounded concurrency only, without starting datab
  assert.equal(name,OFFER_INGESTION_QUEUE);assert.equal(opts.teamSize,2);
  assert.equal(typeof fn,"function");
  await assert.rejects(registerOfferIngestionWorker({work:()=>{}},{teamSize:100}),/invalid_team_size/);
+});
+
+test("untrusted queue flag cannot approve merchant observations",async()=>{
+ let writes=0;
+ const job={data:{sourceId:"ikea-sa",verifiedBySource:"ikea-sa",offer}};
+ await assert.rejects(createOfferIngestionHandler({record:async()=>{writes++;return {recorded:true};}})(job),/trusted_source_verifier_required/);
+ await assert.rejects(createOfferIngestionHandler({verify:async()=>false,record:async()=>{writes++;return {recorded:true};}})(job),/trusted_source_verifier_required/);
+ assert.equal(writes,0);
 });
