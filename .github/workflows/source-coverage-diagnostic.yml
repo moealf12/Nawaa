@@ -1,0 +1,24 @@
+name: NAWAA - offline source coverage diagnostic
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - "server/tooling/source-coverage-diagnostic.mjs"
+      - "tests/source-coverage-diagnostic.test.mjs"
+      - "scripts/probe-source-coverage-diagnostic.mjs"
+      - ".github/workflows/source-coverage-diagnostic.yml"
+permissions:
+  contents: read
+jobs:
+  offline-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node --test tests/source-coverage-diagnostic.test.mjs
+      - run: node scripts/probe-source-coverage-diagnostic.mjs
