@@ -40,3 +40,10 @@ test("a source with one positive search and one empty search must fail",()=>{
   const report=summarizeCertification(["a"],new Map([["a",item]]));
   assert.equal(report.passed,false);
 });
+
+test("registry shrink cannot turn a required 39-source certification green",()=>{
+  const report=summarizeCertification(["a"],new Map([["a",certified("a")]]),39);
+  assert.equal(report.stats.expected,1);
+  assert.equal(report.requiredActiveCount,39);
+  assert.equal(report.passed,false);
+});
