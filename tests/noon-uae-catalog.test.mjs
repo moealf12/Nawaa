@@ -177,6 +177,6 @@ test("Noon UAE reaches customer-facing storefront routing and paginated acquisit
     assert.equal(result.offers[0].providerMarket,"noon-ae");
     assert.equal(result.offers[0].originalCurrency,"AED");
     assert.equal(result.offers[0].currency,"SAR");
-    assert.equal(calls.some(url=>url.includes("/uae-en/search")||/\\/p\\//.test(url)),false);
+    assert.equal(calls.some(url=>url.includes("/uae-en/search") || url.includes("/p/")),false);
   }finally{globalThis.fetch=original;}
 });
