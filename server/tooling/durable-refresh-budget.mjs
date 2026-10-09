@@ -1,3 +1,4 @@
+import {PILOT_PRODUCTS} from "../../src/ikea-pilot-products.mjs";
 // Opt-in, database-atomic, per-merchant request budget for manual refresh work.
 // Intentionally NOT invoked by HTTP routes, search or background startup.
 const WINDOW_MS=24*60*60*1000;
@@ -26,7 +27,11 @@ export async function initDurableRefreshBudget(){
    "CREATE TABLE IF NOT EXISTS nawaa_refresh_request_budgets ("+
    "source_id text PRIMARY KEY,"+
    "window_started_at timestamptz NOT NULL,"+
-   "requests_used integer NOT NULL CHECK(requests_used >= 0 AND requests_used <= 10))"
+   "requests_used integer NOT NULL CHECK(requests_used >= 0 AND requests_used <= 10));"+
+   "CREATE TABLE IF NOT EXISTS nawaa_refresh_product_attempts ("+
+   "source_id text NOT NULL,sku text NOT NULL,"+
+   "last_attempted_at timestamptz NOT NULL,"+
+   "PRIMARY KEY (source_id,sku))"
   ).catch(error=>{initPromise=null;throw error;});
  }
  await initPromise;
@@ -60,15 +65,7 @@ export async function getDurableRefreshBudget(sourceId,{clock=Date.now}={}){
    requestsUsed:0,remainingRequests:MAX_REQUESTS,resetAt:now+WINDOW_MS};
  return rowResult(found.rows[0],now);
 }
-export async function reserveDurableRefreshRequests(sourceId,{clock=Date.now}={}){
- requireSource(sourceId);
- const now=checkedClock(clock);
- const db=await connection();
- await initDurableRefreshBudget();
- // Each IKEA price proof makes two page GETs: JSON-LD + customer-facing HTML.
- // Charge both BEFORE any network I/O, including failures. No refunds.
- // ON CONFLICT locks the source row and serializes simultaneous reservations.
- const sql=String.raw`
+const RESERVATION_SQL=String.raw`
  INSERT INTO nawaa_refresh_request_budgets AS b
    (source_id,window_started_at,requests_used)
  VALUES($1,$2::timestamptz,2)
@@ -80,11 +77,57 @@ export async function reserveDurableRefreshRequests(sourceId,{clock=Date.now}={}
  WHERE b.window_started_at <= EXCLUDED.window_started_at-INTERVAL '24 hours'
    OR b.requests_used+2 <= 10
  RETURNING source_id,window_started_at,requests_used
- `;
- const result=await db.query(sql,[sourceId,now.toISOString()]);
+ `;;
+export async function reserveDurableRefreshRequests(sourceId,{clock=Date.now}={}){
+ requireSource(sourceId);
+ const now=checkedClock(clock);
+ const db=await connection();
+ await initDurableRefreshBudget();
+ // Each IKEA price proof makes two page GETs: JSON-LD + customer-facing HTML.
+ // Charge both BEFORE any network I/O, including failures. No refunds.
+ // ON CONFLICT locks the source row and serializes simultaneous reservations.
+ const result=await db.query(RESERVATION_SQL,[sourceId,now.toISOString()]);
  if(!result.rowCount)return {admitted:false,reason:"daily_request_budget_exhausted",
   ...(await getDurableRefreshBudget(sourceId,{clock:()=>now.getTime()}))};
  return {admitted:true,chargedRequests:2,...rowResult(result.rows[0],now.getTime())};
+}
+export async function reserveDurableProductRefresh(sourceId,sku,{clock=Date.now}={}){
+ requireSource(sourceId);
+ if(!PILOT_PRODUCTS.some(item=>item.sku===sku))
+  throw new Error("refresh_product_not_approved");
+ const now=checkedClock(clock);
+ const db=await connection();
+ await initDurableRefreshBudget();
+ const tx=await db.connect();
+ try{
+  await tx.query("BEGIN");
+  // The product lease and the two-request quota reservation commit together.
+  // PostgreSQL ON CONFLICT locks the SKU across parallel workers and processes.
+  const lease=await tx.query(String.raw`
+   INSERT INTO nawaa_refresh_product_attempts AS a
+     (source_id,sku,last_attempted_at)
+   VALUES($1,$2,$3::timestamptz)
+   ON CONFLICT(source_id,sku) DO UPDATE SET
+     last_attempted_at=EXCLUDED.last_attempted_at
+   WHERE a.last_attempted_at <= EXCLUDED.last_attempted_at-INTERVAL '6 hours'
+   RETURNING sku
+  `,[sourceId,sku,now.toISOString()]);
+  if(!lease.rowCount){
+   await tx.query("ROLLBACK");
+   return {admitted:false,reason:"product_refresh_cooldown",chargedRequests:0};
+  }
+  const quota=await tx.query(RESERVATION_SQL,[sourceId,now.toISOString()]);
+  if(!quota.rowCount){
+   await tx.query("ROLLBACK");
+   return {admitted:false,reason:"daily_request_budget_exhausted",chargedRequests:0};
+  }
+  await tx.query("COMMIT");
+  return {admitted:true,sku,chargedRequests:2,
+   ...rowResult(quota.rows[0],now.getTime())};
+ }catch(error){
+  try{await tx.query("ROLLBACK");}catch{}
+  throw error;
+ }finally{tx.release();}
 }
 export async function closeDurableRefreshBudget(){
  if(pool){const current=pool;pool=null;initPromise=null;await current.end();}
