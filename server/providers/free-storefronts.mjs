@@ -845,6 +845,7 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
     const priceBlock=priceMatch ? block.slice(priceMatch.index+priceMatch[0].length,priceMatch.index+2000) : "";
     const offscreen=stripHtml(priceBlock.match(/^\s*<span[^>]*class=["'][^"']*a-offscreen[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]||"");
     const price=Number(offscreen.replace(/[^0-9.]/g,""));
+    const currency = new URL(origin).hostname.endsWith(".ae") ? "AED" : "SAR";
     if(title.length<3||!Number.isFinite(price)||price<=0)continue;
     const haystack=normalizeSearchQuery(title);const hits=tokens.filter(t=>haystack.includes(t)).length;
     if(tokens.length>1&&hits/tokens.length<0.2)continue;
@@ -855,7 +856,7 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
       if(candidate.origin===new URL(origin).origin && !candidate.username && !candidate.password && candidate.pathname.match(/\/dp\/([A-Z0-9]{10})(?:\/|$)/i)?.[1].toUpperCase()===asin.toUpperCase()) sourceUrl=candidate.href;
     } catch {}
     seen.add(asin);
-    offers.push({productId:asin,title:stripHtml(title),image,price,currency:"SAR",sourceUrl});
+    offers.push({productId:asin,title:stripHtml(title),image,price,currency,sourceUrl});
   }
   return offers;
 }
@@ -1372,7 +1373,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "carrefour-ae" ? extractCarrefourSearchOffers(html, query) :
       store.id === "samsung-sa" ? extractSamsungSearchOffers(html, query) :
-      store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
+      (store.id === "amazon-sa" || store.id === "amazon-ae") ? extractAmazonSearchOffers(html, query, store.id === "amazon-ae" ? "https://www.amazon.ae" : "https://www.amazon.sa") :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       (() => {
         const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
