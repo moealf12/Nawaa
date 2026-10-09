@@ -175,7 +175,7 @@ const STORES = [
   },
   {
     id:"goldenscent-sa", name:"Golden Scent", countryCode:"SA", countryNameAr:"السعودية", brands:["goldenscent"], categories:["beauty","perfume"],
-    search:(q)=>"https://www.goldenscent.com/en/search?q="+encodeURIComponent(q), productPath:/\/(?!catalog\/product\/)[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+    search:(q)=>"https://www.goldenscent.com/en/search?q="+encodeURIComponent(q), productPath:/\/en\/p\/[^/?#]+(?:[/?#]|$)|\/(?!catalog\/product\/)[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
   },
   {
     id:"ounass-sa", name:"Ounass", countryCode:"SA", countryNameAr:"السعودية", brands:["ounass"], categories:["clothing","shoes","bag","beauty","jewelry","watch"],
@@ -1565,6 +1565,36 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             primarySearchError=null;
           }catch(error){
             primarySearchError=[primarySearchError,"mumzworld-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
+          }
+        }
+      }
+      if (store.id === "goldenscent-sa") {
+        const normalized=normalizeSearchQuery(query);
+        const categoryUrl=/\bperfumes?\b/i.test(normalized)
+          ? "https://www.goldenscent.com/en/c/perfumes"
+          : /\blipsticks?\b/i.test(normalized)
+            ? "https://www.goldenscent.com/en/c/beauty/makeup/lips" : null;
+        if(categoryUrl){
+          try{
+            const page=await fetchText(categoryUrl,{signal:options.signal});
+            html=page.html;
+            searchPageFinalUrl=page.finalUrl||categoryUrl;
+            searchDiagnostics={
+              ...searchPageDiagnostics(html,categoryUrl,searchPageFinalUrl),
+              acquisitionFallback:"goldenscent-official-category",
+            };
+            const embedded=extractEmbeddedSearchOffers(html,searchPageFinalUrl,store,query);
+            const jsonLd=extractJsonLdSearchOffers(html,searchPageFinalUrl,store,query);
+            const seen=new Set();
+            htmlFirstOffers=[];
+            for(const offer of [...embedded,...jsonLd]){
+              const key=canonicalizeCandidateUrl(offer.sourceUrl||"")+"|"+offer.price+"|"+offer.currency;
+              if(seen.has(key))continue;
+              seen.add(key);htmlFirstOffers.push(offer);
+            }
+            primarySearchError=null;
+          }catch(error){
+            primarySearchError=[primarySearchError,"goldenscent-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
           }
         }
       }
