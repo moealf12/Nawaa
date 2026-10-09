@@ -20,8 +20,8 @@ function signedBody(sourceId,offer,issuedAt) {
   // A fixed field order binds the signature to price, currency, product URL,
   // image and identity. Extra untrusted job metadata is not authoritative.
   return JSON.stringify([1,sourceId,issuedAt,offer.sourceUrl,offer.title,
-    offer.productPrice,offer.currency,offer.merchant||"",offer.image||offer.imageUrl||"",
-    offer.sku||""]);
+    offer.productPrice,offer.currency,offer.merchant||"",offer.image||"",
+    offer.imageUrl||"",offer.sku||""]);
 }
 function assertKey(key) {
   if(typeof key!=="string"||Buffer.byteLength(key,"utf8")<32)throw new Error("source_signing_key_required");
