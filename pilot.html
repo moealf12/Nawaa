@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>نواة | اختبار المصادر المعتمدة</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{color-scheme:dark;--bg:#07111d;--card:#102235;--line:#273d50;--text:#f6f9ff;--sub:#a7b8ca;--accent:#77b9ff;--ok:#8cf5ba;--bad:#ff9da7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1140px;margin:auto;padding:36px 18px 80px}h1{font-size:clamp(26px,4vw,43px);margin:10px 0}h2{font-size:22px}p{color:var(--sub)}
+a{color:var(--accent)}.head{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}.eyebrow{color:var(--accent);font-weight:700;letter-spacing:2px;font-size:11px}
+.summary{display:flex;flex-wrap:wrap;gap:10px;margin:24px 0}.pill{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:10px 15px}.pill strong{color:var(--accent)}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}.btn,input{font:inherit;border:1px solid var(--line);border-radius:10px;padding:10px;background:#071725;color:var(--text)}
+.btn{background:var(--accent);color:#07111d;font-weight:750;cursor:pointer}.btn:disabled{opacity:.45;cursor:wait}input{min-width:120px;flex:1}
+.sources{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+.source{padding:16px;background:var(--card);border:1px solid var(--line);border-radius:15px}
+.source-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.source-head b{font-size:16px}
+.source small{color:var(--sub)}.controls{display:flex;gap:8px;margin-top:12px}.source-status{margin-top:9px;color:var(--sub);font-size:12px;min-height:18px}
+.results{margin-top:34px}.result-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.product{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:14px;overflow:hidden}
+.product img{width:100%;height:156px;object-fit:contain;background:#fff;border-radius:9px;padding:10px}
+.product h3{font-size:14px;min-height:50px}.product b{font-size:21px;color:var(--ok)}
+.notice{border-right:3px solid var(--accent);padding:12px;background:#11263b}
+.error{color:var(--bad)}.ok{color:var(--ok)}.muted{color:var(--sub)}
+</style>
+</head>
+<body>
+<main>
+  <div class="head"><div><div class="eyebrow">NAWAA · LIVE SOURCE PILOT</div><h1>اختبار المصادر المعتمدة</h1></div><a href="/search.html">العودة إلى بحث نواة ←</a></div>
+  <p>بيئة فحص مستقلة للمتاجر التي نجحت في تقرير الاعتماد. الاختبار يجلب منتجات وأسعارًا حقيقية عند الضغط؛ لا يستخدم بيانات تجريبية ولا يغيّر بحث العملاء.</p>
+  <div class="summary"><span class="pill">المصادر: <strong id="count">—</strong></span><span class="pill">اختبارات ناجحة الآن: <strong id="passed">0</strong></span><span class="pill">جرى فحصها: <strong id="checked">0</strong></span><span class="pill">اعتماد سابق: <strong id="run">—</strong></span></div>
+  <div class="notice" id="notice">جاري جلب قائمة المصادر من الخادم…</div>
+  <h2>اختبر كل مصدر على حدة</h2>
+  <div class="sources" id="sources"></div>
+  <section class="results" aria-live="polite"><h2 id="resultHeading">نتائج الفحص المباشر</h2><p id="resultStatus">اختر مصدرًا ثم اضغط «اختبر».</p><div class="result-grid" id="results"></div></section>
+</main>
+<script type="module">
+const $=id=>document.getElementById(id);
+const statuses=new Map();
+const flags={SA:"🇸🇦",CN:"🇨🇳",GB:"🇬🇧",US:"🇺🇸"};
+function updateCounts(){ $("checked").textContent=[...statuses.values()].filter(s=>s!=="pending").length;$("passed").textContent=[...statuses.values()].filter(s=>s==="live_offers_found").length;}
+function getSourceLink(raw){try{const link=new URL(raw);return link.protocol==="https:"?link.href:null;}catch{return null;}}
+function productCard(offer){
+  const card=document.createElement("article");card.className="product";
+  const img=document.createElement("img");img.loading="lazy";img.alt=String(offer.title||"صورة المنتج");img.src=offer.image;img.referrerPolicy="no-referrer";card.append(img);
+  const title=document.createElement("h3");title.textContent=offer.title;card.append(title);
+  const price=document.createElement("b");price.textContent=new Intl.NumberFormat("ar-SA",{style:"currency",currency:"SAR"}).format(offer.productPrice);card.append(price);
+  const note=document.createElement("p");note.textContent=offer.originalCurrency&&offer.originalCurrency!=="SAR"?"السعر الأصلي: "+(offer.originalCurrency||"")+" — السعر المعروض محوّل للريال":"سعر المتجر بالريال";card.append(note);
+  const href=getSourceLink(offer.sourceUrl);
+  if(href){const link=document.createElement("a");link.href=href;link.target="_blank";link.rel="noopener noreferrer";link.textContent="التحقق من صفحة المنتج الأصلية ↗";card.append(link);}
+  return card;
+}
+async function check(source,input,button,state){
+  const query=input.value.trim();if(query.length<2){state.textContent="أدخل اسم منتج أو عبارة بحث";return;}
+  button.disabled=true;state.textContent="جاري الاتصال بالمتجر وجلب الأسعار…";statuses.set(source.id,"pending");updateCounts();
+  $("resultHeading").textContent=source.name+" — "+query;$("resultStatus").textContent="جارٍ البحث المباشر…";$("results").replaceChildren();
+  try{
+    const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),27000);
+    let response;
+    try{response=await fetch("/api/pilot/source-search?store="+encodeURIComponent(source.id)+"&q="+encodeURIComponent(query),{cache:"no-store",signal:controller.signal});}
+    finally{clearTimeout(timeout);}
+    const data=await response.json();
+    if(!response.ok)throw Error(data?.detail||data?.error||"HTTP "+response.status);
+    const count=data.offers?.length||0;
+    const status=count?"live_offers_found":"no_verified_offers";
+    statuses.set(source.id,status);state.textContent=count?"✓ "+count+" منتجات بأسعار موثقة حاليًا":"لا توجد عروض مؤهلة حاليًا (ليس نجاحًا حيًا)";
+    state.className="source-status "+(count?"ok":"error");
+    $("resultStatus").textContent=count?"عروض حية: "+count+" • المدة "+data.elapsedMs+" ms":"المصدر لم يُرجع منتجات بأسعار موثقة في هذا البحث.";
+    for(const offer of data.offers||[])$("results").append(productCard(offer));
+  }catch(error){
+    statuses.set(source.id,"error");state.textContent="تعذر الفحص: "+String(error.message||error);state.className="source-status error";
+    $("resultStatus").textContent="فشل الاتصال الحي بالمصدر: "+String(error.message||error);
+  }finally{button.disabled=false;updateCounts();}
+}
+async function load(){
+  try{
+    const response=await fetch("/api/pilot/sources",{cache:"no-store"});
+    if(!response.ok)throw Error(response.status===404?"وضع اختبار المصادر غير مفعّل على الخادم المنشور":"HTTP "+response.status);
+    const data=await response.json();
+    $("count").textContent=data.certifiedCount;$("run").textContent=data.certificationRun;
+    $("notice").textContent="هذه قائمة اجتازت اختبارًا سابقًا؛ نتيجة الفحص المباشر هي التي تحدد التوفر الآن. افحص متجرًا واحدًا في كل مرة لتجنب تحديد الطلبات.";
+    for(const source of data.sources){
+      const card=document.createElement("div");card.className="source";
+      const head=document.createElement("div");head.className="source-head";
+      const name=document.createElement("b");name.textContent=(flags[source.countryCode]||"🌐")+" "+source.name;
+      const country=document.createElement("small");country.textContent=source.id;head.append(name,country);
+      const controls=document.createElement("div");controls.className="controls";
+      const input=document.createElement("input");input.value=source.sampleQueries[0];input.ariaLabel="استعلام "+source.name;
+      const button=document.createElement("button");button.className="btn";button.textContent="اختبر";
+      const status=document.createElement("div");status.className="source-status";status.textContent="لم يُختبر بعد";
+      button.onclick=()=>check(source,input,button,status);
+      input.addEventListener("keydown",event=>{if(event.key==="Enter")button.click();});
+      controls.append(input,button);card.append(head,controls,status);
+      const hint=document.createElement("small");hint.textContent="اقتراح آخر: "+source.sampleQueries[1];card.append(hint);
+      $("sources").append(card);
+    }
+  }catch(error){$("notice").textContent="تعذر تجهيز تجربة المصادر: "+String(error.message||error);$("notice").className="notice error";}
+}
+load();
+</script>
+</body>
+</html>
