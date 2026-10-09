@@ -62,6 +62,17 @@ async function main(){
     },source.name,{timeout:25000});
     const status=await card.locator(".source-status").innerText();
     const products=await page.locator("#results .product").count();
+    // A real shopper scrolls to the results. Full-page screenshots alone do
+    // not trigger native image loading="lazy" for offscreen cards.
+    await page.locator("#results .product").first().scrollIntoViewIfNeeded();
+    try {
+      await page.waitForFunction(()=>{
+        const pictures=[...document.querySelectorAll("#results .product img")].slice(0,3);
+        return pictures.length>0&&pictures.some(img=>img.complete&&img.naturalWidth>0);
+      },null,{timeout:15000});
+    } catch {
+      // Preserve browser and image diagnostics for the failed gate below.
+    }
     const samples=await page.locator("#results .product").evaluateAll(cards=>
       cards.slice(0,3).map(card=>({
         title:card.querySelector("h3")?.textContent||"",
@@ -79,6 +90,8 @@ async function main(){
       "SAR price is not visible: "+source.name);
     assert.ok(samples.every(x=>x.destination.startsWith("https://")),
       "A product lacks a secure source link: "+source.name);
+    assert.ok(samples.some(x=>x.imageLoaded),
+      "Images are not loading after scrolling to visible product cards: "+JSON.stringify(entry));
     await page.screenshot({path:"pilot-browser-report/"+source.name.toLowerCase().replace(/\s+/g,"-")+".png",fullPage:true});
   }
   assert.equal(errors.length,0,"Browser JS failures: "+JSON.stringify(errors));
