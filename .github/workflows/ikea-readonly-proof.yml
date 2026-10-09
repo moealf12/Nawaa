@@ -1,0 +1,27 @@
+name: IKEA Saudi — read-only merchant evidence proof
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - ".github/workflows/ikea-readonly-proof.yml"
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Inspect one official IKEA Saudi product without database writes
+        env:
+          DATABASE_URL: ""
+          NAWAA_ENABLE_BACKGROUND_JOBS: "0"
+          NAWAA_ENABLE_CERTIFIED_INGESTION: "0"
+        run: |
+          node scripts/probe-certified-merchant.mjs \
+            "https://www.ikea.com/sa/en/p/poaeng-armchair-birch-veneer-knisa-light-beige-s39240787/"
