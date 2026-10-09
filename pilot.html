@@ -20,6 +20,7 @@ a{color:var(--accent)}.head{display:flex;justify-content:space-between;flex-wrap
 .results{margin-top:34px}.result-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
 .product{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:14px;overflow:hidden}
 .product img{width:100%;height:156px;object-fit:contain;background:#fff;border-radius:9px;padding:10px}
+.product-media{width:100%;height:156px;border-radius:9px;background:#fff;display:grid;place-items:center;overflow:hidden}.product-media img{height:156px}.product-media span{display:none;text-align:center;color:#374151;font-size:12px;padding:12px}.product-media.image-error span{display:block}.product-media.image-error img{display:none}
 .product h3{font-size:14px;min-height:50px}.product b{font-size:21px;color:var(--ok)}
 .notice{border-right:3px solid var(--accent);padding:12px;background:#11263b}
 .error{color:var(--bad)}.ok{color:var(--ok)}.muted{color:var(--sub)}
@@ -43,7 +44,12 @@ function updateCounts(){ $("checked").textContent=[...statuses.values()].filter(
 function getSourceLink(raw){try{const link=new URL(raw);return link.protocol==="https:"?link.href:null;}catch{return null;}}
 function productCard(offer){
   const card=document.createElement("article");card.className="product";
-  const img=document.createElement("img");img.loading="lazy";img.alt=String(offer.title||"صورة المنتج");img.src=offer.image;img.referrerPolicy="no-referrer";card.append(img);
+  const media=document.createElement("div");media.className="product-media";
+  const img=document.createElement("img");img.loading="lazy";img.alt=String(offer.title||"صورة المنتج");img.referrerPolicy="no-referrer";
+  const unavailable=document.createElement("span");unavailable.textContent="تعذّر تحميل الصورة من المتجر. افتح صفحة المنتج للتحقق.";
+  img.addEventListener("error",()=>{media.classList.add("image-error");});
+  img.addEventListener("load",()=>{media.classList.remove("image-error");});
+  media.append(img,unavailable);card.append(media);img.src=offer.image;
   const title=document.createElement("h3");title.textContent=offer.title;card.append(title);
   const price=document.createElement("b");price.textContent=new Intl.NumberFormat("ar-SA",{style:"currency",currency:"SAR"}).format(offer.productPrice);card.append(price);
   const note=document.createElement("p");note.textContent=offer.originalCurrency&&offer.originalCurrency!=="SAR"?"السعر الأصلي: "+(offer.originalCurrency||"")+" — السعر المعروض محوّل للريال":"سعر المتجر بالريال";card.append(note);
