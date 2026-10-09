@@ -5,7 +5,7 @@ import {recordOffer} from "../persistence.mjs";
 // The queue's message contains observed merchant data only; it cannot direct
 // arbitrary URLs to be fetched or execute user-supplied code.
 export const OFFER_INGESTION_QUEUE="nawaa-offer-ingestion";
-export function createOfferIngestionHandler({record=recordOffer,validate=validateCandidateOffer}={}) {
+export function createOfferIngestionHandler({record=recordOffer,validate=validateCandidateOffer,verify}={}) {
  return async function handle(job) {
   const payload=job?.data;
   if(!payload||typeof payload!=="object"||Array.isArray(payload))throw new Error("invalid_ingestion_job");
@@ -17,6 +17,7 @@ export function createOfferIngestionHandler({record=recordOffer,validate=validat
   if(!offer.merchant || !payload.verifiedBySource || payload.verifiedBySource!==sourceId) {
     throw new Error("merchant_verification_required");
   }
+  if(typeof verify!=="function" || await verify({sourceId,offer,job:payload})!==true) throw new Error("trusted_source_verifier_required");
   // Reuse the immutable observation + canonical UPSERT ACID implementation.
   const saved=await record({...offer,sourceName:sourceId,query:payload.query||sourceId});
   if(!saved?.recorded)throw new Error("persistence_did_not_record");
