@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseNoonCatalogPayload} from "../server/providers/noon.mjs";
+import {parseNoonCatalogPayload,searchNoonUaeCatalog} from "../server/providers/noon.mjs";
 
 const hit={
   name:"Apple iPhone 17 256GB Black",
@@ -35,4 +35,22 @@ test("Saudi Noon catalog behavior remains SAR with Saudi paths",()=>{
   assert.equal(offers[0].currency,"SAR");
   assert.equal(offers[0].merchantCountryCode,"SA");
   assert.equal(offers[0].sourceUrl,"https://www.noon.com/saudi-en/iphone-17-256gb-black/N70211553V/p/?o=tracking");
+});
+
+test("Noon UAE catalog request is locale-isolated and uses cancellable fetch",async()=>{
+  const original=globalThis.fetch;
+  let requested;
+  try {
+    globalThis.fetch=async(url,options)=>{
+      requested={url:String(url),options};
+      return Response.json({hits:[hit]});
+    };
+    const controller=new AbortController();
+    const offers=await searchNoonUaeCatalog("iphone 17",10,{signal:controller.signal});
+    assert.equal(new URL(requested.url).hostname,"www.noon.com");
+    assert.equal(requested.options.headers["x-locale"],"en-ae");
+    assert.match(requested.options.headers.referer,/\/uae-en\/search/);
+    assert.ok(requested.options.signal);
+    assert.equal(offers[0].originalCurrency,"AED");
+  } finally { globalThis.fetch=original; }
 });
