@@ -37,7 +37,12 @@ async function waitFor(expected){
 try{
  await initPersistence();
  runtime=await startCertifiedIngestionWorker({env});
- const boss=runtime.boss;
+ const transmitted=[];
+ const boss={send:async (...args)=>{
+  const id=await runtime.boss.send(...args);
+  transmitted.push({id,payload:args[1]});
+  return id;
+ }};
  // Stage A: a genuinely fetched page, with real visible DOM price parity,
  // authenticated and written by pg-boss into the disposable database.
  const initial=await enqueueCertifiedMerchantProduct(boss,{
@@ -79,12 +84,10 @@ try{
  assert.equal(second.current.source_url,first.current.source_url);
  assert.ok(new Date(second.current.observed_at)>=observedAtInitial);
  // pg-boss can deliver a receipt twice without appending a price.
- const replay=await runtime.handler({id:changed.jobId,data:{
-  // fetch the original signed message via pg-boss persistence rather than
-  // synthesizing a new signature.
- } }).catch(()=>null);
- // Do not assert on a malformed direct handler call; receipt dedupe itself
- // is verified below with an explicit same receipt through recordOffer.
+ const changedPayload=transmitted.find(x=>x.id===changed.jobId)?.payload;
+ assert.ok(changedPayload?.attestation,"signed_second_job_missing");
+ const replay=await runtime.handler({id:changed.jobId,data:changedPayload});
+ assert.equal(replay.duplicate,true,"signed_queue_redelivery_appended_duplicate");
  const duplicate=await recordOffer({
   sourceUrl:first.current.source_url,title:productNode.name,
   productPrice:simulatedPrice,currency:"SAR",merchant:"IKEA",sourceName:"ikea-sa",
@@ -115,7 +118,7 @@ try{
   passed:true,mode:"ephemeral_price_history_controlled_change",
   initialPrice,simulatedPrice,canonicalPrice:Number(third.current.product_price),
   historicalObservations:3,receipts:3,
-  replayDeduplicated:true,staleCanonicalProtected:true,
+  replayDeduplicated:true,signedQueueRedeliveryDeduplicated:true,staleCanonicalProtected:true,
   immutableHistory:true,simulatedPriceIsNotRealMerchantEvidence:true
  },null,2));
 }finally{
