@@ -1,0 +1,44 @@
+name: NAWAA - concurrent signed ingestion safety
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - "scripts/test-concurrent-signed-ingestion.mjs"
+      - ".github/workflows/concurrent-signed-ingestion.yml"
+      - "server/tooling/offer-ingestion-worker.mjs"
+      - "server/persistence.mjs"
+permissions:
+  contents: read
+jobs:
+  concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa
+          POSTGRES_PASSWORD: nawaa_ci
+          POSTGRES_DB: nawaa_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nawaa -d nawaa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci
+      DATABASE_SSL: "false"
+      NAWAA_ENABLE_BACKGROUND_JOBS: "1"
+      NAWAA_CI_EPHEMERAL_DB: "1"
+      NAWAA_INGESTION_SIGNING_KEY: "ci-only-ephemeral-unused-outside-github-actions-2026-test"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Verify concurrent signed observations, duplicate retries and history integrity
+        run: node scripts/test-concurrent-signed-ingestion.mjs
