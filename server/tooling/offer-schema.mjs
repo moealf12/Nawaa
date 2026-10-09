@@ -7,6 +7,7 @@ export const candidateOfferSchema=z.object({
  productPrice:z.number().finite().positive(),
  currency:z.string().regex(/^[A-Z]{3}$/),
  image:z.url({protocol:/^https$/}).optional(),
+ imageUrl:z.url({protocol:/^https$/}).optional(),
  merchant:z.string().trim().min(2).max(120).optional(),
  sku:z.string().max(120).optional(),
 }).passthrough();
@@ -17,8 +18,8 @@ export function validateCandidateOffer(value){
  try{
   const url=new URL(offer.sourceUrl);
   if(url.username||url.password||!url.hostname.includes("."))return {valid:false,issues:[{field:"sourceUrl",code:"invalid_target"}]};
-  if(offer.image){
-   const img=new URL(offer.image);
+  for(const candidate of [offer.image,offer.imageUrl].filter(Boolean)){
+   const img=new URL(candidate);
    if(img.username||img.password||!img.hostname.includes("."))return {valid:false,issues:[{field:"image",code:"invalid_target"}]};
   }
  }catch{return {valid:false,issues:[{field:"sourceUrl",code:"invalid_target"}]};}
