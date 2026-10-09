@@ -5,13 +5,25 @@ on:
   push:
     paths:
       - "scripts/certify-active-source.mjs"
+      - "scripts/summarize-active-certification.mjs"
       - ".github/workflows/active-source-certification.yml"
       - "server/providers/free-storefronts.mjs"
+      - "server/providers/noon.mjs"
+      - "server/price-plausibility.mjs"
+      - "server/fx.mjs"
+      - "server/url-resolver.mjs"
+      - "src/search-query.mjs"
   pull_request:
     paths:
       - "scripts/certify-active-source.mjs"
+      - "scripts/summarize-active-certification.mjs"
       - ".github/workflows/active-source-certification.yml"
       - "server/providers/free-storefronts.mjs"
+      - "server/providers/noon.mjs"
+      - "server/price-plausibility.mjs"
+      - "server/fx.mjs"
+      - "server/url-resolver.mjs"
+      - "src/search-query.mjs"
 
 # Avoid spending free-tier minutes certifying superseded commits.
 concurrency:
