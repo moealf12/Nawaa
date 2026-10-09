@@ -1,4 +1,4 @@
-import PgBoss from "pg-boss";
+import {PgBoss} from "pg-boss";
 // Durable jobs only with an already configured PostgreSQL instance.
 // No auto-start, schema creation, paid service, or customer-search changes.
 export function backgroundBossConfigured(env=process.env){
