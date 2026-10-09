@@ -1538,6 +1538,36 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           primarySearchError = [primarySearchError,"namshi-"+namshiFamily+"-category: "+reasons.join(" | ")].filter(Boolean).join(" | ");
         }
       }
+      if (store.id === "mumzworld-sa") {
+        const requested=normalizeSearchQuery(query);
+        const categoryUrl = /\bstrollers?\b/i.test(requested)
+          ? "https://www.mumzworld.com/sa-en/c/travel-gear/strollers-prams/stroller"
+          : /\b(?:baby|newborn|diapers?|wipes?)\b/i.test(requested)
+            ? "https://www.mumzworld.com/sa-en/c/collections/baby-care" : null;
+        if (categoryUrl) {
+          try {
+            const page=await fetchText(categoryUrl,{signal:options.signal});
+            html=page.html;
+            searchPageFinalUrl=page.finalUrl || categoryUrl;
+            searchDiagnostics={
+              ...searchPageDiagnostics(html,categoryUrl,searchPageFinalUrl),
+              acquisitionFallback:"mumzworld-official-category",
+            };
+            const embedded=extractEmbeddedSearchOffers(html,searchPageFinalUrl,store,query);
+            const jsonLd=extractJsonLdSearchOffers(html,searchPageFinalUrl,store,query);
+            const seen=new Set();
+            htmlFirstOffers=[];
+            for(const offer of [...embedded,...jsonLd]){
+              const key=canonicalizeCandidateUrl(offer.sourceUrl||"")+"|"+offer.price+"|"+offer.currency;
+              if(seen.has(key))continue;
+              seen.add(key);htmlFirstOffers.push(offer);
+            }
+            primarySearchError=null;
+          }catch(error){
+            primarySearchError=[primarySearchError,"mumzworld-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
+          }
+        }
+      }
       if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
         catch (error) { primarySearchError ||= error instanceof Error ? error.message : String(error); }
