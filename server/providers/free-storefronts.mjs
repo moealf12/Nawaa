@@ -1628,6 +1628,36 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           }
         }
       }
+      if (store.id === "xcite-kw") {
+        const normalized=normalizeSearchQuery(query);
+        const categoryUrl=/\bhp\b[\s\S]*\blaptops?\b/i.test(normalized)
+          ? "https://www.xcite.com/hp-laptops/c"
+          : /\bairpods?\b/i.test(normalized)
+            ? "https://www.xcite.com/apple-airpods/c" : null;
+        if(categoryUrl){
+          try{
+            const page=await fetchText(categoryUrl,{signal:options.signal});
+            html=page.html;
+            searchPageFinalUrl=page.finalUrl||categoryUrl;
+            searchDiagnostics={
+              ...searchPageDiagnostics(html,categoryUrl,searchPageFinalUrl),
+              acquisitionFallback:"xcite-official-category",
+            };
+            const embedded=extractEmbeddedSearchOffers(html,searchPageFinalUrl,store,query);
+            const jsonLd=extractJsonLdSearchOffers(html,searchPageFinalUrl,store,query);
+            const seen=new Set();
+            htmlFirstOffers=[];
+            for(const offer of [...embedded,...jsonLd]){
+              const key=canonicalizeCandidateUrl(offer.sourceUrl||"")+"|"+offer.price+"|"+offer.currency;
+              if(seen.has(key))continue;
+              seen.add(key);htmlFirstOffers.push(offer);
+            }
+            primarySearchError=null;
+          }catch(error){
+            primarySearchError=[primarySearchError,"xcite-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
+          }
+        }
+      }
       if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
         catch (error) { primarySearchError ||= error instanceof Error ? error.message : String(error); }
