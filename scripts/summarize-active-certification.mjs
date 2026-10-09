@@ -3,7 +3,7 @@ import {resolve,join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {configuredFreeStorefronts} from "../server/providers/free-storefronts.mjs";
 
-export function summarizeCertification(activeIds,reports) {
+export function summarizeCertification(activeIds,reports,expectedActiveCount=activeIds.length) {
   const rows=activeIds.map(id=>{
     const report=reports.get(id);
     if(!report) return {id,status:"MISSING",positiveChecks:0,reason:"No certification artifact"};
@@ -22,7 +22,7 @@ export function summarizeCertification(activeIds,reports) {
     failed:rows.filter(r=>r.status==="FAILED").length,
     missing:rows.filter(r=>r.status==="MISSING").length,
   };
-  return {stats,rows,passed:stats.certified===stats.expected&&stats.expected>0};
+  return {requiredActiveCount:expectedActiveCount,stats,rows,passed:stats.certified===stats.expected&&stats.expected===expectedActiveCount&&expectedActiveCount>0};
 }
 
 async function main(){
@@ -38,14 +38,14 @@ async function main(){
     } catch(error) {console.warn("invalid source artifact",file,error?.message||String(error));}
   }
   const activeIds=configuredFreeStorefronts().map(s=>s.id);
-  const result=summarizeCertification(activeIds,reports);
+  const result=summarizeCertification(activeIds,reports,39);
   await mkdir("source-cert-summary",{recursive:true});
   await writeFile("source-cert-summary/active-source-certification-summary.json",JSON.stringify(result,null,2)+"\n");
   const scrub=value=>String(value||"").replace(/[|\n\r]/g," ").slice(0,180);
   const markdown=[
     "## NAWAA Architecture v2 — Active Source Certification",
     "",
-    "Expected **"+result.stats.expected+"** · Certified **"+result.stats.certified+"** · Failed **"+result.stats.failed+"** · Missing **"+result.stats.missing+"**",
+    "Required **"+result.requiredActiveCount+"** · Registered **"+result.stats.expected+"** · Certified **"+result.stats.certified+"** · Failed **"+result.stats.failed+"** · Missing **"+result.stats.missing+"**",
     "",
     "| Source | Result | Positive checks | Reason |",
     "|---|---|---:|---|",
