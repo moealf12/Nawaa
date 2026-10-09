@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import pg from "pg";
 import {extractProductDocument} from "../server/url-resolver.mjs";
-import {recordOffer,initPersistence} from "../server/persistence.mjs";
+import {recordOffer,initPersistence,getOfferPriceHistory} from "../server/persistence.mjs";
 import {startCertifiedIngestionWorker} from "../server/tooling/certified-ingestion-runtime.mjs";
 import {enqueueCertifiedMerchantProduct} from "../server/tooling/merchant-observation-producer.mjs";
 
@@ -111,6 +111,22 @@ try{
  assert.equal(Number(third.history[0].price),Math.max(1,initialPrice-1));
  assert.equal(third.history[0].validation_timestamp.toISOString(),oldTime.toISOString());
  assert.deepEqual(third.history.slice(1).map(r=>Number(r.price)),[initialPrice,simulatedPrice]);
+ const ledger=await getOfferPriceHistory(url,{sourceName:"ikea-sa",limit:10});
+ assert.equal(ledger.configured,true);
+ assert.equal(ledger.observations.length,3,"historical_read_model_lost_entries");
+ assert.deepEqual(ledger.observations.map(x=>x.price),
+  [simulatedPrice,initialPrice,Math.max(1,initialPrice-1)],
+  "history_must_be_newest_first");
+ assert.equal(ledger.observations[0].currency,"SAR");
+ assert.equal(ledger.observations[0].healthStatus,"healthy");
+ const capped=await getOfferPriceHistory(url,{sourceName:"ikea-sa",limit:2});
+ assert.deepEqual(capped.observations.map(x=>x.price),[simulatedPrice,initialPrice]);
+ const wrongSource=await getOfferPriceHistory(url,{sourceName:"unrelated-source"});
+ assert.equal(wrongSource.observations.length,0,"history_source_isolation_failed");
+ await assert.rejects(getOfferPriceHistory(url,{sourceName:"ikea-sa",limit:501}),
+  /invalid_price_history_limit/);
+ await assert.rejects(getOfferPriceHistory("http://127.0.0.1/",{sourceName:"ikea-sa"}),
+  /invalid_price_history_identity/);
  await assert.rejects(pool.query("update offer_observations set price=1"),/append-only/);
  await assert.rejects(pool.query("delete from offer_observations"),/append-only/);
  assert.equal((await pool.query("select count(*)::int as n from offer_observations")).rows[0].n,3);
@@ -119,7 +135,8 @@ try{
   initialPrice,simulatedPrice,canonicalPrice:Number(third.current.product_price),
   historicalObservations:3,receipts:3,
   replayDeduplicated:true,signedQueueRedeliveryDeduplicated:true,staleCanonicalProtected:true,
-  immutableHistory:true,simulatedPriceIsNotRealMerchantEvidence:true
+  immutableHistory:true,boundedHistoryReadVerified:true,
+  isolatedBySource:true,simulatedPriceIsNotRealMerchantEvidence:true
  },null,2));
 }finally{
  await runtime?.stop().catch(()=>{});
