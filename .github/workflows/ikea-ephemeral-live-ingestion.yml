@@ -5,6 +5,9 @@ on:
       - feature/zero-cost-tooling-foundation
     paths:
       - "scripts/test-ikea-real-ephemeral-ingestion.mjs"
+      - "server/tooling/merchant-observation-producer.mjs"
+      - "server/tooling/ikea-dom-price-proof.mjs"
+      - "tests/zero-cost-visible-price-gate.test.mjs"
       - ".github/workflows/ikea-ephemeral-live-ingestion.yml"
 permissions:
   contents: read
@@ -39,5 +42,5 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci --ignore-scripts
-      - name: Verify merchant original to signed offer to ACID persistence on disposable PostgreSQL
+      - name: Verify five visible-price-gated real merchant offers into disposable ACID PostgreSQL
         run: node scripts/test-ikea-real-ephemeral-ingestion.mjs
