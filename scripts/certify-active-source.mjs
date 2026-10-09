@@ -26,14 +26,23 @@ for(const query of cases){
       typeof o.image==="string" && /^https?:\/\//i.test(o.image) &&
       Number.isFinite(o.productPrice) && o.productPrice>0 &&
       o.currency==="SAR");
+    const invalid=offers.filter(o=>!valid.includes(o));
+    const invalidSamples=invalid.slice(0,3).map(o=>({
+      title:String(o.title||"").slice(0,120),sourceUrl:String(o.sourceUrl||"").slice(0,240),
+      imagePresent:typeof o.image==="string"&&/^https?:\/\//i.test(o.image),
+      imageType:typeof o.image,
+      priceSAR:Number(o.productPrice)||null,
+      currency:o.currency||null,
+    }));
     const pass=query===negative ? offers.length===0 : valid.length>0;
     const diagnostic=result?.diagnostics || {};
     const extraction=diagnostic.searchPage || {};
     const failureKind=pass?null:
       query===negative?"NEGATIVE_FALSE_POSITIVE":
+      offers.length>0 && invalid.every(o=>typeof o.image!=="string" || !/^https?:\/\//i.test(o.image))?"RETURNED_OFFERS_MISSING_IMAGES":
       Number(result?.candidates||0)>0?"CANDIDATES_WITHOUT_VALID_OFFERS":
       diagnostic.primarySearchError?"SEARCH_TRANSPORT_OR_API_FAILED":"NO_PRODUCT_CANDIDATES";
-    report.cases.push({query,pass,offerCount:offers.length,validCount:valid.length,
+    report.cases.push({query,pass,offerCount:offers.length,validCount:valid.length,invalidSamples,
       candidates:result?.candidates??null,failedProductPages:result?.failures??null,
       failureKind,ms:Date.now()-started,error:diagnostic.primarySearchError||null,
       acquisitionFallback:extraction.acquisitionFallback||null,
