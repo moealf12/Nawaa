@@ -24,7 +24,7 @@ for(const query of cases){
       o.currency==="SAR");
     const pass=query===negative ? offers.length===0 : valid.length>0;
     const diagnostic=result?.diagnostics || {};
-    const extraction=diagnostic.searchPage || diagnostic.searchDiagnostics || {};
+    const extraction=diagnostic.searchPage || {};
     const failureKind=pass?null:
       query===negative?"NEGATIVE_FALSE_POSITIVE":
       Number(result?.candidates||0)>0?"CANDIDATES_WITHOUT_VALID_OFFERS":
@@ -32,8 +32,8 @@ for(const query of cases){
     report.cases.push({query,pass,offerCount:offers.length,validCount:valid.length,
       candidates:result?.candidates??null,failedProductPages:result?.failures??null,
       failureKind,ms:Date.now()-started,error:diagnostic.primarySearchError||null,
-      acquisitionFallback:diagnostic.acquisitionFallback||null,
-      searchDiagnostics:diagnostic.searchPageDiagnostics||diagnostic.searchDiagnostics||null,
+      acquisitionFallback:extraction.acquisitionFallback||null,
+      searchDiagnostics:extraction,
       candidateSamples:(diagnostic.candidateSamples||[]).slice(0,3),
       failureSamples:(diagnostic.failureSamples||[]).slice(0,3),
       examples:valid.slice(0,2).map(o=>({title:o.title,price:o.productPrice,url:o.sourceUrl}))});
