@@ -20,8 +20,12 @@ test("background ingestion rejects unverified or malformed offers before persist
 test("producer refuses unverified data and sends only validated payloads",async()=>{
  const calls=[];const boss={send:async(...args)=>{calls.push(args);return "job-123";}};
  await assert.rejects(enqueueVerifiedOffer(boss,{sourceId:"ikea-sa",verifiedBySource:"bad",offer}),/verification_required/);
- const jobId=await enqueueVerifiedOffer(boss,{sourceId:"ikea-sa",verifiedBySource:"ikea-sa",offer,query:"chair"});
+ const dummyAttestation="v1.1791562800000."+ "a".repeat(64);
+ await assert.rejects(enqueueVerifiedOffer(boss,{sourceId:"ikea-sa",verifiedBySource:"ikea-sa",offer}),/attestation_required/);
+ const jobId=await enqueueVerifiedOffer(boss,{sourceId:"ikea-sa",verifiedBySource:"ikea-sa",offer,query:"chair",attestation:dummyAttestation});
  assert.equal(jobId,"job-123");assert.equal(calls[0][0],OFFER_INGESTION_QUEUE);
+ assert.equal(calls[0][2].singletonSeconds,300);
+ assert.equal(calls[0][2].retryBackoff,true);
 });
 test("worker registers explicit bounded concurrency only, without starting database",async()=>{
  let name,opts,fn;
@@ -37,4 +41,18 @@ test("untrusted queue flag cannot approve merchant observations",async()=>{
  await assert.rejects(createOfferIngestionHandler({record:async()=>{writes++;return {recorded:true};}})(job),/trusted_source_verifier_required/);
  await assert.rejects(createOfferIngestionHandler({verify:async()=>false,record:async()=>{writes++;return {recorded:true};}})(job),/trusted_source_verifier_required/);
  assert.equal(writes,0);
+});
+
+test("idempotent replay does not create an additional observation",async()=>{
+ const job={id:"00000000-0000-4000-8000-000000000001",
+   data:{sourceId:"ikea-sa",verifiedBySource:"ikea-sa",offer}};
+ const captures=[];
+ const handler=createOfferIngestionHandler({
+   verify:async()=>true,
+   record:async data=>{captures.push(data);return {duplicate:true,recorded:false};}
+ });
+ const result=await handler(job);
+ assert.equal(result.duplicate,true);
+ assert.equal(result.recorded,true);
+ assert.equal(captures[0].ingestionId,job.id);
 });
