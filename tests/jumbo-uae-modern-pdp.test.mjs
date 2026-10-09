@@ -52,3 +52,20 @@ test("Jumbo negative query cannot substitute general category prices",async()=>{
   assert.equal(urls.some(url=>url.includes("/apple-iphone-17")||url.includes("/apple-airpods")),false);
  }finally{globalThis.fetch=original;}
 });
+
+test("Jumbo only accepts oversized official catalog HTML within its bounded 8MB limit",async()=>{
+ const old=globalThis.fetch;
+ const target="https://www.jumbo.ae/apple-iphone-17-smartphone-white-256-gb.html";
+ try{
+  globalThis.fetch=async url=>{
+    if(String(url).includes("/apple-iphone-17"))
+      return new Response(card("Apple iPhone 17 Smartphone White 256 GB",target,3399)+(" ".repeat(5_200_000)),{headers:{"content-type":"text/html"}});
+    if(String(url).includes("frankfurter.dev"))
+      return Response.json({rate:1.02,date:"2026-10-09"});
+    return new Response("<html></html>",{headers:{"content-type":"text/html"}});
+  };
+  const result=await searchFreeStorefrontById("jumbo-ae","iphone 17",{perStore:5});
+  assert.equal(result.offers.length,1,JSON.stringify(result.diagnostics));
+  assert.equal(result.offers[0].sourceUrl,target);
+ }finally{globalThis.fetch=old;}
+});
