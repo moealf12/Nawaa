@@ -2,6 +2,7 @@ import { resolveProductUrl } from "../url-resolver.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
+import { searchNoonUaeCatalog } from "./noon.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1438,7 +1439,29 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           primarySearchError ||= categoryError instanceof Error ? categoryError.message : String(categoryError);
         }
       }
-      if (store.id === "ikea-sa") {
+      if (store.id === "noon-ae") {
+        try {
+          const cap = Number.isFinite(catalogLimit) ? Math.max(1, Math.min(50, catalogLimit)) : 50;
+          const hits = await searchNoonUaeCatalog(query, cap);
+          // Use only real UAE catalog products with explicit AED prices and
+          // Noon product URLs. Never convert a Saudi catalog result to UAE.
+          primarySearchOffers = hits.filter(item =>
+            item.sourceUrl && store.productPath.test(item.sourceUrl) &&
+            Number.isFinite(item.productPrice) && item.productPrice > 0 &&
+            item.originalCurrency === "AED"
+          ).map(item => ({
+            productId:item.specs?.modelNumber || item.sourceMeta?.productId,
+            title:item.title,
+            image:item.image,
+            price:item.productPrice,
+            currency:"AED",
+            sourceUrl:item.sourceUrl,
+          }));
+          if (primarySearchOffers.length) primarySearchError = null;
+        } catch (error) {
+          primarySearchError = [primarySearchError, "Noon UAE catalog: " + (error?.message || String(error))].filter(Boolean).join(" | ");
+        }
+      } else if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
         catch (error) { primarySearchError ||= error instanceof Error ? error.message : String(error); }
       } else if (LANDMARK_BLOOMREACH[store.id]) {
