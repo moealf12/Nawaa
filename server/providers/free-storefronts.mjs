@@ -254,6 +254,19 @@ function stripHtml(value = "") {
   return decodeHtml(String(value).replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
+// Upstream Decathlon occasionally returns http:// links to its own CDN.
+// Render is HTTPS: only normalize the identical official merchant host.
+// Never rewrite links for other merchants or arbitrary third-party CDNs.
+export function secureStorefrontImage(image,storeId) {
+  if (storeId !== "decathlon-sa" || typeof image !== "string" || !image.startsWith("http://")) return image;
+  try {
+    const parsed = new URL(image);
+    if (parsed.username || parsed.password || !["decathlon.com.sa","www.decathlon.com.sa"].includes(parsed.hostname)) return image;
+    parsed.protocol = "https:";
+    return parsed.href;
+  } catch { return image; }
+}
+
 function canonicalizeCandidateUrl(url) {
   try {
     const parsed = new URL(url);
@@ -1765,7 +1778,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         exactMatch:false,
         matchConfidence:0.9,
         sourceUrl:verifiedUrl.href,
-        image:item.image,
+        image:secureStorefrontImage(item.image,store.id),
         title:item.title,
         productType:item.productType || null,
         specs:{ modelNumber:item.productId },
@@ -1794,6 +1807,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
       .map((result) => ({
         ...result.value,
+        image:secureStorefrontImage(result.value.image,store.id),
         provider:"free-storefronts",
         providerMarket:store.id,
         merchant:result.value.merchant || store.name,
