@@ -49,8 +49,35 @@ test("Noon UAE catalog request is locale-isolated and uses cancellable fetch",as
     const offers=await searchNoonUaeCatalog("iphone 17",10,{signal:controller.signal});
     assert.equal(new URL(requested.url).hostname,"www.noon.com");
     assert.equal(requested.options.headers["x-locale"],"en-ae");
+    assert.equal(requested.options.headers["x-mp-country"],"ae");
+    assert.equal(Object.hasOwn(requested.options.headers,"x-cms"),false);
     assert.match(requested.options.headers.referer,/\/uae-en\/search/);
     assert.ok(requested.options.signal);
     assert.equal(offers[0].originalCurrency,"AED");
   } finally { globalThis.fetch=original; }
+});
+
+test("Noon UAE builds canonical PDP from catalog slug and SKU",()=>{
+ const offers=parseNoonCatalogPayload({hits:[{
+   ...hit,url:"apple-iphone-17-256gb-black",pdp_url:undefined
+ }]},10,"AE");
+ assert.equal(offers.length,1);
+ assert.equal(offers[0].sourceUrl,"https://www.noon.com/uae-en/apple-iphone-17-256gb-black/N70211553V/p/");
+});
+
+test("Noon UAE rejects explicit Saudi currency while accepting AED",()=>{
+ const offers=parseNoonCatalogPayload({hits:[
+   {...hit,currency:"SAR"},
+   {...hit,currency:"AED"},
+ ]},10,"AE");
+ assert.equal(offers.length,1);
+ assert.equal(offers[0].originalCurrency,"AED");
+});
+
+test("Noon UAE prevents market-mismatched JSON responses",async()=>{
+ const original=globalThis.fetch;
+ try{
+   globalThis.fetch=async()=>Response.json({meta:{title:"Shop Saudi Arabia"},hits:[hit]});
+   await assert.rejects(()=>searchNoonUaeCatalog("iphone 17",10),/noon_uae_market_mismatch/);
+ }finally{globalThis.fetch=original;}
 });
