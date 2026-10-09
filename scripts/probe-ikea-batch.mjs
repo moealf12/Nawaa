@@ -90,7 +90,7 @@ export async function runIkeaReadOnlyBatch({products=PILOT_PRODUCTS,extract,prob
   repeatedPriceMatched:count(x=>x.repeatability==="matched"),
   failures:count(x=>!x.ok)};
  // The probe must expose weak coverage rather than forcing price acceptance.
- const passed=metrics.extracted>=Math.ceil(total*0.8)&&metrics.images>=Math.ceil(total*0.8)&&metrics.skuMatched===metrics.extracted&&(!repeatExtract||metrics.repeatedPriceMatched===metrics.extracted);
+ const passed=metrics.extracted>=Math.ceil(total*0.8)&&metrics.reachableImages>=Math.ceil(total*0.8)&&metrics.skuMatched===metrics.extracted&&(!repeatExtract||metrics.repeatedPriceMatched===metrics.extracted);
  return {mode:"read_only_multi_product_no_database_write",sourceId:"ikea-sa",
   capturedAt:new Date().toISOString(),passed,metrics,items};
 }
