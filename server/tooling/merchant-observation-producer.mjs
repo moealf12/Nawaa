@@ -99,6 +99,24 @@ export async function extractCertifiedMerchantOffer({sourceId,url,extract=extrac
   if(crossPrice===null||crossPrice!==price||metadataCurrency!==requested.config.currency)
    throw new Error("original_price_evidence_disagreement");
  }
+ // Compare independent *extraction strategies* only when a secondary candidate
+ // identifies the exact SKU. A generic page-wide price is not product evidence.
+ const secondary=(document.candidates||[]).filter(entry=>
+  ["embedded_json","hydrated_state","storefront_data","domain_adapter"].includes(entry?.strategy)&&
+  entry.product&&typeof entry.product==="object"&&
+  normalizedIkeaSku(entry.product.sku)===expectedSku);
+ let secondaryMatches=0;
+ for(const entry of secondary){
+  const rawSecondary=entry.product.offers;
+  if(!rawSecondary||typeof rawSecondary!=="object"||Array.isArray(rawSecondary))continue;
+  const otherPrice=strictPrice(rawSecondary.price);
+  const otherCurrency=rawSecondary.priceCurrency;
+  if(otherPrice===null||!otherCurrency)continue;
+  if(otherPrice!==price||otherCurrency!==requested.config.currency)
+   throw new Error("original_price_evidence_disagreement");
+  secondaryMatches++;
+ }
+ const secondaryCrossCheck=secondaryMatches>0?"matched":"unavailable";
  const jsonLdImage=approvedImage(product.image,final.url.href);
  const metaImage=metadataMatches?approvedImage(metadata?.image,final.url.href):undefined;
  const image=jsonLdImage||metaImage;
@@ -116,7 +134,9 @@ export async function extractCertifiedMerchantOffer({sourceId,url,extract=extrac
   sourceId,extractionStrategy:"jsonld",verifiedPage:final.url.href,
   observedAt:new Date(when).toISOString(),hasImage:Boolean(image),imageSource,
   imageLoadVerified:false,hasSku:Boolean(offer.sku),
-  priceCrossCheck:metadataPrice!=null&&metadataCurrency!=null?"matched":"unavailable",
+  priceCrossCheck:metadataPrice!=null&&metadataCurrency!=null?"matched":secondaryCrossCheck,
+  secondaryPriceEvidence:secondaryCrossCheck,
+  secondaryPriceMatches:secondaryMatches,
   merchantPriceVerified:true
  }};
 }
