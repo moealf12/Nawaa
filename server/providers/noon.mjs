@@ -312,6 +312,14 @@ export async function searchNoonUaeCatalog(query, limit = 32) {
     "x-locale": "en-ae",
     referer: "https://www.noon.com/uae-en/search/?q=" + encodeURIComponent(query),
   };
-  const payload = await getJsonHttp1(url, headers);
+  // Unlike the opt-in Saudi catalog connector, this path is in the live
+  // storefront pool. Use the shared fetch transport so request cancellation,
+  // test doubles and the search deadline can govern it.
+  const response = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(4500),
+  });
+  if (!response.ok) throw new Error("Noon UAE catalog HTTP " + response.status);
+  const payload = await response.json();
   return parseNoonCatalogPayload(payload, Math.max(1, Math.min(50, Number(limit) || 32)), "AE");
 }
