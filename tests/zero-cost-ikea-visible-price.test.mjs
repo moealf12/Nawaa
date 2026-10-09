@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {visibleIkeaPriceFromHtml} from "../scripts/probe-ikea-price-dom.mjs";
+import {visibleIkeaPriceFromHtml} from "../server/tooling/ikea-dom-price-proof.mjs";
 const title="POÄNG Armchair - birch veneer/Knisa light beige";
 function page(inner){return "<html><body><main><div class='pipcom-pip-price-module'>"+inner+"</div></main></body></html>";}
 test("accepts unique matching SAR amount in product purchase module",()=>{
@@ -26,4 +26,8 @@ test("ignores script-only and decorative prices",()=>{
 test("rejects duplicate root modules and missing currency symbol",()=>{
  assert.equal(visibleIkeaPriceFromHtml(page("POÄNG Armchair ﷼479")+page("POÄNG Armchair ﷼479"),title).status,"unavailable");
  assert.equal(visibleIkeaPriceFromHtml(page("POÄNG Armchair 479"),title).status,"unavailable");
+});
+
+test("parses amounts above 999 SAR without truncation",()=>{
+ assert.equal(visibleIkeaPriceFromHtml(page("POÄNG Armchair ﷼1400"),title).price,1400);
 });

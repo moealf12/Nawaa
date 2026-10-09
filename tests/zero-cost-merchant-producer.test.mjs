@@ -22,7 +22,8 @@ test("one live source only, with original product evidence and no implicit write
 });
 test("pilot producer signs only observed merchant data; worker persists an authenticated minimal projection",async()=>{
  const sends=[];const boss={send:async (...args)=>{sends.push(args);return "job-id";}};
- const enqueued=await enqueueCertifiedMerchantProduct(boss,{sourceId:"ikea-sa",url,key,extract:extraction});
+ const enqueued=await enqueueCertifiedMerchantProduct(boss,{sourceId:"ikea-sa",url,key,extract:extraction,
+  verifyVisiblePrice:async offer=>({status:"matched",currency:offer.currency,price:offer.productPrice})});
  assert.equal(enqueued.queued,true);
  assert.equal(sends.length,1);
  assert.match(sends[0][1].attestation,/^v1\./);
@@ -144,4 +145,21 @@ test("a different product's cheaper secondary price cannot corroborate or veto t
  const r=await extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,extract:async()=>page});
  assert.equal(r.evidence.secondaryPriceEvidence,"unavailable");
  assert.equal(r.evidence.priceCrossCheck,"unavailable");
+});
+
+test("signed ingestion requires corroborating visible price before sending any task",async()=>{
+ const send=[];const boss={send:async (...args)=>{send.push(args);return "job-id";}};
+ const input={sourceId:"ikea-sa",url,key,extract:extraction};
+ await assert.rejects(enqueueCertifiedMerchantProduct(boss,{...input,
+  verifyVisiblePrice:async()=>({status:"matched",currency:"SAR",price:1})}),/visible_price_evidence_mismatch/);
+ await assert.rejects(enqueueCertifiedMerchantProduct(boss,{...input,
+  verifyVisiblePrice:async()=>({status:"unavailable",currency:"SAR",price:399})}),/visible_price_evidence_mismatch/);
+ await assert.rejects(enqueueCertifiedMerchantProduct(boss,{...input,
+  verifyVisiblePrice:null}),/visible_price_verifier_required/);
+ assert.equal(send.length,0,"unverified_prices_must_never_be_queued");
+ const ok=await enqueueCertifiedMerchantProduct(boss,{...input,
+  verifyVisiblePrice:async()=>({status:"matched",currency:"SAR",price:399})});
+ assert.equal(ok.queued,true);
+ assert.equal(ok.evidence.visiblePriceProof,"matched");
+ assert.equal(send.length,1);
 });

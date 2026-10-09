@@ -1,5 +1,6 @@
 // Strictly read-only DOM price inspection: never send or persist offers.
 import {load} from "cheerio";
+import {visibleIkeaPriceFromHtml} from "../server/tooling/ikea-dom-price-proof.mjs";
 import {fetchHtmlSafe} from "../server/url-resolver.mjs";
 import {PILOT_PRODUCTS} from "./probe-ikea-batch.mjs";
 import {extractCertifiedMerchantOffer} from "../server/tooling/merchant-observation-producer.mjs";
@@ -24,24 +25,6 @@ export function summarizePriceDom(html){
   });
  }
  return evidence.slice(0,12);
-}
-export function visibleIkeaPriceFromHtml(html,expectedTitle){
- const $=load(html);
- $("script,style,noscript,template,svg").remove();
- const nodes=$(".pipcom-pip-price-module");
- if(nodes.length!==1)return {status:"unavailable",reason:"unique_visible_price_module_required"};
- const rendered=$(nodes[0]).text().replace(/\s+/g," ").trim();
- const matches=[...rendered.matchAll(/﷼\s*(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{1,2}))?/g)]
-  .map(m=>Number(m[1].replace(/,/g,"")+(m[2]?"."+m[2]:"")));
- const values=[...new Set(matches)];
- if(!values.length)return {status:"unavailable",reason:"no_sar_amount_in_visible_module"};
- if(values.length!==1)return {status:"conflict",reason:"multiple_visible_price_amounts",values};
- const expectedFirst=String(expectedTitle||"").normalize("NFKC").toLowerCase()
-  .match(/[\p{L}\p{N}]{3,}/u)?.[0]||"";
- const header=rendered.split("﷼")[0].normalize("NFKC").toLowerCase();
- if(!expectedFirst||!header.includes(expectedFirst))
-  return {status:"unavailable",reason:"visible_product_title_mismatch"};
- return {status:"matched_module",price:values[0],currency:"SAR",copies:matches.length};
 }
 export async function inspectDomPrices({products=PILOT_PRODUCTS,fetchPage=fetchHtmlSafe}={}){
  if(products.length>5)throw Error("bounded_probe_only");

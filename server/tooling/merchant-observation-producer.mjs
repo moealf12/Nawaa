@@ -1,6 +1,7 @@
 // Pilot producer for merchant-original JSON-LD evidence. No public API entrypoint,
 // no automatic crawling, and no database writes until explicitly queued.
 import {extractProductDocument} from "../url-resolver.mjs";
+import {verifyIkeaVisiblePrice} from "./ikea-dom-price-proof.mjs";
 import {validateCandidateOffer} from "./offer-schema.mjs";
 import {issueSourceAttestation} from "./source-attestation.mjs";
 import {enqueueVerifiedOffer} from "./offer-ingestion-worker.mjs";
@@ -140,15 +141,21 @@ export async function extractCertifiedMerchantOffer({sourceId,url,extract=extrac
   merchantPriceVerified:true
  }};
 }
-export async function enqueueCertifiedMerchantProduct(boss,{sourceId,url,key,extract=extractProductDocument,clock=Date.now}={}){
+export async function enqueueCertifiedMerchantProduct(boss,{sourceId,url,key,extract=extractProductDocument,clock=Date.now,verifyVisiblePrice=verifyIkeaVisiblePrice}={}){
  if(!boss||typeof boss.send!=="function")throw new Error("queue_not_started");
  // Validate secret before any network call, never accept a client-provided price.
  if(typeof key!=="string"||Buffer.byteLength(key,"utf8")<32)throw new Error("source_signing_key_required");
  const extracted=await extractCertifiedMerchantOffer({sourceId,url,extract,clock});
+ if(typeof verifyVisiblePrice!=="function")throw new Error("visible_price_verifier_required");
+ // Fail closed before signing or publishing any job. Never trust an unverified offer.
+ const visibleProof=await verifyVisiblePrice(extracted.offer);
+ if(visibleProof?.status!=="matched"||visibleProof?.currency!==extracted.offer.currency||
+    visibleProof?.price!==extracted.offer.productPrice)
+  throw new Error("visible_price_evidence_mismatch");
  const attestation=issueSourceAttestation({
   sourceId,offer:extracted.offer,sourceHosts:CERTIFIED_SOURCE_HOSTS,key,clock
  });
  const jobId=await enqueueVerifiedOffer(boss,{sourceId,offer:extracted.offer,
   verifiedBySource:sourceId,attestation});
- return {jobId,queued:jobId!==null&&jobId!==undefined,evidence:extracted.evidence};
+ return {jobId,queued:jobId!==null&&jobId!==undefined,evidence:{...extracted.evidence,visiblePriceProof:visibleProof.status}};
 }
