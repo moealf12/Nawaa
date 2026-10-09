@@ -101,7 +101,7 @@ test("Noon UAE live storefront uses priced catalog without slow HTML/PDP fan-out
     assert.equal(result.offers[0].currency,"SAR");
     assert.equal(result.offers[0].originalCurrency,"AED");
     assert.equal(result.offers[0].sourceUrl,"https://www.noon.com/uae-en/apple-iphone-17-256gb-black/N70211553V/p/");
-    assert.equal(calls.some(url=>url.includes("/uae-en/search") || url.includes("/p/")),false);
+    assert.equal(calls.some(url=>url.includes("/uae-en/search")||url.includes("/p/")),false);
   }finally{globalThis.fetch=original;}
 });
 test("Noon UAE empty market-specific catalog does not trigger slow HTML fallback",async()=>{
