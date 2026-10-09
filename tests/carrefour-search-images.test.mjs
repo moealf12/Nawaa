@@ -27,7 +27,7 @@ test("Carrefour AE customer search accepts a priced offer with a verified image"
      if(String(url).includes("frankfurter.dev"))return Response.json({rate:1.02,date:"2026-10-09"});
      throw Error("Unexpected request "+url);
    };
-   const result=await searchFreeStorefrontById("carrefour-ae","iphone 17",{perStore:5});
+   const result=await searchFreeStorefrontById("carrefour-ae","iphone 17 pro",{perStore:5});
    const offer=result.offers.find(o=>o.sourceUrl===a);
    assert.ok(offer,JSON.stringify(result.diagnostics));
    assert.equal(offer.image,"https://cdn.example.com/iphone-pro.jpg");
