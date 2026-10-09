@@ -8,6 +8,10 @@ on:
       - "scripts/certify-active-source.mjs"
       - "scripts/certify-active-sources-batched.mjs"
       - "scripts/summarize-active-certification.mjs"
+      - "scripts/report-active-source-coverage.mjs"
+      - "server/tooling/source-coverage-diagnostic.mjs"
+      - "server/tooling/source-certification-artifacts.mjs"
+      - "server/tooling/source-certification-triage.mjs"
       - ".github/workflows/active-source-certification.yml"
       - "server/providers/free-storefronts.mjs"
       - "server/providers/noon.mjs"
@@ -52,6 +56,9 @@ jobs:
       - name: Produce strict 39-source summary (no hidden failures)
         if: always()
         run: node scripts/summarize-active-certification.mjs
+      - name: Generate source-by-source evidence diagnostic and repair plan
+        if: always()
+        run: node scripts/report-active-source-coverage.mjs
       - name: Upload every source report and final summary
         if: always()
         uses: actions/upload-artifact@v4
@@ -60,4 +67,6 @@ jobs:
           path: |
             source-cert-artifacts/active-source-*.json
             source-cert-summary/active-source-certification-summary.json
+            source-cert-summary/active-source-coverage-diagnostic.json
+            source-cert-summary/active-source-repair-priorities.md
           if-no-files-found: warn
