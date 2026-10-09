@@ -81,3 +81,41 @@ test("Noon UAE prevents market-mismatched JSON responses",async()=>{
    await assert.rejects(()=>searchNoonUaeCatalog("iphone 17",10),/noon_uae_market_mismatch/);
  }finally{globalThis.fetch=original;}
 });
+
+test("Noon UAE live storefront uses priced catalog without slow HTML/PDP fan-out",async()=>{
+  const {searchFreeStorefrontById}=await import("../server/providers/free-storefronts.mjs");
+  const original=globalThis.fetch;
+  const calls=[];
+  try{
+    globalThis.fetch=async(url)=>{
+      calls.push(String(url));
+      if(String(url).startsWith("https://www.noon.com/_vs/"))return Response.json({hits:[{
+        ...hit,url:"apple-iphone-17-256gb-black",pdp_url:undefined
+      }]});
+      if(String(url).includes("frankfurter.dev"))return Response.json({rate:1.02,date:"2026-10-09"});
+      throw Error("Unexpected HTML or product-page network request: "+url);
+    };
+    const result=await searchFreeStorefrontById("noon-ae","iphone 17",{perStore:3});
+    assert.equal(result.offers.length,1,JSON.stringify(result.diagnostics));
+    assert.equal(result.offers[0].providerMarket,"noon-ae");
+    assert.equal(result.offers[0].currency,"SAR");
+    assert.equal(result.offers[0].originalCurrency,"AED");
+    assert.equal(result.offers[0].sourceUrl,"https://www.noon.com/uae-en/apple-iphone-17-256gb-black/N70211553V/p/");
+    assert.equal(calls.some(url=>url.includes("/uae-en/search") || url.includes("/p/")),false);
+  }finally{globalThis.fetch=original;}
+});
+test("Noon UAE empty market-specific catalog does not trigger slow HTML fallback",async()=>{
+  const {searchFreeStorefrontById}=await import("../server/providers/free-storefronts.mjs");
+  const original=globalThis.fetch;
+  const calls=[];
+  try{
+    globalThis.fetch=async(url)=>{
+      calls.push(String(url));
+      if(String(url).startsWith("https://www.noon.com/_vs/"))return Response.json({hits:[]});
+      throw Error("Unexpected network call: "+url);
+    };
+    const result=await searchFreeStorefrontById("noon-ae","nawaa-unfindable-943271-20261003",{perStore:3});
+    assert.equal(result.offers.length,0);
+    assert.equal(calls.length,1);
+  }finally{globalThis.fetch=original;}
+});
