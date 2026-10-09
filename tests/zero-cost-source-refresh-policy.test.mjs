@@ -70,3 +70,10 @@ test("untrusted URLs, duplicate SKUs, clocks and absent quota fail closed",()=>{
  assert.throws(()=>plan({now:NaN}),/invalid_refresh_clock/);
  assert.throws(()=>plan({observations:{"39240787":{lastSuccessfulAt:NOW+60000}}}),/invalid_refresh_state_time/);
 });
+
+test("accepts millisecond-level reservation race without allowing arbitrarily future windows",()=>{
+ const near=plan({budget:budget(2,NOW+250)});
+ assert.equal(near.quota.requestsUsed,2);
+ assert.equal(near.planned.length,4);
+ assert.throws(()=>plan({budget:budget(2,NOW+60000)}),/invalid_refresh_budget_snapshot/);
+});

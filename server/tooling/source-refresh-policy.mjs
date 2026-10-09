@@ -52,7 +52,7 @@ function checkedBudget(budget,now,policy){
  if(!budget||typeof budget!=="object")throw new Error("refresh_budget_snapshot_required");
  const start=safeTime(budget.windowStartedAt);
  const used=budget.requestsUsed;
- if(start===null||start>now||!Number.isInteger(used)||used<0)
+ if(start===null||start>now+30000||!Number.isInteger(used)||used<0)
   throw new Error("invalid_refresh_budget_snapshot");
  const expired=now-start>=policy.windowMs;
  const consumed=expired?0:used;
