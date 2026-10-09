@@ -22,3 +22,13 @@ test("always rejects invalid price amounts",()=>{
   assert.equal(pricePlausibility("Desk lamp",0).ok,false);
   assert.equal(pricePlausibility("Apple AirPods Max",NaN).ok,false);
 });
+
+test("rejects the actual Virgin AE misparsed PlayStation console price",()=>{
+  const title="Sony Playstation PS5 Digital Edition Console - CFI2116B01Y";
+  assert.equal(pricePlausibility(title,2.04).ok,false);
+  assert.equal(pricePlausibility(title,1699).ok,true);
+});
+test("does not mistake PS5 games and controllers for expensive consoles",()=>{
+  assert.equal(pricePlausibility("EA Sports FC 27 - Standard Edition - PS5",200).ok,true);
+  assert.equal(pricePlausibility("PS5 DualSense Wireless Controller",150).ok,true);
+});
