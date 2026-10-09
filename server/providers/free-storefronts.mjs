@@ -1056,6 +1056,17 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
     const score = tokens.length ? hits / tokens.length : 0.5;
     if (score < 0.2 && tokens.length > 1) return;
     url = canonicalizeCandidateUrl(url);
+    // Noon search cards often append navigation/session and offer tracking
+    // parameters. Resolve and deduplicate the public product page itself;
+    // never let changing tracking keys trigger redundant slow PDP requests.
+    if (store.id === "noon-ae") {
+      const clean = new URL(url);
+      if (/\/p\/?$/i.test(clean.pathname)) {
+        clean.search = "";
+        clean.hash = "";
+        url = clean.href;
+      }
+    }
     if (seen.has(url)) return;
     seen.add(url);
     out.push({ url, label, score });
