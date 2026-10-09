@@ -36,6 +36,7 @@ for(const query of cases){
       searchDiagnostics:extraction,
       candidateSamples:(diagnostic.candidateSamples||[]).slice(0,3),
       failureSamples:(diagnostic.failureSamples||[]).slice(0,3),
+      priceRejectedSamples:(diagnostic.priceRejectedSamples||[]).slice(0,3),
       examples:valid.slice(0,2).map(o=>({title:o.title,price:o.productPrice,url:o.sourceUrl}))});
   }catch(error){
     report.cases.push({query,pass:false,ms:Date.now()-started,error:error?.message||String(error)});
