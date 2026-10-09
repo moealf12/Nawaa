@@ -47,7 +47,17 @@ drop trigger if exists offer_observations_immutable on offer_observations;
 create trigger offer_observations_immutable
 before update or delete on offer_observations
 for each row execute function nawaa_reject_offer_observation_mutation();
-`);initialized=true;return {configured:true,ready:true};})();
+`);
+// This ledger is only needed by the opt-in durable background worker.
+// Keeping its DDL behind the feature flag preserves existing customers.
+if(process.env.NAWAA_ENABLE_BACKGROUND_JOBS==="1"){
+  await client.query(`create table if not exists nawaa_ingestion_receipts(
+    ingestion_id uuid primary key,
+    source_name text not null,
+    received_at timestamptz not null default now()
+  )`);
+}
+initialized=true;return {configured:true,ready:true};})();
 try{return await initializing;}finally{initializing=null;}
 }
 const canonicalUrl=value=>{try{const u=new URL(value);u.hash="";for(const key of [...u.searchParams.keys()])if(/^utm_|^(gclid|fbclid|ref|aff|affiliate)$/i.test(key))u.searchParams.delete(key);u.hostname=u.hostname.toLowerCase().replace(/^www\./,"");u.pathname=u.pathname.replace(/\/+$/,"")||"/";return u.toString();}catch{return String(value||"").trim();}};
@@ -70,10 +80,24 @@ export async function recordOffer(offerData={}){
   const key=keyOf(normalized);
   const observedAt=offerData.observedAt ? new Date(offerData.observedAt) : new Date();
   if(Number.isNaN(observedAt.getTime())) throw new Error("invalid_observed_at");
+  // pg-boss retries the same UUID on worker crashes or lost acknowledgements.
+  const ingestionId=offerData.ingestionId==null?null:String(offerData.ingestionId);
+  if(ingestionId!==null && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ingestionId)
+      || process.env.NAWAA_ENABLE_BACKGROUND_JOBS!=="1"))throw new Error("invalid_or_disabled_ingestion_id");
   const query=String(offerData.query||sourceName||"crawler");
   const tx=await client.connect();
   try{
     await tx.query("BEGIN");
+    if(ingestionId){
+      const receipt=await tx.query(
+        "insert into nawaa_ingestion_receipts(ingestion_id,source_name) values($1,$2) on conflict do nothing returning ingestion_id",
+        [ingestionId,sourceName]
+      );
+      if(!receipt.rows.length){
+        await tx.query("ROLLBACK");
+        return {configured:true,recorded:false,duplicate:true,observationId:null};
+      }
+    }
     const observation=await tx.query(
       `insert into offer_observations(product_url,source_name,price,currency,validation_timestamp,health_status)
        values($1,$2,$3,$4,$5,$6) returning id,validation_timestamp`,
