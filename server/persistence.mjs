@@ -160,3 +160,30 @@ export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}
     }))
   };
 }
+
+// Internal bounded historical-price read model; deliberately no public route.
+// Reuse recordOffer URL normalization and index-supported source filtering.
+export async function getOfferPriceHistory(sourceUrl,{sourceName,limit=30}={}){
+  const productUrl=recordUrl(sourceUrl);
+  const source=String(sourceName||"").trim();
+  if(!productUrl||!/^[a-z0-9][a-z0-9-]{1,79}$/.test(source))
+    throw new Error("invalid_price_history_identity");
+  if(!Number.isSafeInteger(limit)||limit<1||limit>500)
+    throw new Error("invalid_price_history_limit");
+  const client=await db();
+  if(!client)return {configured:false,productUrl,sourceName:source,observations:[]};
+  await initPersistence();
+  const result=await client.query(
+    "select id,price,currency,validation_timestamp,health_status "+
+    "from offer_observations where product_url=$1 and source_name=$2 "+
+    "order by validation_timestamp desc,id desc limit $3",
+    [productUrl,source,limit]
+  );
+  return {configured:true,productUrl,sourceName:source,
+    observations:result.rows.map(row=>({
+      id:row.id,price:Number(row.price),currency:row.currency,
+      observedAt:row.validation_timestamp instanceof Date
+        ?row.validation_timestamp.toISOString():row.validation_timestamp,
+      healthStatus:row.health_status
+    }))};
+}
