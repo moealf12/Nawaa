@@ -13,6 +13,11 @@ on:
       - ".github/workflows/active-source-certification.yml"
       - "server/providers/free-storefronts.mjs"
 
+# Avoid spending free-tier minutes certifying superseded commits.
+concurrency:
+  group: active-source-cert-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   batch-1:
     runs-on: ubuntu-latest
