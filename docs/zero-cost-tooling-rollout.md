@@ -78,3 +78,17 @@ This checkpoint supersedes older planned steps above.
 - `main`, public search, production database and production signing keys are untouched. No production ingestion permissions are implied by any passing CI check.
 
 **Remaining gates:** verify real multi-day source refresh without hitting merchant limits; decide acceptable stale-price age, source rate budget, retry/backoff and alerting; retain independently verified merchant DOM price checks; evaluate deployment isolation before adding scheduling.
+
+## October 10, 2026: opt-in budgeted explicit source refresh
+
+Implementation stays confined to `feature/zero-cost-tooling-foundation`; no production customer search change or scheduled crawler.
+
+- `server/tooling/source-refresh-policy.mjs`: **read-only** admission plan for IKEA Saudi with a 6-hour revisit floor, 48-hour stale classification, up to five known pilot products per run, two estimated page requests per product, and a 10-request/24-hour planning budget. Handles failures, Retry-After deadlines, 403/404 manual review and invalid timestamps.
+- `server/tooling/durable-refresh-budget.mjs`: feature-flagged PostgreSQL **transactional request reservations**, max 10 permitted IKEA GETs per 24-hour source window. Each reservation is charged **before** fetching and never refunded. An atomic per-SKU six-hour attempt lease blocks concurrent duplicate refreshes without charging the rejected attempt. No schema is created when the flags are disabled.
+- `server/tooling/explicit-ikea-refresh.mjs`: an **explicitly invoked** single-product bridge using only the five approved URLs, protected by separate background, certification, budget and explicit-refresh flags. It verifies existing observation age, reserves the SKU lease and two requests in one transaction, extracts the merchant JSON-LD and separately verifies the customer-facing HTML price, signs with HMAC and queues to pg-boss.
+- `fetchHtmlSafe` gained an **opt-in `maxRedirects:0`** argument. The explicit bridge uses this on both page GETs: redirects are rejected instead of silently consuming additional network requests. Existing callers retain unchanged default redirect behavior.
+- [Offline refresh planner proof](https://github.com/moealf12/Nawaa/actions/runs/38005183957) **passed** with no network requests or database writes.
+- [Atomic PostgreSQL source quota proof](https://github.com/moealf12/Nawaa/actions/runs/38005718883) **passed** with seven concurrent source reservations and same-SKU lease tests on a disposable database.
+- [Actual authorized single-product refresh proof](https://github.com/moealf12/Nawaa/actions/runs/38005815483) **passed**: the merchant showed SAR 479 for SKU 39240787, HTML and JSON-LD agreed, exactly two requests were reserved, one signed offer/history/receipt was stored on disposable PostgreSQL, a second simultaneous refresh of the same SKU was **blocked without another charge**, and a subsequent fresh-price recheck was skipped.
+
+Safeguards and remaining limits: no automatic schedule, no public API, no credentials stored in source, no production database writes, and no claim of multi-day real price stability. Merchant robots/terms, permitted acquisition frequencies, dynamic checkout/region pricing, production failover, and monitoring still require review before deployment.
