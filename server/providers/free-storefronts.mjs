@@ -101,7 +101,7 @@ const STORES = [
   {
     id:"jumbo-ae", name:"Jumbo Electronics UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","desktop","monitor","audio","camera","tv","console","game","accessory","network","appliance"],
     search:(q)=>"https://www.jumbo.ae/search/"+encodeURIComponent(q),
-    productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)|\/[^/?#]+-\d+(?:[/?#]|$)/i,
+    productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)|\/[^/?#]+-\d+(?:[/?#]|$)|\/(?!search(?:\/|$)|brands(?:\/|$)|ar(?:\/|$))[^/?#]+\.html(?:[?#]|$)/i,
   },
   {
     id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", enabled:false, disabledReason:"http_403_live_search", brands:["farfetch"], categories:["clothing","shoes","bag","jewelry","watch"],
@@ -1595,6 +1595,36 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             primarySearchError=null;
           }catch(error){
             primarySearchError=[primarySearchError,"goldenscent-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
+          }
+        }
+      }
+      if (store.id === "jumbo-ae") {
+        const normalized=normalizeSearchQuery(query);
+        const categoryUrl=/\biphone\s*17\b/i.test(normalized)
+          ? "https://www.jumbo.ae/apple-iphone-17"
+          : /\bairpods?\b/i.test(normalized)
+            ? "https://www.jumbo.ae/apple-airpods" : null;
+        if (categoryUrl) {
+          try {
+            const page=await fetchText(categoryUrl,{signal:options.signal});
+            html=page.html;
+            searchPageFinalUrl=page.finalUrl || categoryUrl;
+            searchDiagnostics={
+              ...searchPageDiagnostics(html,categoryUrl,searchPageFinalUrl),
+              acquisitionFallback:"jumbo-official-product-category",
+            };
+            const embedded=extractEmbeddedSearchOffers(html,searchPageFinalUrl,store,query);
+            const jsonLd=extractJsonLdSearchOffers(html,searchPageFinalUrl,store,query);
+            const seen=new Set();
+            htmlFirstOffers=[];
+            for(const offer of [...embedded,...jsonLd]){
+              const key=canonicalizeCandidateUrl(offer.sourceUrl||"")+"|"+offer.price+"|"+offer.currency;
+              if(seen.has(key))continue;
+              seen.add(key);htmlFirstOffers.push(offer);
+            }
+            primarySearchError=null;
+          }catch(error){
+            primarySearchError=[primarySearchError,"jumbo-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
           }
         }
       }
