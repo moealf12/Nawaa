@@ -1,0 +1,25 @@
+name: IKEA Saudi - read-only visible DOM pricing investigation
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - "scripts/probe-ikea-price-dom.mjs"
+      - ".github/workflows/ikea-dom-price-proof.yml"
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ""
+      NAWAA_ENABLE_BACKGROUND_JOBS: "0"
+      NAWAA_ENABLE_CERTIFIED_INGESTION: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node scripts/probe-ikea-price-dom.mjs
