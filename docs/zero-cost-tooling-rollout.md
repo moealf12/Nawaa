@@ -38,7 +38,7 @@ The producer requires an attestation. The worker verifies its signature using an
 
 ## Still outstanding before deployment
 
-1. Connect certified live source extractors to the attestation issuer after original-merchant verification. Current pg-boss DB integration uses an isolated **CI fixture**, not scraped live offers.
+1. Connect certified live source extractors to the attestation issuer after original-merchant verification. The initial pg-boss integration used an isolated **CI fixture**. Later disposable-database runs additionally verified five real IKEA offers with merchant HTML price parity. No production writing is enabled.
 2. Safely configure database credentials/quotas and signing key for a dedicated zero-cost background worker; test on a disposable non-production database again.
 3. Evaluate Crawl4AI on a *consented/allowed* real source and measure memory and browser CPU. The local fixture is not a live source certification.
 4. Expand browser QA, source observation monitoring and production-readiness/security review.
@@ -53,8 +53,8 @@ No automatic rollout or production migration is authorized by these tests.
 - Fails closed on redirects changing product paths, unapproved merchant hosts, non-SAR prices, missing/ambiguous price evidence, multi-offer variants and unapproved source IDs. A pilot-certified domain is not by itself permission to run this live producer.
 - \`scripts/probe-certified-merchant.mjs <IKEA_SA_PRODUCT_URL>\` is read-only. It requires **no secret, database or queue** and produces evidence plus image presence. Live store behavior is not asserted by the offline tests.
 - \`enqueueCertifiedMerchantProduct(...)\` issues the original-source HMAC only after successful inspection and hands the exact observed product to pg-boss; it is not executed at HTTP startup. A valid signature remains proof of *trusted producer issuance*, not independent proof against a compromised merchant or extractor.
-- Worker now persists only the fields bound by the v1 attestation plus server-assigned source and receipt metadata. Extra unsigned job fields such as \`observedAt\`, \`healthStatus\`, \`totalSAR\` and \`brand\` are discarded to prevent observation backdating and unverified canonical changes.
-- Still no automated crawling, production credentials, production writes, broader merchant activation, or customer search change. Next gate: explicitly run the read-only probe against a compliant live IKEA product page; compare extracted price/currency/title/image against merchant UI, and only then consider a single disposable-PostgreSQL write.
+- Worker persists only fields bound by v1 attestation plus controlled source/receipt metadata and **uses the verified HMAC-issued timestamp as the observation time**. Unsigned job fields such as \`observedAt\`, \`healthStatus\`, \`totalSAR\` and \`brand\` are discarded. Older signed deliveries cannot overwrite newer canonical prices.
+- Still no automated crawling, production credentials, production writes, broader merchant activation, or customer search change. The single-source read-only probe, five-product visible HTML price proof and five-offer disposable PostgreSQL ingestion have since completed. No scheduled production crawler is active.
 
 
 ## October 9, 2026: tested live and historical gates
@@ -65,3 +65,16 @@ This checkpoint supersedes older planned steps above.
 - The history lifecycle passed with one authentic observed 479 SAR price and a controlled simulated 489 SAR change; the simulated amount is **not a real merchant observation**. An older backdated record stayed historical and did not overwrite the current canonical row. See [history lifecycle](https://github.com/moealf12/Nawaa/actions/runs/37988162703).
 - Internal getOfferPriceHistory supports bounded chronological queries scoped to source and product. See [history query checks](https://github.com/moealf12/Nawaa/actions/runs/37988432920).
 - Further work: verify real price changes across days, variant/browser rendering, source-rate budgets, and deployment controls. The live consumer search and production DB remain untouched.
+
+## October 10, 2026: signed ordering, concurrency and bounded price history
+
+**Evidence-based latest status** (all prices in synthetic lifecycle tests are fixtures, *not* observed IKEA changes):
+
+- Signed observation order tested on an actual disposable PostgreSQL 16 worker path: [signed out-of-order run](https://github.com/moealf12/Nawaa/actions/runs/38002893563).
+- 12 distinct signed observations for the same SKU were processed with 13 parallel calls and two simultaneous retries. The [concurrency test](https://github.com/moealf12/Nawaa/actions/runs/38004351159) passed: one canonical offer, 12 immutable observations, 12 receipts, no stale overwrite.
+- `getOfferPriceHistory` now additionally includes `insights` via the pure internal module `server/tooling/price-history-insights.mjs`: last different price, bounded-sample minimum and maximum, direction, observed percentage change, and a marked >=10% move. Invalid or mixed-currency histories do not produce discounts.
+- Repeated unchanged latest readings do **not** create a new historical low if that price previously occurred before a rebound. Source data sample bounds are explicit; these flags are not all-time-price guarantees.
+- [Historical prices on disposable PostgreSQL](https://github.com/moealf12/Nawaa/actions/runs/38004634849) validate the read model, immutable history and synthetic descending price fixture.
+- `main`, public search, production database and production signing keys are untouched. No production ingestion permissions are implied by any passing CI check.
+
+**Remaining gates:** verify real multi-day source refresh without hitting merchant limits; decide acceptable stale-price age, source rate budget, retry/backoff and alerting; retain independently verified merchant DOM price checks; evaluate deployment isolation before adding scheduling.
