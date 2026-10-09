@@ -27,7 +27,8 @@ export function summarizeCertification(activeIds,reports) {
 
 async function main(){
   const folder=resolve(process.env.SOURCE_CERT_DIR||"source-cert-artifacts");
-  const paths=(await readdir(folder)).filter(file=>/^active-source-[a-z0-9-]+\.json$/.test(file));
+  const paths=(await readdir(folder).catch(error=>{if(error?.code==="ENOENT")return [];throw error;}))
+    .filter(file=>/^active-source-[a-z0-9-]+\.json$/.test(file));
   const reports=new Map();
   for(const file of paths){
     try {
