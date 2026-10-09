@@ -1,5 +1,5 @@
 import {writeFile} from "node:fs/promises";
-import {configuredFreeStorefronts,searchFreeStorefrontById} from "../server/providers/free-storefronts.mjs";
+import {configuredFreeStorefronts,searchFreeStorefrontById,routeFreeStorefronts} from "../server/providers/free-storefronts.mjs";
 
 // One isolated source per CI job. This tests its real extraction path, not
 // an in-memory fixture or a count of registry entries.
@@ -10,7 +10,11 @@ if(!id || queries.length!==2 || !active.some(s=>s.id===id)) {
 }
 const negative="nawaa-unfindable-943271-20261003";
 const cases=[...queries,negative];
-const report={source:id,observedAt:new Date().toISOString(),cases:[],passed:false};
+const routeCoverage=queries.map(query=>({
+  query,
+  routed:routeFreeStorefronts(query,Infinity,{stable:true}).some(route=>route.store.id===id),
+}));
+const report={source:id,observedAt:new Date().toISOString(),routeCoverage,cases:[],passed:false};
 for(const query of cases){
   const started=Date.now();
   try{
@@ -42,7 +46,7 @@ for(const query of cases){
     report.cases.push({query,pass:false,ms:Date.now()-started,error:error?.message||String(error)});
   }
 }
-report.passed=report.cases.every(c=>c.pass);
+report.passed=report.cases.every(c=>c.pass) && routeCoverage.some(item=>item.routed);
 await writeFile("active-source-"+id+".json",JSON.stringify(report,null,2)+"\n");
 console.log(JSON.stringify(report,null,2));
 if(!report.passed)process.exitCode=1;
