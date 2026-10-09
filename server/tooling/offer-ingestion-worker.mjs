@@ -19,8 +19,16 @@ export function createOfferIngestionHandler({record=recordOffer,validate=validat
     throw new Error("merchant_verification_required");
   }
   if(typeof verify!=="function" || await verify({sourceId,offer,job:payload})!==true) throw new Error("trusted_source_verifier_required");
-  // Reuse the immutable observation + canonical UPSERT ACID implementation.
-  const saved=await record({...offer,sourceName:sourceId,query:payload.query||sourceId,
+  // v1 HMAC covers only these authoritative fields. Never persist unsigned
+  // payload metadata such as observedAt, healthStatus, condition, totalSAR or brand.
+  // Worker ingestion time is assigned by recordOffer; an attacker cannot backdate
+  // the canonical latest offer via otherwise valid signed data.
+  const trusted={title:offer.title,sourceUrl:offer.sourceUrl,
+    productPrice:offer.productPrice,currency:offer.currency,merchant:offer.merchant,
+    ...(offer.image?{image:offer.image}:{}),
+    ...(offer.imageUrl?{imageUrl:offer.imageUrl}:{}),
+    ...(offer.sku?{sku:offer.sku}:{})};
+  const saved=await record({...trusted,sourceName:sourceId,query:sourceId,
     ...(job?.id?{ingestionId:String(job.id)}:{})});
   if(saved?.duplicate===true)return {recorded:true,duplicate:true,sourceId,observationId:null};
   if(!saved?.recorded)throw new Error("persistence_did_not_record");

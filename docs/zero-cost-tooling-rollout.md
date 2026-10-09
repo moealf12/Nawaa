@@ -45,3 +45,13 @@ The producer requires an attestation. The worker verifies its signature using an
 5. Keep the original 15-source preview separated from PR #71, and keep the remaining 24 unapproved pending independent live certification.
 
 No automatic rollout or production migration is authorized by these tests.
+
+
+## Pilot merchant-original producer (IKEA Saudi only)
+
+- \`server/tooling/merchant-observation-producer.mjs\` is a new **explicitly invoked** producer. It accepts an IKEA Saudi product page URL, uses the existing DNS-pinned, redirect-validated and byte-limited extraction transport, and inspects a unique JSON-LD Product with a single exact Offer.
+- Fails closed on redirects changing product paths, unapproved merchant hosts, non-SAR prices, missing/ambiguous price evidence, multi-offer variants and unapproved source IDs. A pilot-certified domain is not by itself permission to run this live producer.
+- \`scripts/probe-certified-merchant.mjs <IKEA_SA_PRODUCT_URL>\` is read-only. It requires **no secret, database or queue** and produces evidence plus image presence. Live store behavior is not asserted by the offline tests.
+- \`enqueueCertifiedMerchantProduct(...)\` issues the original-source HMAC only after successful inspection and hands the exact observed product to pg-boss; it is not executed at HTTP startup. A valid signature remains proof of *trusted producer issuance*, not independent proof against a compromised merchant or extractor.
+- Worker now persists only the fields bound by the v1 attestation plus server-assigned source and receipt metadata. Extra unsigned job fields such as \`observedAt\`, \`healthStatus\`, \`totalSAR\` and \`brand\` are discarded to prevent observation backdating and unverified canonical changes.
+- Still no automated crawling, production credentials, production writes, broader merchant activation, or customer search change. Next gate: explicitly run the read-only probe against a compliant live IKEA product page; compare extracted price/currency/title/image against merchant UI, and only then consider a single disposable-PostgreSQL write.
