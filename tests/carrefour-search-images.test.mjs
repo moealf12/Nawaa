@@ -36,3 +36,26 @@ test("Carrefour AE customer search accepts a priced offer with a verified image"
    assert.ok(offer.productPrice>4000);
  } finally {globalThis.fetch=orig;}
 });
+
+test("Carrefour image enrichment requires identical PDP id and AED price",async()=>{
+ const original=globalThis.fetch;
+ const jsonLd=JSON.stringify([
+   {"@type":"Product",name:"Apple iPhone 17 256GB Black",url:b,
+     image:"https://cdn.example.com/iphone-base.jpg",offers:{price:3200,priceCurrency:"AED"}},
+   {"@type":"Product",name:"Apple iPhone 17 Pro 256GB Silver",url:a,
+     image:"https://cdn.example.com/incorrect-price.jpg",offers:{price:100,priceCurrency:"AED"}},
+ ]);
+ const html=fixture+'<script type="application/ld+json">'+jsonLd+'</script>';
+ try {
+   globalThis.fetch=async url=>{
+     if(String(url).startsWith("https://www.carrefouruae.com"))return new Response(html,{headers:{"content-type":"text/html"}});
+     if(String(url).includes("frankfurter.dev"))return Response.json({rate:1.02,date:"2026-10-09"});
+     throw Error("Unexpected request "+url);
+   };
+   const result=await searchFreeStorefrontById("carrefour-ae","iphone 17",{perStore:5});
+   const offer=result.offers.find(o=>o.sourceUrl===b);
+   assert.ok(offer,JSON.stringify(result.diagnostics));
+   assert.equal(offer.image,"https://cdn.example.com/iphone-base.jpg");
+   assert.equal(result.diagnostics.searchPage.imageEnrichedFromStructured,1);
+ } finally {globalThis.fetch=original;}
+});
