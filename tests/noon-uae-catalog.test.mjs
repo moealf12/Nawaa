@@ -119,3 +119,32 @@ test("Noon UAE empty market-specific catalog does not trigger slow HTML fallback
     assert.equal(calls.length,1);
   }finally{globalThis.fetch=original;}
 });
+
+test("Noon UAE safely falls back to second public catalog endpoint on network failure",async()=>{
+  const original=globalThis.fetch;
+  const calls=[];
+  try {
+    globalThis.fetch=async(url)=>{
+      calls.push(String(url));
+      if(calls.length===1)throw new TypeError("transport reset");
+      return Response.json({hits:[hit]});
+    };
+    const offers=await searchNoonUaeCatalog("iphone 17",10);
+    assert.equal(calls.length,2);
+    assert.match(calls[0],/\/_vs\/nc\//);
+    assert.match(calls[1],/\/_svc\/catalog\//);
+    assert.equal(offers.length,1);
+    assert.equal(offers[0].originalCurrency,"AED");
+  }finally {globalThis.fetch=original;}
+});
+test("Noon UAE does not retry authorization or rate-limit failures",async()=>{
+  const original=globalThis.fetch;
+  for(const status of [401,403,429]){
+    let calls=0;
+    try{
+      globalThis.fetch=async()=>{calls++;return new Response("",{status});};
+      await assert.rejects(()=>searchNoonUaeCatalog("iphone 17",10),/access denied/);
+      assert.equal(calls,1);
+    }finally{globalThis.fetch=original;}
+  }
+});
