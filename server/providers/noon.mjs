@@ -127,7 +127,13 @@ function productUrl(hit = {}, market = "SA") {
       if (!/^\/uae-en\//i.test(candidate.pathname)) {
         candidate.pathname = "/uae-en" + (candidate.pathname.startsWith("/") ? "" : "/") + candidate.pathname;
       }
-      if (!/\/p\/?$/i.test(candidate.pathname)) return null;
+      if (!/\/p\/?$/i.test(candidate.pathname)) {
+        // Catalog hits can contain a slug rather than a full PDP.
+        // Only a SKU in the same price-bearing hit can form a PDP.
+        const sku = text(hit.sku || hit.catalog_sku || hit.sku_config);
+        if (!/^[A-Z][A-Z0-9]{6,20}$/i.test(sku)) return null;
+        candidate.pathname = candidate.pathname.replace(/\/+$/, "") + "/" + sku + "/p/";
+      }
       candidate.search = ""; candidate.hash = "";
       return candidate.href;
     } catch { return null; }
@@ -159,6 +165,8 @@ export function parseNoonCatalogPayload(payload, limit = 32, market = "SA") {
       : regularPrice;
 
     if (!title || !sku || productPrice === null) continue;
+    const declaredCurrency = text(hit?.currency || hit?.price_currency || hit?.priceCurrency).toUpperCase();
+    if (market === "AE" && declaredCurrency && declaredCurrency !== "AED") continue;
     const url = productUrl(hit, market);
     if (market === "AE" && !url) continue;
 
@@ -306,9 +314,8 @@ export async function searchNoonUaeCatalog(query, limit = 32, {signal} = {}) {
     accept: "application/json",
     "accept-language": "en-AE,en;q=0.9",
     "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.5; +https://moealf12.github.io/Nawaa/)",
-    "x-platform": "web",
-    "x-cms": "v2",
-    "x-content": "desktop",
+    // Both country and locale are needed for market-specific results.
+    "x-mp-country": "ae",
     "x-locale": "en-ae",
     referer: "https://www.noon.com/uae-en/search/?q=" + encodeURIComponent(query),
   };
@@ -321,5 +328,10 @@ export async function searchNoonUaeCatalog(query, limit = 32, {signal} = {}) {
   });
   if (!response.ok) throw new Error("Noon UAE catalog HTTP " + response.status);
   const payload = await response.json();
+  // A clearly Saudi response must never be relabelled as an AED offer.
+  const describedMarket = [payload?.meta?.title, payload?.meta?.desc, payload?.market, payload?.country].filter(Boolean).join(" ");
+  if (/saudi arabia|saudi-en|\bksa\b/i.test(describedMarket) && !/united arab emirates|\buae\b|dubai|abu dhabi/i.test(describedMarket)) {
+    throw new Error("noon_uae_market_mismatch");
+  }
   return parseNoonCatalogPayload(payload, Math.max(1, Math.min(50, Number(limit) || 32)), "AE");
 }
