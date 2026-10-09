@@ -296,7 +296,7 @@ export async function searchNoon(query, limit = 32) {
   };
 }
 
-export async function searchNoonUaeCatalog(query, limit = 32) {
+export async function searchNoonUaeCatalog(query, limit = 32, {signal} = {}) {
   const url = new URL(NOON_SEARCH_BASE);
   url.searchParams.set("q", query);
   url.searchParams.set("limit", String(Math.max(1, Math.min(50, Number(limit) || 32))));
@@ -317,7 +317,7 @@ export async function searchNoonUaeCatalog(query, limit = 32) {
   // test doubles and the search deadline can govern it.
   const response = await fetch(url, {
     headers,
-    signal: AbortSignal.timeout(4500),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(4500)]) : AbortSignal.timeout(4500),
   });
   if (!response.ok) throw new Error("Noon UAE catalog HTTP " + response.status);
   const payload = await response.json();
