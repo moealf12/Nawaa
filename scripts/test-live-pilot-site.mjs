@@ -62,12 +62,23 @@ async function main(){
      !Number.isFinite(o.productPrice)||o.productPrice<=0||
      !String(o.image||"").startsWith("https://") ||
      !String(o.sourceUrl||"").startsWith("https://"));
+   const invalidDetails=offers.filter(o=>
+     o.providerMarket!==source.id||
+     !Number.isFinite(o.productPrice)||o.productPrice<=0||
+     !String(o.image||"").startsWith("https://")||
+     !String(o.sourceUrl||"").startsWith("https://")
+   ).slice(0,2).map(o=>({
+     providerMarket:o.providerMarket,
+     priceSAR:o.productPrice,
+     imageUrl:String(o.image||"").slice(0,180),
+     sourceUrl:String(o.sourceUrl||"").slice(0,180),
+   }));
    results.push({
      id:source.id,name:source.name,query:q,
      http:response.http,durationMs:response.durationMs,
      status:response.data?.status||(response.error?"network_error":response.data?.error||"unexpected_response"),
      offers:offers.length,
-     invalid:invalid.length,
+     invalid:invalid.length,invalidDetails,
      example:offers.slice(0,2).map(o=>({title:String(o.title||"").slice(0,90),priceSAR:o.productPrice})),
      error:response.error||response.data?.detail||null,
    });
