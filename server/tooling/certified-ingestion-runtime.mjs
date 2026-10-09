@@ -2,12 +2,13 @@ import {createBackgroundBoss} from "./background-boss.mjs";
 import {createOfferIngestionHandler,registerOfferIngestionWorker,OFFER_INGESTION_QUEUE} from "./offer-ingestion-worker.mjs";
 import {createSignedSourceVerifier} from "./source-attestation.mjs";
 import {CERTIFIED_SOURCE_HOSTS} from "../../src/certified-source-hosts.mjs";
+import {createLocalTelemetry} from "./local-telemetry.mjs";
 
 // An explicitly-started, offline-capable worker. It does not run at HTTP
 // startup, scrape websites, authenticate externally, or require paid services.
 export async function startCertifiedIngestionWorker({
  env=process.env,bossFactory=createBackgroundBoss,sourceHosts=CERTIFIED_SOURCE_HOSTS,
- record,teamSize=1
+ record,teamSize=1,telemetryFactory=createLocalTelemetry
 }={}){
  if(env.NAWAA_ENABLE_BACKGROUND_JOBS!=="1"||env.NAWAA_ENABLE_CERTIFIED_INGESTION!=="1")
    throw new Error("certified_ingestion_disabled");
@@ -15,6 +16,7 @@ export async function startCertifiedIngestionWorker({
     Buffer.byteLength(env.NAWAA_INGESTION_SIGNING_KEY,"utf8")<32)
    throw new Error("ingestion_signing_key_required");
  const boss=bossFactory({env});
+ const telemetry=telemetryFactory({enabled:env.NAWAA_LOCAL_TELEMETRY==="1"});
  try{
    await boss.start();
    await boss.createQueue(OFFER_INGESTION_QUEUE,{retryLimit:2,retryDelay:5,retryBackoff:true});
@@ -22,10 +24,12 @@ export async function startCertifiedIngestionWorker({
      verify:createSignedSourceVerifier({sourceHosts,key:env.NAWAA_INGESTION_SIGNING_KEY}),
      ...(record?{record}:{})
    });
-   await registerOfferIngestionWorker(boss,{handler,teamSize});
-   return {boss,stop:()=>boss.stop(),handler};
+   await registerOfferIngestionWorker(boss,{handler:job=>telemetry.withSpan(
+     "nawaa.offer.ingest",{source_id:job?.data?.sourceId||"unknown",job_type:"offer"},()=>handler(job)),teamSize});
+   return {boss,stop:async()=>{try{await boss.stop();}finally{await telemetry.shutdown();}},handler};
  }catch(error){
    try{await boss.stop();}catch{}
+   try{await telemetry.shutdown();}catch{}
    throw error;
  }
 }
