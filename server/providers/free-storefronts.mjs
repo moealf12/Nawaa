@@ -3,6 +3,7 @@ import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryO
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 import { searchNoonUaeCatalog } from "./noon.mjs";
+import { pricePlausibility } from "../price-plausibility.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1531,29 +1532,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const links = html ? extractProductLinks(html, searchUrl, store, query, candidateLimit) : [];
     const jsonLdOffers = html ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query) : [];
     const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
-    // Search-result offers are already price-verified. Do not fan out into slow product pages.
-    const resolutionLinks = directSearchOffers.length ? [] : links;
-    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
-    const resolvedOffers = settled
-      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
-      .map((result) => ({
-        ...result.value,
-        provider:"free-storefronts",
-        providerMarket:store.id,
-        merchant:result.value.merchant || store.name,
-        merchantCountryCode:store.countryCode,
-        merchantCountryNameAr:store.countryNameAr,
-        canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
-        isLocal:store.countryCode === "SA",
-        exactMatch:false,
-        matchConfidence:0,
-        sourceMeta:{
-          ...(result.value.sourceMeta || {}),
-          storefrontSearch:store.name,
-          freeDiscovery:true,
-          searchUrl,
-        },
-      }));
+    const priceRejectedSamples=[];
     const directOffers = (await Promise.all(directSearchOffers.map(async (item) => {
       // Discovery is not certification: only accept an offer when its source
       // URL is a merchant-owned product page and its price/currency are explicit.
@@ -1573,6 +1552,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       if (!Number.isFinite(rawPrice) || rawPrice <= 0 || !/^[A-Z]{3}$/.test(currency)) return null;
       const converted = await moneyToSAR(rawPrice, currency).catch(() => null);
       if (!converted) return null;
+      const plausibility=pricePlausibility(item.title,converted.value);
+      if (!plausibility.ok) {
+        priceRejectedSamples.push({title:item.title,priceSAR:converted.value,currency,originalPrice:rawPrice,reason:plausibility.reason});
+        return null;
+      }
       return {
         provider:"free-storefronts",
         providerMarket:store.id,
@@ -1603,9 +1587,32 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         observedAt:new Date().toISOString(),
         dataKind:"live",
         fx:{ rate:converted.rate, source:converted.source, observedAt:converted.observedAt },
-        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true, acquisitionFallback:searchDiagnostics?.acquisitionFallback || null, verifiedProductPageUrl:true, verifiedPriceCurrency:true },
+        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:htmlFirstOffers.length>0, catalogApiPrice:htmlFirstOffers.length===0 && primarySearchOffers.length>0, acquisitionFallback:searchDiagnostics?.acquisitionFallback || null, verifiedProductPageUrl:true, verifiedPriceCurrency:true },
       };
     }))).filter(Boolean);
+    // Search-result offers are already price-verified. Do not fan out into slow product pages.
+    const resolutionLinks = directOffers.length ? [] : links;
+    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
+    const resolvedOffers = settled
+      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
+      .map((result) => ({
+        ...result.value,
+        provider:"free-storefronts",
+        providerMarket:store.id,
+        merchant:result.value.merchant || store.name,
+        merchantCountryCode:store.countryCode,
+        merchantCountryNameAr:store.countryNameAr,
+        canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
+        isLocal:store.countryCode === "SA",
+        exactMatch:false,
+        matchConfidence:0,
+        sourceMeta:{
+          ...(result.value.sourceMeta || {}),
+          storefrontSearch:store.name,
+          freeDiscovery:true,
+          searchUrl,
+        },
+      })).filter(item=>pricePlausibility(item.title,item.productPrice).ok);
     const allOffers = [...directOffers, ...resolvedOffers];
     const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, allOffers);
     const queryFilterSamples = allOffers
@@ -1646,6 +1653,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       diagnostics:{
         queryFilter,
         queryFilterSamples,
+        priceRejectedSamples:priceRejectedSamples.slice(0,5),
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         candidateSamples:(directSearchOffers.length
