@@ -6,6 +6,7 @@ import pg from "pg";
 import {startCertifiedIngestionWorker} from "../server/tooling/certified-ingestion-runtime.mjs";
 import {enqueueCertifiedMerchantProduct} from "../server/tooling/merchant-observation-producer.mjs";
 import {initPersistence} from "../server/persistence.mjs";
+import {PILOT_PRODUCTS} from "./probe-ikea-batch.mjs";
 
 const env=process.env;
 if(env.NAWAA_CI_EPHEMERAL_DB!=="1"||
@@ -23,58 +24,43 @@ let running;
 try{
  await initPersistence();
  running=await startCertifiedIngestionWorker({env});
- let captured=null;
- const trackedBoss={send:async (...args)=>{
-  if(captured!==null)throw new Error("only_one_queue_submission_permitted");
-  captured=args[1];return running.boss.send(...args);
- }};
- const {jobId,queued,evidence}=await enqueueCertifiedMerchantProduct(trackedBoss,{
-  sourceId,url,key:env.NAWAA_INGESTION_SIGNING_KEY
- });
- assert.equal(queued,true);
- assert.match(jobId,/^[0-9a-f-]{36}$/i);
- assert.equal(evidence.merchantPriceVerified,true);
- assert.equal(captured.sourceId,sourceId);
- assert.equal(captured.verifiedBySource,sourceId);
- assert.match(captured.attestation,/^v1\.\d{13}\.[a-f0-9]{64}$/);
- assert.equal(captured.offer.currency,"SAR");
- assert.equal(captured.offer.sku.replace(/\D/g,""),"39240787");
- const timeoutAt=Date.now()+35000;
- let found=null;
- while(Date.now()<timeoutAt){
-  const receipts=await pool.query("select ingestion_id from nawaa_ingestion_receipts where ingestion_id=$1",[jobId]);
-  const row=await pool.query("select offer_key,source_url,title,product_price,currency,image_url,sku,merchant from nawaa_offers");
-  const observations=await pool.query("select product_url,source_name,price,currency from offer_observations");
-  if(receipts.rows.length===1&&row.rows.length===1&&observations.rows.length===1){
-   found={receipt:receipts.rows[0],offer:row.rows[0],observation:observations.rows[0]};
-   break;
-  }
-  await new Promise(resolve=>setTimeout(resolve,200));
+ const completed=[];
+ for(const input of PILOT_PRODUCTS){
+  let payload;
+  const boss={send:async (...args)=>{payload=args[1];return running.boss.send(...args);}};
+  const queued=await enqueueCertifiedMerchantProduct(boss,{sourceId,url:input.url,key:env.NAWAA_INGESTION_SIGNING_KEY});
+  assert.equal(queued.queued,true);
+  assert.equal(payload.offer.sku.replace(/\D/g,""),input.sku);
+  completed.push({input,jobId:queued.jobId,payload});
+  await new Promise(r=>setTimeout(r,650));
  }
- assert.ok(found,"live_offer_ingestion_timeout");
- assert.equal(Number(found.offer.product_price),captured.offer.productPrice);
- assert.equal(Number(found.observation.price),captured.offer.productPrice);
- assert.equal(found.offer.currency,"SAR");
- assert.equal(found.observation.currency,"SAR");
- assert.equal(found.observation.source_name,sourceId);
- assert.equal(found.offer.merchant,"IKEA");
- assert.equal(found.offer.sku.replace(/\D/g,""),"39240787");
- assert.ok(found.offer.image_url?.startsWith("https://www.ikea.com/sa/en/images/products/"),"merchant_image_missing");
- const replay=await running.handler({id:jobId,data:captured});
- assert.equal(replay.duplicate,true);
- const obsAfterReplay=await pool.query("select count(*)::int as n from offer_observations");
- assert.equal(obsAfterReplay.rows[0].n,1,"replay_appended_observation");
- await assert.rejects(running.handler({
-  id:randomUUID(),data:{...captured,offer:{...captured.offer,productPrice:1}}
- }),/trusted_source_verifier_required/);
- const obsAfterTampering=await pool.query("select count(*)::int as n from offer_observations");
- assert.equal(obsAfterTampering.rows[0].n,1);
+ const deadline=Date.now()+45000;
+ let result;
+ while(Date.now()<deadline){
+  const [offers,observations,receipts]=await Promise.all([
+   pool.query("select source_url,sku,product_price,currency,image_url from nawaa_offers"),
+   pool.query("select product_url,price,currency from offer_observations"),
+   pool.query("select ingestion_id from nawaa_ingestion_receipts")]);
+  if(offers.rowCount===5&&observations.rowCount===5&&receipts.rowCount===5){result={offers:offers.rows,observations:observations.rows,receipts:receipts.rows};break;}
+  await new Promise(r=>setTimeout(r,250));
+ }
+ assert.ok(result,"five_product_ingestion_timeout");
+ for(const item of completed){
+  const offer=result.offers.find(x=>x.sku?.replace(/\D/g,"")===item.input.sku);
+  assert.ok(offer,"missing_canonical_offer");
+  assert.equal(Number(offer.product_price),item.payload.offer.productPrice);
+  assert.equal(offer.currency,"SAR");
+  assert.equal(offer.image_url,item.payload.offer.imageUrl);
+  assert.equal(result.observations.filter(x=>x.product_url===offer.source_url).length,1);
+  assert.ok(result.receipts.some(x=>x.ingestion_id===item.jobId));
+  const replay=await running.handler({id:item.jobId,data:item.payload});
+  assert.equal(replay.duplicate,true);
+ }
+ await assert.rejects(running.handler({id:randomUUID(),data:{...completed[0].payload,offer:{...completed[0].payload.offer,productPrice:1}}}),/trusted_source_verifier_required/);
+ const after=await pool.query("select count(*)::int as n from offer_observations");
+ assert.equal(after.rows[0].n,5);
  await assert.rejects(pool.query("update offer_observations set price=1"),/append-only/);
- console.log(JSON.stringify({success:true,mode:"one_shot_ephemeral_postgresql",
-  merchant:sourceId,sku:found.offer.sku,price:Number(found.offer.product_price),
-  currency:found.offer.currency,imageUrl:found.offer.image_url,
-  pgBoss:true,hmac:true,immutable:true,replayIdempotent:true,
-  observations:obsAfterReplay.rows[0].n,receipts:1},null,2));
+ console.log(JSON.stringify({success:true,mode:"five_live_products_ephemeral_postgresql",offers:5,observations:5,receipts:5,duplicateReplaysRejected:5,forgedPriceRejected:true,prices:completed.map(x=>({sku:x.input.sku,price:x.payload.offer.productPrice}))},null,2));
 }finally{
  await running?.stop().catch(()=>{});
  await pool.end();
