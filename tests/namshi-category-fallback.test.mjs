@@ -17,7 +17,7 @@ test("Namshi shirt fallback uses accessible official category after search HTTP 
   try {
     globalThis.fetch=async url=>{
       urls.push(String(url));
-      if(String(url).includes("/men-clothing-shirts/"))return new Response(catalogHtml);
+      if(String(url).includes("/men-clothing-shirts/"))return new Response(catalogHtml,{headers:{"content-type":"text/html"}});
       return new Response("",{status:403});
     };
     const result=await searchFreeStorefrontById("namshi-sa","shirt",{perStore:3});
