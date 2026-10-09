@@ -21,7 +21,9 @@ export function summarizePriceHistory(observations=[]){
  // callers using synthetic fixtures. Stable equal-time ordering is preserved.
  points.sort((a,b)=>b.timestamp-a.timestamp);
  const current=points[0],oldest=points.at(-1);
- const prior=points.slice(1).find(p=>p.price!==current.price);
+ const firstDifferentIndex=points.findIndex((p,i)=>i>0&&p.price!==current.price);
+ const priorSeries=firstDifferentIndex<0?[]:points.slice(firstDifferentIndex);
+ const prior=priorSeries[0];
  const prices=points.map(p=>p.price);
  const min=money(Math.min(...prices)),max=money(Math.max(...prices));
  const delta=prior?money(current.price-prior.price):null;
@@ -35,8 +37,10 @@ export function summarizePriceHistory(observations=[]){
   sampleMinPrice:min,sampleMaxPrice:max,
   hasChange:Boolean(prior),lastDifferentPrice:prior?money(prior.price):null,
   absoluteChange:delta,percentageChange:percent,direction,
-  sampleNewLow:Boolean(prior)&&current.price<Math.min(...points.slice(1).map(p=>p.price)),
-  sampleNewHigh:Boolean(prior)&&current.price>Math.max(...points.slice(1).map(p=>p.price)),
+  sampleAtLow:current.price===min,
+  sampleNewLow:Boolean(prior)&&current.price<Math.min(...priorSeries.map(p=>p.price)),
+  sampleAtHigh:current.price===max,
+  sampleNewHigh:Boolean(prior)&&current.price>Math.max(...priorSeries.map(p=>p.price)),
   significantMove:Boolean(prior)&&Math.abs(percent)>=10
  };
 }
