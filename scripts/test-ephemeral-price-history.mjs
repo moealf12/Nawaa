@@ -12,13 +12,14 @@ if(env.NAWAA_CI_EPHEMERAL_DB!=="1"||
  throw Error("refusing_non_ephemeral_price_lifecycle_write");
 
 const pool=new pg.Pool({connectionString:env.DATABASE_URL,ssl:false});
-const url="https://www.ikea.com/sa/en/p/poaeng-armchair-birch-veneer-knisa-light-beige-s39240787/";
-const sourceName="ikea-sa";
+// Isolated synthetic fixture: do not alter the five live IKEA offers in this database.
+const url="https://fixture.example.test/ci/price-lifecycle-99999999";
+const sourceName="ci-price-history";
 const first="2026-10-08T12:00:00.000Z",second="2026-10-09T12:00:00.000Z";
 const stale="2026-10-07T12:00:00.000Z";
-const base={title:"POÄNG Armchair - birch veneer/Knisa light beige",
- sourceUrl:url,sourceName,query:sourceName,merchant:"IKEA",
- currency:"SAR",sku:"392.407.87",imageUrl:"https://www.ikea.com/sa/en/images/products/poaeng-armchair-birch-veneer-knisa-light-beige__0571500_pe666933_s5.jpg"};
+const base={title:"CI price history fixture",
+ sourceUrl:url,sourceName,query:sourceName,merchant:"CI fixture",
+ currency:"SAR",sku:"99999999"};
 try{
  await initPersistence();
  const id1=randomUUID(),id2=randomUUID(),id3=randomUUID();
@@ -35,15 +36,16 @@ try{
  assert.equal(outOfOrder.recorded,true);
  assert.equal(outOfOrder.canonicalUpdated,false);
  const canonical=await pool.query("select product_price,observed_at,sku from nawaa_offers");
- assert.equal(canonical.rowCount,1);
- assert.equal(Number(canonical.rows[0].product_price),449);
- assert.equal(canonical.rows[0].observed_at.toISOString(),second);
+ const fixtureRows=canonical.rows.filter(x=>x.sku==="99999999");
+ assert.equal(fixtureRows.length,1);
+ assert.equal(Number(fixtureRows[0].product_price),449);
+ assert.equal(fixtureRows[0].observed_at.toISOString(),second);
  const history=await getOfferPriceHistory(url,{sourceName,limit:10});
  assert.equal(history.observations.length,3);
  assert.deepEqual(history.observations.map(x=>x.price),[449,479,999]);
  assert.deepEqual(history.observations.map(x=>x.observedAt),[second,first,stale]);
  const receipts=await pool.query("select count(*)::int as total from nawaa_ingestion_receipts");
- assert.equal(receipts.rows[0].total,3);
+ assert.ok(receipts.rows[0].total>=3);
  await assert.rejects(pool.query("delete from offer_observations"),/append-only/);
  const after=await getOfferPriceHistory(url,{sourceName,limit:10});
  assert.equal(after.observations.length,3);
