@@ -68,7 +68,8 @@ async function main(){
     try {
       await page.waitForFunction(()=>{
         const pictures=[...document.querySelectorAll("#results .product img")].slice(0,3);
-        return pictures.length>0&&pictures.some(img=>img.complete&&img.naturalWidth>0);
+        return pictures.length>0&&pictures.every(img=>
+          (img.complete&&img.naturalWidth>0)||img.closest(".product-media")?.classList.contains("image-error"));
       },null,{timeout:15000});
     } catch {
       // Preserve browser and image diagnostics for the failed gate below.
@@ -80,6 +81,7 @@ async function main(){
         imageSrc:card.querySelector("img")?.getAttribute("src")||"",
         destination:card.querySelector("a")?.href||"",
         imageLoaded:(card.querySelector("img")?.naturalWidth||0)>0,
+        imageFallback:card.querySelector(".product-media")?.classList.contains("image-error")||false,
       }))
     );
     const entry={source:source.name,query:source.query,status,products,samples};
@@ -90,8 +92,8 @@ async function main(){
       "SAR price is not visible: "+source.name);
     assert.ok(samples.every(x=>x.destination.startsWith("https://")),
       "A product lacks a secure source link: "+source.name);
-    assert.ok(samples.some(x=>x.imageLoaded),
-      "Images are not loading after scrolling to visible product cards: "+JSON.stringify(entry));
+    assert.ok(samples.every(x=>x.imageLoaded||x.imageFallback),
+      "Blank product images without a visible merchant-image fallback: "+JSON.stringify(entry));
     await page.screenshot({path:"pilot-browser-report/"+source.name.toLowerCase().replace(/\s+/g,"-")+".png",fullPage:true});
   }
   assert.equal(errors.length,0,"Browser JS failures: "+JSON.stringify(errors));
@@ -105,7 +107,9 @@ async function main(){
   await writeFile("pilot-browser-report/report.json",JSON.stringify(report,null,2)+"\n");
   console.log("PILOT_BROWSER_SUMMARY "+JSON.stringify({
     merchantCards:count,checks:checks.map(x=>({source:x.source,products:x.products,
-      loadedSampleImages:x.samples.filter(s=>s.imageLoaded).length,reportedSampleImages:x.samples.length})),counts,uncaughtBrowserErrors:errors.length,
+      loadedSampleImages:x.samples.filter(s=>s.imageLoaded).length,
+      visibleImageFallbacks:x.samples.filter(s=>s.imageFallback).length,
+      reportedSampleImages:x.samples.length})),counts,uncaughtBrowserErrors:errors.length,
   }));
 }
 try{await main();}
