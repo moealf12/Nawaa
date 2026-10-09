@@ -39,7 +39,7 @@ test("pilot producer signs only observed merchant data; worker persists an authe
  assert.equal(stored.productPrice,399);
  assert.equal(stored.query,"ikea-sa");
  assert.equal(stored.sourceName,"ikea-sa");
- assert.match(stored.observedAt,/^\\d{4}-\\d{2}-\\d{2}T/);
+ assert.match(stored.observedAt,/^\d{4}-\d{2}-\d{2}T/);
  for(const ignored of ["healthStatus","totalSAR","brand","condition"])assert.equal(ignored in stored,false);
  await assert.rejects(handler({data:{...sends[0][1],
   offer:{...sends[0][1].offer,productPrice:1}}}),/trusted_source_verifier_required/);
