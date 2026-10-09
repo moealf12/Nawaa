@@ -1,4 +1,4 @@
-name: IKEA Saudi — read-only merchant evidence proof
+name: IKEA Saudi — read-only merchant evidence proof v2
 on:
   push:
     branches:

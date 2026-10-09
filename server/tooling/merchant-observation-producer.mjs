@@ -34,6 +34,15 @@ function strictPrice(value){
  const number=Number(value.trim().replace(/,/g,""));
  return Number.isFinite(number)&&number>0&&number<=250000?number:null;
 }
+function matchingProductTitle(expected,candidate){
+ if(typeof candidate!=="string")return false;
+ const tokens=v=>new Set((String(v).normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu)||[])
+   .filter(word=>word.length>2&&word!=="ikea"));
+ const a=tokens(expected),b=tokens(candidate);
+ if(a.size<2)return false;
+ const shared=[...a].filter(word=>b.has(word)).length;
+ return shared>=2&&shared/a.size>=0.7;
+}
 function approvedImage(raw,base){
  const value=Array.isArray(raw)?raw[0]:raw;
  const candidate=typeof value==="string"?value:value?.url;
@@ -68,7 +77,20 @@ export async function extractCertifiedMerchantOffer({sourceId,url,extract=extrac
  if(price===null)throw new Error("unverified_original_price");
  if(raw.priceCurrency!==requested.config.currency)throw new Error("merchant_market_currency_mismatch");
  const title=typeof product.name==="string"?product.name.trim().replace(/\s+/g," "):"";
- const image=approvedImage(product.image,final.url.href);
+ const metadata=(document.candidates||[]).find(entry=>entry?.strategy==="meta")?.product;
+ const metadataMatches=matchingProductTitle(title,metadata?.name);
+ const metadataPrice=metadataMatches?metadata?.offers?.price:null;
+ const metadataCurrency=metadataMatches?metadata?.offers?.priceCurrency:null;
+ // Contradictory independently parsed merchant metadata must fail closed.
+ if(metadataPrice!=null&&metadataCurrency!=null){
+  const crossPrice=strictPrice(metadataPrice);
+  if(crossPrice===null||crossPrice!==price||metadataCurrency!==requested.config.currency)
+   throw new Error("original_price_evidence_disagreement");
+ }
+ const jsonLdImage=approvedImage(product.image,final.url.href);
+ const metaImage=metadataMatches?approvedImage(metadata?.image,final.url.href):undefined;
+ const image=jsonLdImage||metaImage;
+ const imageSource=jsonLdImage?"jsonld":metaImage?"matching_page_metadata":"missing";
  const offer={
   title,sourceUrl:final.url.href,productPrice:price,currency:requested.config.currency,
   merchant:requested.config.merchant,
@@ -80,8 +102,10 @@ export async function extractCertifiedMerchantOffer({sourceId,url,extract=extrac
  if(!Number.isSafeInteger(when)||when<0)throw new Error("invalid_observation_time");
  return {offer,evidence:{
   sourceId,extractionStrategy:"jsonld",verifiedPage:final.url.href,
-  observedAt:new Date(when).toISOString(),hasImage:Boolean(image),
-  hasSku:Boolean(offer.sku),merchantPriceVerified:true
+  observedAt:new Date(when).toISOString(),hasImage:Boolean(image),imageSource,
+  imageLoadVerified:false,hasSku:Boolean(offer.sku),
+  priceCrossCheck:metadataPrice!=null&&metadataCurrency!=null?"matched":"unavailable",
+  merchantPriceVerified:true
  }};
 }
 export async function enqueueCertifiedMerchantProduct(boss,{sourceId,url,key,extract=extractProductDocument,clock=Date.now}={}){

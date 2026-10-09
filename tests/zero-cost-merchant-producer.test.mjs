@@ -75,3 +75,30 @@ test("image quality recorded as absent rather than approving unsafe image links"
  assert.equal(r.evidence.hasImage,false);
  assert.equal(r.offer.imageUrl,undefined);
 });
+
+test("matching merchant metadata supplies product-specific image without inventing a CDN link",async()=>{
+ const page=sample();
+ delete page.candidates[0].product.image;
+ page.candidates.push({strategy:"meta",product:{
+  name:"POANG armchair - IKEA",image:"https://www.ikea.com/product-meta.jpg",
+  offers:{price:399,priceCurrency:"SAR"}
+ }});
+ // Metadata title is required to identify the SAME product; generic imagery is rejected.
+ let r=await extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,extract:async()=>page});
+ assert.equal(r.offer.imageUrl,"https://www.ikea.com/product-meta.jpg");
+ assert.equal(r.evidence.imageSource,"matching_page_metadata");
+ assert.equal(r.evidence.priceCrossCheck,"matched");
+ page.candidates[1].product.name="Generic furniture catalog";
+ r=await extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,extract:async()=>page});
+ assert.equal(r.offer.imageUrl,undefined);
+ assert.equal(r.evidence.priceCrossCheck,"unavailable");
+});
+test("disagreeing merchant metadata prices cannot be attested",async()=>{
+ const page=sample();
+ page.candidates.push({strategy:"meta",product:{
+  name:"POANG armchair - IKEA",image:"https://www.ikea.com/alternate.jpg",
+  offers:{price:1,priceCurrency:"SAR"}
+ }});
+ await assert.rejects(extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,
+  extract:async()=>page}),/original_price_evidence_disagreement/);
+});
