@@ -105,6 +105,7 @@ try{
   observedAt:oldTime.toISOString(),ingestionId:randomUUID()
  });
  assert.equal(stale.recorded,true);
+ assert.equal(stale.canonicalUpdated,false,"stale_observation_must_not_claim_current_price_update");
  const third=await waitFor(3);
  assert.equal(Number(third.current.product_price),simulatedPrice,
   "out_of_order_data_overwrote_canonical_price");
@@ -134,7 +135,7 @@ try{
   passed:true,mode:"ephemeral_price_history_controlled_change",
   initialPrice,simulatedPrice,canonicalPrice:Number(third.current.product_price),
   historicalObservations:3,receipts:3,
-  replayDeduplicated:true,signedQueueRedeliveryDeduplicated:true,staleCanonicalProtected:true,
+  replayDeduplicated:true,signedQueueRedeliveryDeduplicated:true,staleCanonicalProtected:true,canonicalUpdateStatusVerified:true,
   immutableHistory:true,boundedHistoryReadVerified:true,
   isolatedBySource:true,simulatedPriceIsNotRealMerchantEvidence:true
  },null,2));
