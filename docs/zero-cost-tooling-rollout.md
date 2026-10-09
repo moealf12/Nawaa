@@ -8,8 +8,8 @@ No subscriptions, paid instances, credits with auto-upgrade, secret values in Gi
 
 - [x] Isolated feature branch created.
 - [x] PostgreSQL `pg_trgm` opt-in migration + unit tests. **Not run against any remote database.**
-- [ ] Validate query normalization and structured offers with Zod; update npm lockfile and tests before use.
-- [ ] Add p-queue concurrency + per-merchant budgets and 429 Retry-After handling.
+- [ ] Install and integrate **Zod**; the isolated offer-shape gate is temporary and does not claim to be Zod. Update npm lockfile and tests together.
+- [x] Implement **dependency-free, background-only** per-merchant concurrency queue, validated offer shape, and Retry-After/backoff helpers with tests. These are not connected to customer search.\n- [ ] Install and integrate the requested **p-queue** library after lockfile update; current custom limiter is only an isolated prototype.
 - [ ] Add pg-boss background ingestion with DB migration compatibility verification.
 - [ ] Crawl4AI separate-worker proof of concept: check free RAM/CPU limits first.
 - [ ] Playwright end-to-end tests for the pilot and image fallbacks.
