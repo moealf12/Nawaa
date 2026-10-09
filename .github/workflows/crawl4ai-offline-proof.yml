@@ -1,6 +1,7 @@
 name: Crawl4AI Offline Proof (Free)
 on:
-  pull_request:
+  push:
+    branches: [feature/zero-cost-tooling-foundation]
     paths:
       - 'scripts/crawl4ai-offline-proof.py'
       - '.github/workflows/crawl4ai-offline-proof.yml'
@@ -9,7 +10,7 @@ permissions:
   contents: read
 jobs:
   offline_chromium:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation'
+    if: github.ref == 'refs/heads/feature/zero-cost-tooling-foundation'
     runs-on: ubuntu-latest
     timeout-minutes: 9
     steps:
