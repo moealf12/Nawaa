@@ -319,15 +319,40 @@ export async function searchNoonUaeCatalog(query, limit = 32, {signal} = {}) {
     "x-locale": "en-ae",
     referer: "https://www.noon.com/uae-en/search/?q=" + encodeURIComponent(query),
   };
-  // Unlike the opt-in Saudi catalog connector, this path is in the live
-  // storefront pool. Use the shared fetch transport so request cancellation,
-  // test doubles and the search deadline can govern it.
-  const response = await fetch(url, {
-    headers,
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(4500)]) : AbortSignal.timeout(4500),
-  });
-  if (!response.ok) throw new Error("Noon UAE catalog HTTP " + response.status);
-  const payload = await response.json();
+  // UAE public catalog paths vary across Noon deployments. Try the
+  // storefront's existing endpoint first; on transport failure or retired API
+  // route, try the separate public _svc catalog. Never evade 401/403/429.
+  // Both requests share ONE cancellation budget to bound customer latency.
+  const budget = AbortSignal.timeout(4500);
+  const requestSignal = signal ? AbortSignal.any([signal,budget]) : budget;
+  const alternate = new URL("https://www.noon.com/_svc/catalog/api/v3/u/search");
+  for (const [name,value] of url.searchParams) alternate.searchParams.set(name,value);
+  const urls=[url,alternate];
+  let payload;
+  let lastError=null;
+  for (let index=0;index<urls.length;index++) {
+    requestSignal.throwIfAborted();
+    try {
+      const response=await fetch(urls[index],{headers,signal:requestSignal});
+      if ([401,403,429].includes(response.status)) {
+        throw new Error("Noon UAE catalog access denied: HTTP "+response.status);
+      }
+      if (!response.ok) {
+        if (index+1<urls.length && [404,410,500,502,503,504].includes(response.status)) {
+          lastError=new Error("Noon UAE catalog HTTP "+response.status);
+          continue;
+        }
+        throw new Error("Noon UAE catalog HTTP "+response.status);
+      }
+      payload=await response.json();
+      break;
+    }catch(error){
+      if (requestSignal.aborted || /access denied|HTTP (?:401|403|429)/.test(String(error?.message||""))) throw error;
+      if (index+1>=urls.length) throw error;
+      lastError=error;
+    }
+  }
+  if (!payload) throw lastError || new Error("Noon UAE catalog unavailable");
   // A clearly Saudi response must never be relabelled as an AED offer.
   const describedMarket = [payload?.meta?.title, payload?.meta?.desc, payload?.market, payload?.country].filter(Boolean).join(" ");
   if (/saudi arabia|saudi-en|\bksa\b/i.test(describedMarket) && !/united arab emirates|\buae\b|dubai|abu dhabi/i.test(describedMarket)) {
