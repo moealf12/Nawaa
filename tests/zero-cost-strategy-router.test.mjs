@@ -41,6 +41,7 @@ test("bounded source queue enforces concurrency and backpressure",async()=>{
  release();
  assert.equal(await first,1);
  assert.equal(await second,2);
+ await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(queue.status(),{active:0,waiting:0,closed:false});
 });
 test("closing queue rejects queued work but allows in-flight work to settle",async()=>{
