@@ -3,6 +3,7 @@ name: Active 39 Source Certification
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - "scripts/certify-active-source.mjs"
       - "scripts/certify-active-sources-batched.mjs"
@@ -29,7 +30,7 @@ on:
 
 # A newer commit supersedes previous network probes. Keep only fresh evidence.
 concurrency:
-  group: active-source-cert-${{ github.event.pull_request.number || github.ref }}
+  group: active-source-cert-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
