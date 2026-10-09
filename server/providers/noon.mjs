@@ -114,9 +114,24 @@ function conditionFromTitle(title = "") {
   return "new";
 }
 
-function productUrl(hit = {}) {
+function productUrl(hit = {}, market = "SA") {
   const path = text(hit.pdp_url || hit.url);
   if (!path) return null;
+  if (market === "AE") {
+    // Reject cross-market or external catalog links. UAE offers must not be
+    // attributed to Saudi Arabia or another merchant.
+    try {
+      const candidate = new URL(path, "https://www.noon.com/uae-en/");
+      if (candidate.hostname !== "www.noon.com" || candidate.protocol !== "https:") return null;
+      if (/^\/saudi-en\//i.test(candidate.pathname)) return null;
+      if (!/^\/uae-en\//i.test(candidate.pathname)) {
+        candidate.pathname = "/uae-en" + (candidate.pathname.startsWith("/") ? "" : "/") + candidate.pathname;
+      }
+      if (!/\/p\/?$/i.test(candidate.pathname)) return null;
+      candidate.search = ""; candidate.hash = "";
+      return candidate.href;
+    } catch { return null; }
+  }
   if (/^https:\/\//i.test(path)) return path;
   const normalized = path.startsWith("/") ? path : "/" + path;
   return "https://www.noon.com/saudi-en" + normalized;
@@ -128,7 +143,7 @@ function nudgeTexts(hit = {}) {
     : [];
 }
 
-export function parseNoonCatalogPayload(payload, limit = 32) {
+export function parseNoonCatalogPayload(payload, limit = 32, market = "SA") {
   const hits = Array.isArray(payload?.hits) ? payload.hits : [];
   const offers = [];
 
@@ -144,6 +159,8 @@ export function parseNoonCatalogPayload(payload, limit = 32) {
       : regularPrice;
 
     if (!title || !sku || productPrice === null) continue;
+    const url = productUrl(hit, market);
+    if (market === "AE" && !url) continue;
 
     const parts = titleParts(title);
     const plp = hit?.plp_specifications && typeof hit.plp_specifications === "object"
@@ -161,16 +178,16 @@ export function parseNoonCatalogPayload(payload, limit = 32) {
 
     offers.push({
       provider: "noon-catalog",
-      providerMarket: "noon-sa",
+      providerMarket: market === "AE" ? "noon-ae" : "noon-sa",
       merchant: "noon",
-      merchantCountryCode: "SA",
-      merchantCountryNameAr: "السعودية",
-      sourceUrl: productUrl(hit),
+      merchantCountryCode: market === "AE" ? "AE" : "SA",
+      merchantCountryNameAr: market === "AE" ? "الإمارات" : "السعودية",
+      sourceUrl: url,
       image: text(hit?.image_url) || text(hit?.image_urls?.[0]) || null,
       title,
       condition: conditionFromTitle(title),
       availability: hit?.is_buyable === false ? "out_of_stock" : hit?.is_buyable === true ? "in_stock" : "unknown",
-      canShipToSaudi: true,
+      canShipToSaudi: market === "AE" ? null : true,
       productPrice,
       originalProductPrice: productPrice,
       listPrice: regularPrice,
@@ -180,12 +197,12 @@ export function parseNoonCatalogPayload(payload, limit = 32) {
       mandatoryFees: 0,
       advertisedDiscount: regularPrice !== null && productPrice < regularPrice ? regularPrice - productPrice : 0,
       discount: 0,
-      currency: "SAR",
-      originalCurrency: "SAR",
+      currency: market === "AE" ? "AED" : "SAR",
+      originalCurrency: market === "AE" ? "AED" : "SAR",
       exactMatch: false,
       matchConfidence: 0,
       priceConfidence: "incomplete",
-      isLocal: true,
+      isLocal: market !== "AE",
       deliveryDays: null,
       observedAt,
       dataKind: "live",
@@ -277,4 +294,24 @@ export async function searchNoon(query, limit = 32) {
       },
     }],
   };
+}
+
+export async function searchNoonUaeCatalog(query, limit = 32) {
+  const url = new URL(NOON_SEARCH_BASE);
+  url.searchParams.set("q", query);
+  url.searchParams.set("limit", String(Math.max(1, Math.min(50, Number(limit) || 32))));
+  url.searchParams.set("sort[by]", "popularity");
+  url.searchParams.set("sort[dir]", "desc");
+  const headers = {
+    accept: "application/json",
+    "accept-language": "en-AE,en;q=0.9",
+    "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.5; +https://moealf12.github.io/Nawaa/)",
+    "x-platform": "web",
+    "x-cms": "v2",
+    "x-content": "desktop",
+    "x-locale": "en-ae",
+    referer: "https://www.noon.com/uae-en/search/?q=" + encodeURIComponent(query),
+  };
+  const payload = await getJsonHttp1(url, headers);
+  return parseNoonCatalogPayload(payload, Math.max(1, Math.min(50, Number(limit) || 32)), "AE");
 }
