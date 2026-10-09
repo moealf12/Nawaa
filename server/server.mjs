@@ -24,6 +24,7 @@ import { searchSharafDG } from "./providers/sharafdg.mjs";
 import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarovski.mjs";
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonCreators } from "./providers/amazon-creators.mjs";
 import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontById } from "./providers/free-storefronts.mjs";
+import { CERTIFIED_PILOT_SOURCES, CERTIFIED_PILOT_RUN, certifiedPilotSource } from "../src/certified-pilot.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
@@ -41,6 +42,7 @@ const STATIC_FILES = new Map([
   ["/", "index.html"],
   ["/index.html", "index.html"],
   ["/search.html", "search.html"],
+  ["/pilot.html", "pilot.html"],
   ["/product.html", "product.html"],
   ["/config.js", "config.js"],
   ["/src/search-page.mjs", "src/search-page.mjs"],
@@ -691,6 +693,66 @@ const server = http.createServer(async (req, res) => {
         : 500;
       const publicMessage=status===500?"persistence_failed":message;
       return jsonResponse(res,status,{error:"ingest_failed",message:publicMessage},origin||"*");
+    }
+  }
+
+  // Opt-in production pilot. This never changes /api/search routing,
+  // feeds, indexing or the meaning of source certification.
+  if (req.method === "GET" && url.pathname.startsWith("/api/pilot/")) {
+    if (process.env.NAWAA_ENABLE_CERTIFIED_PILOT !== "1") {
+      return jsonResponse(res,404,{error:"pilot_disabled"},origin||"*");
+    }
+    if (url.pathname === "/api/pilot/sources") {
+      res.setHeader("cache-control","no-store");
+      return jsonResponse(res,200,{
+        certificationRun:CERTIFIED_PILOT_RUN,
+        certifiedCount:CERTIFIED_PILOT_SOURCES.length,
+        sources:CERTIFIED_PILOT_SOURCES,
+        caution:"Prior live certification; live store and price availability can change.",
+      },origin||"*");
+    }
+    if (url.pathname !== "/api/pilot/source-search") {
+      return jsonResponse(res,404,{error:"not_found"},origin||"*");
+    }
+    if (!enforceRateLimit(req,res,"certified-pilot",{capacity:7,refillPerSecond:1/12},origin||"*")) return;
+    const source=certifiedPilotSource(String(url.searchParams.get("store")||""));
+    const query=String(url.searchParams.get("q")||"").trim();
+    if (!source) return jsonResponse(res,400,{error:"not_in_certified_pilot"},origin||"*");
+    if (query.length<2||query.length>120) return jsonResponse(res,400,{error:"invalid_query"},origin||"*");
+    const started=Date.now();
+    try {
+      const result=await searchFreeStorefrontById(source.id,query,{
+        matchingQuery:query,
+        perStore:10,
+        catalogLimit:10,
+        productPageLimit:5,
+        storeDeadlineMs:8500,
+        signal:AbortSignal.timeout(12500),
+      });
+      const offers=(result.offers||[]).filter(item=>
+        typeof item.title==="string"&&item.title.trim().length>=3 &&
+        typeof item.sourceUrl==="string"&&item.sourceUrl.startsWith("https://") &&
+        typeof item.image==="string"&&/^https?:\/\//i.test(item.image) &&
+        Number.isFinite(item.productPrice)&&item.productPrice>0&&item.currency==="SAR"
+      ).slice(0,10);
+      res.setHeader("cache-control","no-store");
+      return jsonResponse(res,200,{
+        pilot:true,certificationRun:CERTIFIED_PILOT_RUN,
+        source,query,observedAt:new Date().toISOString(),
+        elapsedMs:Date.now()-started,
+        status:offers.length?"live_offers_found":"no_verified_offers",
+        candidates:result.candidates||0,
+        offers,
+        warning:"Live offers may change; no result is not evidence of a fake price.",
+      },origin||"*");
+    } catch(error) {
+      res.setHeader("cache-control","no-store");
+      return jsonResponse(res,502,{
+        pilot:true,source:source.id,query,
+        elapsedMs:Date.now()-started,
+        error:"live_source_unavailable",
+        detail:String(error?.message||"unknown_source_error").slice(0,180),
+      },origin||"*");
     }
   }
 
