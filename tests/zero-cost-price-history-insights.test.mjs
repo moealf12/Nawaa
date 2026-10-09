@@ -47,3 +47,10 @@ test("rejects currency mixing and invalid history rather than claiming savings",
  assert.equal(summarizePriceHistory([]).status,"no_observations");
  assert.throws(()=>summarizePriceHistory(null),/price_history_array_required/);
 });
+
+test("sample new low is false if the price was also reached before a rebound",()=>{
+ const result=summarizePriceHistory([point(429,"10"),point(429,"09"),point(479,"08"),point(429,"07")]);
+ assert.equal(result.sampleAtLow,true);
+ assert.equal(result.sampleNewLow,false);
+ assert.equal(result.direction,"decrease");
+});

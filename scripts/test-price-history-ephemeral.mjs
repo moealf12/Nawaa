@@ -34,6 +34,12 @@ try{
  const history=await getOfferPriceHistory(url,{sourceName:"ikea-sa",limit:10});
  assert.equal(history.observations.length,3);
  assert.deepEqual(history.observations.map(x=>x.price),[429,499,479]);
+ assert.equal(history.insights.status,"ok");
+ assert.equal(history.insights.latestObservedPrice,429);
+ assert.equal(history.insights.lastDifferentPrice,499);
+ assert.equal(history.insights.absoluteChange,-70);
+ assert.equal(history.insights.percentageChange,-14.03);
+ assert.equal(history.insights.sampleNewLow,true);
  assert.ok(history.observations.every(x=>x.currency==="SAR"));
  const receipts=await pool.query("select ingestion_id from nawaa_ingestion_receipts");
  assert.equal(receipts.rowCount,3);
