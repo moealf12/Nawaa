@@ -11,7 +11,7 @@ No subscriptions, paid instances, credits with auto-upgrade, secret values in Gi
 - [ ] Install and integrate **Zod**; the isolated offer-shape gate is temporary and does not claim to be Zod. Update npm lockfile and tests together.
 - [x] Implement **dependency-free, background-only** per-merchant concurrency queue, validated offer shape, and Retry-After/backoff helpers with tests. These are not connected to customer search.\n- [ ] Install and integrate the requested **p-queue** library after lockfile update; current custom limiter is only an isolated prototype.
 - [ ] Add pg-boss background ingestion with DB migration compatibility verification.
-- [ ] Crawl4AI separate-worker proof of concept: check free RAM/CPU limits first.
+- [x] Build a tested free-first extraction strategy router, without changing customer search.\n- [x] Build a secure Jina Reader background adapter with per-merchant allowlist, secret Bearer key, 429 handling, response-size cap, and mocked unit tests. No live Jina request made; not yet connected to merchant ingestion.\n- [ ] Crawl4AI separate-worker proof of concept: check free RAM/CPU limits first.
 - [ ] Playwright end-to-end tests for the pilot and image fallbacks.
 - [ ] OpenTelemetry lightweight observability; no paid collector.
 - [ ] Keep Crawlee + Cheerio as current baseline.
