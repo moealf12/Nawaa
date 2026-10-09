@@ -393,6 +393,24 @@ export function queryMatchReasons(query, offer) {
   const reasons = [];
   const match = assessOfferMatch(query, offer);
   const { model, storage } = parseSearchIntent(query);
+  // Semantic guard for generic category searches. A title mentioning a query
+  // word is not proof that the item belongs to that product category.
+  // Apply narrowly: explicit searches for books, pads, or accessories remain
+  // eligible for their own terms. No brand, price or merchant is fabricated.
+  const broadQuery=normalizeSearchQuery(query);
+  const productTitle=normalizeSearchQuery(String(offer?.title||""));
+  if (broadQuery === "perfume" &&
+      /\b(?:books?|novels?|poetry|anthology|articles?|felt tip|markers?|stamps?|dolls?|toys?)\b/.test(productTitle)) {
+    reasons.push("category_conflict");
+  }
+  if (broadQuery === "stroller" &&
+      /\b(?:books?|novels?|chronicles|anthology|tricycle|fiction)\b/.test(productTitle)) {
+    reasons.push("category_conflict");
+  }
+  if (broadQuery === "chair" &&
+      /\b(?:chair pads?|chair cushions?|chair covers?|seat pads?|seat cushions?|slipcovers?)\b/.test(productTitle)) {
+    reasons.push("category_conflict");
+  }
   // "airpods" without a requested generation is a *family* query, not the
   // nonexistent device model "AirPods (unversioned)". Do not reject genuine
   // AirPods 4, Pro or Max variants as conflicting model numbers.
