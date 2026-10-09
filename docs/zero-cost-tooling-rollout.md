@@ -55,3 +55,13 @@ No automatic rollout or production migration is authorized by these tests.
 - \`enqueueCertifiedMerchantProduct(...)\` issues the original-source HMAC only after successful inspection and hands the exact observed product to pg-boss; it is not executed at HTTP startup. A valid signature remains proof of *trusted producer issuance*, not independent proof against a compromised merchant or extractor.
 - Worker now persists only the fields bound by the v1 attestation plus server-assigned source and receipt metadata. Extra unsigned job fields such as \`observedAt\`, \`healthStatus\`, \`totalSAR\` and \`brand\` are discarded to prevent observation backdating and unverified canonical changes.
 - Still no automated crawling, production credentials, production writes, broader merchant activation, or customer search change. Next gate: explicitly run the read-only probe against a compliant live IKEA product page; compare extracted price/currency/title/image against merchant UI, and only then consider a single disposable-PostgreSQL write.
+
+
+## October 9, 2026: tested live and historical gates
+
+This checkpoint supersedes older planned steps above.
+
+- Five IKEA Saudi offers passed real merchant URL, SKU, image, HMAC, independently parsed HTML price and ephemeral PostgreSQL ingestion checks. See [five-offer integration](https://github.com/moealf12/Nawaa/actions/runs/37987509336).
+- The history lifecycle passed with one authentic observed 479 SAR price and a controlled simulated 489 SAR change; the simulated amount is **not a real merchant observation**. An older backdated record stayed historical and did not overwrite the current canonical row. See [history lifecycle](https://github.com/moealf12/Nawaa/actions/runs/37988162703).
+- Internal getOfferPriceHistory supports bounded chronological queries scoped to source and product. See [history query checks](https://github.com/moealf12/Nawaa/actions/runs/37988432920).
+- Further work: verify real price changes across days, variant/browser rendering, source-rate budgets, and deployment controls. The live consumer search and production DB remain untouched.
