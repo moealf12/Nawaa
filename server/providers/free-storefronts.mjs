@@ -936,6 +936,30 @@ export function extractSamsungSearchOffers(html, query) {
   return offers;
 }
 
+// Only attach a picture from the *same identifiable product card*. Linking
+// the nearest unrelated image would corrupt product identity and price results.
+function carrefourCardImage(source, anchorIndex, title) {
+  const normalize = value => normalizeSearchQuery(stripHtml(value)).replace(/\s+/g," ").trim();
+  const desired = normalize(title);
+  if (desired.length < 5) return null;
+  const before=source.slice(Math.max(0,anchorIndex-2800),anchorIndex);
+  const matches=[...before.matchAll(/<img\b[^>]{0,2300}>/gi)];
+  for (const match of matches.slice(-7).reverse()) {
+    const tag=match[0];
+    const alt=tag.match(/\balt=["']([^"']+)["']/i)?.[1] || "";
+    const label=normalize(alt);
+    if (label.length < 5 || !(label.includes(desired) || desired.includes(label))) continue;
+    const raw = tag.match(/\b(?:data-src|src)=["']([^"']+)["']/i)?.[1] ||
+      tag.match(/\bsrcset=["']([^"',\s]+)/i)?.[1];
+    if(!raw || /^(?:data:|blob:|javascript:)/i.test(raw)) continue;
+    try {
+      const image=new URL(decodeHtml(raw),"https://www.carrefouruae.com");
+      if (image.protocol === "https:" && !/\.(?:js|css|svg)$/i.test(image.pathname)) return image.href;
+    } catch {}
+  }
+  return null;
+}
+
 export function extractCarrefourSearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
@@ -953,7 +977,7 @@ export function extractCarrefourSearchOffers(html, query) {
     if (!title || !Number.isFinite(price) || price <= 0 || (tokens.length > 1 && hits / tokens.length < 0.2) || seen.has(key)) continue;
     seen.add(key);
     const id = sourceUrl.match(/\/p\/(\d+)/i)?.[1] || sourceUrl;
-    offers.push({ productId:id, title, image:null, price, currency:"AED", sourceUrl });
+    offers.push({ productId:id, title, image:carrefourCardImage(source,match.index,title), price, currency:"AED", sourceUrl });
   }
   return offers;
 }
