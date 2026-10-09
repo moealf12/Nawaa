@@ -195,7 +195,10 @@ const STORES = [
   },
   {
     id:"mumzworld-sa", name:"Mumzworld", countryCode:"SA", countryNameAr:"السعودية", brands:["mumzworld"], categories:["baby","toy","clothing","grocery","other"],
-    search:(q)=>"https://www.mumzworld.com/sa-en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+    search:(q)=>"https://www.mumzworld.com/sa-en/search?q="+encodeURIComponent(q),
+    // Modern public PDPs: /sa-en/neobreez-nolite-...-44483883-909-nbr121bk
+    // Do not mistake /sa-en/c/... categories or search/navigation pages for PDPs.
+    productPath:/\/sa-en\/(?!(?:c|search|cart|checkout|account|customer|brand|brands|collections|blog|help|about|terms|policy|pages)(?:[/?#]|$))(?=[^/?#]*(?:-[^/?#]*){3,})(?:[^/?#]+)(?:[/?#]|$)|\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
   },
   {
     id:"netaporter-global", name:"NET-A-PORTER", countryCode:"GB", countryNameAr:"بريطانيا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
