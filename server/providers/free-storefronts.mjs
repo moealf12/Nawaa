@@ -1465,6 +1465,37 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         searchDiagnostics = { ...(searchDiagnostics || {}), acquisitionFallback:"html-structured-metadata" };
       }
     }
+    // Carrefour search results may carry the price and PDP link in a compact
+    // card while an independent JSON-LD / SSR record carries the picture.
+    // Enrich only from the identical numeric PDP id AND identical AED price.
+    // Never attach a merely adjacent or similarly named product image.
+    if (store.id === "carrefour-ae" && html && htmlFirstOffers.some(offer=>!offer.image)) {
+      const structured = [
+        ...extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query),
+        ...extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query),
+      ];
+      const extractId = url => String(url||"").match(/\/p\/(\d+)(?:[/?#]|$)/i)?.[1] || null;
+      const imagesByPdpPrice = new Map();
+      for (const offer of structured) {
+        const id=extractId(offer.sourceUrl);
+        const image=String(offer.image||"");
+        if (!id || !/^https:\/\//i.test(image) || offer.currency !== "AED") continue;
+        if (!Number.isFinite(Number(offer.price)) || Number(offer.price)<=0) continue;
+        const key=id+"|"+Number(offer.price);
+        if (!imagesByPdpPrice.has(key)) imagesByPdpPrice.set(key,new Set());
+        imagesByPdpPrice.get(key).add(image);
+      }
+      let enriched=0;
+      htmlFirstOffers=htmlFirstOffers.map(offer=>{
+        if(offer.image) return offer;
+        const id=extractId(offer.sourceUrl);
+        const images=imagesByPdpPrice.get(id+"|"+Number(offer.price));
+        if (!images || images.size!==1) return offer;
+        enriched++;
+        return {...offer,image:[...images][0]};
+      });
+      if(enriched)searchDiagnostics={...(searchDiagnostics||{}),imageEnrichedFromStructured:enriched};
+    }
     if (!htmlFirstOffers.length) {
       const namshiQuery = store.id === "namshi-sa" ? normalizeSearchQuery(query) : "";
       const namshiFamily = /\bshoes?\b/i.test(namshiQuery) ? "shoes" :
