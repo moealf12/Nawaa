@@ -117,3 +117,31 @@ test("unapproved third-party image URL is dropped, even if JSON-LD names it",asy
  assert.equal(r.offer.imageUrl,undefined);
  assert.equal(r.evidence.hasImage,false);
 });
+
+test("exact-SKU hydrated merchant evidence independently corroborates price",async()=>{
+ const page=sample();
+ page.candidates.push({strategy:"hydrated_state",product:{
+  sku:"12345678",offers:{price:399,priceCurrency:"SAR"}
+ }});
+ const r=await extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,extract:async()=>page});
+ assert.equal(r.evidence.secondaryPriceEvidence,"matched");
+ assert.equal(r.evidence.secondaryPriceMatches,1);
+ assert.equal(r.evidence.priceCrossCheck,"matched");
+});
+test("an exact-SKU secondary price conflict rejects the merchant offer",async()=>{
+ const page=sample();
+ page.candidates.push({strategy:"embedded_json",product:{
+  sku:"12345678",offers:{price:200,priceCurrency:"SAR"}
+ }});
+ await assert.rejects(extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,
+  extract:async()=>page}),/original_price_evidence_disagreement/);
+});
+test("a different product's cheaper secondary price cannot corroborate or veto the current product",async()=>{
+ const page=sample();
+ page.candidates.push({strategy:"embedded_json",product:{
+  sku:"87654321",offers:{price:1,priceCurrency:"SAR"}
+ }});
+ const r=await extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,extract:async()=>page});
+ assert.equal(r.evidence.secondaryPriceEvidence,"unavailable");
+ assert.equal(r.evidence.priceCrossCheck,"unavailable");
+});
