@@ -148,3 +148,35 @@ test("Noon UAE does not retry authorization or rate-limit failures",async()=>{
     }finally{globalThis.fetch=original;}
   }
 });
+
+test("Noon UAE reaches customer-facing storefront routing and paginated acquisition",async()=>{
+  const {routeFreeStorefronts,searchFreeStorefronts}=await import("../server/providers/free-storefronts.mjs");
+  const query="iphone 17";
+  const routes=routeFreeStorefronts(query,Infinity,{stable:true});
+  const index=routes.findIndex(route=>route.store.id==="noon-ae");
+  assert.ok(index>=0,"Noon UAE must be discoverable by search routing");
+  const original=globalThis.fetch;
+  const calls=[];
+  try{
+    globalThis.fetch=async(url)=>{
+      calls.push(String(url));
+      if(String(url).includes("/_vs/nc/") || String(url).includes("/_svc/catalog/"))
+        return Response.json({hits:[{...hit, currency:"AED"}]});
+      if(String(url).includes("frankfurter.dev"))
+        return Response.json({rate:1.02,date:"2026-10-09"});
+      throw Error("Customer search should not fetch unrelated merchant pages: "+url);
+    };
+    const result=await searchFreeStorefronts(query,{
+      stableRouting:true,storeOffset:index,storeLimit:1,
+      productPageLimit:2,storeDeadlineMs:6500,
+    });
+    assert.equal(result.searchedMarkets.length,1);
+    assert.equal(result.searchedMarkets[0].id,"noon-ae");
+    assert.equal(result.ok,true,JSON.stringify({errors:result.errors,diagnostics:result.diagnostics}));
+    assert.equal(result.offers.length,1);
+    assert.equal(result.offers[0].providerMarket,"noon-ae");
+    assert.equal(result.offers[0].originalCurrency,"AED");
+    assert.equal(result.offers[0].currency,"SAR");
+    assert.equal(calls.some(url=>url.includes("/uae-en/search")||/\\/p\\//.test(url)),false);
+  }finally{globalThis.fetch=original;}
+});
