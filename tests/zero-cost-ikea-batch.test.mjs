@@ -41,3 +41,12 @@ test("rejects volatile price seen in consecutive readings of same merchant page"
  assert.equal(result.metrics.failures,1);
  assert.equal(result.items[0].error,"repeated_merchant_observation_disagreed");
 });
+
+test("IKEA image URLs returning an invalid response do not pass qualification",async()=>{
+ const result=await runIkeaReadOnlyBatch({products:[product],extract,
+  probeImage:async()=>({reachable:false,status:404,reason:"unexpected_image_response"}),delayMs:0});
+ assert.equal(result.metrics.extracted,1);
+ assert.equal(result.metrics.images,1);
+ assert.equal(result.metrics.reachableImages,0);
+ assert.equal(result.passed,false);
+});
