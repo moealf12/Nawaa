@@ -1442,7 +1442,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       if (store.id === "noon-ae") {
         try {
           const cap = Number.isFinite(catalogLimit) ? Math.max(1, Math.min(50, catalogLimit)) : 50;
-          const hits = await searchNoonUaeCatalog(query, cap);
+          const hits = await searchNoonUaeCatalog(query, cap, {signal:options.signal});
           // Use only real UAE catalog products with explicit AED prices and
           // Noon product URLs. Never convert a Saudi catalog result to UAE.
           primarySearchOffers = hits.filter(item =>
