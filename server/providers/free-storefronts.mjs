@@ -1140,7 +1140,7 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
 
-async function fetchText(url,{signal}={}) {
+async function fetchText(url,{signal,maxChars=5000000}={}) {
   const combinedSignal=signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000);
   let response;
   // A single bounded retry handles transient origin 503s. Never retry
@@ -1174,7 +1174,8 @@ async function fetchText(url,{signal}={}) {
   const type = response.headers.get("content-type") || "";
   if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("non-html response");
   const text = await response.text();
-  if (text.length > 5000000) throw new Error("search response too large");
+  const limit = Math.max(1000,Math.min(8000000,Number(maxChars)||5000000));
+  if (text.length > limit) throw new Error("search response too large");
   return { html:text, finalUrl:response.url || url };
 }
 
@@ -1606,7 +1607,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             ? "https://www.jumbo.ae/apple-airpods" : null;
         if (categoryUrl) {
           try {
-            const page=await fetchText(categoryUrl,{signal:options.signal});
+            const page=await fetchText(categoryUrl,{signal:options.signal,maxChars:8000000});
             html=page.html;
             searchPageFinalUrl=page.finalUrl || categoryUrl;
             searchDiagnostics={
