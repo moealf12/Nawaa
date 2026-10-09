@@ -1442,17 +1442,29 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       }
     }
     if (!htmlFirstOffers.length) {
-      if (store.id === "namshi-sa" && /\bshoes?\b/i.test(normalizeSearchQuery(query))) {
-        try {
-          const pages = await Promise.all([
-            fetchText("https://www.namshi.com/saudi-en/women-shoes/?page=1",{signal:options.signal}),
-            fetchText("https://www.namshi.com/saudi-en/men-shoes/?page=1",{signal:options.signal}),
-          ]);
+      const namshiQuery = store.id === "namshi-sa" ? normalizeSearchQuery(query) : "";
+      const namshiFamily = /\bshoes?\b/i.test(namshiQuery) ? "shoes" :
+        /\b(?:shirts?|blouses?)\b/i.test(namshiQuery) ? "shirts" : null;
+      if (namshiFamily) {
+        // These are publicly listed merchant category pages, not protected APIs.
+        // An unavailable gender category must not prevent using the other one.
+        const categoryUrls = namshiFamily === "shoes"
+          ? ["https://www.namshi.com/saudi-en/women-shoes/?page=1",
+             "https://www.namshi.com/saudi-en/men-shoes/?page=1"]
+          : ["https://www.namshi.com/saudi-en/women-clothing-shirts_blouses/?page=1",
+             "https://www.namshi.com/saudi-en/men-clothing-shirts/?page=1"];
+        const settledCategories = await Promise.allSettled(
+          categoryUrls.map(url=>fetchText(url,{signal:options.signal}))
+        );
+        const pages = settledCategories.filter(entry=>entry.status==="fulfilled").map(entry=>entry.value);
+        if (pages.length) {
           html = pages.map(page=>page.html).join("\n");
           searchPageFinalUrl = pages[0]?.finalUrl || searchUrl;
           searchDiagnostics = {
             ...searchPageDiagnostics(html, searchUrl, searchPageFinalUrl),
-            acquisitionFallback:"namshi-shoes-category",
+            acquisitionFallback:"namshi-"+namshiFamily+"-category",
+            categoryPagesAvailable:pages.length,
+            categoryPagesRequested:categoryUrls.length,
           };
           primarySearchError = null;
           const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
@@ -1463,8 +1475,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             if (!seen.has(key)) { seen.add(key); merged.push(offer); }
           }
           htmlFirstOffers = merged;
-        } catch (categoryError) {
-          primarySearchError ||= categoryError instanceof Error ? categoryError.message : String(categoryError);
+        } else {
+          const reasons=settledCategories.map(entry=>entry.reason?.message||"category_unavailable");
+          primarySearchError = [primarySearchError,"namshi-"+namshiFamily+"-category: "+reasons.join(" | ")].filter(Boolean).join(" | ");
         }
       }
       if (store.id === "ikea-sa") {
