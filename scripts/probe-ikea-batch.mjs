@@ -75,7 +75,9 @@ export async function runIkeaReadOnlyBatch({products=PILOT_PRODUCTS,extract,prob
     price:offer.productPrice,currency:offer.currency,
     hasImage:Boolean(offer.imageUrl),imageUrl:offer.imageUrl||null,
     imageReachable:image.reachable===true,imageStatus:image.status??null,
-    imageReason:image.reason??null,priceCrossCheck:evidence.priceCrossCheck,repeatability,
+    imageReason:image.reason??null,priceCrossCheck:evidence.priceCrossCheck,
+    secondaryPriceEvidence:evidence.secondaryPriceEvidence,
+    secondaryPriceMatches:evidence.secondaryPriceMatches,repeatability,
     strategy:evidence.extractionStrategy,elapsedMs:Date.now()-started});
   }catch(error){
    items.push({sku:item.sku,category:item.category,ok:false,
@@ -87,6 +89,7 @@ export async function runIkeaReadOnlyBatch({products=PILOT_PRODUCTS,extract,prob
  const metrics={total,extracted:count(x=>x.ok),images:count(x=>x.ok&&x.hasImage),
   reachableImages:count(x=>x.ok&&x.imageReachable),
   skuMatched:count(x=>x.ok),metadataCrossChecked:count(x=>x.priceCrossCheck==="matched"),
+  exactSkuSecondaryCrossChecked:count(x=>x.secondaryPriceEvidence==="matched"),
   repeatedPriceMatched:count(x=>x.repeatability==="matched"),
   failures:count(x=>!x.ok)};
  // The probe must expose weak coverage rather than forcing price acceptance.
