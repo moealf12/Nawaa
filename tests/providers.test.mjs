@@ -7,7 +7,7 @@ import { parseCarrefourSearchPayload } from "../server/providers/carrefour.mjs";
 import { parseSharafAlgoliaPayload } from "../server/providers/sharafdg.mjs";
 import { parseSwarovskiSearchHtml, swarovskiSaudiEligible, swarovskiSaudiProviderQuery } from "../server/providers/swarovski.mjs";
 import { parseAmazonCreatorsPayload } from "../server/providers/amazon-creators.mjs";
-import { extractProductLinks, extractAliExpressSearchOffers, extractTemuSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, parseLandmarkBloomreachPayload, selectedStores, configuredFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
+import { extractProductLinks, extractAliExpressSearchOffers, extractTemuSearchOffers, extractBestBuySearchOffers, parseIkeaSikPayload, parseLandmarkAlgoliaPayload, parseLandmarkBloomreachPayload, selectedStores, configuredFreeStorefronts, quarantinedFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 import { extractEmbeddedProductState, extractMetaProductState, extractionCandidates } from "../server/url-resolver.mjs";
 
 assert.equal(normalizeCondition("Brand New"), "new");
@@ -358,13 +358,13 @@ assert.equal(temuStructuredLinks.length, 2);
 assert.ok(temuStructuredLinks.every((entry) => entry.url.includes("temu.com/sa-en/")));
 assert.ok(temuStructuredLinks.some((entry) => entry.url.includes("601100089500228")));
 assert.ok(temuStructuredLinks.some((entry) => entry.url.includes("601100089500229")));
-assert.ok(selectedStores("فستان شي ان", 8).some((store) => store.id === "shein-sa"));
+assert.ok(!selectedStores("فستان شي ان", 8).some((store) => store.id === "shein-sa"));
+assert.ok(quarantinedFreeStorefronts().some((store) => store.id === "shein-sa" && store.disabledReason === "unstable_shein_risk_challenge"));
 assert.ok(selectedStores("لابتوب", 8).some((store) => store.id === "newegg-global"));
 assert.ok(configuredFreeStorefronts().length >= 15);
 
 const fashionRoutes = routeFreeStorefronts("فستان شي ان", 8);
-assert.equal(fashionRoutes[0].store.id, "shein-sa");
-assert.ok(fashionRoutes[0].reasons.includes("brand"));
+assert.ok(!fashionRoutes.some((route) => route.store.id === "shein-sa"));
 assert.ok(fashionRoutes.every((route) =>
   route.store.categories.includes("clothing") ||
   route.store.categories.includes("*") ||
@@ -380,11 +380,13 @@ assert.ok(laptopRoutes.length <= 8);
 const expandedLaptopRoutes = routeFreeStorefronts("لابتوب hp", 16);
 assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "newegg-global"));
 assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bestbuy-us"));
-assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bhphoto-us"));
+assert.ok(!expandedLaptopRoutes.some((route) => route.store.id === "bhphoto-us"));
+assert.ok(quarantinedFreeStorefronts().some((store) => store.id === "bhphoto-us" && store.disabledReason === "http_403_live_search"));
 
 const perfumeRoutes = routeFreeStorefronts("عطر", 12);
-assert.ok(["sephora-sa","niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0].store.id));
-assert.ok(perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
+assert.ok(["niceone-sa","goldenscent-sa"].includes(perfumeRoutes[0].store.id));
+assert.ok(!perfumeRoutes.some((route) => route.store.id === "sephora-sa"));
+assert.ok(quarantinedFreeStorefronts().some((store) => store.id === "sephora-sa" && store.disabledReason === "http_403_live_search"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "niceone-sa"));
 assert.ok(perfumeRoutes.some((route) => route.store.id === "goldenscent-sa"));
 assert.ok(!perfumeRoutes.some((route) => route.store.id === "newegg-global"));
@@ -527,7 +529,7 @@ assert.equal(aliSearchOffers.length, 1);
 assert.equal(aliSearchOffers[0].price, 0.33);
 assert.equal(aliSearchOffers[0].currency, "USD");
 assert.match(aliSearchOffers[0].title, /iPhone 17/);
-assert.match(aliSearchOffers[0].sourceUrl, /BundleDeals2/);
+assert.equal(aliSearchOffers[0].sourceUrl, "https://www.aliexpress.com/item/3256810253104496.html");
 
 
 const bestBuySearchFixture = String.raw`

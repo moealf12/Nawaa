@@ -4,7 +4,7 @@ import dns from 'node:dns/promises';
 import {fetchHtmlSafe,resolvePublicHttpsTarget} from '../server/url-resolver.mjs';
 import {searchExtraUnbxd} from '../server/providers/extra-unbxd.mjs';
 import {currentSources} from '../server/source-config.mjs';
-import {extractAmazonSearchOffers,configuredFreeStorefronts,fetchAmazonSearchPages} from '../server/providers/free-storefronts.mjs';
+import {extractAmazonSearchOffers,extractProductLinks,configuredFreeStorefronts,fetchAmazonSearchPages} from '../server/providers/free-storefronts.mjs';
 
 for(const address of ['::ffff:127.0.0.1','::ffff:7f00:1','fe90::1','ff02::1','224.0.0.1']) test('resolver rejects non-public address '+address,async()=>{
  const oldLookup=dns.lookup,oldFetch=globalThis.fetch;
@@ -52,6 +52,24 @@ test('eXtra skips absent prices rather than converting null to zero',async()=>{
  assert.equal(result.offers[0]?.productPrice,1200);
  }finally{globalThis.fetch=original;}
 });
+test('Noon UAE canonicalizes tracking variants to one product-page request',()=>{
+ const product='https://www.noon.com/uae-en/iphone-17/N70211553V/p/';
+ const html='<a href="'+product+'?o=offer-one&nav_ctx=x">iPhone 17</a><a href="'+product+'?o=offer-two&nav_ctx=y">iPhone 17</a>';
+ const store={id:'noon-ae',productPath:new RegExp('/p/?(?:[?#]|$)','i')};
+ const links=extractProductLinks(html,'https://www.noon.com/uae-en/search?q=iphone',store,'iphone 17');
+ assert.equal(links.length,1);
+ assert.equal(links[0].url,product);
+});
+
+test('Amazon UAE search cards retain AED and UAE product URLs',()=>{
+ const html='<div data-asin="B0ABC12345"><h2>Apple AirPods</h2><img alt="Apple AirPods" src="https://img.example/airpods"><span class="a-price"><span class="a-offscreen">AED 299.00</span></span></div>';
+ const offers=extractAmazonSearchOffers(html,'airpods','https://www.amazon.ae');
+ assert.equal(offers.length,1);
+ assert.equal(offers[0].currency,'AED');
+ assert.equal(offers[0].price,299);
+ assert.equal(offers[0].sourceUrl,'https://www.amazon.ae/dp/B0ABC12345');
+});
+
 test('Amazon ignores crossed-out price and takes current selling price',()=>{
  const html='<div data-asin="B0ABC12345"><h2>HP Laptop</h2><img alt="HP Laptop" src="https://img.example/x"><span class="a-price a-text-price"><span class="a-offscreen">SAR 4,000</span></span><span class="a-price"><span class="a-offscreen">SAR 2,999</span></span></div>';
  assert.equal(extractAmazonSearchOffers(html,'HP')[0]?.price,2999);

@@ -393,18 +393,41 @@ export function queryMatchReasons(query, offer) {
   const reasons = [];
   const match = assessOfferMatch(query, offer);
   const { model, storage } = parseSearchIntent(query);
+  // Semantic guard for generic category searches. A title mentioning a query
+  // word is not proof that the item belongs to that product category.
+  // Apply narrowly: explicit searches for books, pads, or accessories remain
+  // eligible for their own terms. No brand, price or merchant is fabricated.
+  const broadQuery=normalizeSearchQuery(query);
+  const productTitle=normalizeSearchQuery(String(offer?.title||""));
+  if (broadQuery === "perfume" &&
+      /\b(?:books?|novels?|poetry|anthology|articles?|felt tip|markers?|stamps?|dolls?|toys?)\b/.test(productTitle)) {
+    reasons.push("category_conflict");
+  }
+  if (broadQuery === "stroller" &&
+      /\b(?:books?|novels?|chronicles|anthology|tricycle|fiction)\b/.test(productTitle)) {
+    reasons.push("category_conflict");
+  }
+  if (broadQuery === "chair" &&
+      /\b(?:chair pads?|chair cushions?|chair covers?|seat pads?|seat cushions?|slipcovers?)\b/.test(productTitle)) {
+    reasons.push("category_conflict");
+  }
+  // "airpods" without a requested generation is a *family* query, not the
+  // nonexistent device model "AirPods (unversioned)". Do not reject genuine
+  // AirPods 4, Pro or Max variants as conflicting model numbers.
+  // "airpods 4" / "airpods pro 2" remain model-specific constraints.
+  const constrainedModel = model === "airpods" ? null : model;
   const models = [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
     .filter(Boolean).flatMap(explicitModels);
   const titleModels = [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels);
-  if (model && models.some(value => value !== model)) reasons.push('model_conflict');
+  if (constrainedModel && models.some(value => value !== constrainedModel)) reasons.push('model_conflict');
   const storageText = normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
     .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ');
   const capacities = storageText.match(/\b\d+(?:gb|tb)\b/g) || [];
   if (storage && capacities.some(value => value !== storage)) reasons.push('capacity_conflict');
   // Generic brand/category searches should retain strongly relevant products;
   // exact-match is reserved for model/variant-sensitive queries.
-  const genericIntent = !model && !storage;
-  if ((genericIntent ? match.matchConfidence < 0.65 : !match.exactMatch) || (model && !titleModels.includes(model))) reasons.push('query_mismatch');
+  const genericIntent = !constrainedModel && !storage;
+  if ((genericIntent ? match.matchConfidence < 0.65 : !match.exactMatch) || (constrainedModel && !titleModels.includes(constrainedModel))) reasons.push('query_mismatch');
   return reasons;
 }
 

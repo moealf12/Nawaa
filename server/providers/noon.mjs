@@ -114,9 +114,30 @@ function conditionFromTitle(title = "") {
   return "new";
 }
 
-function productUrl(hit = {}) {
+function productUrl(hit = {}, market = "SA") {
   const path = text(hit.pdp_url || hit.url);
   if (!path) return null;
+  if (market === "AE") {
+    // Reject cross-market or external catalog links. UAE offers must not be
+    // attributed to Saudi Arabia or another merchant.
+    try {
+      const candidate = new URL(path, "https://www.noon.com/uae-en/");
+      if (candidate.hostname !== "www.noon.com" || candidate.protocol !== "https:") return null;
+      if (/^\/saudi-en\//i.test(candidate.pathname)) return null;
+      if (!/^\/uae-en\//i.test(candidate.pathname)) {
+        candidate.pathname = "/uae-en" + (candidate.pathname.startsWith("/") ? "" : "/") + candidate.pathname;
+      }
+      if (!/\/p\/?$/i.test(candidate.pathname)) {
+        // Catalog hits can contain a slug rather than a full PDP.
+        // Only a SKU in the same price-bearing hit can form a PDP.
+        const sku = text(hit.sku || hit.catalog_sku || hit.sku_config);
+        if (!/^[A-Z][A-Z0-9]{6,20}$/i.test(sku)) return null;
+        candidate.pathname = candidate.pathname.replace(/\/+$/, "") + "/" + sku + "/p/";
+      }
+      candidate.search = ""; candidate.hash = "";
+      return candidate.href;
+    } catch { return null; }
+  }
   if (/^https:\/\//i.test(path)) return path;
   const normalized = path.startsWith("/") ? path : "/" + path;
   return "https://www.noon.com/saudi-en" + normalized;
@@ -128,7 +149,7 @@ function nudgeTexts(hit = {}) {
     : [];
 }
 
-export function parseNoonCatalogPayload(payload, limit = 32) {
+export function parseNoonCatalogPayload(payload, limit = 32, market = "SA") {
   const hits = Array.isArray(payload?.hits) ? payload.hits : [];
   const offers = [];
 
@@ -144,6 +165,10 @@ export function parseNoonCatalogPayload(payload, limit = 32) {
       : regularPrice;
 
     if (!title || !sku || productPrice === null) continue;
+    const declaredCurrency = text(hit?.currency || hit?.price_currency || hit?.priceCurrency).toUpperCase();
+    if (market === "AE" && declaredCurrency && declaredCurrency !== "AED") continue;
+    const url = productUrl(hit, market);
+    if (market === "AE" && !url) continue;
 
     const parts = titleParts(title);
     const plp = hit?.plp_specifications && typeof hit.plp_specifications === "object"
@@ -161,16 +186,16 @@ export function parseNoonCatalogPayload(payload, limit = 32) {
 
     offers.push({
       provider: "noon-catalog",
-      providerMarket: "noon-sa",
+      providerMarket: market === "AE" ? "noon-ae" : "noon-sa",
       merchant: "noon",
-      merchantCountryCode: "SA",
-      merchantCountryNameAr: "السعودية",
-      sourceUrl: productUrl(hit),
+      merchantCountryCode: market === "AE" ? "AE" : "SA",
+      merchantCountryNameAr: market === "AE" ? "الإمارات" : "السعودية",
+      sourceUrl: url,
       image: text(hit?.image_url) || text(hit?.image_urls?.[0]) || null,
       title,
       condition: conditionFromTitle(title),
       availability: hit?.is_buyable === false ? "out_of_stock" : hit?.is_buyable === true ? "in_stock" : "unknown",
-      canShipToSaudi: true,
+      canShipToSaudi: market === "AE" ? null : true,
       productPrice,
       originalProductPrice: productPrice,
       listPrice: regularPrice,
@@ -180,12 +205,12 @@ export function parseNoonCatalogPayload(payload, limit = 32) {
       mandatoryFees: 0,
       advertisedDiscount: regularPrice !== null && productPrice < regularPrice ? regularPrice - productPrice : 0,
       discount: 0,
-      currency: "SAR",
-      originalCurrency: "SAR",
+      currency: market === "AE" ? "AED" : "SAR",
+      originalCurrency: market === "AE" ? "AED" : "SAR",
       exactMatch: false,
       matchConfidence: 0,
       priceConfidence: "incomplete",
-      isLocal: true,
+      isLocal: market !== "AE",
       deliveryDays: null,
       observedAt,
       dataKind: "live",
@@ -277,4 +302,61 @@ export async function searchNoon(query, limit = 32) {
       },
     }],
   };
+}
+
+export async function searchNoonUaeCatalog(query, limit = 32, {signal} = {}) {
+  const url = new URL(NOON_SEARCH_BASE);
+  url.searchParams.set("q", query);
+  url.searchParams.set("limit", String(Math.max(1, Math.min(50, Number(limit) || 32))));
+  url.searchParams.set("sort[by]", "popularity");
+  url.searchParams.set("sort[dir]", "desc");
+  const headers = {
+    accept: "application/json",
+    "accept-language": "en-AE,en;q=0.9",
+    "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.5; +https://moealf12.github.io/Nawaa/)",
+    // Both country and locale are needed for market-specific results.
+    "x-mp-country": "ae",
+    "x-locale": "en-ae",
+    referer: "https://www.noon.com/uae-en/search/?q=" + encodeURIComponent(query),
+  };
+  // UAE public catalog paths vary across Noon deployments. Try the
+  // storefront's existing endpoint first; on transport failure or retired API
+  // route, try the separate public _svc catalog. Never evade 401/403/429.
+  // Both requests share ONE cancellation budget to bound customer latency.
+  const budget = AbortSignal.timeout(4500);
+  const requestSignal = signal ? AbortSignal.any([signal,budget]) : budget;
+  const alternate = new URL("https://www.noon.com/_svc/catalog/api/v3/u/search");
+  for (const [name,value] of url.searchParams) alternate.searchParams.set(name,value);
+  const urls=[url,alternate];
+  let payload;
+  let lastError=null;
+  for (let index=0;index<urls.length;index++) {
+    requestSignal.throwIfAborted();
+    try {
+      const response=await fetch(urls[index],{headers,signal:requestSignal});
+      if ([401,403,429].includes(response.status)) {
+        throw new Error("Noon UAE catalog access denied: HTTP "+response.status);
+      }
+      if (!response.ok) {
+        if (index+1<urls.length && [404,410,500,502,503,504].includes(response.status)) {
+          lastError=new Error("Noon UAE catalog HTTP "+response.status);
+          continue;
+        }
+        throw new Error("Noon UAE catalog HTTP "+response.status);
+      }
+      payload=await response.json();
+      break;
+    }catch(error){
+      if (requestSignal.aborted || /access denied|HTTP (?:401|403|429)/.test(String(error?.message||""))) throw error;
+      if (index+1>=urls.length) throw error;
+      lastError=error;
+    }
+  }
+  if (!payload) throw lastError || new Error("Noon UAE catalog unavailable");
+  // A clearly Saudi response must never be relabelled as an AED offer.
+  const describedMarket = [payload?.meta?.title, payload?.meta?.desc, payload?.market, payload?.country].filter(Boolean).join(" ");
+  if (/saudi arabia|saudi-en|\bksa\b/i.test(describedMarket) && !/united arab emirates|\buae\b|dubai|abu dhabi/i.test(describedMarket)) {
+    throw new Error("noon_uae_market_mismatch");
+  }
+  return parseNoonCatalogPayload(payload, Math.max(1, Math.min(50, Number(limit) || 32)), "AE");
 }

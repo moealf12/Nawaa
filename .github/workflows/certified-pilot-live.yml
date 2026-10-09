@@ -1,0 +1,48 @@
+name: Certified 15 Live Website Pilot
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "pilot.html"
+      - "src/certified-pilot.mjs"
+      - "scripts/test-live-pilot-site.mjs"
+      - "scripts/pilot-browser-check.mjs"
+      - ".github/workflows/certified-pilot-live.yml"
+
+concurrency:
+  group: certified-pilot-live-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  browser-site-api-and-merchants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Run real 15-merchant requests through live HTTP pilot endpoint
+        run: node scripts/test-live-pilot-site.mjs
+      - name: Install free Chrome automation tooling
+        run: npm install --no-save --package-lock=false --ignore-scripts playwright@1.55.1
+      - name: Click through actual pilot UI in headless Chrome
+        run: node scripts/pilot-browser-check.mjs
+      - name: Upload browser screenshots and DOM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: certified-15-browser-evidence
+          path: pilot-browser-report/
+          if-no-files-found: warn
+      - name: Keep individual source diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: certified-15-live-pilot
+          path: pilot-15-report/report.json
+          if-no-files-found: warn

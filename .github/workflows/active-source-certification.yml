@@ -1,0 +1,63 @@
+name: Active 39 Source Certification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/certify-active-source.mjs"
+      - "scripts/certify-active-sources-batched.mjs"
+      - "scripts/summarize-active-certification.mjs"
+      - ".github/workflows/active-source-certification.yml"
+      - "server/providers/free-storefronts.mjs"
+      - "server/providers/noon.mjs"
+      - "server/price-plausibility.mjs"
+      - "server/fx.mjs"
+      - "server/url-resolver.mjs"
+      - "src/search-query.mjs"
+  pull_request:
+    paths:
+      - "scripts/certify-active-source.mjs"
+      - "scripts/certify-active-sources-batched.mjs"
+      - "scripts/summarize-active-certification.mjs"
+      - ".github/workflows/active-source-certification.yml"
+      - "server/providers/free-storefronts.mjs"
+      - "server/providers/noon.mjs"
+      - "server/price-plausibility.mjs"
+      - "server/fx.mjs"
+      - "server/url-resolver.mjs"
+      - "src/search-query.mjs"
+
+# A newer commit supersedes previous network probes. Keep only fresh evidence.
+concurrency:
+  group: active-source-cert-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  certify-all-39:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Verify exact source registry and eight ordered batches
+        run: node scripts/certify-active-sources-batched.mjs --check
+      - name: Certify real storefronts five by five (up to three parallel probes)
+        run: node scripts/certify-active-sources-batched.mjs
+      - name: Produce strict 39-source summary (no hidden failures)
+        if: always()
+        run: node scripts/summarize-active-certification.mjs
+      - name: Upload every source report and final summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-39-certification-report
+          path: |
+            source-cert-artifacts/active-source-*.json
+            source-cert-summary/active-source-certification-summary.json
+          if-no-files-found: warn

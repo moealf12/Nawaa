@@ -2,12 +2,14 @@ import { resolveProductUrl } from "../url-resolver.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
+import { searchNoonUaeCatalog } from "./noon.mjs";
+import { pricePlausibility } from "../price-plausibility.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
 const STORES = [
   {
-    id:"shein-sa", name:"SHEIN", countryCode:"SA", countryNameAr:"السعودية", brands:["shein"], categories:["clothing","shoes","bag","beauty","jewelry","home","toy"],
+    id:"shein-sa", name:"SHEIN", countryCode:"SA", countryNameAr:"السعودية", enabled:false, disabledReason:"unstable_shein_risk_challenge", brands:["shein"], categories:["clothing","shoes","bag","beauty","jewelry","home","toy"],
     search:(q)=>"https://ar.shein.com/pdsearch/"+encodeURIComponent(q).replace(/%20/g,"-")+"/",
     productPath:/-p-\d+\.html(?:[?#]|$)/i,
   },
@@ -17,12 +19,12 @@ const STORES = [
     productPath:/\/item\/\d+\.html(?:[?#]|$)/i,
   },
   {
-    id:"temu-global", name:"Temu", countryCode:"CN", countryNameAr:"الصين", categories:["*"],
+    id:"temu-global", name:"Temu", countryCode:"CN", countryNameAr:"الصين", enabled:false, disabledReason:"no_product_candidates_live_search", categories:["*"],
     search:(q)=>"https://www.temu.com/search_result.html?search_key="+encodeURIComponent(q)+"&search_method=user",
     productPath:/\/(?:goods|item)\.html(?:[?#]|$)|-g-\d+\.html/i,
   },
   {
-    id:"iherb-sa", name:"iHerb", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["beauty","grocery","pet","baby","other"],
+    id:"iherb-sa", name:"iHerb", countryCode:"US", countryNameAr:"الولايات المتحدة", enabled:false, disabledReason:"http_403_live_search", categories:["beauty","grocery","pet","baby","other"],
     search:(q)=>"https://sa.iherb.com/search?kw="+encodeURIComponent(q),
     productPath:/\/pr\/[^?#]+\/\d+(?:[/?#]|$)/i,
   },
@@ -99,15 +101,15 @@ const STORES = [
   {
     id:"jumbo-ae", name:"Jumbo Electronics UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","desktop","monitor","audio","camera","tv","console","game","accessory","network","appliance"],
     search:(q)=>"https://www.jumbo.ae/search/"+encodeURIComponent(q),
-    productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)|\/[^/?#]+-\d+(?:[/?#]|$)/i,
+    productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)|\/[^/?#]+-\d+(?:[/?#]|$)|\/(?!search(?:\/|$)|brands(?:\/|$)|ar(?:\/|$))[^/?#]+\.html(?:[?#]|$)/i,
   },
   {
-    id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", brands:["farfetch"], categories:["clothing","shoes","bag","jewelry","watch"],
+    id:"farfetch-sa", name:"Farfetch", countryCode:"GB", countryNameAr:"بريطانيا", enabled:false, disabledReason:"http_403_live_search", brands:["farfetch"], categories:["clothing","shoes","bag","jewelry","watch"],
     search:(q)=>"https://www.farfetch.com/sa/shopping/items.aspx?q="+encodeURIComponent(q),
     productPath:/\/shopping\/[^?#]+\/item-\d+\.aspx(?:[?#]|$)/i,
   },
   {
-    id:"etsy-global", name:"Etsy", countryCode:"US", countryNameAr:"الولايات المتحدة", brands:["etsy"], categories:["jewelry","clothing","bag","home","furniture","toy","office","other"],
+    id:"etsy-global", name:"Etsy", countryCode:"US", countryNameAr:"الولايات المتحدة", enabled:false, disabledReason:"http_403_live_search", brands:["etsy"], categories:["jewelry","clothing","bag","home","furniture","toy","office","other"],
     search:(q)=>"https://www.etsy.com/search?q="+encodeURIComponent(q),
     productPath:/\/listing\/\d+(?:[/?#]|$)/i,
   },
@@ -117,12 +119,12 @@ const STORES = [
     productPath:/\/p\/(?!pl(?:[/?#]|$))[A-Z0-9-]+(?:[/?#]|$)/i,
   },
   {
-    id:"bhphoto-us", name:"B&H Photo", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["camera","audio","laptop","phone","tablet","accessory","other"],
+    id:"bhphoto-us", name:"B&H Photo", countryCode:"US", countryNameAr:"الولايات المتحدة", enabled:false, disabledReason:"http_403_live_search", categories:["camera","audio","laptop","phone","tablet","accessory","other"],
     search:(q)=>"https://www.bhphotovideo.com/c/search?q="+encodeURIComponent(q)+"&sts=ma",
     productPath:/\/c\/product\/\d+(?:-[A-Z0-9_-]+)?(?:[/?#]|$)/i,
   },
   {
-    id:"walmart-us", name:"Walmart", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["*"],
+    id:"walmart-us", name:"Walmart", countryCode:"US", countryNameAr:"الولايات المتحدة", enabled:false, disabledReason:"walmart_blocked", categories:["*"],
     search:(q)=>"https://www.walmart.com/search?q="+encodeURIComponent(q),
     productPath:/\/ip\/[^?#]+\/\d+(?:[/?#]|$)/i,
   },
@@ -132,7 +134,7 @@ const STORES = [
     productPath:/\/(?:site\/[^?#]+\/\d+\.p|product\/[^?#]+\/[^/?#]+\/sku\/\d+)(?:[?#]|$)/i,
   },
   {
-    id:"adidas-sa", name:"adidas Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["adidas"], categories:["clothing","shoes","sports","bag"],
+    id:"adidas-sa", name:"adidas Saudi", countryCode:"SA", countryNameAr:"السعودية", enabled:false, disabledReason:"http_403_live_search", brands:["adidas"], categories:["clothing","shoes","sports","bag"],
     search:(q)=>"https://www.adidas.sa/en/search?q="+encodeURIComponent(q),
     productPath:/\/[A-Z0-9_-]+\.html(?:[?#]|$)/i,
   },
@@ -142,7 +144,7 @@ const STORES = [
     productPath:/\/[^?#]+(?:[?#].*)?$/i,
   },
   {
-    id:"sephora-sa", name:"Sephora Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["sephora"], categories:["beauty","perfume"],
+    id:"sephora-sa", name:"Sephora Saudi", countryCode:"SA", countryNameAr:"السعودية", enabled:false, disabledReason:"http_403_live_search", brands:["sephora"], categories:["beauty","perfume"],
     search:(q)=>"https://www.sephora.me/sa-en/search?q="+encodeURIComponent(q),
     productPath:/\/p\/[^?#]+(?:[?#]|$)/i,
   },
@@ -173,7 +175,7 @@ const STORES = [
   },
   {
     id:"goldenscent-sa", name:"Golden Scent", countryCode:"SA", countryNameAr:"السعودية", brands:["goldenscent"], categories:["beauty","perfume"],
-    search:(q)=>"https://www.goldenscent.com/en/search?q="+encodeURIComponent(q), productPath:/\/(?!catalog\/product\/)[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+    search:(q)=>"https://www.goldenscent.com/en/search?q="+encodeURIComponent(q), productPath:/\/en\/p\/[^/?#]+(?:[/?#]|$)|\/(?!catalog\/product\/)[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
   },
   {
     id:"ounass-sa", name:"Ounass", countryCode:"SA", countryNameAr:"السعودية", brands:["ounass"], categories:["clothing","shoes","bag","beauty","jewelry","watch"],
@@ -193,7 +195,10 @@ const STORES = [
   },
   {
     id:"mumzworld-sa", name:"Mumzworld", countryCode:"SA", countryNameAr:"السعودية", brands:["mumzworld"], categories:["baby","toy","clothing","grocery","other"],
-    search:(q)=>"https://www.mumzworld.com/sa-en/search?q="+encodeURIComponent(q), productPath:/\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
+    search:(q)=>"https://www.mumzworld.com/sa-en/search?q="+encodeURIComponent(q),
+    // Modern public PDPs: /sa-en/neobreez-nolite-...-44483883-909-nbr121bk
+    // Do not mistake /sa-en/c/... categories or search/navigation pages for PDPs.
+    productPath:/\/sa-en\/(?!(?:c|search|cart|checkout|account|customer|brand|brands|collections|blog|help|about|terms|policy|pages)(?:[/?#]|$))(?=[^/?#]*(?:-[^/?#]*){3,})(?:[^/?#]+)(?:[/?#]|$)|\/[^?#]+\.html(?:[?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
   },
   {
     id:"netaporter-global", name:"NET-A-PORTER", countryCode:"GB", countryNameAr:"بريطانيا", categories:["clothing","shoes","bag","beauty","jewelry","watch"],
@@ -247,6 +252,19 @@ function decodeHtml(value = "") {
 
 function stripHtml(value = "") {
   return decodeHtml(String(value).replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+}
+
+// Upstream Decathlon occasionally returns http:// links to its own CDN.
+// Render is HTTPS: only normalize the identical official merchant host.
+// Never rewrite links for other merchants or arbitrary third-party CDNs.
+export function secureStorefrontImage(image,storeId) {
+  if (storeId !== "decathlon-sa" || typeof image !== "string" || !image.startsWith("http://")) return image;
+  try {
+    const parsed = new URL(image);
+    if (parsed.username || parsed.password || !["decathlon.com.sa","www.decathlon.com.sa"].includes(parsed.hostname)) return image;
+    parsed.protocol = "https:";
+    return parsed.href;
+  } catch { return image; }
 }
 
 function canonicalizeCandidateUrl(url) {
@@ -676,7 +694,7 @@ export function extractAliExpressSearchOffers(html, query) {
     const price = Number(priceBlock?.match(/"minPrice":([0-9]+(?:\.[0-9]+)?)/)?.[1]);
     const sourceRaw = block.match(/"productDetailUrl":"((?:\\.|[^"\\])*)"/)?.[1] || null;
 
-    if (!productId || !titleRaw || !currency || !Number.isFinite(price) || price <= 0 || !sourceRaw) continue;
+    if (!productId || !titleRaw || !currency || !Number.isFinite(price) || price <= 0) continue;
     const title = decodeJsonString(titleRaw);
     const haystack = normalizeSearchQuery(title);
     const hits = tokens.filter((token) => haystack.includes(token)).length;
@@ -686,7 +704,15 @@ export function extractAliExpressSearchOffers(html, query) {
 
     let image = imageRaw ? decodeJsonString(imageRaw) : null;
     if (image?.startsWith("//")) image = "https:" + image;
-    const sourceUrl = decodeJsonString(sourceRaw).replace(/&amp;/g, "&");
+    // Search cards sometimes provide only an SSR bundle-deals link rather
+    // than the merchant's canonical PDP. Build the documented item URL only
+    // from a numeric productId already present in the priced product card.
+    let sourceUrl = sourceRaw ? decodeJsonString(sourceRaw).replace(/&amp;/g, "&") : "";
+    let canonicalItemUrl = false;
+    try { const parsed = new URL(sourceUrl); canonicalItemUrl = (parsed.hostname === "aliexpress.com" || parsed.hostname.endsWith(".aliexpress.com")) && /\/item\/\d+\.html(?:[?#]|$)/i.test(parsed.pathname); } catch {}
+    if (!canonicalItemUrl) {
+      sourceUrl = "https://www.aliexpress.com/item/" + productId + ".html";
+    }
     offers.push({ productId, title, image, price, currency, sourceUrl });
   }
   return offers;
@@ -837,6 +863,7 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
     const priceBlock=priceMatch ? block.slice(priceMatch.index+priceMatch[0].length,priceMatch.index+2000) : "";
     const offscreen=stripHtml(priceBlock.match(/^\s*<span[^>]*class=["'][^"']*a-offscreen[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]||"");
     const price=Number(offscreen.replace(/[^0-9.]/g,""));
+    const currency = new URL(origin).hostname.endsWith(".ae") ? "AED" : "SAR";
     if(title.length<3||!Number.isFinite(price)||price<=0)continue;
     const haystack=normalizeSearchQuery(title);const hits=tokens.filter(t=>haystack.includes(t)).length;
     if(tokens.length>1&&hits/tokens.length<0.2)continue;
@@ -847,7 +874,7 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
       if(candidate.origin===new URL(origin).origin && !candidate.username && !candidate.password && candidate.pathname.match(/\/dp\/([A-Z0-9]{10})(?:\/|$)/i)?.[1].toUpperCase()===asin.toUpperCase()) sourceUrl=candidate.href;
     } catch {}
     seen.add(asin);
-    offers.push({productId:asin,title:stripHtml(title),image,price,currency:"SAR",sourceUrl});
+    offers.push({productId:asin,title:stripHtml(title),image,price,currency,sourceUrl});
   }
   return offers;
 }
@@ -925,6 +952,30 @@ export function extractSamsungSearchOffers(html, query) {
   return offers;
 }
 
+// Only attach a picture from the *same identifiable product card*. Linking
+// the nearest unrelated image would corrupt product identity and price results.
+function carrefourCardImage(source, anchorIndex, title) {
+  const normalize = value => normalizeSearchQuery(stripHtml(value)).replace(/\s+/g," ").trim();
+  const desired = normalize(title);
+  if (desired.length < 5) return null;
+  const before=source.slice(Math.max(0,anchorIndex-2800),anchorIndex);
+  const matches=[...before.matchAll(/<img\b[^>]{0,2300}>/gi)];
+  for (const match of matches.slice(-7).reverse()) {
+    const tag=match[0];
+    const alt=tag.match(/\balt=["']([^"']+)["']/i)?.[1] || "";
+    const label=normalize(alt);
+    if (label.length < 5 || !(label.includes(desired) || desired.includes(label))) continue;
+    const raw = tag.match(/\b(?:data-src|src)=["']([^"']+)["']/i)?.[1] ||
+      tag.match(/\bsrcset=["']([^"',\s]+)/i)?.[1];
+    if(!raw || /^(?:data:|blob:|javascript:)/i.test(raw)) continue;
+    try {
+      const image=new URL(decodeHtml(raw),"https://www.carrefouruae.com");
+      if (image.protocol === "https:" && !/\.(?:js|css|svg)$/i.test(image.pathname)) return image.href;
+    } catch {}
+  }
+  return null;
+}
+
 export function extractCarrefourSearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
@@ -942,7 +993,7 @@ export function extractCarrefourSearchOffers(html, query) {
     if (!title || !Number.isFinite(price) || price <= 0 || (tokens.length > 1 && hits / tokens.length < 0.2) || seen.has(key)) continue;
     seen.add(key);
     const id = sourceUrl.match(/\/p\/(\d+)/i)?.[1] || sourceUrl;
-    offers.push({ productId:id, title, image:null, price, currency:"AED", sourceUrl });
+    offers.push({ productId:id, title, image:carrefourCardImage(source,match.index,title), price, currency:"AED", sourceUrl });
   }
   return offers;
 }
@@ -1047,6 +1098,17 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
     const score = tokens.length ? hits / tokens.length : 0.5;
     if (score < 0.2 && tokens.length > 1) return;
     url = canonicalizeCandidateUrl(url);
+    // Noon search cards often append navigation/session and offer tracking
+    // parameters. Resolve and deduplicate the public product page itself;
+    // never let changing tracking keys trigger redundant slow PDP requests.
+    if (store.id === "noon-ae") {
+      const clean = new URL(url);
+      if (/\/p\/?$/i.test(clean.pathname)) {
+        clean.search = "";
+        clean.hash = "";
+        url = clean.href;
+      }
+    }
     if (seen.has(url)) return;
     seen.add(url);
     out.push({ url, label, score });
@@ -1091,27 +1153,42 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
 
-async function fetchText(url,{signal}={}) {
-  const response = await fetch(url, {
-    headers:{
-      accept:"text/html,application/xhtml+xml",
-      "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
-      "cache-control":"no-cache",
-      pragma:"no-cache",
-      "sec-fetch-dest":"document",
-      "sec-fetch-mode":"navigate",
-      "sec-fetch-site":"none",
-      "upgrade-insecure-requests":"1",
-      "user-agent":USER_AGENT,
-    },
-    redirect:"follow",
-    signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),
-  });
+async function fetchText(url,{signal,maxChars=5000000}={}) {
+  const combinedSignal=signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000);
+  let response;
+  // A single bounded retry handles transient origin 503s. Never retry
+  // access-denied responses (401/403), 429 rate limits, or challenge pages.
+  for (let attempt=0;attempt<2;attempt++){
+    combinedSignal.throwIfAborted();
+    response=await fetch(url, {
+      headers:{
+        accept:"text/html,application/xhtml+xml",
+        "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
+        "cache-control":"no-cache",
+        pragma:"no-cache",
+        "sec-fetch-dest":"document",
+        "sec-fetch-mode":"navigate",
+        "sec-fetch-site":"none",
+        "upgrade-insecure-requests":"1",
+        "user-agent":USER_AGENT,
+      },
+      redirect:"follow",
+      signal:combinedSignal,
+    });
+    if(response.status!==503 || attempt===1)break;
+    await response.body?.cancel().catch(()=>{});
+    await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{combinedSignal.removeEventListener("abort",onAbort);resolve();},350);
+      const onAbort=()=>{clearTimeout(timer);reject(combinedSignal.reason);};
+      combinedSignal.addEventListener("abort",onAbort,{once:true});
+    });
+  }
   if (!response.ok) throw new Error("HTTP " + response.status);
   const type = response.headers.get("content-type") || "";
   if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("non-html response");
   const text = await response.text();
-  if (text.length > 5000000) throw new Error("search response too large");
+  const limit = Math.max(1000,Math.min(8000000,Number(maxChars)||5000000));
+  if (text.length > limit) throw new Error("search response too large");
   return { html:text, finalUrl:response.url || url };
 }
 
@@ -1211,6 +1288,7 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const intent = parseSearchIntent(normalizedQuery);
   const stable = options.stable === true;
   const routed = STORES
+    .filter((store)=>store.enabled !== false)
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
@@ -1296,12 +1374,39 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     let searchDiagnostics = null;
     let primarySearchOffers = [];
     let primarySearchError = null;
-    // HTML is the universal first acquisition layer. It is cheap, cache-friendly,
-    // and often contains JSON-LD/SSR state with complete product cards.
-    // Store-specific APIs are fallbacks only when the HTML path yields no offers.
+    // Market-scoped catalog-first strategy avoids slow Noon product-page fetches.
+    // The standard HTML/JSON-LD extraction remains a fallback when the catalog fails.
     let htmlFirstAttempted = false;
+    let noonCatalogVerified = false;
+    if (store.id === "noon-ae") {
+      try {
+        const cap = Number.isFinite(catalogLimit) ? Math.max(1, Math.min(50, catalogLimit)) : 50;
+        const hits = await searchNoonUaeCatalog(query, cap, {signal:options.signal});
+        // Use only real UAE catalog products with explicit AED prices and
+        // Noon product URLs. Never convert a Saudi catalog result to UAE.
+        primarySearchOffers = hits.filter(item =>
+          item.sourceUrl && store.productPath.test(item.sourceUrl) &&
+          Number.isFinite(item.productPrice) && item.productPrice > 0 &&
+          item.originalCurrency === "AED"
+        ).map(item => ({
+          productId:item.specs?.modelNumber || item.sourceMeta?.productId,
+          title:item.title,
+          image:item.image,
+          price:item.productPrice,
+          currency:"AED",
+          sourceUrl:item.sourceUrl,
+        }));
+        noonCatalogVerified = true;
+      primarySearchError = null;
+      } catch (error) {
+        primarySearchError = [primarySearchError, "Noon UAE catalog: " + (error?.message || String(error))].filter(Boolean).join(" | ");
+      }
+    }
+    // All other stores remain HTML-first; Noon uses its priced catalog first.
     try {
-      if (store.id === "amazon-sa") {
+      if (store.id === "noon-ae" && noonCatalogVerified) {
+        searchDiagnostics = { acquisitionFallback:"noon-uae-catalog-primary", market:"AE" };
+      } else if (store.id === "amazon-sa") {
         const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
         const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
@@ -1343,13 +1448,13 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
       }
     }
-    const htmlFirstOffers =
+    let htmlFirstOffers =
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "carrefour-ae" ? extractCarrefourSearchOffers(html, query) :
       store.id === "samsung-sa" ? extractSamsungSearchOffers(html, query) :
-      store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
+      (store.id === "amazon-sa" || store.id === "amazon-ae") ? extractAmazonSearchOffers(html, query, store.id === "amazon-ae" ? "https://www.amazon.ae" : "https://www.amazon.sa") :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       (() => {
         const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
@@ -1361,7 +1466,212 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
         return merged;
       })();
+    // Specialized search parsers are preferred. When a public search page is
+    // readable but its layout has changed, fall back to standards-based HTML
+    // metadata (JSON-LD) and embedded SSR state. Downstream offer validation
+    // still applies; never manufacture a price from links alone.
+    if (!htmlFirstOffers.length && html) {
+      const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+      const jsonLd = extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+      const seen = new Set();
+      for (const offer of [...embedded, ...jsonLd]) {
+        const key = canonicalizeCandidateUrl(offer.sourceUrl || "") + "|" + Number(offer.price) + "|" + String(offer.currency || "");
+        if (!seen.has(key)) { seen.add(key); htmlFirstOffers.push(offer); }
+      }
+      if (htmlFirstOffers.length) {
+        searchDiagnostics = { ...(searchDiagnostics || {}), acquisitionFallback:"html-structured-metadata" };
+      }
+    }
+    // Carrefour search results may carry the price and PDP link in a compact
+    // card while an independent JSON-LD / SSR record carries the picture.
+    // Enrich only from the identical numeric PDP id AND identical AED price.
+    // Never attach a merely adjacent or similarly named product image.
+    if (store.id === "carrefour-ae" && html && htmlFirstOffers.some(offer=>!offer.image)) {
+      const structured = [
+        ...extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query),
+        ...extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query),
+      ];
+      const extractId = url => String(url||"").match(/\/p\/(\d+)(?:[/?#]|$)/i)?.[1] || null;
+      const imagesByPdpPrice = new Map();
+      for (const offer of structured) {
+        const id=extractId(offer.sourceUrl);
+        const image=String(offer.image||"");
+        if (!id || !/^https:\/\//i.test(image) || offer.currency !== "AED") continue;
+        if (!Number.isFinite(Number(offer.price)) || Number(offer.price)<=0) continue;
+        const key=id+"|"+Number(offer.price);
+        if (!imagesByPdpPrice.has(key)) imagesByPdpPrice.set(key,new Set());
+        imagesByPdpPrice.get(key).add(image);
+      }
+      let enriched=0;
+      htmlFirstOffers=htmlFirstOffers.map(offer=>{
+        if(offer.image) return offer;
+        const id=extractId(offer.sourceUrl);
+        const images=imagesByPdpPrice.get(id+"|"+Number(offer.price));
+        if (!images || images.size!==1) return offer;
+        enriched++;
+        return {...offer,image:[...images][0]};
+      });
+      if(enriched)searchDiagnostics={...(searchDiagnostics||{}),imageEnrichedFromStructured:enriched};
+    }
     if (!htmlFirstOffers.length) {
+      const namshiQuery = store.id === "namshi-sa" ? normalizeSearchQuery(query) : "";
+      const namshiFamily = /\bshoes?\b/i.test(namshiQuery) ? "shoes" :
+        /\b(?:shirts?|blouses?)\b/i.test(namshiQuery) ? "shirts" : null;
+      if (namshiFamily) {
+        // These are publicly listed merchant category pages, not protected APIs.
+        // An unavailable gender category must not prevent using the other one.
+        const categoryUrls = namshiFamily === "shoes"
+          ? ["https://www.namshi.com/saudi-en/women-shoes/?page=1",
+             "https://www.namshi.com/saudi-en/men-shoes/?page=1"]
+          : ["https://www.namshi.com/saudi-en/women-clothing-shirts_blouses/?page=1",
+             "https://www.namshi.com/saudi-en/men-clothing-shirts/?page=1"];
+        const settledCategories = await Promise.allSettled(
+          categoryUrls.map(url=>fetchText(url,{signal:options.signal}))
+        );
+        const pages = settledCategories.filter(entry=>entry.status==="fulfilled").map(entry=>entry.value);
+        if (pages.length) {
+          html = pages.map(page=>page.html).join("\n");
+          searchPageFinalUrl = pages[0]?.finalUrl || searchUrl;
+          searchDiagnostics = {
+            ...searchPageDiagnostics(html, searchUrl, searchPageFinalUrl),
+            acquisitionFallback:"namshi-"+namshiFamily+"-category",
+            categoryPagesAvailable:pages.length,
+            categoryPagesRequested:categoryUrls.length,
+          };
+          primarySearchError = null;
+          const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+          const jsonLd = extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+          const merged = []; const seen = new Set();
+          for (const offer of [...embedded, ...jsonLd]) {
+            const key = canonicalizeCandidateUrl(offer.sourceUrl || "") + "|" + Number(offer.price) + "|" + String(offer.currency || "");
+            if (!seen.has(key)) { seen.add(key); merged.push(offer); }
+          }
+          htmlFirstOffers = merged;
+        } else {
+          const reasons=settledCategories.map(entry=>entry.reason?.message||"category_unavailable");
+          primarySearchError = [primarySearchError,"namshi-"+namshiFamily+"-category: "+reasons.join(" | ")].filter(Boolean).join(" | ");
+        }
+      }
+      if (store.id === "mumzworld-sa") {
+        const requested=normalizeSearchQuery(query);
+        const categoryUrl = /\bstrollers?\b/i.test(requested)
+          ? "https://www.mumzworld.com/sa-en/c/travel-gear/strollers-prams/stroller"
+          : /\b(?:baby|newborn|diapers?|wipes?)\b/i.test(requested)
+            ? "https://www.mumzworld.com/sa-en/c/collections/baby-care" : null;
+        if (categoryUrl) {
+          try {
+            const page=await fetchText(categoryUrl,{signal:options.signal});
+            html=page.html;
+            searchPageFinalUrl=page.finalUrl || categoryUrl;
+            searchDiagnostics={
+              ...searchPageDiagnostics(html,categoryUrl,searchPageFinalUrl),
+              acquisitionFallback:"mumzworld-official-category",
+            };
+            const embedded=extractEmbeddedSearchOffers(html,searchPageFinalUrl,store,query);
+            const jsonLd=extractJsonLdSearchOffers(html,searchPageFinalUrl,store,query);
+            const seen=new Set();
+            htmlFirstOffers=[];
+            for(const offer of [...embedded,...jsonLd]){
+              const key=canonicalizeCandidateUrl(offer.sourceUrl||"")+"|"+offer.price+"|"+offer.currency;
+              if(seen.has(key))continue;
+              seen.add(key);htmlFirstOffers.push(offer);
+            }
+            primarySearchError=null;
+          }catch(error){
+            primarySearchError=[primarySearchError,"mumzworld-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
+          }
+        }
+      }
+      if (store.id === "goldenscent-sa") {
+        const normalized=normalizeSearchQuery(query);
+        const categoryUrl=/\bperfumes?\b/i.test(normalized)
+          ? "https://www.goldenscent.com/en/c/perfumes"
+          : /\blipsticks?\b/i.test(normalized)
+            ? "https://www.goldenscent.com/en/c/beauty/makeup/lips" : null;
+        if(categoryUrl){
+          try{
+            const page=await fetchText(categoryUrl,{signal:options.signal});
+            html=page.html;
+            searchPageFinalUrl=page.finalUrl||categoryUrl;
+            searchDiagnostics={
+              ...searchPageDiagnostics(html,categoryUrl,searchPageFinalUrl),
+              acquisitionFallback:"goldenscent-official-category",
+            };
+            const embedded=extractEmbeddedSearchOffers(html,searchPageFinalUrl,store,query);
+            const jsonLd=extractJsonLdSearchOffers(html,searchPageFinalUrl,store,query);
+            const seen=new Set();
+            htmlFirstOffers=[];
+            for(const offer of [...embedded,...jsonLd]){
+              const key=canonicalizeCandidateUrl(offer.sourceUrl||"")+"|"+offer.price+"|"+offer.currency;
+              if(seen.has(key))continue;
+              seen.add(key);htmlFirstOffers.push(offer);
+            }
+            primarySearchError=null;
+          }catch(error){
+            primarySearchError=[primarySearchError,"goldenscent-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
+          }
+        }
+      }
+      if (store.id === "jumbo-ae") {
+        const normalized=normalizeSearchQuery(query);
+        const categoryUrl=/\biphone\s*17\b/i.test(normalized)
+          ? "https://www.jumbo.ae/apple-iphone-17"
+          : /\bairpods?\b/i.test(normalized)
+            ? "https://www.jumbo.ae/apple-airpods" : null;
+        if (categoryUrl) {
+          try {
+            const page=await fetchText(categoryUrl,{signal:options.signal,maxChars:8000000});
+            html=page.html;
+            searchPageFinalUrl=page.finalUrl || categoryUrl;
+            searchDiagnostics={
+              ...searchPageDiagnostics(html,categoryUrl,searchPageFinalUrl),
+              acquisitionFallback:"jumbo-official-product-category",
+            };
+            const embedded=extractEmbeddedSearchOffers(html,searchPageFinalUrl,store,query);
+            const jsonLd=extractJsonLdSearchOffers(html,searchPageFinalUrl,store,query);
+            const seen=new Set();
+            htmlFirstOffers=[];
+            for(const offer of [...embedded,...jsonLd]){
+              const key=canonicalizeCandidateUrl(offer.sourceUrl||"")+"|"+offer.price+"|"+offer.currency;
+              if(seen.has(key))continue;
+              seen.add(key);htmlFirstOffers.push(offer);
+            }
+            primarySearchError=null;
+          }catch(error){
+            primarySearchError=[primarySearchError,"jumbo-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
+          }
+        }
+      }
+      if (store.id === "xcite-kw") {
+        const normalized=normalizeSearchQuery(query);
+        const categoryUrl=/\bhp\b[\s\S]*\blaptops?\b/i.test(normalized)
+          ? "https://www.xcite.com/hp-laptops/c"
+          : /\bairpods?\b/i.test(normalized)
+            ? "https://www.xcite.com/apple-airpods/c" : null;
+        if(categoryUrl){
+          try{
+            const page=await fetchText(categoryUrl,{signal:options.signal});
+            html=page.html;
+            searchPageFinalUrl=page.finalUrl||categoryUrl;
+            searchDiagnostics={
+              ...searchPageDiagnostics(html,categoryUrl,searchPageFinalUrl),
+              acquisitionFallback:"xcite-official-category",
+            };
+            const embedded=extractEmbeddedSearchOffers(html,searchPageFinalUrl,store,query);
+            const jsonLd=extractJsonLdSearchOffers(html,searchPageFinalUrl,store,query);
+            const seen=new Set();
+            htmlFirstOffers=[];
+            for(const offer of [...embedded,...jsonLd]){
+              const key=canonicalizeCandidateUrl(offer.sourceUrl||"")+"|"+offer.price+"|"+offer.currency;
+              if(seen.has(key))continue;
+              seen.add(key);htmlFirstOffers.push(offer);
+            }
+            primarySearchError=null;
+          }catch(error){
+            primarySearchError=[primarySearchError,"xcite-category: "+(error?.message||String(error))].filter(Boolean).join(" | ");
+          }
+        }
+      }
       if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
         catch (error) { primarySearchError ||= error instanceof Error ? error.message : String(error); }
@@ -1378,7 +1688,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       }
     }
     primarySearchError ||= primarySearchOffers.paginationError || null;
-    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html) {
+    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html && !noonCatalogVerified) {
       // A failed HTML-first transport remains a real provider failure unless a
       // fallback produced verified offers. Never mask it as an empty catalog.
       if (primarySearchError && store.id !== "ikea-sa" && !LANDMARK_BLOOMREACH[store.id]) {
@@ -1432,32 +1742,31 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const links = html ? extractProductLinks(html, searchUrl, store, query, candidateLimit) : [];
     const jsonLdOffers = html ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query) : [];
     const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
-    // Search-result offers are already price-verified. Do not fan out into slow product pages.
-    const resolutionLinks = directSearchOffers.length ? [] : links;
-    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
-    const resolvedOffers = settled
-      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
-      .map((result) => ({
-        ...result.value,
-        provider:"free-storefronts",
-        providerMarket:store.id,
-        merchant:result.value.merchant || store.name,
-        merchantCountryCode:store.countryCode,
-        merchantCountryNameAr:store.countryNameAr,
-        canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
-        isLocal:store.countryCode === "SA",
-        exactMatch:false,
-        matchConfidence:0,
-        sourceMeta:{
-          ...(result.value.sourceMeta || {}),
-          storefrontSearch:store.name,
-          freeDiscovery:true,
-          searchUrl,
-        },
-      }));
+    const priceRejectedSamples=[];
     const directOffers = (await Promise.all(directSearchOffers.map(async (item) => {
-      const converted = await moneyToSAR(item.price, item.currency).catch(() => null);
+      // Discovery is not certification: only accept an offer when its source
+      // URL is a merchant-owned product page and its price/currency are explicit.
+      let verifiedUrl;
+      try {
+        verifiedUrl = new URL(item.sourceUrl);
+        if (!["https:","http:"].includes(verifiedUrl.protocol)) return null;
+        // The storefront's public HTML is untrusted discovery data. Strictly
+        // require its canonical PDP pattern; trusted first-party API adapters
+        // have their own verified URLs and may use different catalog paths.
+        if (htmlFirstOffers.length &&
+            (!sameHost(verifiedUrl.href,searchUrl) ||
+             !store.productPath.test(verifiedUrl.href))) return null;
+      } catch { return null; }
+      const rawPrice = Number(item.price);
+      const currency = String(item.currency || "").toUpperCase();
+      if (!Number.isFinite(rawPrice) || rawPrice <= 0 || !/^[A-Z]{3}$/.test(currency)) return null;
+      const converted = await moneyToSAR(rawPrice, currency).catch(() => null);
       if (!converted) return null;
+      const plausibility=pricePlausibility(item.title,converted.value);
+      if (!plausibility.ok) {
+        priceRejectedSamples.push({title:item.title,priceSAR:converted.value,currency,originalPrice:rawPrice,reason:plausibility.reason});
+        return null;
+      }
       return {
         provider:"free-storefronts",
         providerMarket:store.id,
@@ -1468,8 +1777,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         isLocal:store.countryCode === "SA",
         exactMatch:false,
         matchConfidence:0.9,
-        sourceUrl:item.sourceUrl,
-        image:item.image,
+        sourceUrl:verifiedUrl.href,
+        image:secureStorefrontImage(item.image,store.id),
         title:item.title,
         productType:item.productType || null,
         specs:{ modelNumber:item.productId },
@@ -1488,9 +1797,33 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         observedAt:new Date().toISOString(),
         dataKind:"live",
         fx:{ rate:converted.rate, source:converted.source, observedAt:converted.observedAt },
-        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true },
+        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:htmlFirstOffers.length>0, catalogApiPrice:htmlFirstOffers.length===0 && primarySearchOffers.length>0, acquisitionFallback:searchDiagnostics?.acquisitionFallback || null, verifiedProductPageUrl:true, verifiedPriceCurrency:true },
       };
     }))).filter(Boolean);
+    // Search-result offers are already price-verified. Do not fan out into slow product pages.
+    const resolutionLinks = directOffers.length ? [] : links;
+    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
+    const resolvedOffers = settled
+      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
+      .map((result) => ({
+        ...result.value,
+        image:secureStorefrontImage(result.value.image,store.id),
+        provider:"free-storefronts",
+        providerMarket:store.id,
+        merchant:result.value.merchant || store.name,
+        merchantCountryCode:store.countryCode,
+        merchantCountryNameAr:store.countryNameAr,
+        canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
+        isLocal:store.countryCode === "SA",
+        exactMatch:false,
+        matchConfidence:0,
+        sourceMeta:{
+          ...(result.value.sourceMeta || {}),
+          storefrontSearch:store.name,
+          freeDiscovery:true,
+          searchUrl,
+        },
+      })).filter(item=>pricePlausibility(item.title,item.productPrice).ok);
     const allOffers = [...directOffers, ...resolvedOffers];
     const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, allOffers);
     const queryFilterSamples = allOffers
@@ -1531,6 +1864,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       diagnostics:{
         queryFilter,
         queryFilterSamples,
+        priceRejectedSamples:priceRejectedSamples.slice(0,5),
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         candidateSamples:(directSearchOffers.length
@@ -1571,7 +1905,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
 }
 
 export function configuredFreeStorefronts() {
-  return STORES.map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
+  return STORES
+    .filter((store)=>store.enabled !== false)
+    .map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
+}
+
+export function quarantinedFreeStorefronts() {
+  return STORES
+    .filter((store)=>store.enabled === false)
+    .map(({id,name,countryCode,countryNameAr,disabledReason}) => ({id,name,countryCode,countryNameAr,disabledReason}));
 }
 
 export async function searchFreeStorefronts(query, options = {}) {

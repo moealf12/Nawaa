@@ -12,6 +12,10 @@ on:
       - "tests/domain-adapters.test.mjs"
       - "scripts/audit-sources.mjs"
       - ".github/workflows/source-audit.yml"
+      - "server/providers/jarir.mjs"
+      - "server/providers/extra-unbxd.mjs"
+      - "server/providers/sharafdg.mjs"
+      - "server/providers/swarovski.mjs"
   push:
     paths:
       - "server/source-audit.mjs"
@@ -27,29 +31,32 @@ on:
       - "package*.json"
       - ".github/workflows/source-audit.yml"
 
+# Cancel redundant PR runs after newer commits, retaining strict gates.
+concurrency:
+  group: live-source-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   phase3-batch1:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
         include:
-          - { source: jarir, query: "iPhone 17 256GB" }
-          - { source: jarir, query: "HP laptop" }
-          - { source: jarir, query: "nawaa-unfindable-943271-20261003" }
-          - { source: extra, query: "iPhone 17 256GB" }
-          - { source: extra, query: "HP laptop" }
-          - { source: extra, query: "nawaa-unfindable-943271-20261003" }
-          - { source: sharafdg-sa, query: "iPhone 17 256GB" }
-          - { source: sharafdg-sa, query: "Samsung Galaxy S25" }
-          - { source: sharafdg-sa, query: "nawaa-unfindable-943271-20261003" }
-          - { source: swarovski-sa, query: "pendant" }
-          - { source: swarovski-sa, query: "bracelet" }
-          - { source: swarovski-sa, query: "nawaa-unfindable-943271-20261003" }
-          - { source: shein-sa, query: "dress" }
-          - { source: shein-sa, query: "shirt" }
-          - { source: shein-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "1", source: jarir, query: "iPhone 17 256GB" }
+          - { case: "2", source: jarir, query: "HP laptop" }
+          - { case: "3", source: jarir, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "4", source: extra, query: "iPhone 17 256GB" }
+          - { case: "5", source: extra, query: "HP laptop" }
+          - { case: "6", source: extra, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "7", source: sharafdg-sa, query: "iPhone 17 256GB" }
+          - { case: "8", source: sharafdg-sa, query: "Samsung Galaxy S25" }
+          - { case: "9", source: sharafdg-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "10", source: swarovski-sa, query: "pendant" }
+          - { case: "11", source: swarovski-sa, query: "bracelet" }
+          - { case: "12", source: swarovski-sa, query: "nawaa-unfindable-943271-20261003" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,12 +66,216 @@ jobs:
       - name: Phase III batch 1 live source probe
         env:
           NAWAA_AUDIT_CONCURRENCY: "1"
-        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ strategy.job-index }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: phase3-${{ matrix.source }}-${{ strategy.job-index }}
-          path: phase3-${{ matrix.source }}-${{ strategy.job-index }}.json
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
+
+  phase3-batch2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - { case: "16", source: ikea-sa, query: "chair" }
+          - { case: "17", source: ikea-sa, query: "table" }
+          - { case: "18", source: ikea-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "22", source: nike-sa, query: "shoes" }
+          - { case: "23", source: nike-sa, query: "shirt" }
+          - { case: "24", source: nike-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "28", source: namshi-sa, query: "shoes" }
+          - { case: "29", source: namshi-sa, query: "shirt" }
+          - { case: "30", source: namshi-sa, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 2 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
+
+  phase3-batch3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - { case: "31", source: centrepoint-sa, query: "dress" }
+          - { case: "32", source: centrepoint-sa, query: "shirt" }
+          - { case: "33", source: centrepoint-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "34", source: maxfashion-sa, query: "dress" }
+          - { case: "35", source: maxfashion-sa, query: "shirt" }
+          - { case: "36", source: maxfashion-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "37", source: decathlon-sa, query: "shoes" }
+          - { case: "38", source: decathlon-sa, query: "backpack" }
+          - { case: "39", source: decathlon-sa, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "40", source: niceone-sa, query: "perfume" }
+          - { case: "41", source: niceone-sa, query: "lipstick" }
+          - { case: "42", source: niceone-sa, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 3 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+          EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
+
+  phase3-batch4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - { case: "46", source: newegg-us, query: "SSD" }
+          - { case: "47", source: newegg-us, query: "laptop" }
+          - { case: "48", source: newegg-us, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "55", source: bestbuy-us, query: "laptop" }
+          - { case: "56", source: bestbuy-us, query: "headphones" }
+          - { case: "57", source: bestbuy-us, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 4 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
+
+  phase3-batch5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - { case: "64", source: asos-global, query: "dress" }
+          - { case: "65", source: asos-global, query: "shirt" }
+          - { case: "66", source: asos-global, query: "nawaa-unfindable-943271-20261003" }
+          - { case: "70", source: aliexpress-cn, query: "charger" }
+          - { case: "71", source: aliexpress-cn, query: "cable" }
+          - { case: "72", source: aliexpress-cn, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 5 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
+  phase3-batch6:
+    if: ${{ vars.NAWAA_SHOPIFY_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - { case: "76", source: "shopify:native-union", query: "charger" }
+          - { case: "77", source: "shopify:native-union", query: "cable" }
+          - { case: "78", source: "shopify:native-union", query: "nawaa-unfindable-943271-20261003" }
+          - { case: "79", source: "shopify:spigen-us", query: "iPhone 17 case" }
+          - { case: "80", source: "shopify:spigen-us", query: "charger" }
+          - { case: "81", source: "shopify:spigen-us", query: "nawaa-unfindable-943271-20261003" }
+          - { case: "82", source: "shopify:death-wish-coffee", query: "coffee" }
+          - { case: "83", source: "shopify:death-wish-coffee", query: "espresso" }
+          - { case: "84", source: "shopify:death-wish-coffee", query: "nawaa-unfindable-943271-20261003" }
+          - { case: "85", source: "shopify:tentree", query: "shirt" }
+          - { case: "86", source: "shopify:tentree", query: "hoodie" }
+          - { case: "87", source: "shopify:tentree", query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Phase III batch 6 live source probe
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+          SHOPIFY_STORES_JSON: ${{ secrets.SHOPIFY_STORES_JSON }}
+        run: node scripts/audit-sources.mjs "phase3-${{ matrix.source }}-${{ matrix.case }}.json" --store "${{ matrix.source }}" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-${{ matrix.source }}-${{ matrix.case }}
+          path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
+
+
+  phase3-ebay-configured:
+    if: ${{ vars.NAWAA_EBAY_CI_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - { case: "43", source: ebay, query: "iPhone 17 256GB" }
+          - { case: "44", source: ebay, query: "Canon camera" }
+          - { case: "45", source: ebay, query: "nawaa-unfindable-943271-20261003" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Audit configured eBay source
+        env:
+          NAWAA_AUDIT_CONCURRENCY: "1"
+          EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
+        run: node scripts/audit-sources.mjs "phase3-ebay-${{ matrix.case }}.json" --store "ebay" --query "${{ matrix.query }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-ebay-${{ matrix.case }}
+          path: phase3-ebay-${{ matrix.case }}.json
 
   audit:
     runs-on: ubuntu-latest
@@ -76,6 +287,8 @@ jobs:
           node-version: "22"
       - run: npm ci --ignore-scripts
       - run: node scripts/audit-sources.mjs source-audit-results.json
+      - name: Assert quarantined sources stay out of active routing
+        run: node --input-type=module -e "import {configuredFreeStorefronts,quarantinedFreeStorefronts} from './server/providers/free-storefronts.mjs'; const active=configuredFreeStorefronts(); const quarantined=quarantinedFreeStorefronts(); if(active.some(s=>s.id==='shein-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='shein-sa'&&s.disabledReason==='unstable_shein_risk_challenge')) process.exit(1); if(active.some(s=>s.id==='adidas-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='adidas-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1); if(active.some(s=>s.id==='sephora-sa')) process.exit(1); if(!quarantined.some(s=>s.id==='sephora-sa'&&s.disabledReason==='http_403_live_search')) process.exit(1); for(const [id,reason] of [['iherb-sa','http_403_live_search'],['farfetch-sa','http_403_live_search'],['etsy-global','http_403_live_search'],['walmart-us','walmart_blocked'],['temu-global','no_product_candidates_live_search'],['bhphoto-us','http_403_live_search']]){ if(active.some(s=>s.id===id)) process.exit(1); if(!quarantined.some(s=>s.id===id&&s.disabledReason===reason)) process.exit(1); }"
       - name: Probe Temu public search endpoints
         run: node scripts/probe-temu.mjs "iphone 17 case"
       - name: Probe SHEIN public search endpoints
