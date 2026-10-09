@@ -103,7 +103,7 @@ export async function recordOffer(offerData={}){
        values($1,$2,$3,$4,$5,$6) returning id,validation_timestamp`,
       [sourceUrl,sourceName,price,currency,observedAt,healthStatus]
     );
-    await tx.query(
+    const canonical=await tx.query(
       `insert into nawaa_offers(offer_key,query,title,brand,merchant,merchant_country_code,source_url,image_url,currency,product_price,total_sar,sku,condition,availability,match_confidence,exact_match,observed_at,payload)
        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
        on conflict(offer_key) do update set
@@ -112,11 +112,14 @@ export async function recordOffer(offerData={}){
          product_price=excluded.product_price,total_sar=excluded.total_sar,sku=excluded.sku,
          availability=excluded.availability,match_confidence=excluded.match_confidence,
          exact_match=excluded.exact_match,observed_at=excluded.observed_at,payload=excluded.payload
-       where nawaa_offers.observed_at <= excluded.observed_at`,
+       where nawaa_offers.observed_at <= excluded.observed_at
+       returning id`,
       [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||offerData.image||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
     );
     await tx.query("COMMIT");
-    return {configured:true,recorded:true,observationId:observation.rows[0]?.id??null,observedAt:observation.rows[0]?.validation_timestamp??observedAt};
+    return {configured:true,recorded:true,canonicalUpdated:canonical.rowCount>0,
+      observationId:observation.rows[0]?.id??null,
+      observedAt:observation.rows[0]?.validation_timestamp??observedAt};
   }catch(error){
     try{await tx.query("ROLLBACK");}catch{}
     throw error;
