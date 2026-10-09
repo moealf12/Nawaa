@@ -1,27 +1,47 @@
-# Zero-cost tooling rollout (isolated branch)
+# NAWAA — zero-cost tooling (isolated branch)
 
-Base: `phase3-audit-trigger`; protect the 15-certified-source pilot, public `main`, and live customer search.
+Development branch: `feature/zero-cost-tooling-foundation`, draft PR #71, based on `phase3-audit-trigger`.
 
-No subscriptions, paid instances, credits with auto-upgrade, secret values in Git, or unapproved Render upgrades.
+**Non-negotiable:** no new paid services, billing cards, auto-upgrades, production database writes, or changes to `main` and current customer `/api/search`. GitHub-hosted runners use available Actions quota; avoid unnecessary browser CI runs.
 
-## Progress
+## What exists and what is verified
 
-- [x] Isolated feature branch created.
-- [x] PostgreSQL `pg_trgm` opt-in migration + unit tests. **Not run against any remote database.**
-- [ ] Install and integrate **Zod**; the isolated offer-shape gate is temporary and does not claim to be Zod. Update npm lockfile and tests together.
-- [x] Implement **dependency-free, background-only** per-merchant concurrency queue, validated offer shape, and Retry-After/backoff helpers with tests. These are not connected to customer search.\n- [ ] Install and integrate the requested **p-queue** library after lockfile update; current custom limiter is only an isolated prototype.
-- [x] Install pinned pg-boss 12.37.1, with an explicit opt-in connection factory and tests; database migrations and actual workers not yet enabled.\n- [ ] Integrate pg-boss workers with durable background ingestion after testing on an isolated approved free database.
-- [x] Build a tested free-first extraction strategy router, without changing customer search.\n- [x] Build a secure Jina Reader background adapter with per-merchant allowlist, secret Bearer key, 429 handling, response-size cap, and mocked unit tests. No live Jina request made; not yet connected to merchant ingestion.\n- [ ] Crawl4AI separate-worker proof of concept: check free RAM/CPU limits first.
-- [ ] Playwright end-to-end tests for the pilot and image fallbacks.
-- [ ] OpenTelemetry lightweight observability; no paid collector.
-- [ ] Keep Crawlee + Cheerio as current baseline.
+| Component | Implementation | Evidence / limits |
+| --- | --- | --- |
+| Crawlee + Cheerio | Already installed and used | Existing baseline; no refactor of public search |
+| Zod 4.6.5 | `server/tooling/offer-schema.mjs` | Rejects malformed product title, price, currency, HTTPS URL and images |
+| p-queue 9.3.3 | `server/tooling/merchant-queue.mjs` | Bounded background concurrency and backpressure; not yet wired to public search |
+| pg-boss 12.37.1 | `background-boss.mjs`, `offer-ingestion-worker.mjs`, `certified-ingestion-runtime.mjs` | **Real** ephemeral PostgreSQL 16 integration including retries, immutable observations and ACID deduplication (GitHub Actions run 37967792426) |
+| pg_trgm | Opt-in migration and tests | No database extension deployed to production |
+| Jina Reader | `server/tooling/jina-reader.mjs` | Allowlisted authenticated optional adapter, mocked tests; no live merchant certification through Jina |
+| Crawl4AI 0.9.4 | `scripts/crawl4ai-offline-proof.py` | Chromium + two CSS-extracted products on *local fixture* (GitHub Actions run 37968399348), not a production worker or merchant certification |
+| Playwright | `scripts/pilot-browser-check.mjs` | Previously tested 15-source pilot UI; image fallbacks are deliberate when CDN blocks |
+| OpenTelemetry API 1.9.1 + SDK 2.12.0 | `server/tooling/local-telemetry.mjs` | Opt-in local spans; **no remote exporter or paid collector**, limited safe source/status attributes |
+| Strategy Router | `server/tooling/source-strategy-router.mjs` | Tested selection and fallbacks, **not** connected to customer search |
+| Source attestations | `server/tooling/source-attestation.mjs`, `src/certified-source-hosts.mjs` | HMAC-SHA256 binds URL, title, price, currency and images; 15-source domain allowlist and 15-minute TTL |
+| Idempotency | `server/persistence.mjs` | Optional transaction receipt ledger; same pg-boss UUID retry does not append duplicate historical observation |
 
-## Deployment guardrails
+## Important distinction: integrity versus merchant authenticity
 
-The trigram DDL is **opt-in only**: run `node scripts/enable-trigram.mjs` with `NAWAA_ENABLE_TRIGRAM_MIGRATION=1` and an approved `DATABASE_URL`. It is not run during startup. DB provider must support `pg_trgm`; no migration should run on production without approval and backup.
+An HMAC attestation shows the offer was signed by a trusted NAWAA ingestion process; **it does not prove a merchant actually published that price**. Only the certified extractor can issue a signed observation after checking the original merchant data, the URL, currency and image. The unsigned queue flag `verifiedBySource` is not enough.
 
-All new extractors are background-only until their quality, relevance and cost tests pass. A green unit test does not imply merchant certification or production readiness.
+The producer requires an attestation. The worker verifies its signature using an environment-only signing key and the exact approved source-domain list. Retries reuse a UUID, and a transactional receipt ensures at-most-once insertion for each ID even after a crash between commit and acknowledgement. This deliberately does **not** deduplicate unrelated new observations across different jobs.
 
-## Verified dependency installation
+## Operational flags
 
-GitHub Actions generated both `package.json` and `package-lock.json` with exact versions: `zod@4.6.5`, `p-queue@9.3.3`, and `pg-boss@12.37.1`. Test run 37934755387 succeeded after fixing the named PgBoss export. The one-time dependency installation workflow was removed afterwards. No cloud database schema or production endpoint was changed.
+- `NAWAA_ENABLE_BACKGROUND_JOBS=1` allows pg-boss and creates its receipt ledger.
+- `NAWAA_ENABLE_CERTIFIED_INGESTION=1` additionally enables the 15-source worker via **explicit invocation only**.
+- `NAWAA_INGESTION_SIGNING_KEY`: a distinct, private random secret at least 32 bytes. Never commit it.
+- `NAWAA_LOCAL_TELEMETRY=1`: enables local OpenTelemetry console spans; remains disabled by default.
+- `NAWAA_ENABLE_TRIGRAM_MIGRATION=1`: one-time pg_trgm migration only when explicitly executed, not on startup.
+- `JINA_API_KEY`: external service key, optional; never log or commit it.
+
+## Still outstanding before deployment
+
+1. Connect certified live source extractors to the attestation issuer after original-merchant verification. Current pg-boss DB integration uses an isolated **CI fixture**, not scraped live offers.
+2. Safely configure database credentials/quotas and signing key for a dedicated zero-cost background worker; test on a disposable non-production database again.
+3. Evaluate Crawl4AI on a *consented/allowed* real source and measure memory and browser CPU. The local fixture is not a live source certification.
+4. Expand browser QA, source observation monitoring and production-readiness/security review.
+5. Keep the original 15-source preview separated from PR #71, and keep the remaining 24 unapproved pending independent live certification.
+
+No automatic rollout or production migration is authorized by these tests.
