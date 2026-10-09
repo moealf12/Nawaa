@@ -7,7 +7,7 @@ import {extractProductDocument,fetchHtmlSafe} from "../url-resolver.mjs";
 import {verifyIkeaVisiblePrice} from "./ikea-dom-price-proof.mjs";
 import {enqueueCertifiedMerchantProduct} from "./merchant-observation-producer.mjs";
 import {getOfferPriceHistory} from "../persistence.mjs";
-import {getDurableRefreshBudget,reserveDurableRefreshRequests} from "./durable-refresh-budget.mjs";
+import {getDurableRefreshBudget,reserveDurableProductRefresh} from "./durable-refresh-budget.mjs";
 import {planIkeaRefresh} from "./source-refresh-policy.mjs";
 const SOURCE="ikea-sa";
 function requireManualFlags(env,key,boss){
@@ -25,7 +25,7 @@ export async function runExplicitIkeaRefresh({
  url,boss,key,env=process.env,clock=Date.now,
  readHistory=getOfferPriceHistory,
  readBudget=getDurableRefreshBudget,
- reserveBudget=reserveDurableRefreshRequests,
+ reserveBudget=reserveDurableProductRefresh,
  publish=enqueueCertifiedMerchantProduct
 }={}){
  requireManualFlags(env,key,boss);
@@ -51,7 +51,7 @@ export async function runExplicitIkeaRefresh({
  if(!plan.planned.length)return {
   queued:false,admitted:false,reason:plan.entries[0].reason,estimatedRequests:0
  };
- const claimed=await reserveBudget(SOURCE,{clock:()=>now});
+ const claimed=await reserveBudget(SOURCE,approved.sku,{clock:()=>now});
  if(!claimed?.admitted)return {
   queued:false,admitted:false,reason:claimed?.reason||"budget_reservation_denied",
   estimatedRequests:0

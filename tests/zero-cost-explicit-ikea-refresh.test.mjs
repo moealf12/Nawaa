@@ -16,7 +16,7 @@ function context(overrides={}){
   url,boss:{send:async()=>null},key,env,clock:()=>now,
   readHistory:async()=>{events.push("history");return {configured:true,observations:[]}},
   readBudget:async()=>{events.push("budget");return budget},
-  reserveBudget:async()=>{events.push("reserve");return {admitted:true}},
+  reserveBudget:async(source,sku)=>{events.push("reserve");assert.equal(source,"ikea-sa");assert.equal(sku,"39240787");return {admitted:true}},
   publish:async(boss,options)=>{
    events.push("publish");return {queued:true,jobId:"signed-job"}
   },

@@ -24,8 +24,14 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 try{
  await initPersistence();
  runtime=await startCertifiedIngestionWorker({env});
- const first=await runExplicitIkeaRefresh({url,boss:runtime.boss,key});
- assert.equal(first.admitted,true);
+ // Concurrent invocations for ONE SKU must acquire one transactional lease.
+ const attempts=await Promise.all([
+  runExplicitIkeaRefresh({url,boss:runtime.boss,key}),
+  runExplicitIkeaRefresh({url,boss:runtime.boss,key})
+ ]);
+ const first=attempts.find(x=>x.admitted),blocked=attempts.find(x=>!x.admitted);
+ assert.ok(first&&blocked);
+ assert.equal(blocked.reason,"product_refresh_cooldown");
  assert.equal(first.queued,true);
  assert.equal(first.chargedRequests,2);
  assert.equal(first.evidence.visiblePriceProof,"matched");
@@ -53,7 +59,7 @@ try{
   realMerchantPriceObserved:historic.observations[0].price,
   officialSku:PILOT_PRODUCTS[0].sku,merchantPriceParity:"matched",
   quotaRequestsUsed:2,canonicalRows:1,historyRows:1,receipts:1,
-  immediateRepeatBlocked:true,productionWrites:false,noScheduler:true},null,2));
+  immediateRepeatBlocked:true,concurrentSameSkuBlocked:true,productionWrites:false,noScheduler:true},null,2));
 }finally{
  await runtime?.stop().catch(()=>{});
  await closeDurableRefreshBudget();
