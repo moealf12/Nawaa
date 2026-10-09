@@ -28,6 +28,14 @@ function sameProductPage(first,second){
  return a.pathname.replace(/\/+$/,"")===b.pathname.replace(/\/+$/,"") &&
    a.search===b.search;
 }
+function expectedIkeaSku(url){
+ const slug=new URL(url).pathname.split("/").filter(Boolean).at(-1)||"";
+ const match=/(?:^|-)(?:s)?(\d{8})$/i.exec(slug);
+ return match?.[1]||null;
+}
+function normalizedIkeaSku(sku){
+ return typeof sku==="string"?sku.replace(/\D/g,""):null;
+}
 function strictPrice(value){
  if(typeof value==="number")return Number.isFinite(value)&&value>0&&value<=250000?value:null;
  if(typeof value!=="string"||!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(value.trim()))return null;
@@ -49,7 +57,7 @@ function approvedImage(raw,base){
  if(!candidate)return undefined;
  try{
   const url=new URL(candidate,base);
-  if(url.protocol!=="https:"||url.username||url.password||url.port||!url.hostname.includes("."))
+  if(url.protocol!=="https:"||url.username||url.password||url.port||!["ikea.com","www.ikea.com"].includes(url.hostname.toLowerCase()))
    return undefined;
   return url.href;
  }catch{return undefined;}
@@ -76,6 +84,10 @@ export async function extractCertifiedMerchantOffer({sourceId,url,extract=extrac
  const price=strictPrice(raw.price);
  if(price===null)throw new Error("unverified_original_price");
  if(raw.priceCurrency!==requested.config.currency)throw new Error("merchant_market_currency_mismatch");
+ const sku=typeof product.sku==="string"?product.sku.trim():"";
+ const expectedSku=expectedIkeaSku(final.url.href);
+ if(!expectedSku||normalizedIkeaSku(sku)!==expectedSku)
+  throw new Error("original_product_sku_mismatch");
  const title=typeof product.name==="string"?product.name.trim().replace(/\s+/g," "):"";
  const metadata=(document.candidates||[]).find(entry=>entry?.strategy==="meta")?.product;
  const metadataMatches=matchingProductTitle(title,metadata?.name);
@@ -95,7 +107,7 @@ export async function extractCertifiedMerchantOffer({sourceId,url,extract=extrac
   title,sourceUrl:final.url.href,productPrice:price,currency:requested.config.currency,
   merchant:requested.config.merchant,
   ...(image?{imageUrl:image}:{}),
-  ...(typeof product.sku==="string"&&product.sku.length<=120?{sku:product.sku}:{})
+  ...(sku.length<=120?{sku}:{})
  };
  if(!validateCandidateOffer(offer).valid)throw new Error("invalid_original_merchant_offer");
  const when=clock();

@@ -102,3 +102,18 @@ test("disagreeing merchant metadata prices cannot be attested",async()=>{
  await assert.rejects(extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,
   extract:async()=>page}),/original_price_evidence_disagreement/);
 });
+
+test("merchant JSON-LD SKU must match product identifier embedded in official IKEA URL",async()=>{
+ const changed=sample();changed.candidates[0].product.sku="999.999.99";
+ await assert.rejects(extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,
+  extract:async()=>changed}),/original_product_sku_mismatch/);
+ const missing=sample();delete missing.candidates[0].product.sku;
+ await assert.rejects(extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,
+  extract:async()=>missing}),/original_product_sku_mismatch/);
+});
+test("unapproved third-party image URL is dropped, even if JSON-LD names it",async()=>{
+ const fake=sample();fake.candidates[0].product.image="https://unrelated-cdn.example.invalid/a.jpg";
+ const r=await extractCertifiedMerchantOffer({sourceId:"ikea-sa",url,extract:async()=>fake});
+ assert.equal(r.offer.imageUrl,undefined);
+ assert.equal(r.evidence.hasImage,false);
+});

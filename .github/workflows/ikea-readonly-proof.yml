@@ -1,27 +1,28 @@
-name: IKEA Saudi — read-only merchant evidence proof v2
+name: IKEA Saudi — bounded 5-product read-only qualification
 on:
   push:
     branches:
       - feature/zero-cost-tooling-foundation
     paths:
+      - "server/tooling/merchant-observation-producer.mjs"
+      - "scripts/probe-ikea-batch.mjs"
+      - "tests/zero-cost-ikea-batch.test.mjs"
       - ".github/workflows/ikea-readonly-proof.yml"
 permissions:
   contents: read
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - run: npm ci --ignore-scripts
-      - name: Inspect one official IKEA Saudi product without database writes
+      - name: Probe five distinct IKEA products with image HEAD checks (read only)
         env:
           DATABASE_URL: ""
           NAWAA_ENABLE_BACKGROUND_JOBS: "0"
           NAWAA_ENABLE_CERTIFIED_INGESTION: "0"
-        run: |
-          node scripts/probe-certified-merchant.mjs \
-            "https://www.ikea.com/sa/en/p/poaeng-armchair-birch-veneer-knisa-light-beige-s39240787/"
+        run: node scripts/probe-ikea-batch.mjs
