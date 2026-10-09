@@ -55,7 +55,7 @@ test('eXtra skips absent prices rather than converting null to zero',async()=>{
 test('Noon UAE canonicalizes tracking variants to one product-page request',()=>{
  const product='https://www.noon.com/uae-en/iphone-17/N70211553V/p/';
  const html='<a href="'+product+'?o=offer-one&nav_ctx=x">iPhone 17</a><a href="'+product+'?o=offer-two&nav_ctx=y">iPhone 17</a>';
- const store={id:'noon-ae',productPath:/\\/p\\/?(?:[?#]|$)/i};
+ const store={id:'noon-ae',productPath:new RegExp('/p/?(?:[?#]|$)','i')};
  const links=extractProductLinks(html,'https://www.noon.com/uae-en/search?q=iphone',store,'iphone 17');
  assert.equal(links.length,1);
  assert.equal(links[0].url,product);
