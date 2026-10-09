@@ -1333,12 +1333,38 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     let searchDiagnostics = null;
     let primarySearchOffers = [];
     let primarySearchError = null;
-    // HTML is the universal first acquisition layer. It is cheap, cache-friendly,
-    // and often contains JSON-LD/SSR state with complete product cards.
-    // Store-specific APIs are fallbacks only when the HTML path yields no offers.
-    let htmlFirstAttempted = false;
+    // Market-scoped catalog-first strategy avoids slow Noon product-page fetches.
+    // The standard HTML/JSON-LD extraction remains a fallback when the catalog fails.
+    let noonCatalogVerified = false;
+    if (store.id === "noon-ae") {
+      try {
+        const cap = Number.isFinite(catalogLimit) ? Math.max(1, Math.min(50, catalogLimit)) : 50;
+        const hits = await searchNoonUaeCatalog(query, cap, {signal:options.signal});
+        // Use only real UAE catalog products with explicit AED prices and
+        // Noon product URLs. Never convert a Saudi catalog result to UAE.
+        primarySearchOffers = hits.filter(item =>
+          item.sourceUrl && store.productPath.test(item.sourceUrl) &&
+          Number.isFinite(item.productPrice) && item.productPrice > 0 &&
+          item.originalCurrency === "AED"
+        ).map(item => ({
+          productId:item.specs?.modelNumber || item.sourceMeta?.productId,
+          title:item.title,
+          image:item.image,
+          price:item.productPrice,
+          currency:"AED",
+          sourceUrl:item.sourceUrl,
+        }));
+        noonCatalogVerified = true;
+      primarySearchError = null;
+      } catch (error) {
+        primarySearchError = [primarySearchError, "Noon UAE catalog: " + (error?.message || String(error))].filter(Boolean).join(" | ");
+      }
+    }
+    // All other stores remain HTML-first; Noon uses its priced catalog first.
     try {
-      if (store.id === "amazon-sa") {
+      if (store.id === "noon-ae" && noonCatalogVerified) {
+        searchDiagnostics = { acquisitionFallback:"noon-uae-catalog-primary", market:"AE" };
+      } else if (store.id === "amazon-sa") {
         const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
         const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
@@ -1440,29 +1466,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           primarySearchError ||= categoryError instanceof Error ? categoryError.message : String(categoryError);
         }
       }
-      if (store.id === "noon-ae") {
-        try {
-          const cap = Number.isFinite(catalogLimit) ? Math.max(1, Math.min(50, catalogLimit)) : 50;
-          const hits = await searchNoonUaeCatalog(query, cap, {signal:options.signal});
-          // Use only real UAE catalog products with explicit AED prices and
-          // Noon product URLs. Never convert a Saudi catalog result to UAE.
-          primarySearchOffers = hits.filter(item =>
-            item.sourceUrl && store.productPath.test(item.sourceUrl) &&
-            Number.isFinite(item.productPrice) && item.productPrice > 0 &&
-            item.originalCurrency === "AED"
-          ).map(item => ({
-            productId:item.specs?.modelNumber || item.sourceMeta?.productId,
-            title:item.title,
-            image:item.image,
-            price:item.productPrice,
-            currency:"AED",
-            sourceUrl:item.sourceUrl,
-          }));
-          if (primarySearchOffers.length) primarySearchError = null;
-        } catch (error) {
-          primarySearchError = [primarySearchError, "Noon UAE catalog: " + (error?.message || String(error))].filter(Boolean).join(" | ");
-        }
-      } else if (store.id === "ikea-sa") {
+      if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
         catch (error) { primarySearchError ||= error instanceof Error ? error.message : String(error); }
       } else if (LANDMARK_BLOOMREACH[store.id]) {
@@ -1478,7 +1482,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       }
     }
     primarySearchError ||= primarySearchOffers.paginationError || null;
-    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html) {
+    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html && !noonCatalogVerified) {
       // A failed HTML-first transport remains a real provider failure unless a
       // fallback produced verified offers. Never mask it as an empty catalog.
       if (primarySearchError && store.id !== "ikea-sa" && !LANDMARK_BLOOMREACH[store.id]) {
