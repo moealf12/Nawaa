@@ -48,7 +48,7 @@ export async function headCheckIkeaImage(url,{resolve=resolvePublicHttpsTarget,t
 }
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 export async function runIkeaReadOnlyBatch({products=PILOT_PRODUCTS,extract,probeImage=headCheckIkeaImage,
- delayMs=700}={}){
+ delayMs=700,repeatExtract=true}={}){
  if(!Array.isArray(products)||!products.length||products.length>5)throw new Error("invalid_bounded_pilot_batch");
  const items=[];
  for(const item of products){
@@ -59,12 +59,23 @@ export async function runIkeaReadOnlyBatch({products=PILOT_PRODUCTS,extract,prob
    const {offer,evidence}=await extractCertifiedMerchantOffer(params);
    const skuMatched=offer.sku.replace(/\D/g,"")===item.sku;
    if(!skuMatched)throw new Error("batch_expected_sku_mismatch");
+   // Second fresh page extraction detects transient merchant price/variant drift.
+   // This is repeatability evidence, NOT an independent visible-price verification.
+   let repeatability="not_checked";
+   if(repeatExtract){
+    const second=await extractCertifiedMerchantOffer(params);
+    if(second.offer.sku!==offer.sku||second.offer.currency!==offer.currency||
+       second.offer.productPrice!==offer.productPrice||
+       second.offer.sourceUrl!==offer.sourceUrl)
+      throw new Error("repeated_merchant_observation_disagreed");
+    repeatability="matched";
+   }
    const image=offer.imageUrl ? await probeImage(offer.imageUrl) : {reachable:false,reason:"missing_image"};
    items.push({sku:item.sku,category:item.category,ok:true,title:offer.title,
     price:offer.productPrice,currency:offer.currency,
     hasImage:Boolean(offer.imageUrl),imageUrl:offer.imageUrl||null,
     imageReachable:image.reachable===true,imageStatus:image.status??null,
-    imageReason:image.reason??null,priceCrossCheck:evidence.priceCrossCheck,
+    imageReason:image.reason??null,priceCrossCheck:evidence.priceCrossCheck,repeatability,
     strategy:evidence.extractionStrategy,elapsedMs:Date.now()-started});
   }catch(error){
    items.push({sku:item.sku,category:item.category,ok:false,
@@ -76,9 +87,10 @@ export async function runIkeaReadOnlyBatch({products=PILOT_PRODUCTS,extract,prob
  const metrics={total,extracted:count(x=>x.ok),images:count(x=>x.ok&&x.hasImage),
   reachableImages:count(x=>x.ok&&x.imageReachable),
   skuMatched:count(x=>x.ok),metadataCrossChecked:count(x=>x.priceCrossCheck==="matched"),
+  repeatedPriceMatched:count(x=>x.repeatability==="matched"),
   failures:count(x=>!x.ok)};
  // The probe must expose weak coverage rather than forcing price acceptance.
- const passed=metrics.extracted>=Math.ceil(total*0.8)&&metrics.images>=Math.ceil(total*0.8)&&metrics.skuMatched===metrics.extracted;
+ const passed=metrics.extracted>=Math.ceil(total*0.8)&&metrics.images>=Math.ceil(total*0.8)&&metrics.skuMatched===metrics.extracted&&(!repeatExtract||metrics.repeatedPriceMatched===metrics.extracted);
  return {mode:"read_only_multi_product_no_database_write",sourceId:"ikea-sa",
   capturedAt:new Date().toISOString(),passed,metrics,items};
 }
