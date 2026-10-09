@@ -248,3 +248,26 @@ jobs:
           name: active-certification-${{ matrix.source }}
           path: active-source-${{ matrix.source }}.json
 
+
+  certification-summary:
+    needs: [batch-1, batch-2, batch-3, batch-4, batch-5, batch-6, batch-7, batch-8]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: active-certification-*
+          path: source-cert-artifacts
+          merge-multiple: true
+      - name: Aggregate 39 source results and fail on incomplete certification
+        run: node scripts/summarize-active-certification.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: active-39-certification-summary
+          path: source-cert-summary/active-source-certification-summary.json
