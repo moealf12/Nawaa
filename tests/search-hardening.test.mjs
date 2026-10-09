@@ -52,6 +52,15 @@ test('eXtra skips absent prices rather than converting null to zero',async()=>{
  assert.equal(result.offers[0]?.productPrice,1200);
  }finally{globalThis.fetch=original;}
 });
+test('Amazon UAE search cards retain AED and UAE product URLs',()=>{
+ const html='<div data-asin="B0ABC12345"><h2>Apple AirPods</h2><img alt="Apple AirPods" src="https://img.example/airpods"><span class="a-price"><span class="a-offscreen">AED 299.00</span></span></div>';
+ const offers=extractAmazonSearchOffers(html,'airpods','https://www.amazon.ae');
+ assert.equal(offers.length,1);
+ assert.equal(offers[0].currency,'AED');
+ assert.equal(offers[0].price,299);
+ assert.equal(offers[0].sourceUrl,'https://www.amazon.ae/dp/B0ABC12345');
+});
+
 test('Amazon ignores crossed-out price and takes current selling price',()=>{
  const html='<div data-asin="B0ABC12345"><h2>HP Laptop</h2><img alt="HP Laptop" src="https://img.example/x"><span class="a-price a-text-price"><span class="a-offscreen">SAR 4,000</span></span><span class="a-price"><span class="a-offscreen">SAR 2,999</span></span></div>';
  assert.equal(extractAmazonSearchOffers(html,'HP')[0]?.price,2999);
