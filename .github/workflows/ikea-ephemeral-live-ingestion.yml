@@ -1,4 +1,4 @@
-name: IKEA Saudi — isolated live price to PostgreSQL end-to-end
+name: IKEA Saudi — five live signed offers to PostgreSQL
 on:
   push:
     branches:
