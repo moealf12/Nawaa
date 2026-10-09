@@ -1335,6 +1335,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     let primarySearchError = null;
     // Market-scoped catalog-first strategy avoids slow Noon product-page fetches.
     // The standard HTML/JSON-LD extraction remains a fallback when the catalog fails.
+    let htmlFirstAttempted = false;
     let noonCatalogVerified = false;
     if (store.id === "noon-ae") {
       try {
