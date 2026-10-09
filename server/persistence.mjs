@@ -113,7 +113,7 @@ export async function recordOffer(offerData={}){
          availability=excluded.availability,match_confidence=excluded.match_confidence,
          exact_match=excluded.exact_match,observed_at=excluded.observed_at,payload=excluded.payload
        where nawaa_offers.observed_at <= excluded.observed_at`,
-      [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
+      [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||offerData.image||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
     );
     await tx.query("COMMIT");
     return {configured:true,recorded:true,observationId:observation.rows[0]?.id??null,observedAt:observation.rows[0]?.validation_timestamp??observedAt};
