@@ -5,6 +5,9 @@ on:
       - feature/zero-cost-tooling-foundation
     paths:
       - "server/tooling/explicit-ikea-refresh.mjs"
+      - "server/tooling/source-refresh-policy.mjs"
+      - "server/tooling/durable-refresh-budget.mjs"
+      - "server/url-resolver.mjs"
       - "src/ikea-pilot-products.mjs"
       - "scripts/test-explicit-refresh-ephemeral.mjs"
       - ".github/workflows/explicit-refresh-ephemeral.yml"
