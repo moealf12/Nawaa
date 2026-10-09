@@ -66,7 +66,7 @@ const PRODUCT_HEADERS = {
   pragma: "no-cache",
 };
 
-async function fetchHtmlWithMockableFetch(target, redirects, signal) {
+async function fetchHtmlWithMockableFetch(target, redirects, signal, maxRedirects) {
   const response = await fetch(target.parsed, {
     redirect: "manual",
     headers: PRODUCT_HEADERS,
@@ -74,10 +74,10 @@ async function fetchHtmlWithMockableFetch(target, redirects, signal) {
   });
   if ([301,302,303,307,308].includes(response.status)) {
     await response.body?.cancel();
-    if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
+    if (redirects >= maxRedirects) throw new Error("Too many redirects");
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without location");
-    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal});
+    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal,maxRedirects});
   }
   if (!response.ok) throw new Error("Product page returned " + response.status);
   const type = response.headers.get("content-type") || "";
@@ -97,7 +97,7 @@ async function fetchHtmlWithMockableFetch(target, redirects, signal) {
   return {finalUrl:target.parsed.href,html:new TextDecoder().decode(merged)};
 }
 
-function fetchHtmlPinned(target, redirects, signal) {
+function fetchHtmlPinned(target, redirects, signal, maxRedirects) {
   return new Promise((resolve, reject) => {
     if(signal?.aborted)return reject(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
     const hostname = target.parsed.hostname.replace(/^\\[|\\]$/g, "");
@@ -118,10 +118,10 @@ function fetchHtmlPinned(target, redirects, signal) {
       const status = response.statusCode || 0;
       if ([301,302,303,307,308].includes(status)) {
         response.resume();
-        if (redirects >= MAX_REDIRECTS) return reject(new Error("Too many redirects"));
+        if (redirects >= maxRedirects) return reject(new Error("Too many redirects"));
         const location = response.headers.location;
         if (!location) return reject(new Error("Redirect without location"));
-        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal}).then(resolve,reject);
+        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal,maxRedirects}).then(resolve,reject);
         return;
       }
       if (status < 200 || status >= 300) {
@@ -151,13 +151,15 @@ function fetchHtmlPinned(target, redirects, signal) {
   });
 }
 
-export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
+export async function fetchHtmlSafe(url, redirects = 0, {signal,maxRedirects=MAX_REDIRECTS} = {}) {
+  if(!Number.isInteger(maxRedirects)||maxRedirects<0||maxRedirects>MAX_REDIRECTS)
+    throw new Error("invalid_redirect_budget");
   const target = await resolvePublicHttpsTarget(url);
   if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
-    return fetchHtmlWithMockableFetch(target, redirects, signal);
+    return fetchHtmlWithMockableFetch(target, redirects, signal, maxRedirects);
   }
-  return fetchHtmlPinned(target, redirects, signal);
+  return fetchHtmlPinned(target, redirects, signal, maxRedirects);
 }
 
 function decodeHtml(value = "") {
