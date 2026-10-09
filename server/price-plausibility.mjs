@@ -12,7 +12,9 @@ export function pricePlausibility(title, priceSAR) {
     [/\bapple\s+airpods\b/i,25],
     [/\b(?:iphone\s+(?:1[1-9]|2\d)|galaxy\s+s(?:2[1-9]|3\d))\b/i,350],
     [/\b(?:macbook|laptop|notebook|omnibook)\b/i,160],
-    [/\b(?:playstation\s*5|ps5\s*console)\b/i,250],
+    // A console listing can say "Playstation PS5 Digital Edition Console";
+    // games ("FC 27 for PS5") and controllers must not be misclassified.
+    [/\b(?:playstation\s*(?:5|ps\s*5)|ps\s*5)\b[\s\S]{0,90}\b(?:console|slim|digital\s+edition|disc\s+edition)\b/i,250],
   ];
   const rule=ranges.find(([pattern])=>pattern.test(titleText));
   if(rule && price<rule[1]) return {ok:false,reason:"implausibly_low_high_value_device",minimumSar:rule[1]};
