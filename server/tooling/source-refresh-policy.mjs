@@ -29,11 +29,11 @@ function checkedProduct(input){
  if(!match||match[1]!==input.sku)throw new Error("refresh_product_sku_mismatch");
  return {url:url.href,sku:input.sku};
 }
-function stateTime(state,key,now){
+function stateTime(state,key,now,{allowFuture=false}={}){
  const input=state?.[key];
  if(input===undefined||input===null)return null;
  const t=safeTime(input);
- if(t===null||t>now+30000)throw new Error("invalid_refresh_state_time");
+ if(t===null||(!allowFuture&&t>now+30000))throw new Error("invalid_refresh_state_time");
  return t;
 }
 export function priceFreshnessStatus(observedAt,{now=Date.now(),revisitMs=IKEA_REFRESH_POLICY.revisitMs,staleMs=IKEA_REFRESH_POLICY.staleMs}={}){
@@ -72,7 +72,7 @@ function blockReason(state,now,policy){
  if([400,401,403,404,410,451].includes(status))return "manual_review_http_status";
  if(failures>=policy.maxConsecutiveFailures)return "manual_review_failure_limit";
  const lastAttempt=stateTime(state,"lastAttemptAt",now);
- const retryAfter=stateTime(state,"retryAfterUntil",now);
+ const retryAfter=stateTime(state,"retryAfterUntil",now,{allowFuture:true});
  if(retryAfter!==null&&now<retryAfter)return "merchant_retry_after_cooldown";
  if(failures>0&&lastAttempt!==null){
   const backoff=Math.min(policy.backoffCapMs,
