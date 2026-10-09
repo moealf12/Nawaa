@@ -25,10 +25,11 @@ test("attestations reject domains posing as merchants, missing secrets and stale
 test("ingestion requires intact signed attestation from trusted source adapter",async()=>{
  const attestation=issueSourceAttestation({sourceId:"ikea-sa",offer,sourceHosts,key,clock});
  const verify=createSignedSourceVerifier({sourceHosts,key,clock});
- let writes=0;
- const handler=createOfferIngestionHandler({verify,record:async()=>{writes++;return {recorded:true,observationId:21};}});
+ let writes=0,recorded=null;
+ const handler=createOfferIngestionHandler({verify,record:async value=>{writes++;recorded=value;return {recorded:true,observationId:21};}});
  assert.equal((await handler({id:"00000000-0000-4000-8000-000000000001",data:{...data(),attestation}})).recorded,true);
  await assert.rejects(handler({data:{...data(),attestation,offer:{...offer,productPrice:10}}}),/trusted_source_verifier_required/);
  await assert.rejects(handler({data:{...data(),attestation:"v1.0.bad"}}),/trusted_source_verifier_required/);
  assert.equal(writes,1);
+ assert.equal(recorded.observedAt,new Date(clock()).toISOString());
 });

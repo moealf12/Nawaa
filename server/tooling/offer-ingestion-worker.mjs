@@ -21,14 +21,18 @@ export function createOfferIngestionHandler({record=recordOffer,validate=validat
   if(typeof verify!=="function" || await verify({sourceId,offer,job:payload})!==true) throw new Error("trusted_source_verifier_required");
   // v1 HMAC covers only these authoritative fields. Never persist unsigned
   // payload metadata such as observedAt, healthStatus, condition, totalSAR or brand.
-  // Worker ingestion time is assigned by recordOffer; an attacker cannot backdate
-  // the canonical latest offer via otherwise valid signed data.
+  // The observation timestamp is extracted only from a verified HMAC attestation.
+  // Never copy unsigned offer.observedAt or queue metadata.
+  // The attestation timestamp is HMAC authenticated by the verifier above.
+  // Use the time the merchant offer was signed, not delayed worker execution.
+  const signedTime=/^v1\.(\d{13})\.[a-f0-9]{64}$/.exec(String(payload.attestation||""));
+  const observedAt=signedTime?new Date(Number(signedTime[1])).toISOString():null;
   const trusted={title:offer.title,sourceUrl:offer.sourceUrl,
     productPrice:offer.productPrice,currency:offer.currency,merchant:offer.merchant,
     ...(offer.image?{image:offer.image}:{}),
     ...(offer.imageUrl?{imageUrl:offer.imageUrl}:{}),
     ...(offer.sku?{sku:offer.sku}:{})};
-  const saved=await record({...trusted,sourceName:sourceId,query:sourceId,
+  const saved=await record({...trusted,...(observedAt?{observedAt}:{}),sourceName:sourceId,query:sourceId,
     ...(job?.id?{ingestionId:String(job.id)}:{})});
   if(saved?.duplicate===true)return {recorded:true,duplicate:true,sourceId,observationId:null};
   if(!saved?.recorded)throw new Error("persistence_did_not_record");
