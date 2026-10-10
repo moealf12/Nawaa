@@ -39,6 +39,8 @@ for (const query of QUERIES) {
         accepted:Boolean(proof.results[index]?.accepted),
         imageHttpVerified:Boolean(proof.results[index]?.imageHttpVerified),
         imageContentType:proof.results[index]?.imageContentType || null,
+        observedHeadContentType:proof.results[index]?.imageHeadContentType || null,
+        observedHeadContentLength:proof.results[index]?.imageHeadContentLength ?? null,
         reason:proof.results[index]?.reason || "not_checked",
       })),
     });
