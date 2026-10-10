@@ -55,3 +55,47 @@ test("classifies HTTP 503 and oversized responses separately rather than treatin
  assert.equal(result.rows[1].diagnosis,"oversized_merchant_response");
  assert.equal(result.sourceActivationChangesPerformed,0);
 });
+
+test("Virgin AirPods positive check cannot hide two actual EarPods wired examples",()=>{
+ const virgin={
+  source:"virgin-ae",passed:false,routeCoverage:[{query:"airpods",routed:true}],
+  cases:[
+   {query:"airpods",pass:true,validCount:2,examples:[
+    {title:"Apple EarPods Wired In-Ear Headphones (Lightning)",price:2.04},
+    {title:"Apple EarPods Wired In-Ear Headphones (3.5mm Jack)",price:2.04}]},
+   {query:"playstation 5",pass:false,validCount:0,error:"CANDIDATES_WITHOUT_VALID_OFFERS",examples:[]},
+   {query:"nawaa-unfindable-943271-20261003",pass:true,validCount:0}
+  ]
+ };
+ const result=diagnoseActiveSourceCoverage(["virgin-ae"],new Map([["virgin-ae",virgin]]));
+ const row=result.rows[0];
+ assert.equal(result.modelMismatchSources,1);
+ assert.deepEqual(row.modelMismatchQueries,["airpods"]);
+ assert.equal(row.modelExampleEvidence[0].status,"exhaustive_sample_model_mismatch");
+ assert.equal(row.modelExampleEvidence[0].coverage,"all_valid_offers");
+ assert.equal(row.evidenceStatus,"failed");
+ assert.equal(result.reportCertifiesAll,false);
+});
+test("sampled mismatches cannot condemn unseen valid results",()=>{
+ const report={source:"amazon-ae",passed:false,routeCoverage:[],cases:[
+  {query:"airpods",pass:true,validCount:36,examples:[
+    {title:"Generic bluetooth earbud A"},{title:"Generic bluetooth earbud B"}]},
+  {query:"iphone 17",pass:false,validCount:0},
+  {query:"nawaa-unfindable-943271-20261003",pass:true,validCount:0}
+ ]};
+ const result=diagnoseActiveSourceCoverage(["amazon-ae"],new Map([["amazon-ae",report]]));
+ assert.equal(result.modelMismatchSources,0);
+ assert.equal(result.incompleteModelEvidenceSources,1);
+ assert.equal(result.rows[0].modelExampleEvidence[0].status,"partial_sample_without_model_match");
+});
+test("recognizes actual model tokens without confusing AirPods and EarPods",()=>{
+ const report={source:"test-model",passed:true,routeCoverage:[{routed:true}],cases:[
+  {query:"playstation 5",pass:true,validCount:1,examples:[{title:"Sony PlayStation PS5 Slim Console"}]},
+  {query:"galaxy s25",pass:true,validCount:1,examples:[{title:"Samsung Galaxy S25 Ultra"}]},
+  {query:"nawaa-unfindable-943271-20261003",pass:true,validCount:0}
+ ]};
+ const r=diagnoseActiveSourceCoverage(["test-model"],new Map([["test-model",report]]),{requiredActiveCount:1});
+ assert.equal(r.strictlyCertified,1);
+ assert.equal(r.modelMismatchSources,0);
+ assert.equal(r.rows[0].modelExampleEvidence.every(x=>x.status==="model_token_found_in_sample"),true);
+});

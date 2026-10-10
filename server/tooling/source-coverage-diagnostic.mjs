@@ -1,6 +1,7 @@
 // Certification evidence diagnostics: offline and strictly non-authorizing.
 // Configured is not equivalent to extractable, price-verified or certified.
 import {summarizeCertification} from "../../scripts/summarize-active-certification.mjs";
+import {assessCertificationModelExamples} from "./source-model-evidence.mjs";
 const BLOCKED=/\b403\b|\b401\b|blocked|captcha|forbidden|access denied/i;
 const TIMEOUT=/timeout|timed out|aborted|fetch failed|network/i;
 const TEMPORARY=/\b(?:502|503|504)\b|service unavailable|bad gateway/i;
@@ -33,6 +34,11 @@ export function diagnoseActiveSourceCoverage(activeIds,reports,{requiredActiveCo
   const report=reports.get(row.id);
   const positives=Array.isArray(report?.cases)?report.cases.filter(x=>!String(x.query||"").startsWith("nawaa-unfindable-")):[];
   const candidates=positives.reduce((n,c)=>n+(Number.isSafeInteger(c.validCount)&&c.validCount>0?c.validCount:0),0);
+  const modelExamples=positives.map(assessCertificationModelExamples);
+  const modelMismatchQueries=modelExamples.filter(x=>x.status==="exhaustive_sample_model_mismatch")
+    .map(x=>x.query);
+  const incompleteModelQueries=modelExamples.filter(x=>x.status==="partial_sample_without_model_match")
+    .map(x=>x.query);
   const evidenceStatus=row.status==="CERTIFIED"?"certified":
    row.status==="MISSING"?"not_tested":"failed";
   // A positive validCount is extraction evidence, NOT independent price parity.
@@ -41,16 +47,20 @@ export function diagnoseActiveSourceCoverage(activeIds,reports,{requiredActiveCo
    extractionEvidence:candidates>0?"positive_candidates":"not_proven",
    independentPriceParity:"not_verified_by_this_report",
    imageReachability:"not_verified_by_this_report",
+   modelExampleEvidence:modelExamples,modelMismatchQueries,incompleteModelQueries,
    diagnosis:evidenceStatus==="failed"?category(row.reason):
     evidenceStatus==="not_tested"?"missing_evidence":"certification_passed",
    reason:evidenceStatus==="certified"?null:clean(row.reason)};
  });
+ const modelMismatchSources=rows.filter(r=>r.modelMismatchQueries.length>0).length;
+ const incompleteModelEvidenceSources=rows.filter(r=>r.incompleteModelQueries.length>0).length;
  const categories={};
  for(const row of rows)categories[row.diagnosis]=(categories[row.diagnosis]||0)+1;
  return {mode:"offline_certification_diagnostic",observedAt,
   requiredActiveCount,configured:rows.length,strictlyCertified:strict.stats.certified,
   failed:strict.stats.failed,missing:strict.stats.missing,
   verifiedPriceParityByIndependentPageEvidence:0,
+  modelMismatchSources,incompleteModelEvidenceSources,
   reportCertifiesAll:strict.passed,
   sourceActivationChangesPerformed:0,networkRequestsSent:0,
   categories,rows};

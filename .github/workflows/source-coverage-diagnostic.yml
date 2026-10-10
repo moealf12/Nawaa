@@ -5,6 +5,7 @@ on:
       - feature/zero-cost-tooling-foundation
     paths:
       - "server/tooling/source-coverage-diagnostic.mjs"
+      - "server/tooling/source-model-evidence.mjs"
       - "tests/source-coverage-diagnostic.test.mjs"
       - "scripts/probe-source-coverage-diagnostic.mjs"
       - ".github/workflows/source-coverage-diagnostic.yml"

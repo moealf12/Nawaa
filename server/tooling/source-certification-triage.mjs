@@ -37,7 +37,9 @@ export function prioritizeCertificationFailures(diagnostic,{maxItems=39}={}){
    return {
     sourceId:row.sourceId,status:row.evidenceStatus,category:row.diagnosis,
     severity:details.tier,positiveQueriesPassed:row.positiveQueriesPassed,
-    validOfferCandidates:row.validOfferCandidates,action:details.action
+    validOfferCandidates:row.validOfferCandidates,
+    modelMismatchQueries:row.modelMismatchQueries||[],
+    modelEvidenceRequiresReview:Boolean(row.modelMismatchQueries?.length),action:details.action
    };
   });
  list.sort((a,b)=>TIER_ORDER[a.severity]-TIER_ORDER[b.severity]||

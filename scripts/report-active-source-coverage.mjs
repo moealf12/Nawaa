@@ -28,14 +28,17 @@ export async function buildRealSourceCoverageReport({directory="source-cert-arti
   "**Configured:** "+coverage.configured+" · **Strictly certified:** "+coverage.strictlyCertified+
   " · **Failed:** "+coverage.failed+" · **Missing/corrupt:** "+coverage.missing,
   "",
+  "**Exact model title-token mismatches in exhaustive small samples:** "+coverage.modelMismatchSources+
+  " source(s). An example title match alone is NOT SKU, variant, price or shipping verification.",
+  "",
   "**Important:** Source certification does not establish independent product-page price parity, image reachability, or Saudi checkout delivery.",
   "**Policy:** A configured or partially extractable source is not production-certified. No source activation is authorized.",
   "",
-  "| Priority | Source | Status | Category | Positives | Action |",
-  "|---|---|---|---|---:|---|",
+  "| Priority | Source | Status | Category | Positives | Model warning | Action |",
+  "|---|---|---|---|---:|---|---|",
   ...triage.items.map(r=>"| "+scrub(r.severity)+" | "+scrub(r.sourceId)+
    " | "+scrub(r.status)+" | "+scrub(r.category)+" | "+r.positiveQueriesPassed+
-   "/2 | "+scrub(r.action)+" |"),
+   "/2 | "+scrub(r.modelMismatchQueries?.join(", ")||"—")+" | "+scrub(r.action)+" |"),
   "",
   issues.length?"**Artifact validation issues:** "+issues.length+" (see JSON for machine-readable details).":"",
   "**This report is observational and does not modify production source activation.**",""
