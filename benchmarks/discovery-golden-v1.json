@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "purpose": "NAWAA 3.0 Phase I search-discovery goldens; target expectations, not claims of currently passing ranking",
+  "scoringPolicy": {
+    "primaryMustPrecedeAccessory": true,
+    "explicitGenerationOverridesRecency": true,
+    "unknownMarketOrCurrencyMustNotBeGuessed": true
+  },
+  "cases": [
+    {
+      "id": "iphone-family-en",
+      "query": "iPhone",
+      "expected": {
+        "intent": "family",
+        "normalizedQuery": "iphone",
+        "groupOrder": [
+          "phone_primary",
+          "phone_previous",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "iphone-family-ar",
+      "query": "ايفون",
+      "expected": {
+        "intent": "family",
+        "normalizedQuery": "iphone",
+        "groupOrder": [
+          "phone_primary",
+          "phone_previous",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "iphone-exact-generation",
+      "query": "iPhone 15",
+      "expected": {
+        "intent": "exact",
+        "normalizedQuery": "iphone 15",
+        "groupOrder": [
+          "exact",
+          "alternative",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "iphone-exact-variant",
+      "query": "iPhone 17 Pro 256GB",
+      "expected": {
+        "intent": "exact",
+        "normalizedQuery": "iphone 17 pro 256gb",
+        "groupOrder": [
+          "exact",
+          "alternative",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "iphone-accessory",
+      "query": "iPhone case",
+      "expected": {
+        "intent": "accessory",
+        "normalizedQuery": "iphone case",
+        "groupOrder": [
+          "accessory_primary",
+          "related"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "iphone-accessory-ar",
+      "query": "كفر ايفون 17",
+      "expected": {
+        "intent": "accessory",
+        "normalizedQuery": "case iphone 17",
+        "groupOrder": [
+          "accessory_primary",
+          "related"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "iphone-compatibility",
+      "query": "charger for iPhone 17",
+      "expected": {
+        "intent": "compatibility",
+        "normalizedQuery": "charger for iphone 17",
+        "groupOrder": [
+          "compatible",
+          "related"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "brand-hp",
+      "query": "HP",
+      "expected": {
+        "intent": "brand",
+        "normalizedQuery": "hp",
+        "groupOrder": [
+          "brand_primary",
+          "other_categories",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "hp-category",
+      "query": "HP laptop",
+      "expected": {
+        "intent": "category",
+        "normalizedQuery": "hp laptop",
+        "groupOrder": [
+          "laptop",
+          "other_categories",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "hp-printer",
+      "query": "HP LaserJet printer",
+      "expected": {
+        "intent": "exact_category",
+        "normalizedQuery": "hp laserjet printer",
+        "groupOrder": [
+          "printer",
+          "other_categories",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "brand-swarovski",
+      "query": "Swarovski",
+      "expected": {
+        "intent": "brand",
+        "normalizedQuery": "swarovski",
+        "groupOrder": [
+          "brand_primary",
+          "other_categories",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "swarovski-necklace",
+      "query": "سلسال سواروفسكي",
+      "expected": {
+        "intent": "category",
+        "normalizedQuery": "necklace swarovski",
+        "groupOrder": [
+          "necklace",
+          "other_jewelry",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "samsung-budget",
+      "query": "Samsung under 2000 SAR",
+      "expected": {
+        "intent": "constraint",
+        "normalizedQuery": "samsung under 2000 sar",
+        "groupOrder": [
+          "within_budget",
+          "unpriced_or_unknown"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "apple-ambiguous",
+      "query": "Apple",
+      "expected": {
+        "intent": "ambiguous",
+        "normalizedQuery": "apple",
+        "groupOrder": [
+          "brand_categories",
+          "related"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "console-exact",
+      "query": "PS5 slim disc",
+      "expected": {
+        "intent": "exact",
+        "normalizedQuery": "ps5 slim disc",
+        "groupOrder": [
+          "exact",
+          "alternative",
+          "accessory"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    },
+    {
+      "id": "laptop-ar",
+      "query": "لابتوب",
+      "expected": {
+        "intent": "category",
+        "normalizedQuery": "laptop",
+        "groupOrder": [
+          "laptop",
+          "related"
+        ]
+      },
+      "status": "target_not_yet_measured"
+    }
+  ]
+}
