@@ -22,12 +22,12 @@ test('legacy observation + current + outbox intent commit together and replay is
  assert.equal(first.recorded,true);
  const result=await recordOffer({...offer,ingestionId:id});
  assert.equal(result.duplicate,true);
- const ob=await pool.query('SELECT count(*)::int n FROM offer_observations WHERE product_url=$1 AND source_name=$2',[offer.sourceUrl,offer.sourceId]);
+ const ob=await pool.query('SELECT count(*)::int n FROM offer_observations WHERE product_url=$1 AND source_name=$2',[offer.sourceUrl.replace('www.jarir.com','jarir.com'),offer.sourceId]);
  assert.equal(ob.rows[0].n,1);
  const out=await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id]);
  assert.equal(out.rows[0].n,1);
  await assert.rejects(recordOffer({...offer,productPrice:99,ingestionId:id}),/event_id_payload_conflict/);
- assert.equal((await pool.query('SELECT count(*)::int n FROM offer_observations WHERE product_url=$1',[offer.sourceUrl])).rows[0].n,1);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM offer_observations WHERE product_url=$1',[offer.sourceUrl.replace('www.jarir.com','jarir.com')])).rows[0].n,1);
 });
 test('canonical SQL failure rolls back historical observation and durable intent',async()=>{
  const id=randomUUID(),offer=make(randomUUID());
@@ -39,7 +39,7 @@ test('canonical SQL failure rolls back historical observation and durable intent
  const broken={...offer,sourceUrl:'https://www.jarir.com/sa/ci_abort_fixture/'+randomUUID()};
  try{
   await assert.rejects(recordOffer({...broken,ingestionId:id}),/ci_abort_fixture/);
-  assert.equal((await pool.query('SELECT count(*)::int n FROM offer_observations WHERE product_url=$1',[broken.sourceUrl])).rows[0].n,0);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM offer_observations WHERE product_url=$1',[broken.sourceUrl.replace('www.jarir.com','jarir.com')])).rows[0].n,0);
   assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id])).rows[0].n,0);
  }finally{await pool.query('DROP TRIGGER IF EXISTS nawaa_ci_legacy_abort ON nawaa_offers');}
 });
@@ -47,7 +47,7 @@ test('concurrent callers with same event ID write one legacy observation',async(
  const id=randomUUID(),offer=make(randomUUID());
  const results=await Promise.all(Array.from({length:4},()=>recordOffer({...offer,ingestionId:id})));
  assert.equal(results.filter(x=>x.duplicate===true).length,3);
- assert.equal((await pool.query('SELECT count(*)::int n FROM offer_observations WHERE product_url=$1',[offer.sourceUrl])).rows[0].n,1);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM offer_observations WHERE product_url=$1',[offer.sourceUrl.replace('www.jarir.com','jarir.com')])).rows[0].n,1);
 });
 test('shadow rejects ambiguous variant before committing anything',async()=>{
  const id=randomUUID(),offer=make(randomUUID());
