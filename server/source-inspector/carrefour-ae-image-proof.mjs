@@ -120,9 +120,59 @@ export function verifyCarrefourAeImageFromPage(offer, page) {
   return { accepted:false, reason };
 }
 
-async function defaultLoadProduct(url, options) {
-  const { extractProductDocument } = await import("../url-resolver.mjs");
-  return extractProductDocument(url, options);
+const CARREFOUR_UA_BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+
+export async function fetchCarrefourAeBrowserPage(input, {fetchImpl = fetch} = {}) {
+  const source = productLocation(input);
+  if (!source) throw new Error("invalid_carrefour_product_url");
+  let next = source.url;
+  for (let redirect = 0; redirect <= 2; redirect++) {
+    // The caller is restricted to Carrefour UAE official PDPs; never follow off-site redirects.
+    const response = await fetchImpl(next, {
+      headers:{
+        accept:"text/html,application/xhtml+xml",
+        "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
+        "cache-control":"no-cache",
+        pragma:"no-cache",
+        "sec-fetch-dest":"document",
+        "sec-fetch-mode":"navigate",
+        "sec-fetch-site":"none",
+        "upgrade-insecure-requests":"1",
+        "user-agent":CARREFOUR_UA_BROWSER_UA,
+      },
+      redirect:"manual",
+      signal:AbortSignal.timeout(8000),
+    });
+    if ([301,302,303,307,308].includes(response.status)) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error("carrefour_redirect_without_location");
+      const target = new URL(location,next).href;
+      const resolved = productLocation(target);
+      if (!resolved || resolved.id !== source.id) throw new Error("carrefour_unsafe_product_redirect");
+      next = target; continue;
+    }
+    if (!response.ok) throw new Error("carrefour_http_"+response.status);
+    const type = String(response.headers.get("content-type") || "").toLowerCase();
+    if (!type.includes("text/html") && !type.includes("application/xhtml+xml"))
+      throw new Error("carrefour_non_html_response");
+    const chunks=[]; let size=0;
+    if (!response.body) throw new Error("carrefour_empty_body");
+    for await (const chunk of response.body) {
+      size += chunk.byteLength;
+      if (size > 5_000_000) throw new Error("carrefour_html_size_limit");
+      chunks.push(Buffer.from(chunk));
+    }
+    const html=Buffer.concat(chunks).toString("utf8");
+    if (html.length < 200) throw new Error("carrefour_block_or_empty_html");
+    const { extractionCandidates } = await import("../url-resolver.mjs");
+    return {finalUrl:next, html, candidates:extractionCandidates(html,next)};
+  }
+  throw new Error("carrefour_too_many_redirects");
+}
+
+async function defaultLoadProduct(url) {
+  return fetchCarrefourAeBrowserPage(url);
 }
 
 // An explicit, bounded proof run. It does not mutate persistence or activate a source.
