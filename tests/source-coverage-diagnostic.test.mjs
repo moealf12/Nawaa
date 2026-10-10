@@ -99,3 +99,10 @@ test("recognizes actual model tokens without confusing AirPods and EarPods",()=>
  assert.equal(r.modelMismatchSources,0);
  assert.equal(r.rows[0].modelExampleEvidence.every(x=>x.status==="model_token_found_in_sample"),true);
 });
+
+test("model mismatch is a separate repair reason and cannot pass by structural offer count",()=>{
+ const report=failed("virgin-ae","QUERY_MODEL_MISMATCH",2);
+ const result=diagnoseActiveSourceCoverage(["virgin-ae"],new Map([["virgin-ae",report]]));
+ assert.equal(result.rows[0].diagnosis,"query_model_mismatch");
+ assert.equal(result.rows[0].evidenceStatus,"failed");
+});

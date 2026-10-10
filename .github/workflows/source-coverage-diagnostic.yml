@@ -22,5 +22,5 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci --ignore-scripts
-      - run: node --test tests/source-coverage-diagnostic.test.mjs
+      - run: node --test tests/source-coverage-diagnostic.test.mjs tests/certification-model-gate.test.mjs
       - run: node scripts/probe-source-coverage-diagnostic.mjs

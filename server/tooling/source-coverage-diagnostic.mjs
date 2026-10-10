@@ -3,6 +3,7 @@
 import {summarizeCertification} from "../../scripts/summarize-active-certification.mjs";
 import {assessCertificationModelExamples} from "./source-model-evidence.mjs";
 const BLOCKED=/\b403\b|\b401\b|blocked|captcha|forbidden|access denied/i;
+const MODEL=/QUERY_MODEL_MISMATCH|model tokens? mismatch/i;
 const TIMEOUT=/timeout|timed out|aborted|fetch failed|network/i;
 const TEMPORARY=/\b(?:502|503|504)\b|service unavailable|bad gateway/i;
 const PAYLOAD=/response too large|payload too large|body too large|exceeds? (?:byte|size) limit/i;
@@ -12,6 +13,7 @@ const EMPTY=/no.product.candidates|without.valid.offers|no.results|empty|zero.re
 const clean=value=>String(value??"").replace(/[\r\n|<>]/g," ").slice(0,160);
 function category(reason){
  if(BLOCKED.test(reason))return "merchant_access_blocked";
+ if(MODEL.test(reason))return "query_model_mismatch";
  if(TIMEOUT.test(reason))return "transport_or_timeout";
  if(TEMPORARY.test(reason))return "transient_merchant_http_error";
  if(PAYLOAD.test(reason))return "oversized_merchant_response";

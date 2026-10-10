@@ -9,6 +9,8 @@ const ACTIONS=Object.freeze({
   tier:"P1",action:"Inspect query routing and registry identity with offline fixtures"},
  missing_product_images:{
   tier:"P1",action:"Verify source-supported image extraction and HTTPS URL validation using permitted data"},
+ query_model_mismatch:{
+  tier:"P1",action:"Compare exact requested model with valid offer titles; reject near-name devices and accessories before certification"},
  offer_or_price_validation:{
   tier:"P1",action:"Check SKU/variant, SAR conversion and price fields with source-backed fixture tests"},
  transport_or_timeout:{
