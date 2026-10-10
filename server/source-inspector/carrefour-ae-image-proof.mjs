@@ -91,10 +91,10 @@ export async function verifyCarrefourAeImageHead(image, expectedId, { fetchImpl 
     if (response.status !== 200)
       return {ok:false,reason:"image_http_"+response.status};
     if (!["image/jpeg","image/png","image/webp"].includes(contentType))
-      return {ok:false,reason:"image_content_type_mismatch"};
+      return {ok:false,reason:"image_content_type_mismatch",observedContentType:contentType,observedLength:length};
     if (length !== null && (!Number.isSafeInteger(length) || length < 512 ||
         length > 20_000_000))
-      return {ok:false,reason:"image_length_out_of_bounds"};
+      return {ok:false,reason:"image_length_out_of_bounds",observedContentType:contentType,observedLength:length};
     return {ok:true,httpStatus:response.status,contentType,bytes:length};
   } catch (error) {
     return {ok:false,reason:"image_head_request_failed",
@@ -234,7 +234,9 @@ export async function proveCarrefourAeImages(offers, {
           result[index] = health?.ok
             ? {...proof, imageHttpVerified:true, imageHttpStatus:health.httpStatus,
                 imageContentType:health.contentType}
-            : {accepted:false, reason:health?.reason || "image_head_failed"};
+            : {accepted:false, reason:health?.reason || "image_head_failed",
+                imageHeadContentType:health?.observedContentType || null,
+                imageHeadContentLength:health?.observedLength ?? null};
         } else {
           result[index] = proof;
         }
