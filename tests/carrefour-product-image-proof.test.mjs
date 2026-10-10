@@ -79,3 +79,24 @@ test("one staged proof upgrades an initially null image only when all source evi
  assert.equal(merchantOffer.image,null);
  assert.equal(result.imageSource,"same_product_json_ld");
 });
+
+test("rejects model-generation, Pro, storage and color collisions despite identical PDP id",()=>{
+ for(const name of [
+  "Apple iPhone 17 Pro ,256 GB, Sage, 5G",
+  "Apple iPhone 16 ,256 GB, Sage, 5G",
+  "Apple iPhone 17 ,512 GB, Sage, 5G",
+  "Apple iPhone 17 ,256 GB, Black, 5G"
+ ]){
+  const result=check(product({name}));
+  assert.equal(result.verified,false,name);
+  assert.equal(result.mismatches.titleMismatch,1);
+ }
+});
+test("rejects multiple conflicting offers and a changed sellerId",()=>{
+ const other=url.replace("sellerId=19044","sellerId=19177");
+ assert.equal(check(product({offers:[
+  {price:3400,priceCurrency:"AED",url},
+  {price:3399,priceCurrency:"AED",url:other}
+ ]})).verified,false);
+ assert.equal(check(product({offers:{price:3400,priceCurrency:"AED",url:other}})).verified,false);
+});

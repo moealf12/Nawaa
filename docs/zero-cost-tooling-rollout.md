@@ -140,3 +140,11 @@ The isolated feature branch previously restarted a 39-source live certification 
 
 
 **Strict draft verdict:** To prevent green CI from masquerading as merchant certification, the cheap offline branches in the full-live workflows intentionally end in a clearly labeled red `UNCERTIFIED`/`UNVERIFIED` sentinel. This is not an offline unit-test defect. The latest actual completed full 39-source check was [run 38009863753](https://github.com/moealf12/Nawaa/actions/runs/38009863753): **14 certified, 25 failed, 0 missing**. Independent unit test and Search Core workflows remain green. No production source has been newly certified or activated.
+
+
+## October 11, 2026 — zero-request Carrefour image recovery, offline proposal only
+
+- Hardened Product JSON-LD proof: reject similar but wrong iPhone/Galaxy/AirPods model variants, storage or colors, conflicting seller ID and multiple ambiguous seller offers. A matching product title alone does not establish the same variant.
+- New pure `server/tooling/carrefour-staged-image-evidence.mjs` analyzes captured merchant search cards using **exact official PDP id, title, original AED price, unique official HTTPS image**. It sends **zero network requests** and does not change prices or customer offers.
+- `reconcileCarrefourImageEvidence` treats a search-only image as an unverified candidate. A corroborated merchant PDP Product JSON-LD image can create a staging-only proposal; contradictory image URLs always reject both proofs. No production activation or source rewriting.
+- All test evidence uses **synthetic HTML fixtures**, not a recovered live image. This does not assert that Carrefour's current 53-byte response provides a usable image or that customer image coverage improved.

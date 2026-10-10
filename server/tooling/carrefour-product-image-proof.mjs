@@ -6,7 +6,7 @@ import {load} from "cheerio";
 import {carrefourPdpId} from "./carrefour-image-evidence.mjs";
 const IMAGE_HOSTS=["cdn.mafrservices.com","cdnprod.mafretailproxy.com","www.carrefouruae.com"];
 const LIMIT=8_000_000;
-function safeOfficialImage(raw){
+export function safeOfficialImage(raw){
  if(typeof raw!=="string"||raw.length>1600)return null;
  try{
   const url=new URL(raw,"https://www.carrefouruae.com");
@@ -25,10 +25,32 @@ function normalizeTitle(text){
  .replace(/(\d+)\s*(gb|tb)\b/g,"$1 $2")
  .replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
 }
-function sameProductTitle(expected,observed){
+function exactModelSignature(title){
+ const text=normalizeTitle(title);
+ let m=/\biphone\s+(\d{1,2})(?:\s+(pro max|pro|plus|air|mini))?\b/.exec(text);
+ if(m)return "iphone-"+m[1]+"-"+(m[2]||"base");
+ m=/\bgalaxy\s+(s\d{2})(?:\s+(ultra|plus|fe))?\b/.exec(text);
+ if(m)return "galaxy-"+m[1]+"-"+(m[2]||"base");
+ m=/\bairpods(?:\s+(pro|max))?(?:\s+(\d+))?\b/.exec(text);
+ if(m)return "airpods-"+(m[1]||"base")+"-"+(m[2]||"");
+ return null;
+}
+function storageSignature(title){
+ const m=/\b(\d{2,4})\s*(gb|tb)\b/.exec(normalizeTitle(title));
+ return m?m[1]+m[2]:null;
+}
+export function sameProductTitle(expected,observed){
  const a=new Set(normalizeTitle(expected).split(" ").filter(t=>t.length>=2));
  const b=new Set(normalizeTitle(observed).split(" ").filter(t=>t.length>=2));
  if(a.size<3||b.size<3)return false;
+ // High overlap is NOT proof of identical variant or storage.
+ const modelA=exactModelSignature(expected),modelB=exactModelSignature(observed);
+ if(modelA!==null&&modelA!==modelB)return false;
+ const storageA=storageSignature(expected),storageB=storageSignature(observed);
+ if(storageA!==null&&storageA!==storageB)return false;
+ const colors=["sage","lavender","silver","black","white","blue","pink","gold","green","purple","orange","red","titanium","gray","grey","beige"];
+ const colorA=colors.find(c=>a.has(c)),colorB=colors.find(c=>b.has(c));
+ if(colorA&&colorB&&colorA!==colorB)return false;
  const hits=[...a].filter(t=>b.has(t)).length;
  return hits>=3&&hits/a.size>=0.7&&hits/b.size>=0.6;
 }
@@ -55,6 +77,8 @@ function productsFromGraph(value,result=[],depth=0){
 }
 function matchingOffers(product,id,price,originalUrl){
  const candidates=Array.isArray(product.offers)?product.offers:[product.offers];
+ // Ambiguous multi-seller/multi-price listings cannot authenticate one exact offer.
+ if(candidates.length!==1)return false;
  const expected=new URL(originalUrl);
  return candidates.some(offer=>{
   if(!offer||typeof offer!=="object")return false;
@@ -68,6 +92,9 @@ function matchingOffers(product,id,price,originalUrl){
     const offerCode=actual.searchParams.get("offer");
     const expectedCode=expected.searchParams.get("offer");
     if(offerCode&&expectedCode&&offerCode!==expectedCode)return false;
+    const seller=actual.searchParams.get("sellerId");
+    const expectedSeller=expected.searchParams.get("sellerId");
+    if(seller&&expectedSeller&&seller!==expectedSeller)return false;
    }catch{return false;}
   }
   return true;
