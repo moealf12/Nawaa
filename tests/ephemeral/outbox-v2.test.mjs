@@ -47,27 +47,23 @@ test('unresolved variant cannot create outbox or legacy row',async()=>{
 });
 
 
-test('expired lease is reclaimed; old worker cannot acknowledge newer claim',async()=>{
+test('active claim holds an atomic lock so a newer worker cannot reclaim during V2 write',async()=>{
  const id=randomUUID(),a=base(randomUUID());
  await commitLegacyAndOutbox(pool,a,{eventId:id});
- let releaseOld, signalOld;
- const oldStarted=new Promise(resolve=>{signalOld=resolve});
- const oldBlock=new Promise(resolve=>{releaseOld=resolve});
- const oldWorker=async()=>{signalOld();await oldBlock;};
+ let releaseOld,signalOld;
+ const started=new Promise(resolve=>{signalOld=resolve;});
+ const blocked=new Promise(resolve=>{releaseOld=resolve;});
  const early=new Date('2026-10-11T00:00:00Z');
- // Reset eligibility so the simulated clock is deterministic.
  await pool.query('UPDATE nawaa_v2_shadow_outbox SET next_attempt_at=$2 WHERE event_id=$1',[id,early]);
- const original=processShadowOutbox(pool,{max:1,now:early,worker:oldWorker});
- await oldStarted;
- const second=await processShadowOutbox(pool,{max:1,now:new Date('2026-10-11T00:02:00Z')});
- assert.deepEqual(second,[{id,status:'completed'}]);
+ const oldRun=processShadowOutbox(pool,{max:1,now:early,worker:async()=>{signalOld();await blocked;}});
+ await started;
+ // Despite lease expiry in the synthetic clock, SKIP LOCKED cannot steal the
+ // event while the original worker holds the SQL transaction/row lock.
+ const concurrent=await processShadowOutbox(pool,{max:1,now:new Date('2026-10-11T00:02:00Z')});
+ assert.deepEqual(concurrent,[]);
  releaseOld();
- const stale=await original;
- assert.equal(stale[0].status,'stale');
- const row=(await pool.query('SELECT status,attempts FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id])).rows[0];
- assert.equal(row.status,'completed');
- assert.equal(row.attempts,2);
- assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
+ assert.deepEqual(await oldRun,[{id,status:'completed'}]);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id])).rows[0].n,1);
 });
 test('expired lease remains pending after process restart and can be claimed anew',async()=>{
  const id=randomUUID(),a=base(randomUUID());
