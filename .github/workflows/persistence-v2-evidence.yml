@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'server/persistence-v2.mjs'
+      - 'server/persistence-v2-outbox.mjs'
+      - 'server/persistence-v2-backfill.mjs'
       - 'server/offer-identity-v2.mjs'
       - 'tests/ephemeral/**'
       - '.github/workflows/persistence-v2-evidence.yml'
