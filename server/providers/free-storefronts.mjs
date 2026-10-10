@@ -87,11 +87,6 @@ const STORES = [
     productPath:/\/sa_en\/[^?#]+\/buy\/(?:[?#]|$)|\/sa_en\/[^?#]+(?:[?#].*)?$/i,
   },
   {
-    id:"carrefour-ae", name:"Carrefour UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
-    search:(q)=>"https://www.carrefouruae.com/mafuae/en/search?keyword="+encodeURIComponent(q),
-    productPath:/\/mafuae\/en\/[^?#]+\/p\/\d+(?:[/?#]|$)|\/p\/\d+(?:[/?#]|$)/i,
-  },
-  {
     id:"microless-ae", name:"Microless UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","desktop","monitor","audio","camera","tv","console","game","accessory","network","appliance"],
     search:(q)=>"https://uae.microless.com/search/?query="+encodeURIComponent(q),
     productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
