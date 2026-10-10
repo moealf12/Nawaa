@@ -51,7 +51,7 @@ test("live-format raw artifacts drive measured coverage and safe repair queue",a
 test("wrong source identity, corrupt JSON, oversized reports never certify",async()=>{
  await fixture(async(dir,put)=>{
   await put("ikea-sa",{...valid("amazon-sa")});
-  await put("amazon-sa","{");
+  await put("amazon-sa","{broken-json");
   await put("noon-ae","x".repeat(1024*1024+1));
   const loaded=await loadSourceCertificationArtifacts(dir,ids);
   assert.equal(loaded.reportCount,0);
