@@ -3,6 +3,8 @@
 import {summarizeCertification} from "../../scripts/summarize-active-certification.mjs";
 const BLOCKED=/\b403\b|\b401\b|blocked|captcha|forbidden|access denied/i;
 const TIMEOUT=/timeout|timed out|aborted|fetch failed|network/i;
+const TEMPORARY=/\b(?:502|503|504)\b|service unavailable|bad gateway/i;
+const PAYLOAD=/response too large|payload too large|body too large|exceeds? (?:byte|size) limit/i;
 const IMAGE=/missing.images|image|picture/i;
 const PRICE=/price|currency|invalid.offer|valid.offers|plausib/i;
 const EMPTY=/no.product.candidates|without.valid.offers|no.results|empty|zero.results/i;
@@ -10,6 +12,8 @@ const clean=value=>String(value??"").replace(/[\r\n|<>]/g," ").slice(0,160);
 function category(reason){
  if(BLOCKED.test(reason))return "merchant_access_blocked";
  if(TIMEOUT.test(reason))return "transport_or_timeout";
+ if(TEMPORARY.test(reason))return "transient_merchant_http_error";
+ if(PAYLOAD.test(reason))return "oversized_merchant_response";
  if(IMAGE.test(reason))return "missing_product_images";
  if(PRICE.test(reason))return "offer_or_price_validation";
  if(EMPTY.test(reason))return "no_valid_product_candidates";
@@ -48,6 +52,6 @@ export function diagnoseActiveSourceCoverage(activeIds,reports,{requiredActiveCo
   failed:strict.stats.failed,missing:strict.stats.missing,
   verifiedPriceParityByIndependentPageEvidence:0,
   reportCertifiesAll:strict.passed,
-  productionSourcesActivated:0,networkRequestsSent:0,
+  sourceActivationChangesPerformed:0,networkRequestsSent:0,
   categories,rows};
 }

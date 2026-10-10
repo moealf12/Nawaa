@@ -44,3 +44,14 @@ test("rejects malformed IDs, duplicate sources and invalid time",()=>{
  assert.throws(()=>diagnoseActiveSourceCoverage(["bad/source"],new Map()),/invalid_source_diagnostic_input/);
  assert.throws(()=>diagnoseActiveSourceCoverage(["a"],new Map(),{observedAt:"yesterday"}),/invalid_source_diagnostic_timestamp/);
 });
+
+test("classifies HTTP 503 and oversized responses separately rather than treating them as unknown",()=>{
+ const reports=new Map([
+  ["amazon-ae",failed("amazon-ae","HTTP 503",1)],
+  ["jumbo-ae",failed("jumbo-ae","jumbo-category: search response too large")]
+ ]);
+ const result=diagnoseActiveSourceCoverage(["amazon-ae","jumbo-ae"],reports);
+ assert.equal(result.rows[0].diagnosis,"transient_merchant_http_error");
+ assert.equal(result.rows[1].diagnosis,"oversized_merchant_response");
+ assert.equal(result.sourceActivationChangesPerformed,0);
+});

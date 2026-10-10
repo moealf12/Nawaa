@@ -13,6 +13,10 @@ const ACTIONS=Object.freeze({
   tier:"P1",action:"Check SKU/variant, SAR conversion and price fields with source-backed fixture tests"},
  transport_or_timeout:{
   tier:"P1",action:"Inspect bounded timeout/retry logs, reduce request load, review sanctioned endpoint availability"},
+ transient_merchant_http_error:{
+  tier:"P1",action:"Respect Retry-After and bounded backoff on upstream 502/503/504; never certify a failed check"},
+ oversized_merchant_response:{
+  tier:"P1",action:"Inspect safe pagination and permitted compact endpoints; retain byte ceilings and reject oversized responses"},
  no_valid_product_candidates:{
   tier:"P2",action:"Inspect allowed search response schema/selector drift using saved fixtures"},
  other_certification_failure:{
