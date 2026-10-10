@@ -8,6 +8,8 @@ on:
       - "tests/carrefour-image-evidence.test.mjs"
       - "tests/carrefour-product-image-proof.test.mjs"
       - "server/tooling/carrefour-product-image-proof.mjs"
+      - "server/tooling/carrefour-image-pilot.mjs"
+      - "tests/carrefour-image-pilot.test.mjs"
       - "scripts/probe-carrefour-image-evidence.mjs"
       - ".github/workflows/carrefour-image-evidence.yml"
 permissions:
@@ -29,3 +31,5 @@ jobs:
       - run: node --test tests/carrefour-image-evidence.test.mjs
       - name: Validate official PDP image identity and AED price parity offline
         run: node --test tests/carrefour-product-image-proof.test.mjs
+      - name: Validate explicit one-SKU pilot authorization offline
+        run: node --test tests/carrefour-image-pilot.test.mjs
