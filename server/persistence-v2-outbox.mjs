@@ -31,6 +31,26 @@ CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_outbox_ready ON nawaa_v2_shadow_outbo
 `);
 }
 
+// Accept a caller-owned PostgreSQL transaction. The caller must commit or
+// roll back the legacy observation, canonical upsert and this intent together.
+// Reusing the same event ID with different JSONB contents fails closed.
+export async function enqueueShadowIntentTx(tx, offer, {eventId}={}) {
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(eventId||'')))
+    throw new Error('invalid_shadow_event_id');
+  deriveOfferIdentityV2(offer);
+  const result=await tx.query(
+    'INSERT INTO nawaa_v2_shadow_outbox(event_id,offer) VALUES($1,$2::jsonb) ON CONFLICT DO NOTHING RETURNING event_id',
+    [eventId,JSON.stringify(offer)]
+  );
+  if(result.rowCount===1)return {duplicate:false,eventId};
+  const existing=await tx.query(
+    'SELECT (offer=$2::jsonb) AS same FROM nawaa_v2_shadow_outbox WHERE event_id=$1',
+    [eventId,JSON.stringify(offer)]
+  );
+  if(existing.rows[0]?.same!==true)throw new Error('event_id_payload_conflict');
+  return {duplicate:true,eventId};
+}
+
 export async function commitLegacyAndOutbox(pool,offer,{eventId=randomUUID(),env=process.env}={}) {
   assertEphemeralDatabase(env);
   // Require an actual verified variant before the legacy side may commit.
