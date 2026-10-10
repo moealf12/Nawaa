@@ -6,7 +6,8 @@ on:
     paths:
       - "server/tooling/source-coverage-diagnostic.mjs"
       - "server/tooling/source-model-evidence.mjs"
-      - "tests/certification-model-gate.test.mjs"
+      - "server/tooling/certification-case-gate.mjs"
+      - "tests/certification-model-gate.test.mjs tests/certification-case-gate.test.mjs"
       - "tests/source-coverage-diagnostic.test.mjs"
       - "scripts/probe-source-coverage-diagnostic.mjs"
       - ".github/workflows/source-coverage-diagnostic.yml"

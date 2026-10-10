@@ -1,6 +1,6 @@
 import {writeFile} from "node:fs/promises";
 import {configuredFreeStorefronts,searchFreeStorefrontById,routeFreeStorefronts} from "../server/providers/free-storefronts.mjs";
-import {certifyModelTitleMatch} from "../server/tooling/source-model-evidence.mjs";
+import {evaluateCertificationOfferCase} from "../server/tooling/certification-case-gate.mjs";
 
 // One isolated source per CI job. This tests its real extraction path, not
 // an in-memory fixture or a count of registry entries.
@@ -21,13 +21,8 @@ for(const query of cases){
   try{
     const result=await searchFreeStorefrontById(id,query,{perStore:10});
     const offers=Array.isArray(result?.offers)?result.offers:[];
-    const valid=offers.filter(o=>
-      typeof o.title==="string" && o.title.trim().length>=3 &&
-      typeof o.sourceUrl==="string" && /^https:\/\//i.test(o.sourceUrl) &&
-      typeof o.image==="string" && /^https?:\/\//i.test(o.image) &&
-      Number.isFinite(o.productPrice) && o.productPrice>0 &&
-      o.currency==="SAR");
-    const invalid=offers.filter(o=>!valid.includes(o));
+    const gate=evaluateCertificationOfferCase(query,offers,{negativeQuery:negative});
+    const {valid,invalid,pass}=gate;
     const invalidSamples=invalid.slice(0,3).map(o=>({
       title:String(o.title||"").slice(0,120),sourceUrl:String(o.sourceUrl||"").slice(0,240),
       imagePresent:typeof o.image==="string"&&/^https?:\/\//i.test(o.image),
@@ -35,23 +30,17 @@ for(const query of cases){
       priceSAR:Number(o.productPrice)||null,
       currency:o.currency||null,
     }));
-    // For explicit model searches, structural validity cannot substitute for
-    // product-model relevance. EarPods are NOT AirPods; Galaxy S26 is NOT S25.
-    // This is an offline CI gate only, not a change to /api/search.
-    const modelRule=certifyModelTitleMatch(query,"");
-    const modelMatches=modelRule.restricted?
-      valid.filter(o=>certifyModelTitleMatch(query,o.title).matches):valid;
-    const pass=query===negative?offers.length===0:modelMatches.length>0;
     const diagnostic=result?.diagnostics || {};
     const extraction=diagnostic.searchPage || {};
     const failureKind=pass?null:
       query===negative?"NEGATIVE_FALSE_POSITIVE":
-      modelRule.restricted&&valid.length>0&&modelMatches.length===0?"QUERY_MODEL_MISMATCH":
+      gate.modelFailure?gate.modelFailure:
       offers.length>0 && invalid.every(o=>typeof o.image!=="string" || !/^https?:\/\//i.test(o.image))?"RETURNED_OFFERS_MISSING_IMAGES":
       Number(result?.candidates||0)>0?"CANDIDATES_WITHOUT_VALID_OFFERS":
       diagnostic.primarySearchError?"SEARCH_TRANSPORT_OR_API_FAILED":"NO_PRODUCT_CANDIDATES";
     report.cases.push({query,pass,offerCount:offers.length,validCount:valid.length,
-      modelMatchRequired:modelRule.restricted,modelMatchedCount:modelMatches.length,invalidSamples,
+      modelMatchRequired:gate.modelMatchRequired,modelMatchedCount:gate.modelMatchedCount,
+      modelRejectedCount:gate.modelRejectedCount,invalidSamples,
       candidates:result?.candidates??null,failedProductPages:result?.failures??null,
       failureKind,ms:Date.now()-started,error:diagnostic.primarySearchError||null,
       acquisitionFallback:extraction.acquisitionFallback||null,
