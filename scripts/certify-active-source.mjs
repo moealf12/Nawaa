@@ -1,5 +1,6 @@
 import {writeFile} from "node:fs/promises";
 import {configuredFreeStorefronts,searchFreeStorefrontById,routeFreeStorefronts} from "../server/providers/free-storefronts.mjs";
+import {certifyModelTitleMatch} from "../server/tooling/source-model-evidence.mjs";
 
 // One isolated source per CI job. This tests its real extraction path, not
 // an in-memory fixture or a count of registry entries.
@@ -34,15 +35,23 @@ for(const query of cases){
       priceSAR:Number(o.productPrice)||null,
       currency:o.currency||null,
     }));
-    const pass=query===negative ? offers.length===0 : valid.length>0;
+    // For explicit model searches, structural validity cannot substitute for
+    // product-model relevance. EarPods are NOT AirPods; Galaxy S26 is NOT S25.
+    // This is an offline CI gate only, not a change to /api/search.
+    const modelRule=certifyModelTitleMatch(query,"");
+    const modelMatches=modelRule.restricted?
+      valid.filter(o=>certifyModelTitleMatch(query,o.title).matches):valid;
+    const pass=query===negative?offers.length===0:modelMatches.length>0;
     const diagnostic=result?.diagnostics || {};
     const extraction=diagnostic.searchPage || {};
     const failureKind=pass?null:
       query===negative?"NEGATIVE_FALSE_POSITIVE":
+      modelRule.restricted&&valid.length>0&&modelMatches.length===0?"QUERY_MODEL_MISMATCH":
       offers.length>0 && invalid.every(o=>typeof o.image!=="string" || !/^https?:\/\//i.test(o.image))?"RETURNED_OFFERS_MISSING_IMAGES":
       Number(result?.candidates||0)>0?"CANDIDATES_WITHOUT_VALID_OFFERS":
       diagnostic.primarySearchError?"SEARCH_TRANSPORT_OR_API_FAILED":"NO_PRODUCT_CANDIDATES";
-    report.cases.push({query,pass,offerCount:offers.length,validCount:valid.length,invalidSamples,
+    report.cases.push({query,pass,offerCount:offers.length,validCount:valid.length,
+      modelMatchRequired:modelRule.restricted,modelMatchedCount:modelMatches.length,invalidSamples,
       candidates:result?.candidates??null,failedProductPages:result?.failures??null,
       failureKind,ms:Date.now()-started,error:diagnostic.primarySearchError||null,
       acquisitionFallback:extraction.acquisitionFallback||null,

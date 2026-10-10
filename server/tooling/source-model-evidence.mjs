@@ -14,6 +14,12 @@ function requestedModel(query){
   return {model:"playstation 5",pattern:/\b(?:ps\s*5|playstation\s*(?:5|ps\s*5))\b/i};
  return null;
 }
+export function certifyModelTitleMatch(query,title){
+ const rule=requestedModel(query);
+ return {restricted:Boolean(rule),model:rule?.model??null,
+  matches:!rule||typeof title==="string"&&rule.pattern.test(title)};
+}
+
 export function assessCertificationModelExamples(reportCase){
  const query=typeof reportCase?.query==="string"?reportCase.query:"";
  const rule=requestedModel(query);
