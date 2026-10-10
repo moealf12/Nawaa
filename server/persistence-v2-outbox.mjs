@@ -12,9 +12,10 @@ CREATE TABLE IF NOT EXISTS nawaa_v2_shadow_outbox(
  CHECK(status IN ('pending','processing','completed','dead')),
  attempts integer NOT NULL DEFAULT 0, max_attempts integer NOT NULL DEFAULT 3,
  next_attempt_at timestamptz NOT NULL DEFAULT now(),
- lease_until timestamptz, last_error text, created_at timestamptz NOT NULL DEFAULT now(),
+ lease_until timestamptz, claim_token uuid, last_error text, created_at timestamptz NOT NULL DEFAULT now(),
  completed_at timestamptz
 );
+ALTER TABLE nawaa_v2_shadow_outbox ADD COLUMN IF NOT EXISTS claim_token uuid;
 CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_outbox_ready ON nawaa_v2_shadow_outbox(status,next_attempt_at);
 `);
 }
@@ -62,10 +63,11 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
       WHERE ((status='pending' AND next_attempt_at<=$1) OR (status='processing' AND lease_until<=$1))
       ORDER BY created_at,event_id FOR UPDATE SKIP LOCKED LIMIT $2`,[now,max]);
     for(const row of rows.rows){
+      const claimToken=randomUUID();
       await client.query(`UPDATE nawaa_v2_shadow_outbox
-        SET status='processing', attempts=attempts+1,lease_until=$2::timestamptz+interval '60 seconds'
-        WHERE event_id=$1`,[row.event_id,now]);
-      claimed.push(row);
+        SET status='processing', attempts=attempts+1,claim_token=$3,lease_until=$2::timestamptz+interval '60 seconds'
+        WHERE event_id=$1`,[row.event_id,now,claimToken]);
+      claimed.push({...row,claimToken});
     }
     await client.query('COMMIT');
   }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
@@ -73,16 +75,16 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
   for(const row of claimed){
     try{
       await worker(pool,row.offer,{ingestionId:row.event_id});
-      await pool.query(`UPDATE nawaa_v2_shadow_outbox SET status='completed',completed_at=now(),lease_until=NULL,last_error=NULL
-        WHERE event_id=$1 AND status='processing'`,[row.event_id]);
-      outcomes.push({id:row.event_id,status:'completed'});
+      const result=await pool.query(`UPDATE nawaa_v2_shadow_outbox SET status='completed',completed_at=now(),lease_until=NULL,claim_token=NULL,last_error=NULL
+        WHERE event_id=$1 AND status='processing' AND claim_token=$2`,[row.event_id,row.claimToken]);
+      outcomes.push({id:row.event_id,status:result.rowCount===1?'completed':'stale'});
     }catch(e){
       const dead=row.attempts+1>=row.max_attempts;
-      await pool.query(`UPDATE nawaa_v2_shadow_outbox SET status=$2,lease_until=NULL,
+      const result=await pool.query(`UPDATE nawaa_v2_shadow_outbox SET status=$2,lease_until=NULL,claim_token=NULL,
         next_attempt_at=$3::timestamptz+(power(2,LEAST(attempts,8))*interval '1 second'),
-        last_error=$4 WHERE event_id=$1 AND status='processing'`,
-        [row.event_id,dead?'dead':'pending',now,String(e?.message||e).slice(0,200)]);
-      outcomes.push({id:row.event_id,status:dead?'dead':'pending'});
+        last_error=$4 WHERE event_id=$1 AND status='processing' AND claim_token=$5`,
+        [row.event_id,dead?'dead':'pending',now,String(e?.message||e).slice(0,200),row.claimToken]);
+      outcomes.push({id:row.event_id,status:result.rowCount===1?(dead?'dead':'pending'):'stale'});
     }
   }
   return outcomes;
