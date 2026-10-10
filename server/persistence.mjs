@@ -1,3 +1,4 @@
+import {summarizePriceHistory} from "./tooling/price-history-insights.mjs";
 let pool, initialized=false, initializing=null, PoolCtor=null;
 export const persistenceConfigured=()=>Boolean(process.env.DATABASE_URL);
 async function db(){
@@ -47,7 +48,17 @@ drop trigger if exists offer_observations_immutable on offer_observations;
 create trigger offer_observations_immutable
 before update or delete on offer_observations
 for each row execute function nawaa_reject_offer_observation_mutation();
-`);initialized=true;return {configured:true,ready:true};})();
+`);
+// This ledger is only needed by the opt-in durable background worker.
+// Keeping its DDL behind the feature flag preserves existing customers.
+if(process.env.NAWAA_ENABLE_BACKGROUND_JOBS==="1"){
+  await client.query(`create table if not exists nawaa_ingestion_receipts(
+    ingestion_id uuid primary key,
+    source_name text not null,
+    received_at timestamptz not null default now()
+  )`);
+}
+initialized=true;return {configured:true,ready:true};})();
 try{return await initializing;}finally{initializing=null;}
 }
 const canonicalUrl=value=>{try{const u=new URL(value);u.hash="";for(const key of [...u.searchParams.keys()])if(/^utm_|^(gclid|fbclid|ref|aff|affiliate)$/i.test(key))u.searchParams.delete(key);u.hostname=u.hostname.toLowerCase().replace(/^www\./,"");u.pathname=u.pathname.replace(/\/+$/,"")||"/";return u.toString();}catch{return String(value||"").trim();}};
@@ -70,16 +81,30 @@ export async function recordOffer(offerData={}){
   const key=keyOf(normalized);
   const observedAt=offerData.observedAt ? new Date(offerData.observedAt) : new Date();
   if(Number.isNaN(observedAt.getTime())) throw new Error("invalid_observed_at");
+  // pg-boss retries the same UUID on worker crashes or lost acknowledgements.
+  const ingestionId=offerData.ingestionId==null?null:String(offerData.ingestionId);
+  if(ingestionId!==null && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ingestionId)
+      || process.env.NAWAA_ENABLE_BACKGROUND_JOBS!=="1"))throw new Error("invalid_or_disabled_ingestion_id");
   const query=String(offerData.query||sourceName||"crawler");
   const tx=await client.connect();
   try{
     await tx.query("BEGIN");
+    if(ingestionId){
+      const receipt=await tx.query(
+        "insert into nawaa_ingestion_receipts(ingestion_id,source_name) values($1,$2) on conflict do nothing returning ingestion_id",
+        [ingestionId,sourceName]
+      );
+      if(!receipt.rows.length){
+        await tx.query("ROLLBACK");
+        return {configured:true,recorded:false,duplicate:true,observationId:null};
+      }
+    }
     const observation=await tx.query(
       `insert into offer_observations(product_url,source_name,price,currency,validation_timestamp,health_status)
        values($1,$2,$3,$4,$5,$6) returning id,validation_timestamp`,
       [sourceUrl,sourceName,price,currency,observedAt,healthStatus]
     );
-    await tx.query(
+    const canonical=await tx.query(
       `insert into nawaa_offers(offer_key,query,title,brand,merchant,merchant_country_code,source_url,image_url,currency,product_price,total_sar,sku,condition,availability,match_confidence,exact_match,observed_at,payload)
        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
        on conflict(offer_key) do update set
@@ -88,11 +113,14 @@ export async function recordOffer(offerData={}){
          product_price=excluded.product_price,total_sar=excluded.total_sar,sku=excluded.sku,
          availability=excluded.availability,match_confidence=excluded.match_confidence,
          exact_match=excluded.exact_match,observed_at=excluded.observed_at,payload=excluded.payload
-       where nawaa_offers.observed_at <= excluded.observed_at`,
-      [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
+       where nawaa_offers.observed_at < excluded.observed_at
+       returning id`,
+      [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||offerData.image||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
     );
     await tx.query("COMMIT");
-    return {configured:true,recorded:true,observationId:observation.rows[0]?.id??null,observedAt:observation.rows[0]?.validation_timestamp??observedAt};
+    return {configured:true,recorded:true,canonicalUpdated:canonical.rowCount>0,
+      observationId:observation.rows[0]?.id??null,
+      observedAt:observation.rows[0]?.validation_timestamp??observedAt};
   }catch(error){
     try{await tx.query("ROLLBACK");}catch{}
     throw error;
@@ -135,4 +163,32 @@ export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}
       observedAt:row.observed_at instanceof Date ? row.observed_at.toISOString() : row.observed_at
     }))
   };
+}
+
+// Internal bounded historical-price read model; deliberately no public route.
+// Reuse recordOffer URL normalization and index-supported source filtering.
+export async function getOfferPriceHistory(sourceUrl,{sourceName,limit=30}={}){
+  const productUrl=recordUrl(sourceUrl);
+  const source=String(sourceName||"").trim();
+  if(!productUrl||!/^[a-z0-9][a-z0-9-]{1,79}$/.test(source))
+    throw new Error("invalid_price_history_identity");
+  if(!Number.isSafeInteger(limit)||limit<1||limit>500)
+    throw new Error("invalid_price_history_limit");
+  const client=await db();
+  if(!client)return {configured:false,productUrl,sourceName:source,observations:[],insights:summarizePriceHistory([])};
+  await initPersistence();
+  const result=await client.query(
+    "select id,price,currency,validation_timestamp,health_status "+
+    "from offer_observations where product_url=$1 and source_name=$2 "+
+    "order by validation_timestamp desc,id desc limit $3",
+    [productUrl,source,limit]
+  );
+  const observations=result.rows.map(row=>({
+      id:row.id,price:Number(row.price),currency:row.currency,
+      observedAt:row.validation_timestamp instanceof Date
+        ?row.validation_timestamp.toISOString():row.validation_timestamp,
+      healthStatus:row.health_status
+    }));
+  return {configured:true,productUrl,sourceName:source,observations,
+    insights:summarizePriceHistory(observations)};
 }

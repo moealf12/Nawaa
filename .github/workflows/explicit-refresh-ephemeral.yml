@@ -1,0 +1,50 @@
+name: IKEA - explicit budgeted live refresh on disposable PostgreSQL
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - "server/tooling/explicit-ikea-refresh.mjs"
+      - "server/tooling/source-refresh-policy.mjs"
+      - "server/tooling/durable-refresh-budget.mjs"
+      - "server/url-resolver.mjs"
+      - "src/ikea-pilot-products.mjs"
+      - "scripts/test-explicit-refresh-ephemeral.mjs"
+      - ".github/workflows/explicit-refresh-ephemeral.yml"
+permissions:
+  contents: read
+jobs:
+  guarded-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa
+          POSTGRES_PASSWORD: nawaa_ci
+          POSTGRES_DB: nawaa_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nawaa -d nawaa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci
+      DATABASE_SSL: "false"
+      NAWAA_ENABLE_BACKGROUND_JOBS: "1"
+      NAWAA_ENABLE_CERTIFIED_INGESTION: "1"
+      NAWAA_ENABLE_REFRESH_BUDGET: "1"
+      NAWAA_ENABLE_EXPLICIT_MERCHANT_REFRESH: "1"
+      NAWAA_CI_EPHEMERAL_DB: "1"
+      NAWAA_INGESTION_SIGNING_KEY: "ci-only-ephemeral-unused-outside-github-actions-2026-test"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node --test tests/zero-cost-explicit-ikea-refresh.test.mjs
+      - run: node scripts/test-explicit-refresh-ephemeral.mjs

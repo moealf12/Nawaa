@@ -1,0 +1,28 @@
+name: NAWAA - offline source-refresh admission policy
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - "server/tooling/source-refresh-policy.mjs"
+      - "tests/zero-cost-source-refresh-policy.test.mjs"
+      - "scripts/probe-ikea-refresh-plan.mjs"
+      - ".github/workflows/refresh-policy-proof.yml"
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      NAWAA_ENABLE_BACKGROUND_JOBS: "0"
+      NAWAA_ENABLE_CERTIFIED_INGESTION: "0"
+      DATABASE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node --test tests/zero-cost-source-refresh-policy.test.mjs
+      - run: node scripts/probe-ikea-refresh-plan.mjs

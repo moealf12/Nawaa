@@ -1,0 +1,49 @@
+name: IKEA Saudi — five live signed offers to PostgreSQL
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - "scripts/test-ikea-real-ephemeral-ingestion.mjs"
+      - "scripts/test-ephemeral-price-history.mjs"
+      - "server/tooling/merchant-observation-producer.mjs"
+      - "server/tooling/ikea-dom-price-proof.mjs"
+      - "tests/zero-cost-visible-price-gate.test.mjs"
+      - ".github/workflows/ikea-ephemeral-live-ingestion.yml"
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa
+          POSTGRES_PASSWORD: nawaa_ci
+          POSTGRES_DB: nawaa_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nawaa -d nawaa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci
+      DATABASE_SSL: "false"
+      NAWAA_ENABLE_BACKGROUND_JOBS: "1"
+      NAWAA_ENABLE_CERTIFIED_INGESTION: "1"
+      NAWAA_CI_EPHEMERAL_DB: "1"
+      NAWAA_INGESTION_SIGNING_KEY: "ci-only-ephemeral-unused-outside-github-actions-2026-test"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Verify five visible-price-gated real merchant offers into disposable ACID PostgreSQL
+        run: node scripts/test-ikea-real-ephemeral-ingestion.mjs
+      - name: Verify newer and older price events against immutable history
+        run: node scripts/test-ephemeral-price-history.mjs

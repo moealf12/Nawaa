@@ -67,3 +67,39 @@ jobs:
           node --check server/internal-audit.mjs
           node --check scripts/audit-worker.mjs
           node --check scripts/audit-matrix.mjs
+
+
+  zero_cost_postgres_integration:
+    name: Verify pg-boss against ephemeral PostgreSQL
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa
+          POSTGRES_PASSWORD: nawaa_ci
+          POSTGRES_DB: nawaa_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nawaa -d nawaa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci
+      DATABASE_SSL: 'false'
+      NAWAA_ENABLE_BACKGROUND_JOBS: '1'
+      NAWAA_CI_EPHEMERAL_DB: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Exercise real ACID persistence, pg-boss workers and retry idempotency
+        run: node scripts/test-zero-cost-postgres-integration.mjs

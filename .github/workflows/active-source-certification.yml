@@ -8,6 +8,10 @@ on:
       - "scripts/certify-active-source.mjs"
       - "scripts/certify-active-sources-batched.mjs"
       - "scripts/summarize-active-certification.mjs"
+      - "scripts/report-active-source-coverage.mjs"
+      - "server/tooling/source-coverage-diagnostic.mjs"
+      - "server/tooling/source-certification-artifacts.mjs"
+      - "server/tooling/source-certification-triage.mjs"
       - ".github/workflows/active-source-certification.yml"
       - "server/providers/free-storefronts.mjs"
       - "server/providers/noon.mjs"
@@ -34,7 +38,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  draft-offline-source-check:
+    if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node scripts/certify-active-sources-batched.mjs --check
+      - run: node --test tests/active-certification-summary.test.mjs tests/real-source-evidence.test.mjs
+      - name: Mark full certification UNCERTIFIED until a real permitted live run
+        run: |
+          echo "::error::UNCERTIFIED: 39-source live certification intentionally skipped on draft. Run the full manual source gate before activation or merge."
+          exit 1
+
   certify-all-39:
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -52,6 +74,9 @@ jobs:
       - name: Produce strict 39-source summary (no hidden failures)
         if: always()
         run: node scripts/summarize-active-certification.mjs
+      - name: Generate source-by-source evidence diagnostic and repair plan
+        if: always()
+        run: node scripts/report-active-source-coverage.mjs
       - name: Upload every source report and final summary
         if: always()
         uses: actions/upload-artifact@v4
@@ -60,4 +85,6 @@ jobs:
           path: |
             source-cert-artifacts/active-source-*.json
             source-cert-summary/active-source-certification-summary.json
+            source-cert-summary/active-source-coverage-diagnostic.json
+            source-cert-summary/active-source-repair-priorities.md
           if-no-files-found: warn

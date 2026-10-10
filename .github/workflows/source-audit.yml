@@ -37,7 +37,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  draft-offline-source-safety:
+    if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node scripts/certify-active-sources-batched.mjs --check
+      - run: node --test tests/carrefour-product-image-proof.test.mjs tests/source-coverage-diagnostic.test.mjs
+      - name: Mark full live source audit UNVERIFIED for isolated draft
+        run: |
+          echo "::error::UNVERIFIED: live source audit intentionally skipped on draft. Complete full manual audit before approval."
+          exit 1
+
   phase3-batch1:
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -75,6 +93,7 @@ jobs:
 
 
   phase3-batch2:
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -109,6 +128,7 @@ jobs:
 
 
   phase3-batch3:
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -148,6 +168,7 @@ jobs:
 
 
   phase3-batch4:
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -179,6 +200,7 @@ jobs:
 
 
   phase3-batch5:
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -209,7 +231,7 @@ jobs:
           path: phase3-${{ matrix.source }}-${{ matrix.case }}.json
 
   phase3-batch6:
-    if: ${{ vars.NAWAA_SHOPIFY_CI_ENABLED == 'true' }}
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) && vars.NAWAA_SHOPIFY_CI_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -248,7 +270,7 @@ jobs:
 
 
   phase3-ebay-configured:
-    if: ${{ vars.NAWAA_EBAY_CI_ENABLED == 'true' }}
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) && vars.NAWAA_EBAY_CI_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -278,6 +300,7 @@ jobs:
           path: phase3-ebay-${{ matrix.case }}.json
 
   audit:
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

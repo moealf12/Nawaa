@@ -1,0 +1,28 @@
+name: Crawl4AI Offline Proof (Free)
+on:
+  push:
+    branches: [feature/zero-cost-tooling-foundation]
+    paths:
+      - 'scripts/crawl4ai-offline-proof.py'
+      - '.github/workflows/crawl4ai-offline-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline_chromium:
+    if: github.ref == 'refs/heads/feature/zero-cost-tooling-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install open-source Crawl4AI only
+        run: |
+          python -m pip install --disable-pip-version-check 'crawl4ai==0.9.4'
+          python -m playwright install --with-deps chromium
+      - name: Verify local fixture via Chromium and CSS extraction
+        run: python scripts/crawl4ai-offline-proof.py

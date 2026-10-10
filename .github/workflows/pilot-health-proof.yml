@@ -1,0 +1,24 @@
+name: NAWAA - offline price health and multi-day evidence
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - "server/tooling/pilot-health-monitor.mjs"
+      - "tests/pilot-health-monitor.test.mjs"
+      - "scripts/probe-pilot-health.mjs"
+      - ".github/workflows/pilot-health-proof.yml"
+permissions:
+  contents: read
+jobs:
+  monitor-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node --test tests/pilot-health-monitor.test.mjs
+      - run: node scripts/probe-pilot-health.mjs
