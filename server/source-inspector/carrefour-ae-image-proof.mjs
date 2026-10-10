@@ -50,20 +50,56 @@ function offerPrice(product) {
   }).filter(value => Number.isFinite(value.price) && value.price > 0);
 }
 
-function candidateImage(product, finalUrl) {
+function officialImageLocation(value, expectedId) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password ||
+        url.hostname !== "cdn.mafrservices.com") return null;
+    const segments = url.pathname.split("/").filter(Boolean);
+    const prefix = ["pim-content","UAE","media","product"];
+    if (!prefix.every((segment, index) => segments[index] === segment) ||
+        segments[4] !== String(expectedId) || segments.length !== 7 ||
+        !/^\d{8,12}$/.test(segments[5]) ||
+        !new RegExp("^"+String(expectedId)+"_main\\.(?:jpe?g|png|webp)$","i")
+          .test(segments[6])) return null;
+    return url.href;
+  } catch { return null; }
+}
+
+function candidateImage(product, finalUrl, expectedId) {
   const raw = Array.isArray(product?.image) ? product.image[0] : product?.image;
   const ref = typeof raw === "string" ? raw : raw?.url || raw?.src;
   if (typeof ref !== "string" || !ref.trim()) return null;
   try {
-    const url = new URL(ref, finalUrl);
-    if (url.protocol !== "https:" || url.username || url.password ||
-        !url.hostname || url.hostname.length > 253 ||
-        !/^[a-z0-9.-]+$/i.test(url.hostname) ||
-        /(?:^|\.)localhost$|(?:^|\.)local$|(?:^|\.)internal$/.test(url.hostname) ||
-        /^(?:\d{1,3}\.){3}\d{1,3}$/.test(url.hostname) ||
-        /\/(?:pixel|tracker|placeholder|no-image|sprite)(?:[\/._-]|$)/i.test(url.pathname)) return null;
-    return url.href;
+    return officialImageLocation(new URL(ref, finalUrl).href, expectedId);
   } catch { return null; }
+}
+
+/** Audit-only HEAD gate: validates CDN response without fetching image bytes. */
+export async function verifyCarrefourAeImageHead(image, expectedId, { fetchImpl = fetch } = {}) {
+  const target = officialImageLocation(image, expectedId);
+  if (!target) return { ok:false, reason:"image_identity_or_domain_mismatch" };
+  try {
+    const response = await fetchImpl(target,{
+      method:"HEAD", redirect:"manual", signal:AbortSignal.timeout(6000),
+      headers:{accept:"image/jpeg,image/png,image/webp"},
+    });
+    const contentType = String(response.headers.get("content-type")||"")
+      .split(";")[0].trim().toLowerCase();
+    const lengthRaw = response.headers.get("content-length");
+    const length = lengthRaw === null ? null : Number(lengthRaw);
+    if (response.status !== 200)
+      return {ok:false,reason:"image_http_"+response.status};
+    if (!["image/jpeg","image/png","image/webp"].includes(contentType))
+      return {ok:false,reason:"image_content_type_mismatch"};
+    if (length !== null && (!Number.isSafeInteger(length) || length < 512 ||
+        length > 20_000_000))
+      return {ok:false,reason:"image_length_out_of_bounds"};
+    return {ok:true,httpStatus:response.status,contentType,bytes:length};
+  } catch (error) {
+    return {ok:false,reason:"image_head_request_failed",
+      detail:String(error?.message||error).slice(0,120)};
+  }
 }
 
 function explicitIdentityMismatch(product, expectedId) {
@@ -75,7 +111,7 @@ function explicitIdentityMismatch(product, expectedId) {
   }
   const sku = String(product?.sku ?? product?.productID ?? "").trim();
   // Only Carrefour-style numeric page IDs are comparable to /p/<id>.
-  return /^\d{6,9}$/.test(sku) && sku !== expectedId;
+  return /^\d{6,16}$/.test(sku) && sku !== expectedId;
 }
 
 export function verifyCarrefourAeImageFromPage(offer, page) {
@@ -106,7 +142,7 @@ export function verifyCarrefourAeImageFromPage(offer, page) {
         Math.abs(p.price - Number(offer.originalProductPrice)) < 0.005)) {
       reason = "product_price_mismatch"; continue;
     }
-    const image = candidateImage(product, landing.url);
+    const image = candidateImage(product, landing.url, requested.id);
     if (!image) { reason = "missing_safe_product_image"; continue; }
     return {
       accepted:true, image, reason:"verified",
@@ -178,6 +214,7 @@ async function defaultLoadProduct(url) {
 // An explicit, bounded proof run. It does not mutate persistence or activate a source.
 export async function proveCarrefourAeImages(offers, {
   limit = MAX_PROBES, concurrency = MAX_CONCURRENCY, loadProduct = defaultLoadProduct,
+  imageHead = null,
 } = {}) {
   const sample = (Array.isArray(offers) ? offers : []).slice(
     0, Math.max(0, Math.min(MAX_PROBES, Math.floor(Number(limit) || 0)))
@@ -191,7 +228,16 @@ export async function proveCarrefourAeImages(offers, {
       if (!target) { result[index] = { accepted:false, reason:"invalid_product_url" }; continue; }
       try {
         const page = await loadProduct(target.url);
-        result[index] = verifyCarrefourAeImageFromPage(offer, page);
+        const proof = verifyCarrefourAeImageFromPage(offer, page);
+        if (proof.accepted && typeof imageHead === "function") {
+          const health = await imageHead(proof.image, proof.evidence.productId);
+          result[index] = health?.ok
+            ? {...proof, imageHttpVerified:true, imageHttpStatus:health.httpStatus,
+                imageContentType:health.contentType}
+            : {accepted:false, reason:health?.reason || "image_head_failed"};
+        } else {
+          result[index] = proof;
+        }
       } catch (error) {
         result[index] = { accepted:false, reason:"product_page_fetch_failed",
           detail:String(error?.message || error).slice(0, 160) };
