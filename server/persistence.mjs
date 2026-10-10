@@ -54,26 +54,9 @@ const canonicalUrl=value=>{try{const u=new URL(value);u.hash="";for(const key of
 const keyOf=o=>[canonicalUrl(o.sourceUrl),o.condition||"new"].join("|");
 const recordUrl=value=>{try{const url=new URL(String(value||"").trim());if(url.protocol!=="https:"||url.username||url.password||!url.hostname)return "";return canonicalUrl(url.href);}catch{return "";}};
 
-export async function recordOffer(offerData={}){
-  const sourceUrl=recordUrl(offerData.sourceUrl);
-  const title=String(offerData.title||"").trim();
-  const price=Number(offerData.productPrice);
-  const currency=String(offerData.currency||"").trim().toUpperCase();
-  const sourceName=String(offerData.sourceName||offerData.merchant||offerData.provider||"crawler").trim();
-  const healthStatus=String(offerData.healthStatus||"healthy").trim().toLowerCase();
-  const condition=String(offerData.condition||"new").trim().toLowerCase()||"new";
-  if(!sourceUrl||title.length<3||!Number.isFinite(price)||price<=0||!/^[A-Z]{3}$/.test(currency)||!sourceName) throw new Error("invalid_offer_record");
-  const client=await db();
-  if(!client) throw new Error("persistence_not_configured");
-  await initPersistence();
-  const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition};
-  const key=keyOf(normalized);
-  const observedAt=offerData.observedAt ? new Date(offerData.observedAt) : new Date();
-  if(Number.isNaN(observedAt.getTime())) throw new Error("invalid_observed_at");
-  const query=String(offerData.query||sourceName||"crawler");
-  const tx=await client.connect();
-  try{
-    await tx.query("BEGIN");
+// Shared transactional legacy writer. This function deliberately does not commit.
+// It can be composed with optional outbox creation on the SAME connection.
+export async function writeLegacyOfferInTransaction(tx,{sourceUrl,sourceName,price,currency,observedAt,healthStatus,key,query,title,offerData,condition,normalized}){
     const observation=await tx.query(
       `insert into offer_observations(product_url,source_name,price,currency,validation_timestamp,health_status)
        values($1,$2,$3,$4,$5,$6) returning id,validation_timestamp`,
@@ -91,6 +74,52 @@ export async function recordOffer(offerData={}){
        where nawaa_offers.observed_at <= excluded.observed_at`,
       [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
     );
+    return observation;
+}
+
+export async function recordOffer(offerData={}){
+  const sourceUrl=recordUrl(offerData.sourceUrl);
+  const title=String(offerData.title||"").trim();
+  const price=Number(offerData.productPrice);
+  const currency=String(offerData.currency||"").trim().toUpperCase();
+  const sourceName=String(offerData.sourceName||offerData.merchant||offerData.provider||"crawler").trim();
+  const healthStatus=String(offerData.healthStatus||"healthy").trim().toLowerCase();
+  const condition=String(offerData.condition||"new").trim().toLowerCase()||"new";
+  if(!sourceUrl||title.length<3||!Number.isFinite(price)||price<=0||!/^[A-Z]{3}$/.test(currency)||!sourceName) throw new Error("invalid_offer_record");
+  const client=await db();
+  if(!client) throw new Error("persistence_not_configured");
+  await initPersistence();
+  const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition};
+  const key=keyOf(normalized);
+  const observedAt=offerData.observedAt ? new Date(offerData.observedAt) : new Date();
+  if(Number.isNaN(observedAt.getTime())) throw new Error("invalid_observed_at");
+  const query=String(offerData.query||sourceName||"crawler");
+  const shadowEnabled=process.env.NAWAA_LEGACY_OUTBOX_SHADOW==='1';
+  // Fail closed: only test-database experiments can turn on shadow mode.
+  // Production behavior remains byte-for-byte compatible when flag is off.
+  let shadow=null;
+  if(shadowEnabled){
+    const {assertEphemeralDatabase}=await import('./persistence-v2.mjs');
+    const {initShadowOutbox,enqueueShadowIntentTx}=await import('./persistence-v2-outbox.mjs');
+    assertEphemeralDatabase();
+    if(!offerData.ingestionId)throw new Error('shadow_ingestion_id_required');
+    await initShadowOutbox(client);
+    shadow={enqueueShadowIntentTx};
+  }
+  const tx=await client.connect();
+  try{
+    await tx.query("BEGIN");
+    if(shadow){
+      const intent=await shadow.enqueueShadowIntentTx(tx,{
+        ...normalized,sourceId:offerData.sourceId||sourceName,
+        observedAt:observedAt.toISOString(),
+      },{eventId:String(offerData.ingestionId)});
+      if(intent.duplicate){
+        await tx.query("COMMIT");
+        return {configured:true,recorded:true,duplicate:true,observationId:null};
+      }
+    }
+    const observation=await writeLegacyOfferInTransaction(tx,{sourceUrl,sourceName,price,currency,observedAt,healthStatus,key,query,title,offerData,condition,normalized});
     await tx.query("COMMIT");
     return {configured:true,recorded:true,observationId:observation.rows[0]?.id??null,observedAt:observation.rows[0]?.validation_timestamp??observedAt};
   }catch(error){
