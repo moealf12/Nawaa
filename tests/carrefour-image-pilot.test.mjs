@@ -70,3 +70,40 @@ test("unapproved product and existing image cannot be reprocessed",async()=>{
  }
  assert.equal(calls,0);
 });
+
+test("optional already-captured search HTML adds corroboration without an extra GET",async()=>{
+ const search='<section class="card">'+
+  '<img alt="Apple iPhone 17 ,256 GB, Sage, 5G" src="https://cdn.mafrservices.com/p/2258790.webp">'+
+  '<a href="'+url+'"><span>'+offer.title+'</span></a>'+
+  '<div><span>AED</span><span>3,400</span></div></section>';
+ let calls=0;
+ const r=await inspectOneCarrefourImageFromPdp({
+  offer,env,searchHtml:search,
+  fetchPage:async()=>{calls++;return {finalUrl:url,html:fixture()}}
+ });
+ assert.equal(calls,1);
+ assert.equal(r.requestsAttempted,1);
+ assert.equal(r.verified,true);
+ assert.equal(r.status,"eligible_for_separate_staging_review");
+ assert.equal(r.proposedImageUrl,"https://cdn.mafrservices.com/p/2258790.webp");
+ assert.equal(offer.image,null);
+});
+test("contradictory captured search photo vetoes an otherwise valid PDP",async()=>{
+ const search='<section class="card">'+
+  '<img alt="Apple iPhone 17 ,256 GB, Sage, 5G" src="https://cdn.mafrservices.com/other-product.webp">'+
+  '<a href="'+url+'"><span>'+offer.title+'</span></a>'+
+  '<div><span>AED</span><span>3,400</span></div></section>';
+ const r=await inspectOneCarrefourImageFromPdp({
+  offer,env,searchHtml:search,fetchPage:async()=>({finalUrl:url,html:fixture()})
+ });
+ assert.equal(r.verified,false);
+ assert.equal(r.status,"conflicting_merchant_images");
+ assert.equal(r.proposedImageUrl,null);
+ assert.equal(offer.image,null);
+});
+test("fabricated environment flags cannot activate real network transport",async()=>{
+ await assert.rejects(
+  inspectOneCarrefourImageFromPdp({offer,env}),
+  /real_carrefour_pilot_requires_process_flags/
+ );
+});
