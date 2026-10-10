@@ -6,6 +6,7 @@ on:
       - "server/source-inspector/carrefour-ae-image-proof.mjs"
       - "tests/carrefour-ae-image-proof.test.mjs"
       - "scripts/probe-carrefour-ae-images.mjs"
+      - "scripts/inspect-carrefour-ae-image-html.mjs"
       - ".github/workflows/carrefour-ae-image-proof.yml"
   workflow_dispatch:
 
@@ -26,6 +27,8 @@ jobs:
         run: |
           node --check server/source-inspector/carrefour-ae-image-proof.mjs
           node --test tests/carrefour-ae-image-proof.test.mjs
+      - name: Inspect actual merchant HTML (one search + one PDP)
+        run: node scripts/inspect-carrefour-ae-image-html.mjs
       - name: Live read-only image sampling (up to 8 product page reads)
         run: node scripts/probe-carrefour-ae-images.mjs carrefour-ae-image-proof.json
       - name: Preserve quality evidence
