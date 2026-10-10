@@ -93,7 +93,7 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
         FROM nawaa_v2_shadow_outbox WHERE event_id=$1 FOR UPDATE`,[row.event_id]);
       const eligible=active.rows[0]?.status==='processing' &&
         active.rows[0]?.claim_token===row.claimToken &&
-        new Date(active.rows[0].lease_until).getTime()>Date.now();
+        new Date(active.rows[0].lease_until).getTime()>new Date(now).getTime();
       if(!eligible){
         await owner.query('ROLLBACK');
         outcomes.push({id:row.event_id,status:'stale'});
