@@ -343,7 +343,13 @@ export function assessOfferMatch(query, offer) {
   const queryTokens = new Set(q);
   const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
     intent.model && intent.category === 'accessory'
-      ? explicitModels([offer?.title,offer?.specs?.deviceType,offer?.specs?.series].filter(Boolean).join(' ')).some(model=>model!==intent.model)
+      ? (() => {
+          const compatibleModels = explicitModels([offer?.title, offer?.specs?.deviceType, offer?.specs?.series].filter(Boolean).join(' '));
+          // Multi-device accessory listings are compatible when the requested exact
+          // model is explicitly listed. Do not reject a case for 15/16 when
+          // searching for 15; still reject a case for 16 only or 15 Pro only.
+          return compatibleModels.length > 0 && !compatibleModels.includes(intent.model);
+        })()
       : UNREQUESTED_VARIANT_TERMS.some((term) => titleTokens.has(term) && !queryTokens.has(term))
   );
   if (hasUnrequestedVariant) confidence *= 0.82;
