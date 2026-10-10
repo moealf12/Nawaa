@@ -87,11 +87,6 @@ const STORES = [
     productPath:/\/sa_en\/[^?#]+\/buy\/(?:[?#]|$)|\/sa_en\/[^?#]+(?:[?#].*)?$/i,
   },
   {
-    id:"carrefour-ae", name:"Carrefour UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
-    search:(q)=>"https://www.carrefouruae.com/mafuae/en/search?keyword="+encodeURIComponent(q),
-    productPath:/\/mafuae\/en\/[^?#]+\/p\/\d+(?:[/?#]|$)|\/p\/\d+(?:[/?#]|$)/i,
-  },
-  {
     id:"microless-ae", name:"Microless UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["phone","laptop","desktop","monitor","audio","camera","tv","console","game","accessory","network","appliance"],
     search:(q)=>"https://uae.microless.com/search/?query="+encodeURIComponent(q),
     productPath:/\/product\/[^/?#]+(?:[/?#]|$)|\/products?\/[^/?#]+(?:[/?#]|$)/i,
@@ -925,28 +920,6 @@ export function extractSamsungSearchOffers(html, query) {
   return offers;
 }
 
-export function extractCarrefourSearchOffers(html, query) {
-  const source = String(html || "");
-  const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
-  const offers = []; const seen = new Set();
-  const re = /<a\b[^>]*href=["']([^"']*\/mafuae\/en\/[^"']*\/p\/\d+[^"']*)["'][^>]*>\s*<span[^>]*>([\s\S]*?)<\/span><\/a>\s*<div[^>]*>\s*<span[^>]*>AED<\/span>\s*<span[^>]*>([\d,.]+)<\/span>/gi;
-  let match;
-  while ((match = re.exec(source))) {
-    let sourceUrl;
-    try { sourceUrl = canonicalizeCandidateUrl(new URL(decodeHtml(match[1]), "https://www.carrefouruae.com").href); } catch { continue; }
-    const title = stripHtml(match[2]);
-    const price = Number(String(match[3]).replace(/,/g, ""));
-    const hay = normalizeSearchQuery(title + " " + sourceUrl);
-    const hits = tokens.filter(t => hay.includes(t)).length;
-    const key = sourceUrl + "|" + price;
-    if (!title || !Number.isFinite(price) || price <= 0 || (tokens.length > 1 && hits / tokens.length < 0.2) || seen.has(key)) continue;
-    seen.add(key);
-    const id = sourceUrl.match(/\/p\/(\d+)/i)?.[1] || sourceUrl;
-    offers.push({ productId:id, title, image:null, price, currency:"AED", sourceUrl });
-  }
-  return offers;
-}
-
 export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
@@ -1347,7 +1320,6 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
-      store.id === "carrefour-ae" ? extractCarrefourSearchOffers(html, query) :
       store.id === "samsung-sa" ? extractSamsungSearchOffers(html, query) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
