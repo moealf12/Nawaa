@@ -1,0 +1,41 @@
+name: NAWAA Phase Zero Persistence V2 Evidence
+on:
+  pull_request:
+    paths:
+      - 'server/persistence-v2.mjs'
+      - 'server/offer-identity-v2.mjs'
+      - 'tests/ephemeral/**'
+      - '.github/workflows/persistence-v2-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ephemeral-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa
+          POSTGRES_PASSWORD: nawaa_ci
+          POSTGRES_DB: nawaa_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nawaa -d nawaa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NAWAA_CI_EPHEMERAL_DB: '1'
+      DATABASE_URL: postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci
+      DATABASE_SSL: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Verify real PostgreSQL transaction evidence
+        run: node --test tests/ephemeral/persistence-v2.test.mjs
