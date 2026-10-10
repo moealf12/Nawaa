@@ -60,5 +60,22 @@ test("rejects invalid inputs and oversized HTML without network use",()=>{
 });
 test("validates raw AED numeric money, not converted SAR or fabricated price",()=>{
  assert.equal(check(product(),{priceAED:3469.6}).verified,false);
- assert.equal(check(product(),{priceAED:0}).verified,false);
+ assert.throws(()=>check(product(),{priceAED:0}),/invalid_carrefour_image_proof_identity/);
+});
+
+test("a product JSON-LD SKU that conflicts with the PDP id cannot provide an image",()=>{
+ const r=check(product({sku:"2258791"}));
+ assert.equal(r.verified,false);
+ assert.equal(r.mismatches.idMismatch,1);
+});
+test("one staged proof upgrades an initially null image only when all source evidence matches",()=>{
+ const merchantOffer={sourceUrl:url,title,originalProductPrice:3400,
+  originalCurrency:"AED",image:null};
+ const result=proveCarrefourPdpImage(html(product()),{
+  sourceUrl:merchantOffer.sourceUrl,title:merchantOffer.title,
+  priceAED:merchantOffer.originalProductPrice
+ });
+ assert.equal(result.verified,true);
+ assert.equal(merchantOffer.image,null);
+ assert.equal(result.imageSource,"same_product_json_ld");
 });

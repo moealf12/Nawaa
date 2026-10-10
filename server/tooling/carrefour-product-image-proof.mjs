@@ -88,7 +88,10 @@ export function proveCarrefourPdpImage(html,{sourceUrl,title,priceAED}={}){
   let json;
   try{json=JSON.parse(body)}catch{continue}
   for(const product of productsFromGraph(json)){
-   if(carrefourPdpId(product.url)!==id){failures.idMismatch++;continue;}
+   if(carrefourPdpId(product.url)!==id||
+      (typeof product.sku==="string"&&/^\d{5,12}$/.test(product.sku)&&product.sku!==id)){
+    failures.idMismatch++;continue;
+   }
    if(!sameProductTitle(title,product.name)){failures.titleMismatch++;continue;}
    if(!matchingOffers(product,id,targetPrice,sourceUrl)){failures.priceMismatch++;continue;}
    const imgs=Array.isArray(product.image)?product.image:[product.image];
