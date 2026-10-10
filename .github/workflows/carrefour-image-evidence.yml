@@ -1,4 +1,4 @@
-name: NAWAA - bounded Carrefour DOM image diagnostic
+name: NAWAA - offline Carrefour image evidence safety
 on:
   push:
     branches:
@@ -6,6 +6,8 @@ on:
     paths:
       - "server/tooling/carrefour-image-evidence.mjs"
       - "tests/carrefour-image-evidence.test.mjs"
+      - "tests/carrefour-product-image-proof.test.mjs"
+      - "server/tooling/carrefour-product-image-proof.mjs"
       - "scripts/probe-carrefour-image-evidence.mjs"
       - ".github/workflows/carrefour-image-evidence.yml"
 permissions:
@@ -17,7 +19,7 @@ jobs:
     env:
       DATABASE_URL: ""
       NAWAA_ENABLE_BACKGROUND_JOBS: "0"
-      NAWAA_SINGLE_CARREFOUR_IMAGE_PROBE: "1"
+      NAWAA_SINGLE_CARREFOUR_IMAGE_PROBE: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,5 +27,5 @@ jobs:
           node-version: "22"
       - run: npm ci --ignore-scripts
       - run: node --test tests/carrefour-image-evidence.test.mjs
-      - name: Inspect one real public search page without following redirects
-        run: node scripts/probe-carrefour-image-evidence.mjs
+      - name: Validate official PDP image identity and AED price parity offline
+        run: node --test tests/carrefour-product-image-proof.test.mjs

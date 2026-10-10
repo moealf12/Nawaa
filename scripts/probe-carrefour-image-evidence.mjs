@@ -10,6 +10,10 @@ if(process.env.NAWAA_SINGLE_CARREFOUR_IMAGE_PROBE!=="1"||
 const response=await fetchHtmlSafe(EXPECTED,0,{maxRedirects:0});
 if(response.finalUrl!==EXPECTED)throw new Error("carrefour_unexpected_final_url");
 const html=response.html;
+if(Buffer.byteLength(html)<5000){
+ console.error("source_response_without_product_html",Buffer.byteLength(html));
+ process.exitCode=1;
+}else{
 const offers=extractCarrefourSearchOffers(html,"iphone 17");
 const cases=offers.slice(0,5).map(offer=>({
  title:offer.title.slice(0,130),pdpId:offer.productId,
@@ -22,3 +26,4 @@ const result={mode:"one_off_carrefour_html_image_evidence",
  productionChanges:0,merchantImageDownloads:0,cases};
 console.log(JSON.stringify(result,null,2));
 if(cases.length===0)process.exitCode=1;
+}
