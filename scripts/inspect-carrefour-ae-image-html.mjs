@@ -1,7 +1,8 @@
 // Diagnostic only. Never imported by server or production crawler.
 // Emits bounded metadata and nearest-image structure, not full retailer HTML.
 import { load } from "cheerio";
-import { fetchHtmlSafe, extractionCandidates } from "../server/url-resolver.mjs";
+import { extractionCandidates } from "../server/url-resolver.mjs";
+import { fetchCarrefourAeBrowserPage } from "../server/source-inspector/carrefour-ae-image-proof.mjs";
 import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
 
 const offerSearch = await searchFreeStorefrontById("carrefour-ae", "iPhone 17",{perStore:6});
@@ -14,7 +15,20 @@ const urls = [
 for (const url of urls) {
   const type = url.includes("/search?") ? "search" : "product";
   try {
-    const page = await fetchHtmlSafe(url);
+    const page = type==="product" ? await fetchCarrefourAeBrowserPage(url) : await (async()=>{
+      const response=await fetch(url,{
+        headers:{
+          accept:"text/html,application/xhtml+xml",
+          "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
+          "user-agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+        },
+        signal:AbortSignal.timeout(8000),
+      });
+      if(!response.ok)throw new Error("search HTTP "+response.status);
+      const html=await response.text();
+      if(html.length>5_000_000)throw new Error("too_large");
+      return {html,finalUrl:response.url||url};
+    })();
     const $ = load(page.html);
     const matchingAnchors = [];
     $('a[href*="/p/"]').slice(0,4).each((_,el)=>{
@@ -39,6 +53,7 @@ for (const url of urls) {
     const candidates=extractionCandidates(page.html,page.finalUrl);
     report.inspections.push({
       type, httpFinalUrl:page.finalUrl, htmlBytes:Buffer.byteLength(page.html),
+      responsePrefix:page.html.slice(0,100).replace(/\s+/g," "),
       title:$("title").first().text().slice(0,160),
       h1:$("h1").first().text().replace(/\s+/g," ").slice(0,160),
       canonical:$('link[rel="canonical"]').attr("href")||null,
