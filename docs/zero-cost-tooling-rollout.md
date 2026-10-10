@@ -132,3 +132,8 @@ Safeguards and remaining limits: no automatic schedule, no public API, no creden
 - `server/tooling/carrefour-image-pilot.mjs` is an opt-in, single-SKU **CI-ephemeral-only** image verification adapter. It allows exactly one HTTPS page GET with zero redirect hops for the explicit Carrefour UAE iPhone 17 Sage listing (PDP 2258790, seller 19044) only after both explicit flags are set and no database or ingestion worker environment is present. It never modifies customer offers, never queues/schedules jobs, and does not attach a speculative image.
 - Under simulated signed-off HTML, it can *propose* an image only after full numeric PDP, title, original AED price, seller-offer URL, JSON-LD and approved CDN corroboration. In production absence of that evidence, `verified:false` is mandatory. Merchant 53-byte shell, URL redirects, unexpected variant, and wrong merchant host fail closed.
 - No real new image URL has been recovered or added to any customer path; this pilot is deliberately disabled by default and is not hooked to `/api/search`. A future live experiment must first review permitted access and obtain a sufficiently complete PDP document.
+
+
+## Zero-cost isolation of draft CI source checks (2026-10-10)
+
+The isolated feature branch previously restarted a 39-source live certification and dozens of live source audit jobs after each small commit. Only pull_request or push events originating from feature/zero-cost-tooling-foundation now use explicitly labeled cheap offline jobs instead. Full live checks are SKIPPED in this isolated branch only, never interpreted as merchant certification success. workflow_dispatch, main and all other branches keep the original strict live checks. Production search, database and source activation remain untouched.

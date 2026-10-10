@@ -38,7 +38,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  draft-offline-source-check:
+    if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node scripts/certify-active-sources-batched.mjs --check
+      - run: node --test tests/active-certification-summary.test.mjs tests/real-source-evidence.test.mjs
+      - run: echo "No live source certification on isolated tooling branch; full manual and main gates remain."
+
   certify-all-39:
+    if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
