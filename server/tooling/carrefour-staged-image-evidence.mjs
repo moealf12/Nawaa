@@ -45,7 +45,9 @@ export function proveCarrefourSearchCardImage(html,offer){
    const ids=new Set();
    node.find("a[href]").each((_,el)=>{const item=carrefourPdpId($(el).attr("href"));if(item)ids.add(item);});
    if(ids.size!==1||!ids.has(id))break;
-   const prices=[...node.text().matchAll(/\bAED\s*([\d,]+(?:\.\d{1,2})?)\b/gi)]
+   // DOM text() can glue adjacent spans into "5GAED3,400". Preserve tag boundaries.
+   const visibleText=(node.html()||"").replace(/<[^>]*>/g," ").replace(/\s+/g," ");
+   const prices=[...visibleText.matchAll(/\bAED\s*([\d,]+(?:\.\d{1,2})?)\b/gi)]
     .map(match=>priceCents(match[1])).filter(v=>v!==null);
    if(!prices.length)continue;
    if(prices.some(v=>v!==price)){priceConflicts++;continue;}
@@ -76,8 +78,12 @@ export function reconcileCarrefourImageEvidence({offer,searchHtml,pdpHtml}={}){
  const product=typeof pdpHtml==="string"?proveCarrefourPdpImage(pdpHtml,{
   sourceUrl:offer.sourceUrl,title:offer.title,priceAED:offer.originalProductPrice
  }):null;
- const conflict=Boolean(card?.proposedImageUrl&&product?.verified&&
+ const imageConflict=Boolean(card?.proposedImageUrl&&product?.verified&&
   card.proposedImageUrl!==product.imageUrl);
+ // The captured search card can veto a PDP claim if the observed AED price
+ // conflicts or its product-image identity was ambiguous.
+ const evidenceConflict=Boolean(card?.priceConflicts||card?.ambiguousCards);
+ const conflict=imageConflict||evidenceConflict;
  const verified=Boolean(product?.verified&&!conflict);
  return {status:conflict?"conflicting_merchant_images":
    verified?"eligible_for_separate_staging_review":

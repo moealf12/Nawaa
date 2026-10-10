@@ -64,3 +64,16 @@ test("rejects missing image evidence, wrong currency, invalid offer and oversize
  assert.throws(()=>proveCarrefourSearchCardImage(card(),{...offer,originalCurrency:"SAR"}),/invalid_carrefour_card_offer/);
  assert.throws(()=>proveCarrefourSearchCardImage("x".repeat(8_000_001),offer),/invalid_carrefour_card_html/);
 });
+
+test("search AED price contradiction vetoes independently matching PDP image",()=>{
+ const r=reconcileCarrefourImageEvidence({
+  offer,searchHtml:card(image,title,"3,399"),pdpHtml:pdp()
+ });
+ assert.equal(r.verified,false);
+ assert.equal(r.proposedImageUrl,null);
+ assert.equal(r.status,"conflicting_merchant_images");
+});
+test("exact product card price can be split into adjacent span nodes",()=>{
+ const html=card().replace("<span>3,400</span>","<span>3,400</span>");
+ assert.equal(proveCarrefourSearchCardImage(html,offer).proposedImageUrl,image);
+});
