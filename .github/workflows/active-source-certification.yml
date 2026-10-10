@@ -50,7 +50,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/certify-active-sources-batched.mjs --check
       - run: node --test tests/active-certification-summary.test.mjs tests/real-source-evidence.test.mjs
-      - run: echo "No live source certification on isolated tooling branch; full manual and main gates remain."
+      - name: Mark full certification UNCERTIFIED until a real permitted live run
+        run: |
+          echo "::error::UNCERTIFIED: 39-source live certification intentionally skipped on draft. Run the full manual source gate before activation or merge."
+          exit 1
 
   certify-all-39:
     if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}

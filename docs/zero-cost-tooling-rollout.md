@@ -137,3 +137,6 @@ Safeguards and remaining limits: no automatic schedule, no public API, no creden
 ## Zero-cost isolation of draft CI source checks (2026-10-10)
 
 The isolated feature branch previously restarted a 39-source live certification and dozens of live source audit jobs after each small commit. Only pull_request or push events originating from feature/zero-cost-tooling-foundation now use explicitly labeled cheap offline jobs instead. Full live checks are SKIPPED in this isolated branch only, never interpreted as merchant certification success. workflow_dispatch, main and all other branches keep the original strict live checks. Production search, database and source activation remain untouched.
+
+
+**Strict draft verdict:** To prevent green CI from masquerading as merchant certification, the cheap offline branches in the full-live workflows intentionally end in a clearly labeled red `UNCERTIFIED`/`UNVERIFIED` sentinel. This is not an offline unit-test defect. The latest actual completed full 39-source check was [run 38009863753](https://github.com/moealf12/Nawaa/actions/runs/38009863753): **14 certified, 25 failed, 0 missing**. Independent unit test and Search Core workflows remain green. No production source has been newly certified or activated.

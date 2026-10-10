@@ -49,7 +49,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/certify-active-sources-batched.mjs --check
       - run: node --test tests/carrefour-product-image-proof.test.mjs tests/source-coverage-diagnostic.test.mjs
-      - run: echo "No live merchant audit on isolated tooling branch; full manual and main audit remains."
+      - name: Mark full live source audit UNVERIFIED for isolated draft
+        run: |
+          echo "::error::UNVERIFIED: live source audit intentionally skipped on draft. Complete full manual audit before approval."
+          exit 1
 
   phase3-batch1:
     if: ${{ !((github.event_name == 'pull_request' && github.head_ref == 'feature/zero-cost-tooling-foundation') || (github.event_name == 'push' && github.ref_name == 'feature/zero-cost-tooling-foundation')) }}
