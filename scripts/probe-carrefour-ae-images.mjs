@@ -1,7 +1,7 @@
 // Manual/CI-only read-only proof. Does NOT run from /api/search or write persistence.
 import { writeFile } from "node:fs/promises";
 import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
-import { proveCarrefourAeImages } from "../server/source-inspector/carrefour-ae-image-proof.mjs";
+import { proveCarrefourAeImages, verifyCarrefourAeImageHead } from "../server/source-inspector/carrefour-ae-image-proof.mjs";
 
 const QUERIES = ["iPhone 17", "Laptop"];
 const SAMPLE_PER_QUERY = 4; // 8 total PDP reads maximum
@@ -18,6 +18,7 @@ for (const query of QUERIES) {
     const offers = search.offers || [];
     const proof = await proveCarrefourAeImages(offers,{
       limit:SAMPLE_PER_QUERY, concurrency:2,
+      imageHead:verifyCarrefourAeImageHead,
     });
     totalOffers += offers.length;
     checked += proof.attempted;
@@ -36,6 +37,8 @@ for (const query of QUERIES) {
         sourceUrl:offer.sourceUrl, originalPriceAED:offer.originalProductPrice,
         title:offer.title, image:proof.results[index]?.image || null,
         accepted:Boolean(proof.results[index]?.accepted),
+        imageHttpVerified:Boolean(proof.results[index]?.imageHttpVerified),
+        imageContentType:proof.results[index]?.imageContentType || null,
         reason:proof.results[index]?.reason || "not_checked",
       })),
     });
