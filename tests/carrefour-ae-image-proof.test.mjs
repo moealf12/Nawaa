@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  verifyCarrefourAeImageFromPage, proveCarrefourAeImages,
+  verifyCarrefourAeImageFromPage, proveCarrefourAeImages, fetchCarrefourAeBrowserPage,
 } from "../server/source-inspector/carrefour-ae-image-proof.mjs";
 import { extractCarrefourSearchOffers } from "../server/providers/free-storefronts.mjs";
 
@@ -137,4 +137,41 @@ test("fails closed on fetch errors without changing original offer", async () =>
   assert.equal(result.results[0].reason, "product_page_fetch_failed");
   assert.equal(result.accepted, 0);
   assert.equal(original.image, null);
+});
+
+
+test("browser-header PDP reader parses JSON-LD product and retains official id", async()=>{
+  let calls=0;
+  const html='<!doctype html><html><head><title>Apple iPhone 17</title><script type="application/ld+json">'+
+    JSON.stringify({"@context":"https://schema.org","@type":"Product",
+      name:TITLE, sku:"2258801", image:IMAGE,
+      offers:{"@type":"Offer",price:"3999",priceCurrency:"AED"}})+
+    '</script></head><body><h1>Apple iPhone 17, 256GB Black 5G</h1></body></html>';
+  const page = await fetchCarrefourAeBrowserPage(URL,{
+    fetchImpl:async (url,options)=>{
+      calls++;assert.equal(options.redirect,"manual");
+      assert.match(options.headers["user-agent"],/Mozilla\/5/);
+      assert.equal(url,URL);
+      return new Response(html,{status:200,headers:{"content-type":"text/html"}});
+    },
+  });
+  assert.equal(calls,1);
+  assert.equal(page.finalUrl,URL);
+  assert.equal(verifyCarrefourAeImageFromPage(offer(),page).accepted,true);
+});
+
+test("reader rejects redirects outside official product identity before fetching",async()=>{
+  let calls=0;
+  await assert.rejects(fetchCarrefourAeBrowserPage(URL,{
+    fetchImpl:async()=>{calls++;return new Response("",{
+      status:302,headers:{location:"https://example.org/mafuae/en/p/2258801"}});},
+  }),/unsafe_product_redirect/);
+  assert.equal(calls,1);
+});
+
+test("reader fails closed on tiny WAF or empty HTML response",async()=>{
+  await assert.rejects(fetchCarrefourAeBrowserPage(URL,{
+    fetchImpl:async()=>new Response("<html>Access Denied</html>",{
+      status:200,headers:{"content-type":"text/html"}}),
+  }),/block_or_empty_html/);
 });
