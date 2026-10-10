@@ -1,0 +1,38 @@
+name: Carrefour UAE Image Proof (isolated)
+
+on:
+  pull_request:
+    paths:
+      - "server/source-inspector/carrefour-ae-image-proof.mjs"
+      - "tests/carrefour-ae-image-proof.test.mjs"
+      - "scripts/probe-carrefour-ae-images.mjs"
+      - ".github/workflows/carrefour-ae-image-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Verify isolation and regression gates
+        run: |
+          node --check server/source-inspector/carrefour-ae-image-proof.mjs
+          node --test tests/carrefour-ae-image-proof.test.mjs
+      - name: Live read-only image sampling (up to 8 product page reads)
+        run: node scripts/probe-carrefour-ae-images.mjs carrefour-ae-image-proof.json
+      - name: Preserve quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carrefour-ae-image-proof
+          path: carrefour-ae-image-proof.json
+          if-no-files-found: warn
+          retention-days: 14
