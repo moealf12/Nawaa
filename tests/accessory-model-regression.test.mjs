@@ -4,7 +4,7 @@ import { assessOfferMatch } from '../src/search-query.mjs';
 
 const offer = title => ({
   title,
-  sourceUrl: 'https://example.com/products/phone-case',
+  sourceUrl: 'https://example.com/p/123',
   condition: 'new',
 });
 
