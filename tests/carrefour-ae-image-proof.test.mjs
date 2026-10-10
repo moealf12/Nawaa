@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  verifyCarrefourAeImageFromPage, proveCarrefourAeImages, fetchCarrefourAeBrowserPage,
+  verifyCarrefourAeImageFromPage, proveCarrefourAeImages, fetchCarrefourAeBrowserPage, verifyCarrefourAeImageHead,
 } from "../server/source-inspector/carrefour-ae-image-proof.mjs";
 import { extractCarrefourSearchOffers } from "../server/providers/free-storefronts.mjs";
 
 const URL = "https://www.carrefouruae.com/mafuae/en/smartphones/apple-iphone-17-256gb-black/p/2258801";
 const TITLE = "Apple iPhone 17, 256 GB, Black, 5G";
-const IMAGE = "https://cdn.carrefouruae.com/mafuae/media/p/2258801.jpg";
+const IMAGE = "https://cdn.mafrservices.com/pim-content/UAE/media/product/2258801/1757614204/2258801_main.jpg";
 const offer = (patch = {}) => ({
   sourceUrl:URL, title:TITLE, originalProductPrice:3999,
   originalCurrency:"AED", image:null, ...patch,
@@ -174,4 +174,72 @@ test("reader fails closed on tiny WAF or empty HTML response",async()=>{
     fetchImpl:async()=>new Response("<html>Access Denied</html>",{
       status:200,headers:{"content-type":"text/html"}}),
   }),/block_or_empty_html/);
+});
+
+
+test("rejects CDN image for a different product even when title and price match",()=>{
+  const proof=verifyCarrefourAeImageFromPage(offer(),page({},{
+    image:"https://cdn.mafrservices.com/pim-content/UAE/media/product/2258802/1757614204/2258802_main.jpg",
+  }));
+  assert.equal(proof.accepted,false);
+  assert.equal(proof.reason,"missing_safe_product_image");
+});
+
+test("rejects unrelated HTTPS image domains even when JSON-LD references them",()=>{
+  const proof=verifyCarrefourAeImageFromPage(offer(),page({},{
+    image:"https://images.evil.example/p/2258801_main.jpg",
+  }));
+  assert.equal(proof.reason,"missing_safe_product_image");
+});
+
+test("rejects mismatched long Carrefour numeric SKU (12-digit)",()=>{
+  const longUrl=URL.replace("2258801","199251084393");
+  const proof=verifyCarrefourAeImageFromPage(offer({sourceUrl:longUrl}),page({
+    finalUrl:longUrl
+  },{url:longUrl,sku:"199251084394"}));
+  assert.equal(proof.reason,"product_identity_mismatch");
+});
+
+test("HEAD validates real image MIME and reasonable optional length without downloading bytes",async()=>{
+  let calls=0;
+  const result=await verifyCarrefourAeImageHead(IMAGE,"2258801",{
+    fetchImpl:async(uri,options)=>{
+      calls++;
+      assert.equal(uri,IMAGE);
+      assert.equal(options.method,"HEAD");
+      assert.equal(options.redirect,"manual");
+      return new Response(null,{
+        status:200,headers:{"content-type":"image/jpeg","content-length":"41000"},
+      });
+    },
+  });
+  assert.equal(calls,1);
+  assert.equal(result.ok,true);
+  assert.equal(result.bytes,41000);
+});
+
+test("HEAD refuses HTTP redirect and HTML errors instead of accepting CDN placeholders",async()=>{
+  const redirect=await verifyCarrefourAeImageHead(IMAGE,"2258801",{
+    fetchImpl:async()=>new Response(null,{status:302,headers:{location:"https://attacker.example/"}}),
+  });
+  assert.equal(redirect.ok,false);
+  const html=await verifyCarrefourAeImageHead(IMAGE,"2258801",{
+    fetchImpl:async()=>new Response(null,{status:200,headers:{"content-type":"text/html"}}),
+  });
+  assert.equal(html.reason,"image_content_type_mismatch");
+  const bad=await verifyCarrefourAeImageHead(IMAGE.replace("2258801","2258802"),"2258801",{
+    fetchImpl:async()=>{throw new Error("must not request mismatched image");},
+  });
+  assert.equal(bad.reason,"image_identity_or_domain_mismatch");
+});
+
+test("image HEAD rejection never mutates input offers and fails qualification closed",async()=>{
+  const original=offer();
+  const proof=await proveCarrefourAeImages([original],{
+    loadProduct:async()=>page(),
+    imageHead:async()=>({ok:false,reason:"image_http_404"}),
+  });
+  assert.equal(proof.accepted,0);
+  assert.equal(proof.results[0].reason,"image_http_404");
+  assert.equal(original.image,null);
 });
