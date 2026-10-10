@@ -1,0 +1,29 @@
+name: NAWAA - bounded Carrefour DOM image diagnostic
+on:
+  push:
+    branches:
+      - feature/zero-cost-tooling-foundation
+    paths:
+      - "server/tooling/carrefour-image-evidence.mjs"
+      - "tests/carrefour-image-evidence.test.mjs"
+      - "scripts/probe-carrefour-image-evidence.mjs"
+      - ".github/workflows/carrefour-image-evidence.yml"
+permissions:
+  contents: read
+jobs:
+  inspect-one-off:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      DATABASE_URL: ""
+      NAWAA_ENABLE_BACKGROUND_JOBS: "0"
+      NAWAA_SINGLE_CARREFOUR_IMAGE_PROBE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - run: node --test tests/carrefour-image-evidence.test.mjs
+      - name: Inspect one real public search page without following redirects
+        run: node scripts/probe-carrefour-image-evidence.mjs
