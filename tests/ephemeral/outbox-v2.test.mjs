@@ -106,3 +106,29 @@ test('audit INSERT failure rolls back V2 and resumes after lease expiry',async()
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id])).rows[0].n,1);
 });
+
+
+test('repeated worker crashes exhaust bounded retries and create one durable dead audit',async()=>{
+ const id=randomUUID(),a=base(randomUUID());
+ await commitLegacyAndOutbox(pool,a,{eventId:id});
+ const expired=new Date(Date.now()-120000);
+ const token=randomUUID();
+ await pool.query(`UPDATE nawaa_v2_shadow_outbox
+   SET status='processing',attempts=max_attempts,claim_token=$2,lease_until=$3
+   WHERE event_id=$1`,[id,token,expired]);
+ const outcomes=await Promise.all([
+  processShadowOutbox(pool,{max:100}),
+  processShadowOutbox(pool,{max:100})
+ ]);
+ assert.equal(outcomes.flat().filter(x=>x.id===id).length,0);
+ const state=await pool.query('SELECT status,attempts,claim_token FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id]);
+ assert.equal(state.rows[0].status,'dead');
+ assert.equal(state.rows[0].claim_token,null);
+ const audit=await pool.query('SELECT outcome,error FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id]);
+ assert.equal(audit.rowCount,1);
+ assert.equal(audit.rows[0].outcome,'dead');
+ assert.equal(audit.rows[0].error,'lease_expired_retry_budget_exhausted');
+ await processShadowOutbox(pool,{max:100,now:new Date(Date.now()+360000)});
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id])).rows[0].n,1);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,0);
+});
