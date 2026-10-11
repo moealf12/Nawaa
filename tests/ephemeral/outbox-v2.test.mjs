@@ -85,3 +85,24 @@ test('simultaneous same-ID legacy writers converge without rejected duplicates',
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_offers WHERE offer_key=$1',[offer.legacyOfferKey])).rows[0].n,1);
  await assert.rejects(commitLegacyAndOutbox(pool,{...offer,productPrice:999},{eventId}),/event_id_payload_conflict/);
 });
+
+
+test('audit INSERT failure rolls back V2 and resumes after lease expiry',async()=>{
+ const id=randomUUID(),a=base(randomUUID());
+ await commitLegacyAndOutbox(pool,a,{eventId:id});
+ await pool.query(`CREATE OR REPLACE FUNCTION nawaa_ci_fail_attempt() RETURNS trigger LANGUAGE plpgsql AS $$
+ BEGIN RAISE EXCEPTION 'ci_attempt_audit_abort'; END; $$`);
+ await pool.query('DROP TRIGGER IF EXISTS nawaa_ci_fail_attempt ON nawaa_v2_shadow_attempts');
+ await pool.query('CREATE TRIGGER nawaa_ci_fail_attempt BEFORE INSERT ON nawaa_v2_shadow_attempts FOR EACH ROW EXECUTE FUNCTION nawaa_ci_fail_attempt()');
+ try{
+  await assert.rejects(processShadowOutbox(pool,{max:100}),/ci_attempt_audit_abort/);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,0);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_receipts WHERE ingestion_id=$1',[id])).rows[0].n,0);
+ }finally{
+  await pool.query('DROP TRIGGER IF EXISTS nawaa_ci_fail_attempt ON nawaa_v2_shadow_attempts');
+ }
+ const restored=await processShadowOutbox(pool,{max:100,now:new Date(Date.now()+120000)});
+ assert.ok(restored.some(x=>x.id===id&&x.status==='completed'));
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id])).rows[0].n,1);
+});
