@@ -74,3 +74,14 @@ test('expired lease remains pending after process restart and can be claimed ane
  assert.equal(result[0].status,'completed');
  assert.equal((await pool.query('SELECT attempts FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id])).rows[0].attempts,2);
 });
+
+
+test('simultaneous same-ID legacy writers converge without rejected duplicates',async()=>{
+ const eventId=randomUUID(),offer=base(randomUUID());
+ const outcomes=await Promise.all(Array.from({length:8},()=>commitLegacyAndOutbox(pool,offer,{eventId})));
+ assert.equal(outcomes.filter(x=>x.duplicate===false).length,1);
+ assert.equal(outcomes.filter(x=>x.duplicate===true).length,7);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[eventId])).rows[0].n,1);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_offers WHERE offer_key=$1',[offer.legacyOfferKey])).rows[0].n,1);
+ await assert.rejects(commitLegacyAndOutbox(pool,{...offer,productPrice:999},{eventId}),/event_id_payload_conflict/);
+});

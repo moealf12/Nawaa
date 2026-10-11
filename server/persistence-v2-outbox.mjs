@@ -61,9 +61,11 @@ export async function commitLegacyAndOutbox(pool,offer,{eventId=randomUUID(),env
   const client=await pool.connect();
   try {
     await client.query('BEGIN');
-    const prior=await client.query('SELECT offer FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[eventId]);
-    if(prior.rowCount){
-      if(JSON.stringify(prior.rows[0].offer)!==JSON.stringify(offer)) throw new Error('event_id_payload_conflict');
+    // Reserve this event ID first, inside the same transaction as legacy write.
+    // A concurrent retry waits on the unique key and then reads the committed
+    // receipt, rather than failing after touching the canonical row.
+    const intent=await enqueueShadowIntentTx(client,offer,{eventId});
+    if(intent.duplicate){
       await client.query('COMMIT');
       return {eventId,duplicate:true};
     }
@@ -76,7 +78,6 @@ export async function commitLegacyAndOutbox(pool,offer,{eventId=randomUUID(),env
       WHERE nawaa_offers.observed_at < excluded.observed_at`,
       [offer.legacyOfferKey,offer.sourceUrl,offer.title||'Shadow fixture',offer.merchant||null,offer.sku||null,
       offer.condition||'new',price,offer.currency,at,JSON.stringify(offer)]);
-    await client.query('INSERT INTO nawaa_v2_shadow_outbox(event_id,offer) VALUES($1,$2::jsonb)',[eventId,JSON.stringify(offer)]);
     await client.query('COMMIT');
     return {eventId,duplicate:false};
   }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
