@@ -40,4 +40,10 @@ jobs:
           node-version: '22'
       - run: npm ci --ignore-scripts
       - name: Verify real PostgreSQL transaction evidence
-        run: node --test tests/ephemeral/persistence-v2.test.mjs
+        run: |
+          set -eu
+          for suite in tests/ephemeral/*.test.mjs; do
+            echo "=== Running isolated PostgreSQL suite: $suite ==="
+            node --input-type=module -e "import pg from 'pg'; const db=new pg.Client({connectionString:process.env.DATABASE_URL,ssl:false}); await db.connect(); try { await db.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public'); } finally { await db.end(); }"
+            node --test "$suite"
+          done
