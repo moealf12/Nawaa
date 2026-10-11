@@ -21,6 +21,7 @@ const item=()=>{const name=randomUUID();return {
 test('real socket loss after issuing COMMIT is recoverable with stable event identity',async()=>{
  const eventId=randomUUID(),offer=item();
  const client=new pg.Client({connectionString:process.env.DATABASE_URL,ssl:false});
+ client.on('error',()=>{}); // expected transport failure while destroying the live socket
  await client.connect();
  const url=offer.sourceUrl.replace('www.jarir.com','jarir.com');
  const normalized={...offer,sourceUrl:url};
@@ -55,8 +56,8 @@ test('expired processing claim is restored after abandoned worker; receipt is id
  await pool.query(`UPDATE nawaa_v2_shadow_outbox SET status='processing',
   claim_token=$2,attempts=1,lease_until=now()-interval '1 minute'
   WHERE event_id=$1`,[eventId,randomUUID()]);
- const outcome=await processShadowOutbox(pool,{max:1});
- assert.equal(outcome[0]?.status,'completed');
+ const outcome=await processShadowOutbox(pool,{max:100});
+ assert.ok(outcome.some(x=>x.id===eventId&&x.status==='completed'));
  await recordOffer({...offer,ingestionId:eventId});
  assert.equal((await pool.query('SELECT count(*)::int AS n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[eventId])).rows[0].n,1);
 });
