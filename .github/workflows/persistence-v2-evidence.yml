@@ -40,4 +40,4 @@ jobs:
           node-version: '22'
       - run: npm ci --ignore-scripts
       - name: Verify real PostgreSQL transaction evidence
-        run: node --test tests/ephemeral/persistence-v2.test.mjs
+        run: node --test --test-concurrency=1 tests/ephemeral/*.test.mjs
