@@ -24,7 +24,7 @@ test('real socket loss after issuing COMMIT is recoverable with stable event ide
  client.on('error',()=>{}); // expected transport failure while destroying the live socket
  await client.connect();
  const url=offer.sourceUrl.replace('www.jarir.com','jarir.com');
- const normalized={...offer,sourceUrl:url};
+ const normalized={...offer,sourceUrl:url,ingestionId:eventId};
  const at=new Date(offer.observedAt);
  try{
   await client.query('BEGIN');
