@@ -50,3 +50,13 @@ test('equal timestamps preserve first canonical snapshot but append history',asy
 test('immutable history cannot be modified',async()=>{
  await assert.rejects(pool.query('DELETE FROM nawaa_observation_v2'),/v2_observations_immutable/);
 });
+
+test('reusing an ingestion UUID with changed listing metadata is rejected',async()=>{
+ const a=offer('receipt-metadata-'+randomUUID(),{title:'Original listing',imageUrl:'https://images.example.test/one.jpg'});
+ const id=randomUUID();
+ await recordOfferV2(pool,a,{ingestionId:id});
+ await assert.rejects(recordOfferV2(pool,{...a,title:'Forged listing'},{ingestionId:id}),/ingestion_id_payload_conflict/);
+ await assert.rejects(recordOfferV2(pool,{...a,imageUrl:'https://images.example.test/two.jpg'},{ingestionId:id}),/ingestion_id_payload_conflict/);
+ const rows=await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id]);
+ assert.equal(rows.rows[0].n,1);
+});
