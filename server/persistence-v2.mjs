@@ -49,10 +49,10 @@ export async function recordOfferV2(pool, offer, {ingestionId,failAfterObservati
   try {
     await client.query('BEGIN');
     // The unique receipt is taken first to serialize identical retries.
-    const receipt=await client.query('INSERT INTO nawaa_v2_receipts(ingestion_id,offer_key,content_digest) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING ingestion_id',[ingestionId,identity.offerKey,createHash('sha256').update(JSON.stringify([identity.offerKey,price,currency,at.toISOString()])).digest('hex')]);
+    const receipt=await client.query('INSERT INTO nawaa_v2_receipts(ingestion_id,offer_key,content_digest) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING ingestion_id',[ingestionId,identity.offerKey,createHash('sha256').update(JSON.stringify([identity.offerKey,price,currency,at.toISOString(),offer])).digest('hex')]);
     if(!receipt.rowCount) {
       const old=await client.query('SELECT offer_key,content_digest FROM nawaa_v2_receipts WHERE ingestion_id=$1',[ingestionId]);
-      const hash=createHash('sha256').update(JSON.stringify([identity.offerKey,price,currency,at.toISOString()])).digest('hex');
+      const hash=createHash('sha256').update(JSON.stringify([identity.offerKey,price,currency,at.toISOString(),offer])).digest('hex');
       if(old.rows[0]?.offer_key!==identity.offerKey||old.rows[0]?.content_digest!==hash) throw new Error('ingestion_id_payload_conflict');
       await client.query('COMMIT');
       return {duplicate:true,updated:false,offerKey:identity.offerKey};
