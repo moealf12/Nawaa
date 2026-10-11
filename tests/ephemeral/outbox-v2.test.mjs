@@ -26,8 +26,15 @@ test('two consumers claim each available event once',async()=>{
  const ids=Array.from({length:6},()=>randomUUID());
  for(const id of ids)await commitLegacyAndOutbox(pool,base(id),{eventId:id});
  const all=(await Promise.all([processShadowOutbox(pool,{max:3}),processShadowOutbox(pool,{max:3})])).flat();
- assert.equal(new Set(all.map(x=>x.id)).size,6);
- assert.equal(all.filter(x=>x.status==='completed').length,6);
+ for(let i=0;i<6 && ids.some(id=>!all.some(x=>x.id===id&&x.status==='completed'));i++){
+   all.push(...await processShadowOutbox(pool,{max:6}));
+ }
+ assert.equal(new Set(all.filter(x=>ids.includes(x.id)).map(x=>x.id)).size,6);
+ assert.equal(all.filter(x=>ids.includes(x.id)&&x.status==='completed').length,6);
+ for(const id of ids){
+   const count=await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id]);
+   assert.equal(count.rows[0].n,1);
+ }
 });
 test('failures retry then become dead; original legacy row stays',async()=>{
  const a=base(randomUUID()),id=randomUUID();
