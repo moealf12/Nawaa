@@ -24,19 +24,19 @@ export async function backfillV2Snapshots(pool,{env=process.env,batchSize=25,sto
       await client.query('SELECT pg_advisory_xact_lock($1,$2)',[17031,Number(row.id)%2147483647]);
       const existing=await client.query('SELECT 1 FROM nawaa_v2_backfill_progress WHERE legacy_id=$1',[row.id]);
       if(existing.rowCount){await client.query('COMMIT');continue;}
-      const payload=row.payload||{};
+      // Lock and reread the canonical row after obtaining the migration lock.\n      // Otherwise a concurrent legacy price update can make the prefetched row stale.\n      const freshResult=await client.query(`SELECT source_url,merchant,sku,condition,product_price,currency,observed_at,payload\n        FROM nawaa_offers WHERE id=$1 FOR UPDATE`,[row.id]);\n      if(!freshResult.rowCount)throw new Error('legacy_row_disappeared');\n      const current=freshResult.rows[0];\n      const payload=current.payload||{};
       const sourceId=payload.sourceId||payload.sourceName;
       const sourceListingId=payload.sourceListingId||payload.sourceProductId;
       const sourceVariantId=payload.sourceVariantId||payload.variantId;
-      const sku=payload.sku||row.sku;
+      const sku=payload.sku||current.sku;
       // Do not invent source IDs or variant keys for unresolved historical data.
       if(!sourceId||!(sourceVariantId||sku)){
         await client.query("INSERT INTO nawaa_v2_backfill_progress(legacy_id,outcome) VALUES($1,'unresolved') ON CONFLICT DO NOTHING",[row.id]);
         unresolved++;await client.query('COMMIT');continue;
       }
       const identityInput={...payload,sourceId,sourceListingId,sourceVariantId,sku,
-        sourceUrl:row.source_url,condition:row.condition||'new',
-        productPrice:Number(row.product_price),currency:row.currency,observedAt:row.observed_at};
+        sourceUrl:current.source_url,condition:current.condition||'new',
+        productPrice:Number(current.product_price),currency:current.currency,observedAt:current.observed_at};
       const ingestionId=deterministicUUID('legacy:'+row.id);
       try {
         const txPool={connect:async()=>({query:async(sql,args)=>{
