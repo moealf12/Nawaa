@@ -24,7 +24,13 @@ export async function backfillV2Snapshots(pool,{env=process.env,batchSize=25,sto
       await client.query('SELECT pg_advisory_xact_lock($1,$2)',[17031,Number(row.id)%2147483647]);
       const existing=await client.query('SELECT 1 FROM nawaa_v2_backfill_progress WHERE legacy_id=$1',[row.id]);
       if(existing.rowCount){await client.query('COMMIT');continue;}
-      // Lock and reread the canonical row after obtaining the migration lock.\n      // Otherwise a concurrent legacy price update can make the prefetched row stale.\n      const freshResult=await client.query(`SELECT source_url,merchant,sku,condition,product_price,currency,observed_at,payload\n        FROM nawaa_offers WHERE id=$1 FOR UPDATE`,[row.id]);\n      if(!freshResult.rowCount)throw new Error('legacy_row_disappeared');\n      const current=freshResult.rows[0];\n      const payload=current.payload||{};
+      // Lock and reread the canonical row after obtaining the migration lock. 
+      // Otherwise a concurrent legacy price update can make the prefetched row stale. 
+      const freshResult=await client.query(`SELECT source_url,merchant,sku,condition,product_price,currency,observed_at,payload 
+        FROM nawaa_offers WHERE id=$1 FOR UPDATE`,[row.id]); 
+      if(!freshResult.rowCount)throw new Error('legacy_row_disappeared'); 
+      const current=freshResult.rows[0]; 
+      const payload=current.payload||{};
       const sourceId=payload.sourceId||payload.sourceName;
       const sourceListingId=payload.sourceListingId||payload.sourceProductId;
       const sourceVariantId=payload.sourceVariantId||payload.variantId;
