@@ -70,6 +70,13 @@ async function assertExistingColumns(client){
     WHERE c.conrelid=to_regclass($1) AND c.contype='p'`,['public.'+table]);
   if(key.rows.length!==1||key.rows[0].definition!=='PRIMARY KEY ('+pk+')')
    throw new Error('incompatible_existing_schema:'+table+'.primary_key');
+  if(table==='nawaa_v2_shadow_attempts'){
+   const c=await client.query(`SELECT contype,pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid=to_regclass($1)`,['public.'+table]);
+   if(!c.rows.some(x=>x.contype==='u'&&x.def==='UNIQUE (event_id, claim_token)'))
+    throw new Error('incompatible_existing_schema:'+table+'.unique_event_claim');
+   if(!c.rows.some(x=>x.contype==='f'&&x.def.startsWith('FOREIGN KEY (event_id) REFERENCES nawaa_v2_shadow_outbox(event_id)')))
+    throw new Error('incompatible_existing_schema:'+table+'.event_foreign_key');
+  }
  }
 }
 
