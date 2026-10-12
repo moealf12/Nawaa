@@ -104,6 +104,9 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
   const client=await pool.connect();
   const claimed=[];
   try{
+    // The initial claim/dead-letter sweep also writes to the DB.
+    // Verify this exact session before its first transactional statement.
+    await attestEphemeralConnection(client,{env});
     await client.query('BEGIN');
     // A repeatedly crashing worker must not reclaim the same event forever.
     // On lease expiry, exhaust the retry budget and persist the terminal
