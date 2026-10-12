@@ -12,7 +12,7 @@ test('attempt table missing event claim uniqueness rejects without touching rows
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     event_id uuid NOT NULL REFERENCES nawaa_v2_shadow_outbox(event_id),
     claim_token uuid NOT NULL,attempt integer NOT NULL,outcome text NOT NULL)`);
-  await pool.query("INSERT INTO nawaa_v2_shadow_outbox(event_id) VALUES('00000000-0000-0000-0000-000000000002','{}','pending',0,3,now(),NULL,NULL)");
+  await pool.query("INSERT INTO nawaa_v2_shadow_outbox(event_id,offer,status,attempts,max_attempts,next_attempt_at,lease_until,claim_token) VALUES('00000000-0000-0000-0000-000000000002','{}','pending',0,3,now(),NULL,NULL)");
   await pool.query("INSERT INTO nawaa_v2_shadow_attempts(event_id,claim_token,attempt,outcome) VALUES('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000003',1,'retry')");
   await assert.rejects(rehearseV2Migrations(pool),/incompatible_existing_schema:nawaa_v2_shadow_attempts.unique_event_claim/);
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM nawaa_v2_shadow_attempts')).rows[0].n,1);
