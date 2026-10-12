@@ -37,4 +37,9 @@ test('required GitHub checks retain unique stable job identifiers',()=>{
   const pg=workflow('persistence-v2-evidence.yml');
   assert.doesNotMatch(search,/^  ephemeral-postgres:/m);
   assert.doesNotMatch(pg,/^  test:/m);
+  for(const source of [search,pg]) {
+    assert.match(source,/^concurrency:/m,'required workflows must cancel superseded runs');
+    assert.match(source,/cancel-in-progress: true/,'stale PR jobs should not consume CI minutes');
+    assert.match(source,/github.event.pull_request.number/,'concurrency must be PR-scoped');
+  }
 });
