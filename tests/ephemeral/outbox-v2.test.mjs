@@ -186,3 +186,27 @@ test('locked expired lease cannot block processing an unrelated pending event',a
  const final=(await pool.query('SELECT status FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[expiredId])).rows[0];
  assert.equal(final.status,'dead');
 });
+
+test('dead-letter sweep is bounded by max batch and eventually drains expired backlog',async()=>{
+ const ids=Array.from({length:5},()=>randomUUID());
+ for(const id of ids){
+  await commitLegacyAndOutbox(pool,base(randomUUID()),{eventId:id});
+  await pool.query(`UPDATE nawaa_v2_shadow_outbox
+   SET status='processing',attempts=max_attempts,claim_token=$2,
+       lease_until=now()-interval '5 minutes' WHERE event_id=$1`,[id,randomUUID()]);
+ }
+ const statusCounts=async()=>{
+  const rows=await pool.query('SELECT status,count(*)::int AS n FROM nawaa_v2_shadow_outbox WHERE event_id=ANY($1::uuid[]) GROUP BY status',[ids]);
+  return Object.fromEntries(rows.rows.map(r=>[r.status,r.n]));
+ };
+ await processShadowOutbox(pool,{max:2});
+ assert.deepEqual(await statusCounts(),{dead:2,processing:3});
+ await processShadowOutbox(pool,{max:2});
+ assert.deepEqual(await statusCounts(),{dead:4,processing:1});
+ await processShadowOutbox(pool,{max:2});
+ assert.deepEqual(await statusCounts(),{dead:5});
+ const audit=await pool.query('SELECT count(*)::int AS n FROM nawaa_v2_shadow_attempts WHERE event_id=ANY($1::uuid[]) AND outcome=$2',[ids,'dead']);
+ assert.equal(audit.rows[0].n,5);
+ const v2=await pool.query('SELECT count(*)::int AS n FROM nawaa_observation_v2 WHERE ingestion_id=ANY($1::uuid[])',[ids]);
+ assert.equal(v2.rows[0].n,0);
+});
