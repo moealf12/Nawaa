@@ -53,3 +53,6 @@ jobs:
             node --input-type=module -e "import pg from 'pg'; const db=new pg.Client({connectionString:process.env.DATABASE_URL,ssl:false}); await db.connect(); try { await db.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public'); } finally { await db.end(); }"
             node --test "$suite"
           done
+
+      - name: Verify isolated PostgreSQL backup and restore
+        run: node tests/ephemeral/restore-rehearsal.mjs
