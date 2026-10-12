@@ -80,10 +80,39 @@ try{
  let wrongTargetRejected=false;
  try{await verifyRestoredMigrationReplay(source)}catch(error){wrongTargetRejected=error.message==='restore_target_not_allowlisted'}
  if(!wrongTargetRejected)throw Error('restore_allowlist_not_enforced');
+ // Replay the ACTUAL runner against a fresh restored copy in the runner's
+ // existing exact allowlisted nawaa_ci database. The CI PostgreSQL service
+ // is disposable and its connection is attested by rehearseV2Migrations().
+ const restoreReplayStarted=Date.now();
+ const replayCopy=join(directory,'replay.dump');
+ run('pg_dump',['--format=custom','--no-owner','--no-privileges','--dbname',restored,'--file',replayCopy]);
+ await source.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public');
+ run('pg_restore',['--no-owner','--no-privileges','--exit-on-error','--dbname',root,replayCopy]);
+ const replayBaseline=await snapshot(source);
+ if(JSON.stringify(replayBaseline)!==JSON.stringify(expected))throw Error('replay_copy_mismatch');
+ const sequenceBaseline=await source.query(`SELECT s.relname, q.seqstart, q.seqincrement, q.seqmin, q.seqmax, q.seqcache, q.seqcycle,
+   p.last_value FROM pg_class s JOIN pg_sequence q ON q.seqrelid=s.oid
+   JOIN pg_namespace n ON n.oid=s.relnamespace
+   CROSS JOIN LATERAL pg_sequences p
+   WHERE n.nspname='public' AND p.schemaname='public' AND p.sequencename=s.relname
+   ORDER BY s.relname`);
+ for(let iteration=0;iteration<2;iteration++){
+  const actualReplay=await rehearseV2Migrations(source);
+  if(actualReplay.applied.length!==0||actualReplay.skipped!==4)throw Error('actual_runner_replay_not_idempotent');
+  if(JSON.stringify(await snapshot(source))!==JSON.stringify(replayBaseline))throw Error('actual_runner_changed_data');
+  const sequences=await source.query(`SELECT s.relname, q.seqstart, q.seqincrement, q.seqmin, q.seqmax, q.seqcache, q.seqcycle,
+    p.last_value FROM pg_class s JOIN pg_sequence q ON q.seqrelid=s.oid
+    JOIN pg_namespace n ON n.oid=s.relnamespace
+    CROSS JOIN LATERAL pg_sequences p
+    WHERE n.nspname='public' AND p.schemaname='public' AND p.sequencename=s.relname
+    ORDER BY s.relname`);
+  if(JSON.stringify(sequences.rows)!==JSON.stringify(sequenceBaseline.rows))throw Error('actual_runner_changed_sequences');
+ }
+ const actualReplayMs=Date.now()-restoreReplayStarted;
  const postChecks=await snapshot(restoredClient);
  if(JSON.stringify(postChecks)!==JSON.stringify(expected))throw Error('restored_integrity_changed_during_checks');
 
- process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1\n');
+ process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1 actual_runner_replays=2 actual_runner_applied=0\n');
 }finally{
  if(restoredClient)await restoredClient.end();
  const exists=await source.query('SELECT 1 FROM pg_database WHERE datname=$1',[target]);
