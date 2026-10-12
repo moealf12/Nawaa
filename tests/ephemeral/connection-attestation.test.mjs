@@ -62,3 +62,17 @@ test('unverifiable or malformed mock sessions fail closed before writes',async()
    server_address:'198.51.100.20',server_port:5432
  }]})},{env:validEnv}),/ephemeral_database_identity_mismatch/);
 });
+
+test('Docker bridge server address is valid only with local pg socket peer',async()=>{
+ const identity={rowCount:1,rows:[{
+   database_name:'nawaa_ci',database_user:'nawaa',login_user:'nawaa',
+   server_address:'172.20.0.3',server_port:5432
+ }]};
+ await attestEphemeralConnection({query:async()=>identity,connection:{stream:{remoteAddress:'127.0.0.1'}}},{env:validEnv});
+ await assert.rejects(attestEphemeralConnection({
+   query:async()=>identity,connection:{stream:{remoteAddress:'198.51.100.20'}}
+ },{env:validEnv}),/ephemeral_database_identity_mismatch/);
+ await assert.rejects(attestEphemeralConnection({
+   query:async()=>({rowCount:1,rows:[{...identity.rows[0],server_address:'8.8.8.8'}]})
+ },{env:validEnv}),/ephemeral_database_identity_mismatch/);
+});
