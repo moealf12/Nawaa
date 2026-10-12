@@ -90,22 +90,12 @@ try{
  run('pg_restore',['--no-owner','--no-privileges','--exit-on-error','--dbname',root,replayCopy]);
  const replayBaseline=await snapshot(source);
  if(JSON.stringify(replayBaseline)!==JSON.stringify(expected))throw Error('replay_copy_mismatch');
- const sequenceBaseline=await source.query(`SELECT s.relname, q.seqstart, q.seqincrement, q.seqmin, q.seqmax, q.seqcache, q.seqcycle,
-   p.last_value FROM pg_class s JOIN pg_sequence q ON q.seqrelid=s.oid
-   JOIN pg_namespace n ON n.oid=s.relnamespace
-   CROSS JOIN LATERAL pg_sequences p
-   WHERE n.nspname='public' AND p.schemaname='public' AND p.sequencename=s.relname
-   ORDER BY s.relname`);
+ const sequenceBaseline=await source.query(`SELECT schemaname, sequencename, start_value, min_value, max_value, increment_by, cycle, cache_size, last_value FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename`);
  for(let iteration=0;iteration<2;iteration++){
   const actualReplay=await rehearseV2Migrations(source);
   if(actualReplay.applied.length!==0||actualReplay.skipped!==4)throw Error('actual_runner_replay_not_idempotent');
   if(JSON.stringify(await snapshot(source))!==JSON.stringify(replayBaseline))throw Error('actual_runner_changed_data');
-  const sequences=await source.query(`SELECT s.relname, q.seqstart, q.seqincrement, q.seqmin, q.seqmax, q.seqcache, q.seqcycle,
-    p.last_value FROM pg_class s JOIN pg_sequence q ON q.seqrelid=s.oid
-    JOIN pg_namespace n ON n.oid=s.relnamespace
-    CROSS JOIN LATERAL pg_sequences p
-    WHERE n.nspname='public' AND p.schemaname='public' AND p.sequencename=s.relname
-    ORDER BY s.relname`);
+  const sequences=await source.query(`SELECT schemaname, sequencename, start_value, min_value, max_value, increment_by, cycle, cache_size, last_value FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename`);
   if(JSON.stringify(sequences.rows)!==JSON.stringify(sequenceBaseline.rows))throw Error('actual_runner_changed_sequences');
  }
  const actualReplayMs=Date.now()-restoreReplayStarted;
