@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import pg from 'pg';
 import {createHash} from 'node:crypto';
-import {V2_MIGRATIONS} from '../../server/persistence-v2-migration-rehearsal.mjs';
+import {V2_MIGRATIONS,verifyRestoredMigrationReplay} from '../../server/persistence-v2-migration-rehearsal.mjs';
 import {assertEphemeralDatabase,createEphemeralPool} from '../../server/persistence-v2.mjs';
 import {rehearseV2Migrations} from '../../server/persistence-v2-migration-rehearsal.mjs';
 
@@ -75,10 +75,15 @@ try{
  const ledger=await restoredClient.query('SELECT version,trim(checksum_sha256) AS checksum FROM nawaa_schema_migrations ORDER BY version');
  const expectedLedger=V2_MIGRATIONS.map(m=>({version:m.version,checksum:createHash('sha256').update(m.sql).digest('hex')}));
  if(JSON.stringify(ledger.rows)!==JSON.stringify(expectedLedger))throw Error('restored_migration_checksum_mismatch');
+ const replay=await verifyRestoredMigrationReplay(restoredClient);
+ if(replay.applied.length!==0||replay.skipped!==4)throw Error('restored_replay_not_idempotent');
+ let wrongTargetRejected=false;
+ try{await verifyRestoredMigrationReplay(source)}catch(error){wrongTargetRejected=error.message==='restore_target_not_allowlisted'}
+ if(!wrongTargetRejected)throw Error('restore_allowlist_not_enforced');
  const postChecks=await snapshot(restoredClient);
  if(JSON.stringify(postChecks)!==JSON.stringify(expected))throw Error('restored_integrity_changed_during_checks');
 
- process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4\n');
+ process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1\n');
 }finally{
  if(restoredClient)await restoredClient.end();
  const exists=await source.query('SELECT 1 FROM pg_database WHERE datname=$1',[target]);
