@@ -99,7 +99,7 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
         FROM nawaa_v2_shadow_outbox
         WHERE status='processing' AND lease_until<$1
           AND attempts>=max_attempts AND claim_token IS NOT NULL
-        FOR UPDATE
+        FOR UPDATE SKIP LOCKED
       ), exhausted AS (
         UPDATE nawaa_v2_shadow_outbox o
         SET status='dead',lease_until=NULL,claim_token=NULL,
