@@ -13,12 +13,12 @@ test('explicit enabled shadow requires isolated CI pool',async()=>{
  await assert.rejects(recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1'},legacy:async()=>({recorded:true}),v2:async()=>{}}),/ephemeral_pool/);
 });
 test('enabled shadow leaves successful legacy result untouched when shadow fails',async()=>{
- const r=await recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1'},v2Pool:{},legacy:async()=>({recorded:true}),v2:async()=>{throw new Error('test_failure')}});
+ const r=await recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci',DATABASE_SSL:'false'},v2Pool:{},legacy:async()=>({recorded:true}),v2:async()=>{throw new Error('test_failure')}});
  assert.equal(r.legacyResult.recorded,true);assert.equal(r.shadow.ok,false);
 });
 test('enabled shadow receives stable supplied job id',async()=>{
  let captured;const id='00000000-0000-4000-8000-000000000001';
- const r=await recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1'},v2Pool:{},ingestionId:id,legacy:async()=>({recorded:true}),v2:async(_p,_o,args)=>{captured=args.ingestionId;return {duplicate:false}}});
+ const r=await recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci',DATABASE_SSL:'false'},v2Pool:{},ingestionId:id,legacy:async()=>({recorded:true}),v2:async(_p,_o,args)=>{captured=args.ingestionId;return {duplicate:false}}});
  assert.equal(captured,id);assert.equal(r.shadow.ok,true);
 });
 
@@ -29,4 +29,15 @@ test('V2 schema bootstrap rejects production-like database before opening connec
  await assert.rejects(initV2(unsafePool,{env}),/ephemeral_database_only/);
  await assert.rejects(initShadowOutbox(unsafePool,{env}),/ephemeral_database_only/);
  assert.equal(connects,0,'invalid environment must not open SQL connections');
+});
+
+test('invalid opt-in shadow configuration fails before any legacy side effects',async()=>{
+ let legacy=0,shadow=0;
+ const bad={NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',
+   DATABASE_URL:'postgresql://production.example.net/nawaa',DATABASE_SSL:'false'};
+ await assert.rejects(recordOfferWithV2Shadow(offer,{env:bad,v2Pool:{},
+   legacy:async()=>{legacy++;return {recorded:true}},
+   v2:async()=>{shadow++}}),/ephemeral_database_only/);
+ assert.equal(legacy,0,'invalid config must not commit a legacy observation');
+ assert.equal(shadow,0);
 });
