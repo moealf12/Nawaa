@@ -17,7 +17,7 @@ test('migrator owns DDL; app and verifier cannot mutate schema; verifier cannot 
   const worker='ci_worker_'+suffix;
   const verifier='ci_verifier_'+suffix;
   const roles=[migrator,app,worker,verifier];
-  const q=s=>client.query(s);
+  const q=(s,params)=>client.query(s,params);
   const asRole=async(role,fn)=>{
     await q('BEGIN');
     try {
