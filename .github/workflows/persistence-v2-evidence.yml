@@ -42,6 +42,14 @@ jobs:
       DATABASE_SSL: 'false'
     steps:
       - uses: actions/checkout@v4
+      - name: Verify PR merge checkout provenance
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" =~ ^refs/pull/[0-9]+/merge$ ]] || { echo 'expected_pr_merge_ref'; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || { echo 'checkout_not_at_merge_sha'; exit 1; }
+          echo "verified_merge_ref=$GITHUB_REF base=$GITHUB_BASE_REF sha=$GITHUB_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
