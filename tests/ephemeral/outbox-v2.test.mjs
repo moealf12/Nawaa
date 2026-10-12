@@ -139,3 +139,16 @@ test('repeated worker crashes exhaust bounded retries and create one durable dea
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id])).rows[0].n,1);
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,0);
 });
+
+test('outbox delivery preserves V2 receipt identity and rejects changed metadata replay',async()=>{
+ const id=randomUUID(),a={...base(randomUUID()),title:'Integrated original',metadata:{z:1,a:2}};
+ await commitLegacyAndOutbox(pool,a,{eventId:id});
+ const delivered=await processShadowOutbox(pool,{max:100});
+ assert.ok(delivered.some(x=>x.id===id&&x.status==='completed'));
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
+ await assert.rejects(commitLegacyAndOutbox(pool,{...a,title:'Modified after commit'},{eventId:id}),/event_id_payload_conflict/);
+ const rows=await pool.query('SELECT status FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id]);
+ assert.equal(rows.rows[0].status,'completed');
+ await processShadowOutbox(pool,{max:100});
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
+});
