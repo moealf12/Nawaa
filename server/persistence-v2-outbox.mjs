@@ -99,19 +99,25 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
         SELECT event_id,claim_token,attempts
         FROM nawaa_v2_shadow_outbox
         WHERE status='processing' AND lease_until<$1
-          AND attempts>=max_attempts AND claim_token IS NOT NULL
+          AND attempts>=max_attempts
         ORDER BY lease_until,event_id
         LIMIT $2
         FOR UPDATE SKIP LOCKED
       ), exhausted AS (
         UPDATE nawaa_v2_shadow_outbox o
         SET status='dead',lease_until=NULL,claim_token=NULL,
-            last_error='lease_expired_retry_budget_exhausted'
+            last_error=CASE WHEN e.claim_token IS NULL
+              THEN 'legacy_null_claim_token_retry_budget_exhausted'
+              ELSE 'lease_expired_retry_budget_exhausted' END
         FROM eligible e WHERE o.event_id=e.event_id
-        RETURNING e.event_id,e.claim_token AS previous_token,e.attempts
+        RETURNING e.event_id,COALESCE(e.claim_token,e.event_id) AS audit_token,
+                  e.attempts,(e.claim_token IS NULL) AS legacy_missing_token
       )
       INSERT INTO nawaa_v2_shadow_attempts(event_id,claim_token,attempt,outcome,error)
-      SELECT event_id,previous_token,attempts,'dead','lease_expired_retry_budget_exhausted'
+      SELECT event_id,audit_token,attempts,'dead',
+        CASE WHEN legacy_missing_token
+          THEN 'legacy_null_claim_token_retry_budget_exhausted'
+          ELSE 'lease_expired_retry_budget_exhausted' END
       FROM exhausted ON CONFLICT(event_id,claim_token) DO NOTHING`,[now,max]);
     const rows=await client.query(`
       SELECT event_id,offer,attempts,max_attempts FROM nawaa_v2_shadow_outbox
