@@ -6,9 +6,21 @@ import {recordOfferV2,assertEphemeralDatabase} from './persistence-v2.mjs';
 export async function backfillV2Snapshots(pool,{env=process.env,batchSize=25,stopAfter=Infinity}={}) {
   assertEphemeralDatabase(env);
   if(!Number.isInteger(batchSize)||batchSize<1||batchSize>100)throw new Error('invalid_batch_size');
-  await pool.query(`CREATE TABLE IF NOT EXISTS nawaa_v2_backfill_progress(
-    legacy_id bigint PRIMARY KEY, outcome text NOT NULL CHECK(outcome IN ('copied','unresolved')),
-    processed_at timestamptz NOT NULL DEFAULT now())`);
+  // PostgreSQL's CREATE TABLE IF NOT EXISTS is not concurrency-safe against
+  // simultaneous catalog creation; use a dedicated transaction-scoped DDL lock.
+  // Keep this separate from per-row backfill advisory locks (namespace 17031).
+  const initClient=await pool.connect();
+  try{
+    await initClient.query('BEGIN');
+    await initClient.query('SELECT pg_advisory_xact_lock($1,$2)',[17032,1]);
+    await initClient.query(`CREATE TABLE IF NOT EXISTS nawaa_v2_backfill_progress(
+      legacy_id bigint PRIMARY KEY, outcome text NOT NULL CHECK(outcome IN ('copied','unresolved')),
+      processed_at timestamptz NOT NULL DEFAULT now())`);
+    await initClient.query('COMMIT');
+  }catch(error){
+    try{await initClient.query('ROLLBACK')}catch{}
+    throw error;
+  }finally{initClient.release()}
   let copied=0,unresolved=0;
   while(copied+unresolved<stopAfter){
     const items=await pool.query(`SELECT id,source_url,merchant,sku,condition,product_price,currency,observed_at,payload
