@@ -44,6 +44,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Bind owned PostgreSQL service endpoint
+        shell: bash
+        env:
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          test -n "$POSTGRES_SERVICE_ID"
+          SERVICE_IPV4=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$POSTGRES_SERVICE_ID")
+          [[ "$SERVICE_IPV4" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "NAWAA_CI_OWNED_SERVICE_IPV4=$SERVICE_IPV4" >> "$GITHUB_ENV"
+          echo "owned_postgres_service_endpoint_verified=1"
       - run: npm ci --ignore-scripts
       - name: Verify real PostgreSQL transaction evidence
         run: |
