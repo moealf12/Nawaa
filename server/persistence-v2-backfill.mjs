@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {recordOfferV2,assertEphemeralDatabase} from './persistence-v2.mjs';
+import {recordOfferV2,assertEphemeralDatabase,attestEphemeralConnection} from './persistence-v2.mjs';
 
 // Re-runnable isolated migration of legacy canonical snapshots. Never mutates
 // legacy tables or claims to reconstruct missing historical observations.
@@ -11,6 +11,7 @@ export async function backfillV2Snapshots(pool,{env=process.env,batchSize=25,sto
   // Keep this separate from per-row backfill advisory locks (namespace 17031).
   const initClient=await pool.connect();
   try{
+    await attestEphemeralConnection(initClient,{env});
     await initClient.query('BEGIN');
     await initClient.query('SELECT pg_advisory_xact_lock($1,$2)',[17032,1]);
     await initClient.query(`CREATE TABLE IF NOT EXISTS nawaa_v2_backfill_progress(
@@ -23,15 +24,21 @@ export async function backfillV2Snapshots(pool,{env=process.env,batchSize=25,sto
   }finally{initClient.release()}
   let copied=0,unresolved=0;
   while(copied+unresolved<stopAfter){
-    const items=await pool.query(`SELECT id,source_url,merchant,sku,condition,product_price,currency,observed_at,payload
-      FROM nawaa_offers WHERE id NOT IN(SELECT legacy_id FROM nawaa_v2_backfill_progress)
-      ORDER BY id ASC LIMIT $1`,[Math.min(batchSize,stopAfter-copied-unresolved)]);
+    const readClient=await pool.connect();
+    let items;
+    try{
+      await attestEphemeralConnection(readClient,{env});
+      items=await readClient.query(`SELECT id,source_url,merchant,sku,condition,product_price,currency,observed_at,payload
+        FROM nawaa_offers WHERE id NOT IN(SELECT legacy_id FROM nawaa_v2_backfill_progress)
+        ORDER BY id ASC LIMIT $1`,[Math.min(batchSize,stopAfter-copied-unresolved)]);
+    }finally{readClient.release()}
     if(!items.rows.length)break;
     for(const row of items.rows) {
       // Per-row advisory lock makes separate workers serialize before checking
       // progress; the lock and marker are committed with the V2 observation.
       const client=await pool.connect();
       try {
+      await attestEphemeralConnection(client,{env});
       await client.query('BEGIN');
       await client.query('SELECT pg_advisory_xact_lock($1,$2)',[17031,Number(row.id)%2147483647]);
       const existing=await client.query('SELECT 1 FROM nawaa_v2_backfill_progress WHERE legacy_id=$1',[row.id]);
@@ -64,7 +71,7 @@ export async function backfillV2Snapshots(pool,{env=process.env,batchSize=25,sto
           if(cmd==='ROLLBACK')return client.query('ROLLBACK TO SAVEPOINT nawaa_backfill_v2');
           return client.query(sql,args);
         },release:()=>{}})};
-        await recordOfferV2(txPool,identityInput,{ingestionId});
+        await recordOfferV2(txPool,identityInput,{ingestionId,env});
         await client.query("INSERT INTO nawaa_v2_backfill_progress(legacy_id,outcome) VALUES($1,'copied') ON CONFLICT DO NOTHING",[row.id]);
         copied++;await client.query('COMMIT');
       }catch(error){
