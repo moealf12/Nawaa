@@ -41,6 +41,13 @@ const REQUIRED_COLUMNS={
 };
 async function assertExistingColumns(client){
  for(const [table,expected] of Object.entries(REQUIRED_COLUMNS)){
+  // PostgreSQL regclass also resolves views and indexes: require an ordinary or
+  // partitioned table, never a name-only substitute.
+  const kind=await client.query(`SELECT c.relkind FROM pg_class c
+    JOIN pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='public' AND c.relname=$1`,[table]);
+  if(kind.rows.length && !['r','p'].includes(kind.rows[0].relkind))
+   throw new Error('incompatible_existing_schema:'+table+'.object_kind');
   const r=await client.query(`SELECT a.attname AS name,
     pg_catalog.format_type(a.atttypid,a.atttypmod) AS type
     FROM pg_catalog.pg_attribute a
