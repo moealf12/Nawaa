@@ -3,6 +3,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import pg from 'pg';
+import {createHash} from 'node:crypto';
+import {V2_MIGRATIONS} from '../../server/persistence-v2-migration-rehearsal.mjs';
 import {assertEphemeralDatabase,createEphemeralPool} from '../../server/persistence-v2.mjs';
 import {rehearseV2Migrations} from '../../server/persistence-v2-migration-rehearsal.mjs';
 
@@ -70,7 +72,13 @@ try{
  }
  const versions=await restoredClient.query('SELECT version FROM nawaa_schema_migrations ORDER BY version');
  if(versions.rows.map(x=>x.version).join(',')!=='v2_0001,v2_0002,v2_0003,v2_0004')throw Error('restored_ledger_invalid');
- process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2\n');
+ const ledger=await restoredClient.query('SELECT version,trim(checksum_sha256) AS checksum FROM nawaa_schema_migrations ORDER BY version');
+ const expectedLedger=V2_MIGRATIONS.map(m=>({version:m.version,checksum:createHash('sha256').update(m.sql).digest('hex')}));
+ if(JSON.stringify(ledger.rows)!==JSON.stringify(expectedLedger))throw Error('restored_migration_checksum_mismatch');
+ const postChecks=await snapshot(restoredClient);
+ if(JSON.stringify(postChecks)!==JSON.stringify(expected))throw Error('restored_integrity_changed_during_checks');
+
+ process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4\n');
 }finally{
  if(restoredClient)await restoredClient.end();
  const exists=await source.query('SELECT 1 FROM pg_database WHERE datname=$1',[target]);
