@@ -32,7 +32,13 @@ test('migrator owns DDL; app and verifier cannot mutate schema; verifier cannot 
     await q('CREATE SCHEMA "'+schema+'" AUTHORIZATION "'+migrator+'"');
     await q('REVOKE ALL ON SCHEMA "'+schema+'" FROM PUBLIC');
     for(const role of [app,worker,verifier])await q('GRANT USAGE ON SCHEMA "'+schema+'" TO "'+role+'"');
-    await asRole(migrator,async()=>await q('CREATE TABLE "'+schema+'".offers (id integer PRIMARY KEY, price integer NOT NULL)'));
+    // Commit the migrator-owned DDL; negative role assertions run in rollback-only transactions.
+    await q('BEGIN');
+    try {
+      await q('SET LOCAL ROLE "'+migrator+'"');
+      await q('CREATE TABLE "'+schema+'".offers (id integer PRIMARY KEY, price integer NOT NULL)');
+      await q('COMMIT');
+    } catch(error) { await q('ROLLBACK'); throw error; }
     await q('GRANT SELECT,INSERT,UPDATE ON "'+schema+'".offers TO "'+app+'"');
     await q('GRANT SELECT,UPDATE ON "'+schema+'".offers TO "'+worker+'"');
     await q('GRANT SELECT ON "'+schema+'".offers TO "'+verifier+'"');
