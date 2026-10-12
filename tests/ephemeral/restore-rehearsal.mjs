@@ -50,9 +50,27 @@ try{
  (SELECT count(*) FROM pg_constraint WHERE conrelid='nawaa_observation_v2'::regclass AND contype='f') AS foreign_keys,
  (SELECT count(*) FROM pg_constraint WHERE conrelid='nawaa_observation_v2'::regclass AND contype='u') AS unique_keys`);
  if(Number(invariant.rows[0].triggers)!==1||Number(invariant.rows[0].foreign_keys)!==1||Number(invariant.rows[0].unique_keys)!==1)throw Error('restored_schema_invariant_missing');
+ // Behavioral evidence: restored observation rows must reject both mutations.
+ const original=await restoredClient.query('SELECT id,product_price FROM nawaa_observation_v2 ORDER BY id');
+ for(const sql of ["UPDATE nawaa_observation_v2 SET product_price=1 WHERE id=$1","DELETE FROM nawaa_observation_v2 WHERE id=$1"]){
+  let rejected=false;
+  try{await restoredClient.query(sql,[original.rows[0].id])}catch(error){rejected=error.message.includes('v2_observations_immutable')}
+  if(!rejected)throw Error('restored_observation_mutation_not_rejected');
+ }
+ const unchanged=await restoredClient.query('SELECT id,product_price FROM nawaa_observation_v2 ORDER BY id');
+ if(JSON.stringify(unchanged.rows)!==JSON.stringify(original.rows))throw Error('restored_observation_was_modified');
+ // A restored receipt cannot be duplicated, and a broken observation FK is rejected.
+ for(const [sql,code] of [
+  ["INSERT INTO nawaa_v2_receipts(ingestion_id,offer_key,content_digest) VALUES('00000000-0000-0000-0000-000000000097','duplicate','digest')",'23505'],
+  ["INSERT INTO nawaa_observation_v2(offer_key,ingestion_id,source_id,product_price,currency,observed_at) VALUES('missing-offer','00000000-0000-4000-8000-000000000095','source',12,'SAR',now())",'23503']
+ ]){
+  let rejected=false;
+  try{await restoredClient.query(sql)}catch(error){rejected=error.code===code}
+  if(!rejected)throw Error('restored_constraint_not_enforced:'+code);
+ }
  const versions=await restoredClient.query('SELECT version FROM nawaa_schema_migrations ORDER BY version');
  if(versions.rows.map(x=>x.version).join(',')!=='v2_0001,v2_0002,v2_0003,v2_0004')throw Error('restored_ledger_invalid');
- process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3\n');
+ process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2\n');
 }finally{
  if(restoredClient)await restoredClient.end();
  const exists=await source.query('SELECT 1 FROM pg_database WHERE datname=$1',[target]);
