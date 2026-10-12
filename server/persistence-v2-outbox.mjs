@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {deriveOfferIdentityV2} from './offer-identity-v2.mjs';
-import {recordOfferV2,assertEphemeralDatabase} from './persistence-v2.mjs';
+import {recordOfferV2,assertEphemeralDatabase,attestEphemeralConnection} from './persistence-v2.mjs';
 
 // Explicitly isolated CI prototype; NOT wired into current recordOffer or customer search.
 // Both the legacy insert and outbox intent are committed by the SAME SQL transaction.
@@ -10,6 +10,7 @@ export async function initShadowOutbox(pool,{env=process.env}={}) {
   // A separate advisory lock from initV2 avoids DDL catalog races.
   const client=await pool.connect();
   try{
+    await attestEphemeralConnection(client,{env});
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock($1,$2)',[17033,2]);
     await client.query(`
@@ -46,7 +47,8 @@ CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_outbox_expired ON nawaa_v2_shadow_out
 // Accept a caller-owned PostgreSQL transaction. The caller must commit or
 // roll back the legacy observation, canonical upsert and this intent together.
 // Reusing the same event ID with different JSONB contents fails closed.
-export async function enqueueShadowIntentTx(tx, offer, {eventId}={}) {
+export async function enqueueShadowIntentTx(tx, offer, {eventId,env=process.env}={}) {
+  await attestEphemeralConnection(tx,{env});
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(eventId||'')))
     throw new Error('invalid_shadow_event_id');
   deriveOfferIdentityV2(offer);
@@ -72,11 +74,12 @@ export async function commitLegacyAndOutbox(pool,offer,{eventId=randomUUID(),env
     throw new Error('invalid_legacy_offer');
   const client=await pool.connect();
   try {
+    await attestEphemeralConnection(client,{env});
     await client.query('BEGIN');
     // Reserve this event ID first, inside the same transaction as legacy write.
     // A concurrent retry waits on the unique key and then reads the committed
     // receipt, rather than failing after touching the canonical row.
-    const intent=await enqueueShadowIntentTx(client,offer,{eventId});
+    const intent=await enqueueShadowIntentTx(client,offer,{eventId,env});
     if(intent.duplicate){
       await client.query('COMMIT');
       return {eventId,duplicate:true};
@@ -151,6 +154,7 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
     // cannot supersede us between the token check and the persistent write.
     const owner=await pool.connect();
     try{
+      await attestEphemeralConnection(owner,{env});
       await owner.query('BEGIN');
       const active=await owner.query(`SELECT claim_token,status,lease_until
         FROM nawaa_v2_shadow_outbox WHERE event_id=$1 FOR UPDATE`,[row.event_id]);
@@ -195,7 +199,13 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
       try{await owner.query('ROLLBACK')}catch{}
       const dead=row.attempts+1>=row.max_attempts;
       const errorText=String(e?.message||e).slice(0,200);
-      const result=await pool.query(`WITH claim AS (
+      // Reattest the connection used for failure-state writes; pool.query
+      // could otherwise select a different (injected) connection.
+      const failureClient=await pool.connect();
+      let result;
+      try {
+        await attestEphemeralConnection(failureClient,{env});
+        result=await failureClient.query(`WITH claim AS (
         UPDATE nawaa_v2_shadow_outbox SET
           status=$2,lease_until=NULL,claim_token=NULL,
           next_attempt_at=now()+(power(2,LEAST(attempts,8))*interval '1 second'),
@@ -206,6 +216,7 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
       INSERT INTO nawaa_v2_shadow_attempts(event_id,claim_token,attempt,outcome,error)
         SELECT event_id,$4,attempts,$5,$3 FROM claim RETURNING id`,
         [row.event_id,dead?'dead':'pending',errorText,row.claimToken,dead?'dead':'retry']);
+      }finally{failureClient.release()}
       outcomes.push({id:row.event_id,status:result.rowCount===1?(dead?'dead':'pending'):'stale'});
     }finally{owner.release()}
   }
