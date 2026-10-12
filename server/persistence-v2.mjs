@@ -38,7 +38,9 @@ export async function attestEphemeralConnection(client,{env=process.env}={}) {
   // For actual pg clients, also verify the socket's peer is local.
   // Savepoint query adapters have no stream; their owning client is separately attested.
   const peer=client?.connection?.stream?.remoteAddress;
-  const localPeer=peer===undefined||peer==='127.0.0.1'||peer==='::1'||peer==='::ffff:127.0.0.1';
+  // A pg client exposing connection metadata must provide a verifiable peer.
+  // Query-only transaction adapters are handled by their separately attested owner.
+  const localPeer=(!client?.connection && peer===undefined)||peer==='127.0.0.1'||peer==='::1'||peer==='::ffff:127.0.0.1';
   if(result?.rowCount!==1 ||
      row?.database_name!=='nawaa_ci' ||
      row?.database_user!=='nawaa' ||
