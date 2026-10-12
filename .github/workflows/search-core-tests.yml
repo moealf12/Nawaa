@@ -30,9 +30,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # Default checkout verifies the synthetic PR merge commit, not just the head branch.
+      # This detects regressions introduced by interaction with the target branch.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
