@@ -7,6 +7,33 @@ import {backfillV2Snapshots} from '../../server/persistence-v2-backfill.mjs';
 const pool=createEphemeralPool();
 await initPersistence(); await initV2(pool);
 test.after(async()=>pool.end());
+test('cold backfill bootstrap serializes concurrent PostgreSQL DDL',async()=>{
+ const existing=(await pool.query("SELECT to_regclass('public.nawaa_v2_backfill_progress') AS rel")).rows[0].rel;
+ assert.equal(existing,null,'ephemeral test starts before progress-table initialization');
+ const blocker=await pool.connect();
+ const jobs=[];
+ try{
+   await blocker.query('BEGIN');
+   await blocker.query('SELECT pg_advisory_xact_lock($1,$2)',[17032,1]);
+   jobs.push(backfillV2Snapshots(pool,{stopAfter:0}));
+   jobs.push(backfillV2Snapshots(pool,{stopAfter:0}));
+   let waiters=0;
+   const deadline=Date.now()+2500;
+   while(Date.now()<deadline && waiters<2){
+     const result=await pool.query(`SELECT count(*)::int AS n FROM pg_stat_activity
+       WHERE datname=current_database() AND wait_event_type='Lock' AND wait_event='advisory'`);
+     waiters=result.rows[0].n;
+     if(waiters<2)await new Promise(resolve=>setTimeout(resolve,25));
+   }
+   assert.equal(waiters,2,'both concurrent initializers must wait on the same DDL advisory lock');
+   assert.equal((await pool.query("SELECT to_regclass('public.nawaa_v2_backfill_progress') AS rel")).rows[0].rel,null);
+ }finally{
+   try{await blocker.query('ROLLBACK')}finally{blocker.release()}
+ }
+ await Promise.all(jobs);
+ assert.equal((await pool.query("SELECT to_regclass('public.nawaa_v2_backfill_progress') IS NOT NULL AS present")).rows[0].present,true);
+});
+
 test('two backfill workers serialize each legacy snapshot and preserve variants',async()=>{
  const name=randomUUID();
  for(const variant of ['128','256']){
