@@ -199,13 +199,12 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
       try{await owner.query('ROLLBACK')}catch{}
       const dead=row.attempts+1>=row.max_attempts;
       const errorText=String(e?.message||e).slice(0,200);
-      // Reattest the connection used for failure-state writes; pool.query
-      // could otherwise select a different (injected) connection.
-      const failureClient=await pool.connect();
-      let result;
-      try {
-        await attestEphemeralConnection(failureClient,{env});
-        result=await failureClient.query(`WITH claim AS (
+      // Reuse the already-owned session after ROLLBACK. Borrowing a second
+      // connection here deadlocks when the pool max is 1 or fully saturated.
+      // If this session was lost, fail closed and let the lease recovery path
+      // handle it rather than issuing an unauthenticated write elsewhere.
+      await attestEphemeralConnection(owner,{env});
+      const result=await owner.query(`WITH claim AS (
         UPDATE nawaa_v2_shadow_outbox SET
           status=$2,lease_until=NULL,claim_token=NULL,
           next_attempt_at=now()+(power(2,LEAST(attempts,8))*interval '1 second'),
@@ -216,7 +215,6 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
       INSERT INTO nawaa_v2_shadow_attempts(event_id,claim_token,attempt,outcome,error)
         SELECT event_id,$4,attempts,$5,$3 FROM claim RETURNING id`,
         [row.event_id,dead?'dead':'pending',errorText,row.claimToken,dead?'dead':'retry']);
-      }finally{failureClient.release()}
       outcomes.push({id:row.event_id,status:result.rowCount===1?(dead?'dead':'pending'):'stale'});
     }finally{owner.release()}
   }
