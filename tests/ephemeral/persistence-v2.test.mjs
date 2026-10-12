@@ -60,3 +60,15 @@ test('reusing an ingestion UUID with changed listing metadata is rejected',async
  const rows=await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id]);
  assert.equal(rows.rows[0].n,1);
 });
+
+test('same ingestion UUID replays equivalent payload despite key insertion order',async()=>{
+ const a=offer('receipt-order-'+randomUUID(),{title:'Equivalent',metadata:{z:1,a:{last:2,first:1}}});
+ const id=randomUUID();
+ const first=await recordOfferV2(pool,a,{ingestionId:id});
+ const reordered={metadata:{a:{first:1,last:2},z:1},...a};
+ reordered.metadata={a:{first:1,last:2},z:1};
+ const replay=await recordOfferV2(pool,reordered,{ingestionId:id});
+ assert.equal(first.duplicate,false);
+ assert.equal(replay.duplicate,true);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
+});
