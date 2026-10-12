@@ -1,4 +1,4 @@
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -18,6 +18,10 @@ const restored=root.replace(/\/nawaa_ci$/,'/'+target);
 const credentials={...process.env,PGPASSWORD:'nawaa_ci'};
 const run=(bin,args)=>execFileSync(bin,args,{env:credentials,stdio:'pipe',timeout:120000});
 let restoredClient;
+const measured={};
+const clock=()=>process.hrtime.bigint();
+const elapsedMs=start=>Number(process.hrtime.bigint()-start)/1e6;
+const totalStarted=clock();
 try{
  run('pg_dump',['--version']);
  run('pg_restore',['--version']);
@@ -41,10 +45,19 @@ try{
  const exists=await source.query('SELECT 1 FROM pg_database WHERE datname=$1',[target]);
  if(exists.rowCount)throw Error('restore_target_already_exists');
  await source.query('CREATE DATABASE '+target);
+ if(process.env.NAWAA_CI_INJECT_RESTORE_FAILURE==='1'){
+  const corrupt=join(directory,'corrupt.dump');
+  await writeFile(corrupt,'not a PostgreSQL custom-format backup');
+  run('pg_restore',['--exit-on-error','--dbname',restored,corrupt]);
+  throw Error('injected_restore_unexpected_success');
+ }
+ const restoreStarted=clock();
  run('pg_dump',['--format=custom','--no-owner','--no-privileges','--dbname',root,'--file',dump]);
  run('pg_restore',['--no-owner','--no-privileges','--exit-on-error','--dbname',restored,dump]);
  restoredClient=new pg.Client({connectionString:restored,ssl:false});
  await restoredClient.connect();
+ measured.restore_ms=elapsedMs(restoreStarted);
+ const validationStarted=clock();
  const actual=await snapshot(restoredClient);
  if(JSON.stringify(actual)!==JSON.stringify(expected))throw Error('restored_snapshot_mismatch');
  const invariant=await restoredClient.query(`SELECT
@@ -83,7 +96,8 @@ try{
  // Replay the ACTUAL runner against a fresh restored copy in the runner's
  // existing exact allowlisted nawaa_ci database. The CI PostgreSQL service
  // is disposable and its connection is attested by rehearseV2Migrations().
- const restoreReplayStarted=Date.now();
+ measured.validation_ms=elapsedMs(validationStarted);
+ const restoreReplayStarted=clock();
  const replayCopy=join(directory,'replay.dump');
  run('pg_dump',['--format=custom','--no-owner','--no-privileges','--dbname',restored,'--file',replayCopy]);
  await source.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public');
@@ -92,17 +106,20 @@ try{
  if(JSON.stringify(replayBaseline)!==JSON.stringify(expected))throw Error('replay_copy_mismatch');
  const sequenceBaseline=await source.query(`SELECT schemaname, sequencename, start_value, min_value, max_value, increment_by, cycle, cache_size, last_value FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename`);
  for(let iteration=0;iteration<2;iteration++){
+  const replayStarted=clock();
   const actualReplay=await rehearseV2Migrations(source);
+  measured['replay_'+(iteration+1)+'_ms']=elapsedMs(replayStarted);
   if(actualReplay.applied.length!==0||actualReplay.skipped!==4)throw Error('actual_runner_replay_not_idempotent');
   if(JSON.stringify(await snapshot(source))!==JSON.stringify(replayBaseline))throw Error('actual_runner_changed_data');
   const sequences=await source.query(`SELECT schemaname, sequencename, start_value, min_value, max_value, increment_by, cycle, cache_size, last_value FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename`);
   if(JSON.stringify(sequences.rows)!==JSON.stringify(sequenceBaseline.rows))throw Error('actual_runner_changed_sequences');
  }
- const actualReplayMs=Date.now()-restoreReplayStarted;
+ measured.copy_and_replay_ms=elapsedMs(restoreReplayStarted);
  const postChecks=await snapshot(restoredClient);
  if(JSON.stringify(postChecks)!==JSON.stringify(expected))throw Error('restored_integrity_changed_during_checks');
 
- process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1 actual_runner_replays=2 actual_runner_applied=0\n');
+ measured.end_to_end_ms=elapsedMs(totalStarted);
+ process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1 actual_runner_replays=2 actual_runner_applied=0 '+Object.entries(measured).map(([key,value])=>key+'='+value.toFixed(2)).join(' ')+'\\n');
 }finally{
  if(restoredClient)await restoredClient.end();
  const exists=await source.query('SELECT 1 FROM pg_database WHERE datname=$1',[target]);
