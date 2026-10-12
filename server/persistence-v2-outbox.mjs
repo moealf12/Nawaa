@@ -190,7 +190,7 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
           release:()=>{},
         }),
       };
-      await worker(nestedPool,row.offer,{ingestionId:row.event_id});
+      await worker(nestedPool,row.offer,{ingestionId:row.event_id,env});
       await owner.query(`UPDATE nawaa_v2_shadow_outbox
         SET status='completed',completed_at=now(),lease_until=NULL,claim_token=NULL,last_error=NULL
         WHERE event_id=$1 AND claim_token=$2`,[row.event_id,row.claimToken]);
