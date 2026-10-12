@@ -2,6 +2,11 @@ name: NAWAA Phase Zero Persistence V2 Evidence
 on:
   pull_request:
   workflow_dispatch:
+concurrency:
+  # Save public-runner time by superseding stale CI after a new PR commit.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 jobs:
