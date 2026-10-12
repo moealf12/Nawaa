@@ -54,5 +54,17 @@ jobs:
             node --test "$suite"
           done
 
+      - name: Prove failed restore cleans disposable resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          if NAWAA_CI_INJECT_RESTORE_FAILURE=1 node tests/ephemeral/restore-rehearsal.mjs >restore-failure.log 2>&1; then
+            echo "injected_restore_unexpected_success"
+            exit 1
+          fi
+          grep -q "input file does not appear to be a valid archive" restore-failure.log
+          node --input-type=module -e "import pg from 'pg'; const c=new pg.Client({connectionString:process.env.DATABASE_URL,ssl:false}); await c.connect(); try { const x=await c.query(\"SELECT count(*)::int AS n FROM pg_database WHERE datname='nawaa_restore_ci'\"); if(x.rows[0].n!==0)throw Error('restore_cleanup_failed'); } finally { await c.end(); }"
+          echo "injected_restore_failure_verified cleanup=1"
+          rm -f restore-failure.log
       - name: Verify isolated PostgreSQL backup and restore
         run: node tests/ephemeral/restore-rehearsal.mjs
