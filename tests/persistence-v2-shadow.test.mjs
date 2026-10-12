@@ -4,6 +4,10 @@ import {recordOfferWithV2Shadow} from '../server/persistence-v2-shadow.mjs';
 import {initV2} from '../server/persistence-v2.mjs';
 import {initShadowOutbox} from '../server/persistence-v2-outbox.mjs';
 const offer={title:'Demo',sourceUrl:'https://example.com/a',productPrice:50,currency:'SAR'};
+const attestedFixturePool={connect:async()=>({
+  query:async()=>({rowCount:1,rows:[{database_name:'nawaa_ci',database_user:'nawaa',login_user:'nawaa',server_address:'127.0.0.1',server_port:5432}]}),
+  release:()=>{}
+})};
 test('shadow is disabled by default and legacy always runs',async()=>{
  let legacy=0,shadow=0;
  const result=await recordOfferWithV2Shadow(offer,{env:{},legacy:async()=>{legacy++;return {recorded:true}},v2:async()=>{shadow++}});
@@ -13,12 +17,12 @@ test('explicit enabled shadow requires isolated CI pool',async()=>{
  await assert.rejects(recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1'},legacy:async()=>({recorded:true}),v2:async()=>{}}),/ephemeral_pool/);
 });
 test('enabled shadow leaves successful legacy result untouched when shadow fails',async()=>{
- const r=await recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci',DATABASE_SSL:'false'},v2Pool:{},legacy:async()=>({recorded:true}),v2:async()=>{throw new Error('test_failure')}});
+ const r=await recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci',DATABASE_SSL:'false'},v2Pool:attestedFixturePool,legacy:async()=>({recorded:true}),v2:async()=>{throw new Error('test_failure')}});
  assert.equal(r.legacyResult.recorded,true);assert.equal(r.shadow.ok,false);
 });
 test('enabled shadow receives stable supplied job id',async()=>{
  let captured;const id='00000000-0000-4000-8000-000000000001';
- const r=await recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci',DATABASE_SSL:'false'},v2Pool:{},ingestionId:id,legacy:async()=>({recorded:true}),v2:async(_p,_o,args)=>{captured=args.ingestionId;return {duplicate:false}}});
+ const r=await recordOfferWithV2Shadow(offer,{env:{NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci',DATABASE_SSL:'false'},v2Pool:attestedFixturePool,ingestionId:id,legacy:async()=>({recorded:true}),v2:async(_p,_o,args)=>{captured=args.ingestionId;return {duplicate:false}}});
  assert.equal(captured,id);assert.equal(r.shadow.ok,true);
 });
 
@@ -35,9 +39,21 @@ test('invalid opt-in shadow configuration fails before any legacy side effects',
  let legacy=0,shadow=0;
  const bad={NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',
    DATABASE_URL:'postgresql://production.example.net/nawaa',DATABASE_SSL:'false'};
- await assert.rejects(recordOfferWithV2Shadow(offer,{env:bad,v2Pool:{},
+ await assert.rejects(recordOfferWithV2Shadow(offer,{env:bad,v2Pool:attestedFixturePool,
    legacy:async()=>{legacy++;return {recorded:true}},
    v2:async()=>{shadow++}}),/ephemeral_database_only/);
  assert.equal(legacy,0,'invalid config must not commit a legacy observation');
  assert.equal(shadow,0);
+});
+
+test('wrong database identity from supplied shadow pool blocks legacy writer',async()=>{
+ let legacyWrites=0,probes=0;
+ const wrongPool={connect:async()=>({
+   query:async()=>{probes++;return {rowCount:1,rows:[{database_name:'production',database_user:'nawaa',login_user:'nawaa',server_address:'127.0.0.1',server_port:5432}]};},
+   release:()=>{}
+ })};
+ const env={NAWAA_PERSISTENCE_V2_SHADOW:'1',NAWAA_CI_EPHEMERAL_DB:'1',DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci',DATABASE_SSL:'false'};
+ await assert.rejects(recordOfferWithV2Shadow(offer,{env,v2Pool:wrongPool,legacy:async()=>{legacyWrites++;return {recorded:true}}}),/ephemeral_database_identity_mismatch/);
+ assert.equal(probes,1);
+ assert.equal(legacyWrites,0);
 });
