@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import pg from 'pg';
 import {createEphemeralPool,initV2} from '../../server/persistence-v2.mjs';
 import {initPersistence} from '../../server/persistence.mjs';
 import {initShadowOutbox,commitLegacyAndOutbox,processShadowOutbox} from '../../server/persistence-v2-outbox.mjs';
@@ -235,4 +236,27 @@ test('pre-fencing expired claim without token dead-letters exactly once',async()
  await processShadowOutbox(pool,{max:100,now:new Date(Date.now()+360000)});
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id])).rows[0].n,1);
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,0);
+});
+
+test('single-connection pool reports worker failure without deadlocking on second connection',async()=>{
+ const single=new pg.Pool({
+   connectionString:process.env.DATABASE_URL,ssl:false,
+   max:1,connectionTimeoutMillis:1500
+ });
+ const id=randomUUID(),offer=base(randomUUID());
+ try{
+   await commitLegacyAndOutbox(single,offer,{eventId:id});
+   const result=await processShadowOutbox(single,{max:1,
+     worker:async()=>{throw new Error('single_pool_injected_failure')}
+   });
+   assert.equal(result.find(x=>x.id===id)?.status,'pending');
+   const row=(await single.query('SELECT status,claim_token,attempts FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id])).rows[0];
+   assert.equal(row.status,'pending');
+   assert.equal(row.claim_token,null);
+   assert.equal(row.attempts,1);
+   const attempts=await single.query('SELECT outcome FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id]);
+   assert.equal(attempts.rowCount,1);
+   assert.equal(attempts.rows[0].outcome,'retry');
+   assert.equal((await single.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,0);
+ }finally{await single.end()}
 });
