@@ -47,6 +47,11 @@ function receiptDigest(offerKey,price,currency,observedAt,offer) {
   return createHash('sha256').update(payload).digest('hex');
 }
 
+// Previous deployed-in-branch receipt format; accept exact byte-equivalent retries only.
+function legacyReceiptDigest(offerKey,price,currency,observedAt,offer) {
+  return createHash('sha256').update(JSON.stringify([offerKey,price,currency,observedAt,offer])).digest('hex');
+}
+
 export async function recordOfferV2(pool, offer, {ingestionId,failAfterObservation=false}={}) {
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(ingestionId||''))) throw new Error('ingestion_id_required');
   const identity=deriveOfferIdentityV2(offer);
@@ -62,7 +67,7 @@ export async function recordOfferV2(pool, offer, {ingestionId,failAfterObservati
     if(!receipt.rowCount) {
       const old=await client.query('SELECT offer_key,content_digest FROM nawaa_v2_receipts WHERE ingestion_id=$1',[ingestionId]);
       const hash=receiptDigest(identity.offerKey,price,currency,at.toISOString(),offer);
-      if(old.rows[0]?.offer_key!==identity.offerKey||old.rows[0]?.content_digest!==hash) throw new Error('ingestion_id_payload_conflict');
+      if(old.rows[0]?.offer_key!==identity.offerKey || (old.rows[0]?.content_digest!==hash && old.rows[0]?.content_digest!==legacyReceiptDigest(identity.offerKey,price,currency,at.toISOString(),offer))) throw new Error('ingestion_id_payload_conflict');
       await client.query('COMMIT');
       return {duplicate:true,updated:false,offerKey:identity.offerKey};
     }
