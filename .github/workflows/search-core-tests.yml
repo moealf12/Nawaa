@@ -13,15 +13,6 @@ on:
       - "package*.json"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
-    paths:
-      - "server/**"
-      - "src/**"
-      - "tests/**"
-      - "workers/**"
-      - "scripts/**"
-      - "*.html"
-      - "package*.json"
-      - ".github/workflows/search-core-tests.yml"
 
 permissions:
   contents: read
