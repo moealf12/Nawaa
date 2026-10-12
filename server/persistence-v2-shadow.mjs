@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {recordOffer as legacyRecordOffer} from './persistence.mjs';
-import {recordOfferV2,assertEphemeralDatabase} from './persistence-v2.mjs';
+import {recordOfferV2,assertEphemeralDatabase,attestEphemeralConnection} from './persistence-v2.mjs';
 
 // Opt-in migration seam only. Existing recordOffer(), persistOffers(), and search
 // remain untouched. V2 shadow writes require an explicitly supplied isolated pool.
@@ -14,8 +14,12 @@ export async function recordOfferWithV2Shadow(offer, {
   const shadowRequested=env.NAWAA_PERSISTENCE_V2_SHADOW==='1';
   // Invalid opt-in configuration must fail before the irreversible legacy write.
   if(shadowRequested){
-    if(!v2Pool)throw new Error('v2_shadow_requires_ephemeral_pool');
+    if(!v2Pool||typeof v2Pool.connect!=='function')throw new Error('v2_shadow_requires_ephemeral_pool');
     assertEphemeralDatabase(env);
+    // Preflight the actual supplied pool BEFORE the irreversible legacy write.
+    const probe=await v2Pool.connect();
+    try{await attestEphemeralConnection(probe,{env});}
+    finally{probe.release()}
   }
   const legacyResult=await legacy(offer);
   if(!shadowRequested)
@@ -23,7 +27,7 @@ export async function recordOfferWithV2Shadow(offer, {
   // A failed shadow must never overwrite a successful legacy write.
   // This explicit path is reserved for CI experiments, not customer requests.
   try {
-    const shadow=await v2(v2Pool,offer,{ingestionId});
+    const shadow=await v2(v2Pool,offer,{ingestionId,env});
     return {legacyResult,shadow:{enabled:true,ok:true,result:shadow}};
   } catch(error) {
     return {legacyResult,shadow:{enabled:true,ok:false,errorCode:String(error?.message||'shadow_error').slice(0,100)}};
