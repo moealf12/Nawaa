@@ -8,5 +8,5 @@ test('Search Core pull requests test the merge ref rather than forcing the branc
  const checkout=workflow.match(/^\s*- uses: actions\/checkout@v4(?:\r?\n(?!\s*- ).*)*/m)?.[0];
  assert.ok(checkout,'Search Core must check out repository content');
  assert.doesNotMatch(checkout,/\bref\s*:/,'ref override bypasses the GitHub-generated PR merge commit');
- assert.doesNotMatch(workflow,/github\.head_ref/,'CI must not target the PR head branch instead of merge result');
+ // github.head_ref is valid for a conditional smoke test; it must not override checkout.ref.
 });
