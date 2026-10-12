@@ -70,6 +70,12 @@ test('Docker bridge server address is valid only with local pg socket peer',asyn
  }]};
  await attestEphemeralConnection({query:async()=>identity,connection:{stream:{remoteAddress:'127.0.0.1'}}},{env:validEnv});
  await assert.rejects(attestEphemeralConnection({
+   query:async()=>identity,connection:{}
+ },{env:validEnv}),/ephemeral_database_identity_mismatch/);
+ await assert.rejects(attestEphemeralConnection({
+   query:async()=>identity,connection:{stream:{}}
+ },{env:validEnv}),/ephemeral_database_identity_mismatch/);
+ await assert.rejects(attestEphemeralConnection({
    query:async()=>identity,connection:{stream:{remoteAddress:'198.51.100.20'}}
  },{env:validEnv}),/ephemeral_database_identity_mismatch/);
  await assert.rejects(attestEphemeralConnection({
