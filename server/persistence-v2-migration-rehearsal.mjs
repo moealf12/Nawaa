@@ -27,6 +27,35 @@ export const V2_MIGRATIONS=[
  legacy_id bigint PRIMARY KEY,outcome text NOT NULL CHECK(outcome IN ('copied','unresolved')),
  processed_at timestamptz NOT NULL DEFAULT now());`}
 ];
+
+// Fail closed on pre-existing incompatible objects before creating the ledger or any V2 DDL.
+// This covers critical columns; it does not yet constitute a complete schema fingerprint.
+const REQUIRED_COLUMNS={
+ nawaa_offer_v2:{offer_key:'text',source_id:'text',source_url:'text',condition:'text',product_price:'numeric',currency:'character(3)',observed_at:'timestamp with time zone',payload:'jsonb'},
+ nawaa_observation_v2:{id:'bigint',offer_key:'text',ingestion_id:'uuid',source_id:'text',product_price:'numeric',currency:'character(3)',observed_at:'timestamp with time zone'},
+ nawaa_v2_receipts:{ingestion_id:'uuid',offer_key:'text',content_digest:'text'},
+ nawaa_v2_shadow_outbox:{event_id:'uuid',offer:'jsonb',status:'text',attempts:'integer',max_attempts:'integer',next_attempt_at:'timestamp with time zone',lease_until:'timestamp with time zone',claim_token:'uuid'},
+ nawaa_v2_shadow_attempts:{id:'bigint',event_id:'uuid',claim_token:'uuid',attempt:'integer',outcome:'text'},
+ nawaa_v2_backfill_progress:{legacy_id:'bigint',outcome:'text',processed_at:'timestamp with time zone'},
+ nawaa_schema_migrations:{version:'text',checksum_sha256:'character(64)',applied_at:'timestamp with time zone',applied_by:'text'}
+};
+async function assertExistingColumns(client){
+ for(const [table,expected] of Object.entries(REQUIRED_COLUMNS)){
+  const r=await client.query(`SELECT a.attname AS name,
+    pg_catalog.format_type(a.atttypid,a.atttypmod) AS type
+    FROM pg_catalog.pg_attribute a
+    WHERE a.attrelid=to_regclass($1) AND a.attnum>0 AND NOT a.attisdropped`,['public.'+table]);
+  if(r.rows.length===0){
+   const exists=await client.query('SELECT to_regclass($1) AS name',['public.'+table]);
+   if(exists.rows[0].name!==null)throw new Error('incompatible_existing_schema:'+table);
+   continue;
+  }
+  const actual=new Map(r.rows.map(x=>[x.name,x.type]));
+  for(const [name,type] of Object.entries(expected))
+   if(actual.get(name)!==type)throw new Error('incompatible_existing_schema:'+table+'.'+name);
+ }
+}
+
 const digest=sql=>createHash('sha256').update(sql).digest('hex');
 export async function rehearseV2Migrations(pool,{env=process.env,failVersion=null}={}){
  assertEphemeralDatabase(env);
@@ -37,6 +66,7 @@ export async function rehearseV2Migrations(pool,{env=process.env,failVersion=nul
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '60s'");
   await client.query('SELECT pg_advisory_xact_lock($1,$2)',[17033,40]);
+  await assertExistingColumns(client);
   await client.query(`CREATE TABLE IF NOT EXISTS nawaa_schema_migrations(
     version text PRIMARY KEY,checksum_sha256 char(64) NOT NULL,
     applied_at timestamptz NOT NULL DEFAULT now(),applied_by text NOT NULL)`);
