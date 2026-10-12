@@ -186,3 +186,29 @@ test('locked expired lease cannot block processing an unrelated pending event',a
  const final=(await pool.query('SELECT status FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[expiredId])).rows[0];
  assert.equal(final.status,'dead');
 });
+
+test('pre-fencing expired claim without token dead-letters exactly once',async()=>{
+ const id=randomUUID(),a=base(randomUUID());
+ await commitLegacyAndOutbox(pool,a,{eventId:id});
+ await pool.query(`UPDATE nawaa_v2_shadow_outbox
+   SET status='processing',attempts=max_attempts,claim_token=NULL,
+       lease_until=now()-interval '5 minutes' WHERE event_id=$1`,[id]);
+ const outcomes=await Promise.all([
+  processShadowOutbox(pool,{max:100}),
+  processShadowOutbox(pool,{max:100})
+ ]);
+ assert.equal(outcomes.flat().filter(x=>x.id===id).length,0);
+ const row=(await pool.query('SELECT status,attempts,claim_token,last_error FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id])).rows[0];
+ assert.equal(row.status,'dead');
+ assert.equal(row.attempts,3);
+ assert.equal(row.claim_token,null);
+ assert.equal(row.last_error,'legacy_null_claim_token_retry_budget_exhausted');
+ const audit=await pool.query('SELECT claim_token,outcome,error FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id]);
+ assert.equal(audit.rowCount,1);
+ assert.equal(audit.rows[0].claim_token,id); // Explicit surrogate for pre-fencing row; not a worker ownership token.
+ assert.equal(audit.rows[0].outcome,'dead');
+ assert.equal(audit.rows[0].error,'legacy_null_claim_token_retry_budget_exhausted');
+ await processShadowOutbox(pool,{max:100,now:new Date(Date.now()+360000)});
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_v2_shadow_attempts WHERE event_id=$1',[id])).rows[0].n,1);
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,0);
+});
