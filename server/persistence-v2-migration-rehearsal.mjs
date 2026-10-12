@@ -76,6 +76,18 @@ async function assertExistingColumns(client){
    if(!checks.rows.some(c=>c.convalidated&&c.definition==='CHECK ((product_price > (0)::numeric))'))
     throw new Error('incompatible_existing_schema:'+table+'.price_check');
   }
+  if(table==='nawaa_observation_v2'){
+   const trigger=await client.query(`SELECT t.tgenabled,pg_get_triggerdef(t.oid) AS definition,
+       p.proname,pg_get_functiondef(p.oid) AS function_definition
+     FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
+     WHERE t.tgrelid='public.nawaa_observation_v2'::regclass AND NOT t.tgisinternal AND t.tgname='nawaa_v2_immutable'`);
+   const t=trigger.rows[0];
+   if(trigger.rows.length!==1||t.tgenabled!=='O'||
+      !t.definition.includes('BEFORE UPDATE OR DELETE ON public.nawaa_observation_v2 FOR EACH ROW EXECUTE FUNCTION nawaa_v2_reject_observation_change()')||
+      t.proname!=='nawaa_v2_reject_observation_change'||
+      !t.function_definition.includes("RAISE EXCEPTION 'v2_observations_immutable'"))
+    throw new Error('incompatible_existing_schema:'+table+'.immutable_trigger');
+  }
   if(table==='nawaa_v2_shadow_attempts'){
    const c=await client.query(`SELECT contype,pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid=to_regclass($1)`,['public.'+table]);
    if(!c.rows.some(x=>x.contype==='u'&&x.def==='UNIQUE (event_id, claim_token)'))
