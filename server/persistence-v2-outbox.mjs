@@ -6,7 +6,13 @@ import {recordOfferV2,assertEphemeralDatabase} from './persistence-v2.mjs';
 // Both the legacy insert and outbox intent are committed by the SAME SQL transaction.
 export async function initShadowOutbox(pool,{env=process.env}={}) {
   assertEphemeralDatabase(env);
-  await pool.query(`
+  // Serialize first-time creation across CI workers on the same isolated DB.
+  // A separate advisory lock from initV2 avoids DDL catalog races.
+  const client=await pool.connect();
+  try{
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1,$2)',[17033,2]);
+    await client.query(`
 CREATE TABLE IF NOT EXISTS nawaa_v2_shadow_outbox(
  event_id uuid PRIMARY KEY, offer jsonb NOT NULL, status text NOT NULL DEFAULT 'pending'
  CHECK(status IN ('pending','processing','completed','dead')),
@@ -30,6 +36,11 @@ CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_attempts_event ON nawaa_v2_shadow_att
 CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_outbox_ready ON nawaa_v2_shadow_outbox(status,next_attempt_at);
 CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_outbox_expired ON nawaa_v2_shadow_outbox(lease_until,event_id) WHERE status='processing';
 `);
+    await client.query('COMMIT');
+  }catch(error){
+    try{await client.query('ROLLBACK')}catch{}
+    throw error;
+  }finally{client.release()}
 }
 
 // Accept a caller-owned PostgreSQL transaction. The caller must commit or
