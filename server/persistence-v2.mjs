@@ -9,6 +9,29 @@ export function assertEphemeralDatabase(env=process.env) {
     env.DATABASE_SSL!=='false') throw new Error('ephemeral_database_only');
 }
 
+// Verify the actual PostgreSQL session, not just the URL advertised by env.
+ // This guards against an injected pool pointing to a different local database.
+ // It is not cryptographic server authentication; CI must control localhost.
+export async function attestEphemeralConnection(client,{env=process.env}={}) {
+  assertEphemeralDatabase(env);
+  if(!client||typeof client.query!=='function')throw new Error('ephemeral_database_connection_unverifiable');
+  let result;
+  try {
+    result=await client.query(`SELECT current_database() AS database_name,
+      current_user AS database_user, session_user AS login_user,
+      host(inet_server_addr()) AS server_address,
+      inet_server_port() AS server_port`);
+  }catch(error){throw new Error('ephemeral_database_attestation_failed',{cause:error})}
+  const row=result?.rows?.[0];
+  if(result?.rowCount!==1 ||
+     row?.database_name!=='nawaa_ci' ||
+     row?.database_user!=='nawaa' ||
+     row?.login_user!=='nawaa' ||
+     !['127.0.0.1','::1'].includes(row?.server_address) ||
+     Number(row?.server_port)!==5432)
+    throw new Error('ephemeral_database_identity_mismatch');
+}
+
 export const CREATE_V2_SQL=`
 CREATE TABLE IF NOT EXISTS nawaa_offer_v2 (
  offer_key text PRIMARY KEY,
@@ -52,7 +75,8 @@ function legacyReceiptDigest(offerKey,price,currency,observedAt,offer) {
   return createHash('sha256').update(JSON.stringify([offerKey,price,currency,observedAt,offer])).digest('hex');
 }
 
-export async function recordOfferV2(pool, offer, {ingestionId,failAfterObservation=false}={}) {
+export async function recordOfferV2(pool, offer, {ingestionId,failAfterObservation=false,env=process.env}={}) {
+  assertEphemeralDatabase(env);
   if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(ingestionId||''))) throw new Error('ingestion_id_required');
   const identity=deriveOfferIdentityV2(offer);
   const price=Number(offer.productPrice);
@@ -61,6 +85,7 @@ export async function recordOfferV2(pool, offer, {ingestionId,failAfterObservati
   if(!Number.isFinite(price)||price<=0||!/^[A-Z]{3}$/.test(currency)||Number.isNaN(at.getTime())) throw new Error('invalid_observation');
   const client=await pool.connect();
   try {
+    await attestEphemeralConnection(client,{env});
     await client.query('BEGIN');
     // The unique receipt is taken first to serialize identical retries.
     const receipt=await client.query('INSERT INTO nawaa_v2_receipts(ingestion_id,offer_key,content_digest) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING ingestion_id',[ingestionId,identity.offerKey,receiptDigest(identity.offerKey,price,currency,at.toISOString(),offer)]);
@@ -93,6 +118,7 @@ export async function initV2(pool,{env=process.env}={}) {
   // The dedicated advisory xact lock covers both tables and trigger DDL.
   const client=await pool.connect();
   try {
+    await attestEphemeralConnection(client,{env});
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock($1,$2)',[17033,1]);
     await client.query(CREATE_V2_SQL);
