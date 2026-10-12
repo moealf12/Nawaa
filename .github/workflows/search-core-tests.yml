@@ -14,6 +14,11 @@ on:
       - ".github/workflows/search-core-tests.yml"
   pull_request:
 
+concurrency:
+  # Save public-runner time by superseding stale CI after a new PR commit.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
