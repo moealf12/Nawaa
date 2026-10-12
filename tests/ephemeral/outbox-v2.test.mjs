@@ -152,3 +152,37 @@ test('outbox delivery preserves V2 receipt identity and rejects changed metadata
  await processShadowOutbox(pool,{max:100});
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
 });
+
+test('locked expired lease cannot block processing an unrelated pending event',async()=>{
+ const expiredId=randomUUID(),readyId=randomUUID();
+ await commitLegacyAndOutbox(pool,base(randomUUID()),{eventId:expiredId});
+ await commitLegacyAndOutbox(pool,base(randomUUID()),{eventId:readyId});
+ await pool.query(`UPDATE nawaa_v2_shadow_outbox
+   SET status='processing', attempts=max_attempts, claim_token=$2,
+       lease_until=now()-interval '5 minutes'
+   WHERE event_id=$1`,[expiredId,randomUUID()]);
+ const blocker=await pool.connect();
+ let timer;
+ let work;
+ let outcome;
+ try{
+  await blocker.query('BEGIN');
+  await blocker.query('SELECT event_id FROM nawaa_v2_shadow_outbox WHERE event_id=$1 FOR UPDATE',[expiredId]);
+  work=processShadowOutbox(pool,{max:20});
+  outcome=await Promise.race([
+   work.then(()=> 'finished'),
+   new Promise(resolve=>{timer=setTimeout(()=>resolve('blocked'),2500);})
+  ]);
+ }finally{
+  if(timer)clearTimeout(timer);
+  await blocker.query('ROLLBACK');
+  blocker.release();
+ }
+ if(work)await work;
+ assert.equal(outcome,'finished','dead-letter sweep must skip a locked lease rather than block other events');
+ assert.equal((await pool.query('SELECT status FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[readyId])).rows[0].status,'completed');
+ assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[readyId])).rows[0].n,1);
+ await processShadowOutbox(pool,{max:20});
+ const final=(await pool.query('SELECT status FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[expiredId])).rows[0];
+ assert.equal(final.status,'dead');
+});
