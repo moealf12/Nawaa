@@ -85,3 +85,31 @@ Removing this guard or replacing it with `true` is prohibited.
 **Not authorized:** automatic main merge, production provisioning, applying
 branch protection, activating shadow ingestion, modifying customer search, or any
 destructive database operation.
+
+## v4.7 connection-attestation boundary (CI-only)
+
+The ephemeral-only entry points now check the **actual connected PostgreSQL
+session** before mutating data: `current_database()`, `current_user`,
+`session_user`, `inet_server_addr()` and `inet_server_port()`. Standard
+`pg` clients also require a local TCP socket peer. A Docker service's server
+address can be an RFC1918 private bridge address even when the client reaches
+the CI database through localhost:5432. Environment-variable checks alone
+are insufficient; injected Pools must pass the read-only session check.
+
+The guard is **not cryptographic remote-server authentication**. A privileged
+proxy or malicious synthetic connection could fabricate SQL responses, and
+matching database/user names do not constitute independently attested cluster
+identity. No production-target connection is permitted in the current V2
+code. Production requires a trusted driver and network path, verified TLS
+identity/CA when supported, restricted database roles, a migration-only DDL
+role, secrets provisioning, a provider-specific target attestation contract,
+and explicit owner approval before any feature flag or migration.
+
+In CI, wrong-target test pools connect to the local `postgres` database
+instead of `nawaa_ci` while the environment still advertises the permitted
+URL. Every V2/Outbox/Backfill entry point must reject that mismatch before
+any DDL, receipt, legacy or Outbox write; the test verifies no V2 tables were
+created in the wrong database. Savepoint adapters are attested by querying
+their transaction owner connection, not by assuming a new Pool selection is safe.
+
+Never remove or weaken the CI-only guard as a shortcut to production.
