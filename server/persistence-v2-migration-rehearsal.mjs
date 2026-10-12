@@ -58,12 +58,10 @@ async function assertExistingColumns(client){
    nawaa_v2_receipts:'ingestion_id',nawaa_v2_shadow_outbox:'event_id',
    nawaa_v2_shadow_attempts:'id',nawaa_v2_backfill_progress:'legacy_id',
    nawaa_schema_migrations:'version'}[table];
-  const key=await client.query(`SELECT array_agg(a.attname ORDER BY k.ordinality) AS names
-    FROM pg_constraint c
-    JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum,ordinality) ON true
-    JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum
+  const key=await client.query(`SELECT pg_get_constraintdef(c.oid) AS definition
+    FROM pg_catalog.pg_constraint c
     WHERE c.conrelid=to_regclass($1) AND c.contype='p'`,['public.'+table]);
-  if(key.rows[0]?.names?.length!==1||key.rows[0].names[0]!==pk)
+  if(key.rows.length!==1||key.rows[0].definition!=='PRIMARY KEY ('+pk+')')
    throw new Error('incompatible_existing_schema:'+table+'.primary_key');
  }
 }
