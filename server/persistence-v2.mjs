@@ -35,6 +35,14 @@ export async function attestEphemeralConnection(client,{env=process.env}={}) {
     (octets[0]===192 && octets[1]===168)
   );
   const ciNetwork=address==='::1'||privateV4===true;
+  // GitHub Actions provisions the PostgreSQL service container independently.
+  // The job obtains this IP from docker inspect of its owned service ID, not
+  // from the database connection string or a server-controlled SQL marker.
+  if(env.GITHUB_ACTIONS==='true'){
+    const expected=env.NAWAA_CI_OWNED_SERVICE_IPV4;
+    if(!expected||!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(expected)||
+       expected!==address)throw new Error('ephemeral_runtime_owner_mismatch');
+  }
   // For actual pg clients, also verify the socket's peer is local.
   // Savepoint query adapters have no stream; their owning client is separately attested.
   const peer=client?.connection?.stream?.remoteAddress;
