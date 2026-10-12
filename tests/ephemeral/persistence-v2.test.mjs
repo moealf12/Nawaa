@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {createEphemeralPool,initV2,recordOfferV2} from '../../server/persistence-v2.mjs';
 const pool=createEphemeralPool();
 const base={sourceId:'jarir-sa',sourceUrl:'https://www.jarir.com/sa/p/15',sourceListingId:'15',sourceVariantId:'128',condition:'new',productPrice:1000,currency:'SAR',observedAt:'2026-10-10T10:00:00Z'};
@@ -71,4 +71,16 @@ test('same ingestion UUID replays equivalent payload despite key insertion order
  assert.equal(first.duplicate,false);
  assert.equal(replay.duplicate,true);
  assert.equal((await pool.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
+});
+
+test('existing legacy receipt accepts exact replay and rejects changed metadata',async()=>{
+ const a=offer('legacy-receipt-'+randomUUID(),{title:'Legacy listing',metadata:{z:1,a:2}});
+ const id=randomUUID();
+ const first=await recordOfferV2(pool,a,{ingestionId:id});
+ const legacyHash=createHash('sha256').update(JSON.stringify([first.offerKey,Number(a.productPrice),a.currency,new Date(a.observedAt).toISOString(),a])).digest('hex');
+ await pool.query('UPDATE nawaa_v2_receipts SET content_digest=$1 WHERE ingestion_id=$2',[legacyHash,id]);
+ const replay=await recordOfferV2(pool,a,{ingestionId:id});
+ assert.equal(replay.duplicate,true);
+ await assert.rejects(recordOfferV2(pool,{...a,title:'Tampered'},{ingestionId:id}),/ingestion_id_payload_conflict/);
+ assert.equal((await pool.query('SELECT count(*)::int AS n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,1);
 });
