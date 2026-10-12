@@ -88,6 +88,12 @@ export async function recordOffer(offerData={}){
   if(!sourceUrl||title.length<3||!Number.isFinite(price)||price<=0||!/^[A-Z]{3}$/.test(currency)||!sourceName) throw new Error("invalid_offer_record");
   const client=await db();
   if(!client) throw new Error("persistence_not_configured");
+  // Shadow opt-in must be rejected before legacy schema initialization can write DDL.
+  // initPersistence() is intentionally deferred until after the CI guard.
+  if(process.env.NAWAA_LEGACY_OUTBOX_SHADOW==='1') {
+    const {assertEphemeralDatabase}=await import('./persistence-v2.mjs');
+    assertEphemeralDatabase();
+  }
   await initPersistence();
   const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition};
   const key=keyOf(normalized);
