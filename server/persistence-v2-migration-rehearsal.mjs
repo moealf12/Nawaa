@@ -70,6 +70,12 @@ async function assertExistingColumns(client){
     WHERE c.conrelid=to_regclass($1) AND c.contype='p'`,['public.'+table]);
   if(key.rows.length!==1||key.rows[0].definition!=='PRIMARY KEY ('+pk+')')
    throw new Error('incompatible_existing_schema:'+table+'.primary_key');
+  if(table==='nawaa_offer_v2'||table==='nawaa_observation_v2'){
+   const checks=await client.query(`SELECT pg_get_constraintdef(c.oid) AS definition,c.convalidated
+     FROM pg_catalog.pg_constraint c WHERE c.conrelid=to_regclass($1) AND c.contype='c'`,['public.'+table]);
+   if(!checks.rows.some(c=>c.convalidated&&c.definition==='CHECK ((product_price > (0)::numeric))'))
+    throw new Error('incompatible_existing_schema:'+table+'.price_check');
+  }
   if(table==='nawaa_v2_shadow_attempts'){
    const c=await client.query(`SELECT contype,pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid=to_regclass($1)`,['public.'+table]);
    if(!c.rows.some(x=>x.contype==='u'&&x.def==='UNIQUE (event_id, claim_token)'))
