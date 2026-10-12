@@ -77,13 +77,13 @@ async function assertExistingColumns(client){
     throw new Error('incompatible_existing_schema:'+table+'.price_check');
   }
   if(table==='nawaa_observation_v2'){
-   const trigger=await client.query(`SELECT t.tgenabled,pg_get_triggerdef(t.oid) AS definition,
+   const trigger=await client.query(`SELECT t.tgenabled,t.tgtype,
        p.proname,pg_get_functiondef(p.oid) AS function_definition
      FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
      WHERE t.tgrelid='public.nawaa_observation_v2'::regclass AND NOT t.tgisinternal AND t.tgname='nawaa_v2_immutable'`);
    const t=trigger.rows[0];
    if(trigger.rows.length!==1||t.tgenabled!=='O'||
-      !t.definition.includes('BEFORE UPDATE OR DELETE ON public.nawaa_observation_v2 FOR EACH ROW EXECUTE FUNCTION nawaa_v2_reject_observation_change()')||
+      Number(t.tgtype)!==27||
       t.proname!=='nawaa_v2_reject_observation_change'||
       !t.function_definition.includes("RAISE EXCEPTION 'v2_observations_immutable'"))
     throw new Error('incompatible_existing_schema:'+table+'.immutable_trigger');
