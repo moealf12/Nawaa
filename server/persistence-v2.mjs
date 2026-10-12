@@ -23,11 +23,27 @@ export async function attestEphemeralConnection(client,{env=process.env}={}) {
       inet_server_port() AS server_port`);
   }catch(error){throw new Error('ephemeral_database_attestation_failed',{cause:error})}
   const row=result?.rows?.[0];
+  // On GitHub Actions, TCP localhost:5432 is forwarded to a Docker service
+  // with an RFC1918 bridge IP (usually 172.16/12), not server-side loopback.
+  // The connection is still permitted only when env pins localhost:5432.
+  const address=String(row?.server_address||'');
+  const ipv4=address.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  const octets=ipv4?.slice(1).map(Number);
+  const privateV4=octets && octets.every(n=>n>=0&&n<=255) && (
+    octets[0]===127 || octets[0]===10 ||
+    (octets[0]===172 && octets[1]>=16 && octets[1]<=31) ||
+    (octets[0]===192 && octets[1]===168)
+  );
+  const ciNetwork=address==='::1'||privateV4===true;
+  // For actual pg clients, also verify the socket's peer is local.
+  // Savepoint query adapters have no stream; their owning client is separately attested.
+  const peer=client?.connection?.stream?.remoteAddress;
+  const localPeer=peer===undefined||peer==='127.0.0.1'||peer==='::1'||peer==='::ffff:127.0.0.1';
   if(result?.rowCount!==1 ||
      row?.database_name!=='nawaa_ci' ||
      row?.database_user!=='nawaa' ||
      row?.login_user!=='nawaa' ||
-     !['127.0.0.1','::1'].includes(row?.server_address) ||
+     !ciNetwork || !localPeer ||
      Number(row?.server_port)!==5432)
     throw new Error('ephemeral_database_identity_mismatch');
 }
