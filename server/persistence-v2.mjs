@@ -85,10 +85,23 @@ export async function recordOfferV2(pool, offer, {ingestionId,failAfterObservati
     return {duplicate:false,updated:canonical.rowCount>0,offerKey:identity.offerKey};
   } catch(error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
 }
-export async function initV2(pool) {
-  // DDL is opt-in and only safe to invoke against isolated test db for now.
-  await pool.query(CREATE_V2_SQL);
-  await pool.query('CREATE TABLE IF NOT EXISTS nawaa_v2_receipts(ingestion_id uuid PRIMARY KEY,offer_key text NOT NULL, content_digest text NOT NULL)');
+export async function initV2(pool,{env=process.env}={}) {
+  // Validate BEFORE opening a connection or executing any schema-changing SQL.
+  assertEphemeralDatabase(env);
+  // PostgreSQL CREATE TABLE IF NOT EXISTS does not serialize concurrent first
+  // creators: catalog uniqueness can still fail with SQLSTATE 23505.
+  // The dedicated advisory xact lock covers both tables and trigger DDL.
+  const client=await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1,$2)',[17033,1]);
+    await client.query(CREATE_V2_SQL);
+    await client.query('CREATE TABLE IF NOT EXISTS nawaa_v2_receipts(ingestion_id uuid PRIMARY KEY,offer_key text NOT NULL, content_digest text NOT NULL)');
+    await client.query('COMMIT');
+  }catch(error){
+    try{await client.query('ROLLBACK')}catch{}
+    throw error;
+  }finally{client.release()}
 }
 export function createEphemeralPool(env=process.env) {
   assertEphemeralDatabase(env);
