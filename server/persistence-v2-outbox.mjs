@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS nawaa_v2_shadow_attempts(
 );
 CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_attempts_event ON nawaa_v2_shadow_attempts(event_id,recorded_at);
 CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_outbox_ready ON nawaa_v2_shadow_outbox(status,next_attempt_at);
+CREATE INDEX IF NOT EXISTS nawaa_v2_shadow_outbox_expired ON nawaa_v2_shadow_outbox(lease_until,event_id) WHERE status='processing';
 `);
 }
 
@@ -99,6 +100,8 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
         FROM nawaa_v2_shadow_outbox
         WHERE status='processing' AND lease_until<$1
           AND attempts>=max_attempts AND claim_token IS NOT NULL
+        ORDER BY lease_until,event_id
+        LIMIT $2
         FOR UPDATE SKIP LOCKED
       ), exhausted AS (
         UPDATE nawaa_v2_shadow_outbox o
@@ -109,7 +112,7 @@ export async function processShadowOutbox(pool,{env=process.env,worker=recordOff
       )
       INSERT INTO nawaa_v2_shadow_attempts(event_id,claim_token,attempt,outcome,error)
       SELECT event_id,previous_token,attempts,'dead','lease_expired_retry_budget_exhausted'
-      FROM exhausted ON CONFLICT(event_id,claim_token) DO NOTHING`,[now]);
+      FROM exhausted ON CONFLICT(event_id,claim_token) DO NOTHING`,[now,max]);
     const rows=await client.query(`
       SELECT event_id,offer,attempts,max_attempts FROM nawaa_v2_shadow_outbox
       WHERE ((status='pending' AND next_attempt_at<=$1) OR (status='processing' AND lease_until<=$1 AND attempts<max_attempts))
