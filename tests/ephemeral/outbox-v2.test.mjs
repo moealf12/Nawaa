@@ -260,3 +260,25 @@ test('single-connection pool reports worker failure without deadlocking on secon
    assert.equal((await single.query('SELECT count(*)::int n FROM nawaa_observation_v2 WHERE ingestion_id=$1',[id])).rows[0].n,0);
  }finally{await single.end()}
 });
+
+test('nested Outbox V2 worker receives the attested explicit environment',async()=>{
+ const id=randomUUID(),offer=base(randomUUID());
+ const env={
+   NAWAA_CI_EPHEMERAL_DB:process.env.NAWAA_CI_EPHEMERAL_DB,
+   DATABASE_URL:process.env.DATABASE_URL,
+   DATABASE_SSL:process.env.DATABASE_SSL,
+   auditMarker:'explicit-worker-env'
+ };
+ await commitLegacyAndOutbox(pool,offer,{eventId:id,env});
+ const observed=[];
+ const results=await processShadowOutbox(pool,{env,max:1,
+   worker:async(_tx,_offer,options)=>{
+     observed.push(options);
+     assert.equal(options.ingestionId,id);
+     assert.strictEqual(options.env,env);
+   }
+ });
+ assert.equal(observed.length,1);
+ assert.equal(results.find(r=>r.id===id)?.status,'completed');
+ assert.equal((await pool.query('SELECT status FROM nawaa_v2_shadow_outbox WHERE event_id=$1',[id])).rows[0].status,'completed');
+});
