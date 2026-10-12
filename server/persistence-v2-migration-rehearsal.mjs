@@ -122,3 +122,27 @@ export async function rehearseV2Migrations(pool,{env=process.env,failVersion=nul
   throw e;
  }finally{client.release()}
 }
+
+/**
+ * Read-only, CI-only post-restore replay gate. This never applies SQL migrations.
+ * A restored target has a different database name and must not be passed to the
+ * production-shaped rehearsal runner's nawaa_ci-only attestation.
+ */
+export async function verifyRestoredMigrationReplay(client,{env=process.env}={}){
+ assertEphemeralDatabase(env);
+ if(!client || typeof client.query!=='function')throw new Error('restore_connection_required');
+ const identity=await client.query("SELECT current_database() AS db,current_user AS usr,inet_server_port() AS port");
+ if(identity.rowCount!==1||identity.rows[0].db!=='nawaa_restore_ci'||
+    identity.rows[0].usr!=='nawaa'||Number(identity.rows[0].port)!==5432)
+   throw new Error('restore_target_not_allowlisted');
+ await client.query('BEGIN READ ONLY');
+ try{
+  await client.query("SET LOCAL statement_timeout = '15s'");
+  await assertExistingColumns(client);
+  const history=await client.query('SELECT version,trim(checksum_sha256) AS checksum FROM nawaa_schema_migrations ORDER BY version');
+  const known=V2_MIGRATIONS.map(m=>({version:m.version,checksum:digest(m.sql)}));
+  if(JSON.stringify(history.rows)!==JSON.stringify(known))throw new Error('restored_migration_history_diverged');
+  await client.query('COMMIT');
+  return {applied:[],skipped:known.length,verified:known.length};
+ }catch(error){try{await client.query('ROLLBACK')}catch{}throw error}
+}
