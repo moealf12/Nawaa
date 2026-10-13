@@ -106,6 +106,14 @@ async function assertExistingColumns(client){
       !t.function_definition.includes("RAISE EXCEPTION 'v2_observations_immutable'"))
     throw new Error('incompatible_existing_schema:'+table+'.immutable_trigger');
   }
+  if(table==='nawaa_observation_v2'){
+   const indexes=await client.query(`SELECT i.indisunique,i.indisvalid,i.indisready,
+      i.indpred IS NULL AS not_partial,pg_get_indexdef(i.indexrelid) AS definition
+      FROM pg_index i WHERE i.indrelid='public.nawaa_observation_v2'::regclass`);
+   if(!indexes.rows.some(x=>x.indisunique&&x.indisvalid&&x.indisready&&x.not_partial&&
+      /USING btree \\(ingestion_id\\)$/.test(x.definition)))
+    throw new Error('incompatible_existing_schema:'+table+'.ingestion_unique');
+  }
   if(table==='nawaa_v2_shadow_outbox'){
    const idx=await client.query(`SELECT i.indisvalid,i.indisready,i.indisunique,
      pg_get_expr(i.indpred,i.indrelid) AS predicate,
@@ -130,7 +138,11 @@ async function assertExistingColumns(client){
    const c=await client.query(`SELECT contype,pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid=to_regclass($1)`,['public.'+table]);
    if(!c.rows.some(x=>x.contype==='u'&&x.def==='UNIQUE (event_id, claim_token)'))
     throw new Error('incompatible_existing_schema:'+table+'.unique_event_claim');
-   if(!c.rows.some(x=>x.contype==='f'&&x.def.startsWith('FOREIGN KEY (event_id) REFERENCES nawaa_v2_shadow_outbox(event_id)')))
+   const fk=await client.query(`SELECT convalidated,confdeltype,confupdtype,condeferrable,
+     pg_get_constraintdef(oid) AS def FROM pg_constraint
+     WHERE conrelid=to_regclass($1) AND contype='f'`,['public.'+table]);
+   if(!fk.rows.some(x=>x.convalidated&&x.confdeltype==='a'&&x.confupdtype==='a'&&
+      !x.condeferrable&&x.def==='FOREIGN KEY (event_id) REFERENCES nawaa_v2_shadow_outbox(event_id)'))
     throw new Error('incompatible_existing_schema:'+table+'.event_foreign_key');
   }
  }
