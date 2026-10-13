@@ -111,7 +111,7 @@ async function assertExistingColumns(client){
       i.indpred IS NULL AS not_partial,pg_get_indexdef(i.indexrelid) AS definition
       FROM pg_index i WHERE i.indrelid='public.nawaa_observation_v2'::regclass`);
    if(!indexes.rows.some(x=>x.indisunique&&x.indisvalid&&x.indisready&&x.not_partial&&
-      /USING btree \\(ingestion_id\\)$/.test(x.definition)))
+      /USING btree \(ingestion_id\)$/.test(x.definition)))
     throw new Error('incompatible_existing_schema:'+table+'.ingestion_unique');
   }
   if(table==='nawaa_v2_shadow_outbox'){
