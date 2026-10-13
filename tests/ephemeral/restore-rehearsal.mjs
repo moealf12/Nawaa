@@ -107,6 +107,17 @@ try{
  run('pg_restore',['--no-owner','--no-privileges','--exit-on-error','--dbname',root,replayCopy]);
  const replayBaseline=await snapshot(source);
  if(JSON.stringify(replayBaseline)!==JSON.stringify(expected))throw Error('replay_copy_mismatch');
+ const identityOwnership=await source.query(`SELECT t.relname AS table_name,a.attname AS column_name,
+    q.relname AS sequence_name,d.deptype, (q.relowner=t.relowner) AS same_owner
+   FROM pg_class t
+   JOIN pg_attribute a ON a.attrelid=t.oid AND a.attname='id'
+   JOIN pg_depend d ON d.refobjid=t.oid AND d.refobjsubid=a.attnum AND d.deptype='i'
+   JOIN pg_class q ON q.oid=d.objid AND q.relkind='S'
+   WHERE t.relnamespace='public'::regnamespace
+    AND t.relname IN ('nawaa_observation_v2','nawaa_v2_shadow_attempts')
+   ORDER BY t.relname`);
+ if(identityOwnership.rows.length!==2||identityOwnership.rows.some(x=>x.deptype!=='i'||!x.same_owner))
+  throw Error('restored_identity_sequence_ownership_mismatch');
  const sequenceBaseline=await source.query(`SELECT schemaname, sequencename, start_value, min_value, max_value, increment_by, cycle, cache_size, last_value FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename`);
  for(let iteration=0;iteration<2;iteration++){
   const replayStarted=clock();
@@ -122,6 +133,8 @@ try{
  if(JSON.stringify(postChecks)!==JSON.stringify(expected))throw Error('restored_integrity_changed_during_checks');
 
  measured.end_to_end_ms=elapsedMs(totalStarted);
+ const fixtureRows=Object.entries(expected).map(([name,info])=>name+':'+info.count).join(',');
+ process.stdout.write('isolated_restore_fixture_rows='+fixtureRows+' identity_sequence_owners=2\\n');
  process.stdout.write('isolated_restore_verified postgres_version='+measured.postgres_version+' backup_bytes='+measured.fixture_backup_bytes+' tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1 actual_runner_replays=2 actual_runner_applied=0 '+Object.entries(measured).filter(([,value])=>typeof value==='number'&&keyIsTime(value)).map(([key,value])=>key+'='+value.toFixed(2)).join(' ')+'\\n');
 }finally{
  const cleanupStarted=clock();
