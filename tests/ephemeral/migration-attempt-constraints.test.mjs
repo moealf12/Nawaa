@@ -8,6 +8,7 @@ test('attempt table missing event claim uniqueness rejects without touching rows
  const pool=createEphemeralPool();
  try{
   await pool.query(`CREATE TABLE nawaa_v2_shadow_outbox(event_id uuid PRIMARY KEY,offer jsonb NOT NULL,status text NOT NULL,attempts integer NOT NULL,max_attempts integer NOT NULL,next_attempt_at timestamptz NOT NULL,lease_until timestamptz,claim_token uuid)`);
+  await pool.query("CREATE INDEX nawaa_v2_shadow_outbox_expired ON nawaa_v2_shadow_outbox(lease_until,event_id) WHERE status='processing'");
   await pool.query(`CREATE TABLE nawaa_v2_shadow_attempts(
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     event_id uuid NOT NULL REFERENCES nawaa_v2_shadow_outbox(event_id),
