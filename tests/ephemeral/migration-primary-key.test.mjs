@@ -6,7 +6,7 @@ import {rehearseV2Migrations} from '../../server/persistence-v2-migration-rehear
 test('existing receipts table with correct columns but no primary key fails without writes',async()=>{
  const pool=createEphemeralPool();
  try {
-  await pool.query('CREATE TABLE nawaa_v2_receipts(ingestion_id uuid, offer_key text, content_digest text)');
+  await pool.query('CREATE TABLE nawaa_v2_receipts(ingestion_id uuid NOT NULL, offer_key text NOT NULL, content_digest text NOT NULL)');
   await pool.query("INSERT INTO nawaa_v2_receipts VALUES('00000000-0000-0000-0000-000000000001','keep','digest')");
   await assert.rejects(rehearseV2Migrations(pool),/incompatible_existing_schema:nawaa_v2_receipts.primary_key/);
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM nawaa_v2_receipts')).rows[0].n,1);
