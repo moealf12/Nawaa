@@ -106,6 +106,18 @@ async function assertExistingColumns(client){
       !t.function_definition.includes("RAISE EXCEPTION 'v2_observations_immutable'"))
     throw new Error('incompatible_existing_schema:'+table+'.immutable_trigger');
   }
+  if(table==='nawaa_v2_shadow_outbox'){
+   const idx=await client.query(`SELECT i.indisvalid,i.indisready,i.indisunique,
+     pg_get_expr(i.indpred,i.indrelid) AS predicate,
+     pg_get_indexdef(i.indexrelid) AS definition
+     FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
+     WHERE i.indrelid='public.nawaa_v2_shadow_outbox'::regclass
+       AND c.relname='nawaa_v2_shadow_outbox_expired'`);
+   if(idx.rows.length!==1||!idx.rows[0].indisvalid||!idx.rows[0].indisready||
+      idx.rows[0].indisunique||idx.rows[0].predicate!=="(status = 'processing'::text)"||
+      !/USING btree \(lease_until, event_id\) WHERE/.test(idx.rows[0].definition))
+    throw new Error('incompatible_existing_schema:'+table+'.expired_index');
+  }
   if(table==='nawaa_v2_shadow_attempts'){
    const c=await client.query(`SELECT contype,pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid=to_regclass($1)`,['public.'+table]);
    if(!c.rows.some(x=>x.contype==='u'&&x.def==='UNIQUE (event_id, claim_token)'))
