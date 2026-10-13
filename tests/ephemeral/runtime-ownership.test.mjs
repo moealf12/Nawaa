@@ -15,6 +15,15 @@ test('missing or mismatched owned runtime identity fails before migration DDL',a
    const ledger=await pool.query("SELECT to_regclass('public.nawaa_schema_migrations') AS t");
    assert.equal(ledger.rows[0].t,null);
   }
+  // Reject effective target overrides before establishing any new connection.
+  for(const override of [
+   {...env,DATABASE_URL:'postgresql://nawaa:nawaa_ci@127.0.0.2:5432/nawaa_ci'},
+   {...env,DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5433/nawaa_ci'},
+   {...env,DATABASE_URL:'postgresql://other:nawaa_ci@localhost:5432/nawaa_ci'},
+   {...env,DATABASE_URL:'postgresql://nawaa:nawaa_ci@localhost:5432/other'}
+  ]){
+   await assert.rejects(async()=>createEphemeralPool(override),/ephemeral_database_only/);
+  }
   const ok=await rehearseV2Migrations(pool);
   assert.equal(ok.applied.length,4);
  }finally{await pool.end()}
