@@ -1,4 +1,4 @@
-import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -54,6 +54,8 @@ try{
  const restoreStarted=clock();
  run('pg_dump',['--format=custom','--no-owner','--no-privileges','--dbname',root,'--file',dump]);
  run('pg_restore',['--no-owner','--no-privileges','--exit-on-error','--dbname',restored,dump]);
+ measured.fixture_backup_bytes=(await stat(dump)).size;
+ measured.postgres_version=(await source.query('SHOW server_version')).rows[0].server_version;
  restoredClient=new pg.Client({connectionString:restored,ssl:false});
  await restoredClient.connect();
  measured.restore_ms=elapsedMs(restoreStarted);
@@ -119,11 +121,13 @@ try{
  if(JSON.stringify(postChecks)!==JSON.stringify(expected))throw Error('restored_integrity_changed_during_checks');
 
  measured.end_to_end_ms=elapsedMs(totalStarted);
- process.stdout.write('isolated_restore_verified tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1 actual_runner_replays=2 actual_runner_applied=0 '+Object.entries(measured).map(([key,value])=>key+'='+value.toFixed(2)).join(' ')+'\\n');
+ process.stdout.write('isolated_restore_verified postgres_version='+measured.postgres_version+' backup_bytes='+measured.fixture_backup_bytes+' tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1 actual_runner_replays=2 actual_runner_applied=0 '+Object.entries(measured).map(([key,value])=>key+'='+value.toFixed(2)).join(' ')+'\\n');
 }finally{
+ const cleanupStarted=clock();
  if(restoredClient)await restoredClient.end();
  const exists=await source.query('SELECT 1 FROM pg_database WHERE datname=$1',[target]);
  if(exists.rowCount)await source.query('DROP DATABASE '+target+' WITH (FORCE)');
  await source.end();
  await rm(directory,{recursive:true,force:true});
+ process.stdout.write('isolated_restore_cleanup_verified cleanup_ms='+elapsedMs(cleanupStarted).toFixed(2)+'\\n');
 }
