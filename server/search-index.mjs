@@ -35,8 +35,9 @@ function isValidPriceEvidence(offer, now) {
       !validSourceUrl(offer.sourceUrl) ||
       typeof offer.productPrice !== "number" ||
       !Number.isFinite(offer.productPrice) || offer.productPrice <= 0 ||
-      typeof offer.currency !== "string" ||
-      !/^[A-Z]{3}$/.test(offer.currency) ||
+      // Shopper ranking compares numeric prices as SAR; never treat USD/other
+      // source-native amounts as comparable SAR index recall.
+      offer.currency !== "SAR" ||
       !observedAtEvidence(offer.observedAt, now)) return false;
 
   // A claimed foreign-to-SAR conversion must retain its original price
@@ -52,6 +53,9 @@ function isValidPriceEvidence(offer, now) {
         typeof offer.fx.observedAt !== "string" ||
         !Number.isFinite(Date.parse(offer.fx.observedAt)) ||
         Date.parse(offer.fx.observedAt) > now + CLOCK_SKEW_MS)
+      return false;
+    const verifiedSar = Math.round(offer.originalProductPrice * offer.fx.rate * 100) / 100;
+    if (!Number.isFinite(verifiedSar) || Math.abs(verifiedSar - offer.productPrice) > 0.011)
       return false;
   }
   return true;
