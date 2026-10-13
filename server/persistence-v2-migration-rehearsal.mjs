@@ -118,6 +118,14 @@ async function assertExistingColumns(client){
       !/USING btree \(lease_until, event_id\) WHERE/.test(idx.rows[0].definition))
     throw new Error('incompatible_existing_schema:'+table+'.expired_index');
   }
+  if(table==='nawaa_observation_v2'){
+   const fks=await client.query(`SELECT convalidated, confdeltype, confupdtype, condeferrable,
+      pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid=to_regclass($1) AND contype='f'`,['public.'+table]);
+   if(!fks.rows.some(x=>x.convalidated&&x.confdeltype==='a'&&x.confupdtype==='a'&&
+       !x.condeferrable&&x.definition==='FOREIGN KEY (offer_key) REFERENCES nawaa_offer_v2(offer_key)'))
+    throw new Error('incompatible_existing_schema:'+table+'.offer_foreign_key');
+  }
   if(table==='nawaa_v2_shadow_attempts'){
    const c=await client.query(`SELECT contype,pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conrelid=to_regclass($1)`,['public.'+table]);
    if(!c.rows.some(x=>x.contype==='u'&&x.def==='UNIQUE (event_id, claim_token)'))
