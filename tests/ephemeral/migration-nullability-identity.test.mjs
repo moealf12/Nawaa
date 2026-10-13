@@ -9,7 +9,7 @@ test('nullable receipt offer identity is rejected before any migration ledger wr
   await pool.query(`CREATE TABLE nawaa_v2_receipts(ingestion_id uuid PRIMARY KEY,offer_key text,content_digest text NOT NULL)`);
   await assert.rejects(rehearseV2Migrations(pool),/incompatible_existing_schema:nawaa_v2_receipts.not_null.offer_key/);
   assert.equal((await pool.query("SELECT to_regclass('public.nawaa_schema_migrations') AS t")).rows[0].t,null);
- }finally{await pool.end()}
+ }finally{await pool.query('DROP TABLE IF EXISTS nawaa_v2_receipts');await pool.end()}
 });
 
 test('existing observation table missing identity generation rejects replay without mutation',async()=>{
