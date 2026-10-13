@@ -115,6 +115,17 @@ async function assertExistingColumns(client){
     throw new Error('incompatible_existing_schema:'+table+'.ingestion_unique');
   }
   if(table==='nawaa_v2_shadow_outbox'){
+   const ready=await client.query(`SELECT i.indisvalid,i.indisready,i.indisunique,
+     i.indpred IS NULL AS not_partial, pg_get_indexdef(i.indexrelid) AS definition
+     FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
+     WHERE i.indrelid='public.nawaa_v2_shadow_outbox'::regclass
+       AND c.relname='nawaa_v2_shadow_outbox_ready'`);
+   if(ready.rows.length!==1||!ready.rows[0].indisvalid||!ready.rows[0].indisready||
+      ready.rows[0].indisunique||!ready.rows[0].not_partial||
+      !ready.rows[0].definition.includes('USING btree (status, next_attempt_at)'))
+    throw new Error('incompatible_existing_schema:'+table+'.ready_index');
+  }
+  if(table==='nawaa_v2_shadow_outbox'){
    const idx=await client.query(`SELECT i.indisvalid,i.indisready,i.indisunique,
      pg_get_expr(i.indpred,i.indrelid) AS predicate,
      pg_get_indexdef(i.indexrelid) AS definition
