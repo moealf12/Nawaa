@@ -12,7 +12,7 @@ test('shadow attempt FK DELETE CASCADE drift rejected before migration writes',a
   const before=(await p.query('SELECT version,checksum_sha256 FROM nawaa_schema_migrations ORDER BY version')).rows;
   await assert.rejects(rehearseV2Migrations(p),/incompatible_existing_schema:nawaa_v2_shadow_attempts.event_foreign_key/);
   assert.deepEqual((await p.query('SELECT version,checksum_sha256 FROM nawaa_schema_migrations ORDER BY version')).rows,before);
- }finally{await p.end()}
+ }finally{await p.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public');await p.end()}
 });
 
 test('missing ingestion unique index is rejected on migrated observation table',async()=>{
