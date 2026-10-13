@@ -58,6 +58,36 @@ async function assertExistingColumns(client){
    continue;
   }
   const actual=new Map(r.rows.map(x=>[x.name,x.type]));
+  for(const [name,type] of Object.entries(expected))
+   if(actual.get(name)!==type)throw new Error('incompatible_existing_schema:'+table+'.'+name);
+  // Reject objects that have matching columns but lack the required primary key.
+  const pk={nawaa_offer_v2:'offer_key',nawaa_observation_v2:'id',
+   nawaa_v2_receipts:'ingestion_id',nawaa_v2_shadow_outbox:'event_id',
+   nawaa_v2_shadow_attempts:'id',nawaa_v2_backfill_progress:'legacy_id',
+   nawaa_schema_migrations:'version'}[table];
+  const key=await client.query(`SELECT pg_get_constraintdef(c.oid) AS definition
+    FROM pg_catalog.pg_constraint c
+    WHERE c.conrelid=to_regclass($1) AND c.contype='p'`,['public.'+table]);
+  if(key.rows.length!==1||key.rows[0].definition!=='PRIMARY KEY ('+pk+')')
+   throw new Error('incompatible_existing_schema:'+table+'.primary_key');
+  const requiredNotNull={
+   nawaa_offer_v2:['offer_key','source_id','source_url','condition','product_price','currency','observed_at','payload'],
+   nawaa_observation_v2:['id','offer_key','ingestion_id','source_id','product_price','currency','observed_at'],
+   nawaa_v2_receipts:['ingestion_id','offer_key','content_digest'],
+   nawaa_v2_shadow_attempts:['id','event_id','claim_token','attempt','outcome'],
+   nawaa_v2_shadow_outbox:['event_id','offer','status','attempts','max_attempts','next_attempt_at'],
+   nawaa_v2_backfill_progress:['legacy_id','outcome','processed_at'],
+   nawaa_schema_migrations:['version','checksum_sha256','applied_at','applied_by']
+  }[table];
+  const nullable=await client.query(`SELECT attname,attnotnull,attidentity FROM pg_attribute
+    WHERE attrelid=to_regclass($1) AND attnum>0 AND NOT attisdropped`,['public.'+table]);
+  const metadata=new Map(nullable.rows.map(x=>[x.attname,x]));
+  for(const name of requiredNotNull)
+   if(!metadata.get(name)?.attnotnull)throw new Error('incompatible_existing_schema:'+table+'.not_null.'+name);
+  if(table==='nawaa_observation_v2'||table==='nawaa_v2_shadow_attempts'){
+   if(metadata.get('id')?.attidentity!=='a')
+    throw new Error('incompatible_existing_schema:'+table+'.identity');
+  }
   if(table==='nawaa_offer_v2'||table==='nawaa_observation_v2'){
    const checks=await client.query(`SELECT pg_get_constraintdef(c.oid) AS definition,c.convalidated
      FROM pg_catalog.pg_constraint c WHERE c.conrelid=to_regclass($1) AND c.contype='c'`,['public.'+table]);
