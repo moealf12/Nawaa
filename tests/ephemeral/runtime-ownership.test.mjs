@@ -1,4 +1,5 @@
 import test from 'node:test';
+import pg from 'pg';
 import assert from 'node:assert/strict';
 import {createEphemeralPool} from '../../server/persistence-v2.mjs';
 import {rehearseV2Migrations} from '../../server/persistence-v2-migration-rehearsal.mjs';
@@ -27,4 +28,18 @@ test('missing or mismatched owned runtime identity fails before migration DDL',a
   const ok=await rehearseV2Migrations(pool);
   assert.equal(ok.applied.length,4);
  }finally{await pool.end()}
+});
+
+test('otherwise valid nawaa_ci instance on unowned service fails actual runner attestation',async()=>{
+ const unowned=new pg.Pool({connectionString:'postgresql://nawaa:nawaa_ci@127.0.0.1:5433/nawaa_ci',ssl:false,max:1,connectionTimeoutMillis:3000});
+ try{
+  const peer=await unowned.query("SELECT current_database() AS db, current_user AS usr,host(inet_server_addr()) AS addr");
+  assert.equal(peer.rows[0].db,'nawaa_ci');
+  assert.equal(peer.rows[0].usr,'nawaa');
+  assert.notEqual(peer.rows[0].addr,process.env.NAWAA_CI_OWNED_SERVICE_IPV4);
+  await assert.rejects(rehearseV2Migrations(unowned),/ephemeral_runtime_owner_mismatch/);
+  const state=await unowned.query("SELECT to_regclass('public.nawaa_schema_migrations') AS ledger,to_regclass('public.nawaa_offer_v2') AS offers");
+  assert.equal(state.rows[0].ledger,null);
+  assert.equal(state.rows[0].offers,null);
+ }finally{await unowned.end()}
 });
