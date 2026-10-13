@@ -7,13 +7,21 @@ import {rehearseV2Migrations} from '../../server/persistence-v2-migration-rehear
 test('attempt table missing event claim uniqueness rejects without touching rows',async()=>{
  const pool=createEphemeralPool();
  try{
-  await pool.query(`CREATE TABLE nawaa_v2_shadow_outbox(event_id uuid PRIMARY KEY,offer jsonb NOT NULL,status text NOT NULL,attempts integer NOT NULL,max_attempts integer NOT NULL,next_attempt_at timestamptz NOT NULL,lease_until timestamptz,claim_token uuid)`);
+  // All unrelated CHECK/DEFAULT contracts must be valid: isolate only missing UNIQUE.
+  await pool.query(`CREATE TABLE nawaa_v2_shadow_outbox(
+    event_id uuid PRIMARY KEY,offer jsonb NOT NULL,
+    status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','completed','dead')),
+    attempts integer NOT NULL DEFAULT 0,max_attempts integer NOT NULL DEFAULT 3,
+    next_attempt_at timestamptz NOT NULL DEFAULT now(),lease_until timestamptz,
+    claim_token uuid,created_at timestamptz NOT NULL DEFAULT now())`);
   await pool.query("CREATE INDEX nawaa_v2_shadow_outbox_expired ON nawaa_v2_shadow_outbox(lease_until,event_id) WHERE status='processing'");
   await pool.query('CREATE INDEX nawaa_v2_shadow_outbox_ready ON nawaa_v2_shadow_outbox(status,next_attempt_at)');
   await pool.query(`CREATE TABLE nawaa_v2_shadow_attempts(
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     event_id uuid NOT NULL REFERENCES nawaa_v2_shadow_outbox(event_id),
-    claim_token uuid NOT NULL,attempt integer NOT NULL,outcome text NOT NULL)`);
+    claim_token uuid NOT NULL,attempt integer NOT NULL,
+    outcome text NOT NULL CHECK(outcome IN ('completed','retry','dead','stale')),
+    recorded_at timestamptz NOT NULL DEFAULT now())`);
   await pool.query("INSERT INTO nawaa_v2_shadow_outbox(event_id,offer,status,attempts,max_attempts,next_attempt_at,lease_until,claim_token) VALUES('00000000-0000-0000-0000-000000000002','{}','pending',0,3,now(),NULL,NULL)");
   await pool.query("INSERT INTO nawaa_v2_shadow_attempts(event_id,claim_token,attempt,outcome) VALUES('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000003',1,'retry')");
   await assert.rejects(rehearseV2Migrations(pool),/incompatible_existing_schema:nawaa_v2_shadow_attempts.unique_event_claim/);
