@@ -39,6 +39,26 @@ const REQUIRED_COLUMNS={
  nawaa_v2_backfill_progress:{legacy_id:'bigint',outcome:'text',processed_at:'timestamp with time zone'},
  nawaa_schema_migrations:{version:'text',checksum_sha256:'character(64)',applied_at:'timestamp with time zone',applied_by:'text'}
 };
+// Critical PG16 contract only: keep this narrower than a full schema fingerprint.
+// Match complete catalog expressions, never substring-match security constraints.
+const IMMUTABLE_TRIGGER_BODY=/RETURNS trigger LANGUAGE plpgsql AS \\$\\$([\\s\\S]*?)\\$\\$;/;
+const EXPECTED_TRIGGER_BODY=IMMUTABLE_TRIGGER_BODY.exec(CREATE_V2_SQL)?.[1]?.trim();
+const REQUIRED_CHECK_DEFINITIONS={
+ nawaa_v2_shadow_outbox:{
+  status:"CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'dead'::text])))"
+ },
+ nawaa_v2_shadow_attempts:{
+  outcome:"CHECK ((outcome = ANY (ARRAY['completed'::text, 'retry'::text, 'dead'::text, 'stale'::text])))"
+ },
+ nawaa_v2_backfill_progress:{
+  outcome:"CHECK ((outcome = ANY (ARRAY['copied'::text, 'unresolved'::text])))"
+ }
+};
+const REQUIRED_DEFAULTS={
+ nawaa_v2_shadow_outbox:{status:"'pending'::text",attempts:'0',max_attempts:'3',next_attempt_at:'now()',created_at:'now()'},
+ nawaa_v2_shadow_attempts:{recorded_at:'now()'},
+ nawaa_v2_backfill_progress:{processed_at:'now()'}
+};
 async function assertExistingColumns(client){
  for(const [table,expected] of Object.entries(REQUIRED_COLUMNS)){
   // PostgreSQL regclass also resolves views and indexes: require an ordinary or
@@ -116,6 +136,28 @@ async function assertExistingColumns(client){
       seq.cache_size!=='1'||seq.cycle!==false)
     throw new Error('incompatible_existing_schema:'+table+'.identity_sequence');
   }
+  const requiredChecks=REQUIRED_CHECK_DEFINITIONS[table];
+  if(requiredChecks){
+   const constraints=await client.query(`SELECT c.convalidated,
+     pg_get_constraintdef(c.oid) AS definition
+     FROM pg_constraint c
+     WHERE c.conrelid=to_regclass($1) AND c.contype='c'`,['public.'+table]);
+   for(const [name,expectedDefinition] of Object.entries(requiredChecks))
+    if(!constraints.rows.some(c=>c.convalidated&&c.definition===expectedDefinition))
+     throw new Error('incompatible_existing_schema:'+table+'.check_'+name);
+  }
+  const requiredDefaults=REQUIRED_DEFAULTS[table];
+  if(requiredDefaults){
+   const defaults=await client.query(`SELECT a.attname AS name,
+     pg_get_expr(d.adbin,d.adrelid) AS expression
+     FROM pg_attribute a
+     LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+     WHERE a.attrelid=to_regclass($1) AND a.attnum>0 AND NOT a.attisdropped`,['public.'+table]);
+   const expressions=new Map(defaults.rows.map(row=>[row.name,row.expression]));
+   for(const [name,expression] of Object.entries(requiredDefaults))
+    if(expressions.get(name)!==expression)
+     throw new Error('incompatible_existing_schema:'+table+'.default_'+name);
+  }
   if(table==='nawaa_offer_v2'||table==='nawaa_observation_v2'){
    const checks=await client.query(`SELECT pg_get_constraintdef(c.oid) AS definition,c.convalidated
      FROM pg_catalog.pg_constraint c WHERE c.conrelid=to_regclass($1) AND c.contype='c'`,['public.'+table]);
@@ -124,14 +166,25 @@ async function assertExistingColumns(client){
   }
   if(table==='nawaa_observation_v2'){
    const trigger=await client.query(`SELECT t.tgenabled,t.tgtype,
-       p.proname,pg_get_functiondef(p.oid) AS function_definition
-     FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
-     WHERE t.tgrelid='public.nawaa_observation_v2'::regclass AND NOT t.tgisinternal AND t.tgname='nawaa_v2_immutable'`);
+       t.tgqual IS NULL AS unqualified,
+       p.proname,p.prosrc AS body,p.prosecdef AS security_definer,
+       p.proconfig IS NULL AS no_function_config,
+       ns.nspname AS function_schema,lan.lanname AS function_language
+     FROM pg_trigger t
+     JOIN pg_proc p ON p.oid=t.tgfoid
+     JOIN pg_namespace ns ON ns.oid=p.pronamespace
+     JOIN pg_language lan ON lan.oid=p.prolang
+     WHERE t.tgrelid='public.nawaa_observation_v2'::regclass
+       AND NOT t.tgisinternal AND t.tgname='nawaa_v2_immutable'`);
    const t=trigger.rows[0];
-   if(trigger.rows.length!==1||t.tgenabled!=='O'||
-      Number(t.tgtype)!==27||
+   // Exact trusted PL/pgSQL body and unqualified firing are required:
+   // a function containing an unreachable RAISE must never pass preflight.
+   if(!EXPECTED_TRIGGER_BODY||trigger.rows.length!==1||t.tgenabled!=='O'||
+      Number(t.tgtype)!==27||t.unqualified!==true||
       t.proname!=='nawaa_v2_reject_observation_change'||
-      !t.function_definition.includes("RAISE EXCEPTION 'v2_observations_immutable'"))
+      t.function_schema!=='public'||t.function_language!=='plpgsql'||
+      t.security_definer!==false||t.no_function_config!==true||
+      t.body?.trim()!==EXPECTED_TRIGGER_BODY)
     throw new Error('incompatible_existing_schema:'+table+'.immutable_trigger');
   }
   if(table==='nawaa_observation_v2'){
