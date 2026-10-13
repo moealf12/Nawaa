@@ -1,0 +1,101 @@
+name: NAWAA Phase Zero Persistence V2 Evidence
+on:
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  # Save public-runner time by superseding stale CI after a new PR commit.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+jobs:
+  ephemeral-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa
+          POSTGRES_PASSWORD: nawaa_ci
+          POSTGRES_DB: nawaa_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nawaa -d nawaa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      unowned_postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa
+          POSTGRES_PASSWORD: nawaa_ci
+          POSTGRES_DB: nawaa_ci
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U nawaa -d nawaa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NAWAA_CI_EPHEMERAL_DB: '1'
+      DATABASE_URL: postgresql://nawaa:nawaa_ci@localhost:5432/nawaa_ci
+      DATABASE_SSL: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify PR merge checkout provenance
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" =~ ^refs/pull/[0-9]+/merge$ ]] || { echo 'expected_pr_merge_ref'; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || { echo 'checkout_not_at_merge_sha'; exit 1; }
+          echo "verified_merge_tree=$(git rev-parse HEAD^{tree}) parents=$(git show -s --format=%P HEAD)"
+          echo "verified_merge_ref=$GITHUB_REF base=$GITHUB_BASE_REF sha=$GITHUB_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Bind owned PostgreSQL service endpoint
+        shell: bash
+        env:
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          test -n "$POSTGRES_SERVICE_ID"
+          SERVICE_IPV4=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$POSTGRES_SERVICE_ID")
+          [[ "$SERVICE_IPV4" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "NAWAA_CI_OWNED_SERVICE_IPV4=$SERVICE_IPV4" >> "$GITHUB_ENV"
+          echo "owned_postgres_service_endpoint_verified=1"
+      - run: npm ci --ignore-scripts
+      - name: Verify real PostgreSQL transaction evidence
+        run: |
+          set -eu
+          for suite in tests/ephemeral/*.test.mjs; do
+            echo "=== Running isolated PostgreSQL suite: $suite ==="
+            node --input-type=module -e "import pg from 'pg'; const db=new pg.Client({connectionString:process.env.DATABASE_URL,ssl:false}); await db.connect(); try { await db.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public'); } finally { await db.end(); }"
+            node --test "$suite"
+          done
+
+      - name: Prove failed restore cleans disposable resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          if NAWAA_CI_INJECT_RESTORE_FAILURE=1 node tests/ephemeral/restore-rehearsal.mjs >restore-failure.log 2>&1; then
+            echo "injected_restore_unexpected_success"
+            exit 1
+          fi
+          grep -q "input file does not appear to be a valid archive" restore-failure.log
+          node --input-type=module -e "import pg from 'pg'; const c=new pg.Client({connectionString:process.env.DATABASE_URL,ssl:false}); await c.connect(); try { const x=await c.query(\"SELECT count(*)::int AS n FROM pg_database WHERE datname='nawaa_restore_ci'\"); if(x.rows[0].n!==0)throw Error('restore_cleanup_failed'); } finally { await c.end(); }"
+          echo "injected_restore_failure_verified cleanup=1"
+          # The deliberately failed run seeded the disposable source database.
+          # Clear only the allowlisted CI source before the subsequent clean recovery.
+          node --input-type=module -e "import pg from 'pg'; const c=new pg.Client({connectionString:process.env.DATABASE_URL,ssl:false}); await c.connect(); try { const i=await c.query('SELECT current_database() AS db, current_user AS usr'); if(i.rows[0].db!=='nawaa_ci'||i.rows[0].usr!=='nawaa')throw Error('cleanup_target_not_allowlisted'); await c.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public'); } finally { await c.end(); }"
+          echo "injected_restore_source_fixture_reset=1"
+          rm -f restore-failure.log
+      - name: Verify isolated PostgreSQL backup and restore
+        run: node tests/ephemeral/restore-rehearsal.mjs

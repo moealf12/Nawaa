@@ -13,15 +13,11 @@ on:
       - "package*.json"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
-    paths:
-      - "server/**"
-      - "src/**"
-      - "tests/**"
-      - "workers/**"
-      - "scripts/**"
-      - "*.html"
-      - "package*.json"
-      - ".github/workflows/search-core-tests.yml"
+
+concurrency:
+  # Save public-runner time by superseding stale CI after a new PR commit.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -30,9 +26,26 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # Default checkout verifies the synthetic PR merge commit, not just the head branch.
+      # This detects regressions introduced by interaction with the target branch.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          fetch-depth: 2
+      - name: Verify PR merge checkout provenance
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" =~ ^refs/pull/[0-9]+/merge$ ]] || { echo 'expected_pr_merge_ref'; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || { echo 'checkout_not_at_merge_sha'; exit 1; }
+          read -r parent_base parent_head extra <<< "$(git show -s --format=%P HEAD)"
+          [[ -n "$parent_base" && -n "$parent_head" && -z "${extra:-}" ]] || { echo 'invalid_merge_parents'; exit 1; }
+          [[ "$parent_base" == "$EXPECTED_BASE_SHA" && "$parent_head" == "$EXPECTED_HEAD_SHA" ]] || { echo 'merge_parent_mismatch'; exit 1; }
+          echo "verified_merge_tree=$(git rev-parse HEAD^{tree}) parent_base=$parent_base parent_head=$parent_head"
+          echo "verified_merge_ref=$GITHUB_REF base=$GITHUB_BASE_REF sha=$GITHUB_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
