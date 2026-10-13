@@ -28,13 +28,13 @@ const offer=(changes={})=>({
 test('indexing preserves original price observation and price metadata, not indexing time',async()=>{
   let inserted;
   const target={async addDocuments(docs){inserted=docs;}};
-  const src=offer({originalCurrency:'USD',originalProductPrice:1333,
+  const src=offer({productPrice:4998.75,originalCurrency:'USD',originalProductPrice:1333,
     fx:{rate:3.75,source:'Frankfurter',observedAt:new Date(now-86_400_000).toISOString()}});
   const result=await indexOffers([src],{target,now});
   assert.deepEqual(result,{configured:true,indexed:1});
   assert.equal(inserted[0].observedAt,src.observedAt);
   assert.notEqual(inserted[0].observedAt,new Date(now).toISOString());
-  assert.equal(inserted[0].productPrice,4999);
+  assert.equal(inserted[0].productPrice,4998.75);
   assert.equal(inserted[0].originalCurrency,'USD');
   assert.equal(inserted[0].originalProductPrice,1333);
   assert.equal(inserted[0].fx.source,'Frankfurter');
@@ -52,10 +52,12 @@ test('expired, future, invalid or unsupported price evidence cannot refresh inde
     offer({productPrice:NaN}),
     offer({productPrice:'4999'}),
     offer({currency:'???'}),
+    offer({currency:'USD'}), // must not compare USD units against SAR units
     offer({currency:null}),
     offer({sourceUrl:'http://example.com/phone'}),
     offer({sourceUrl:'https://user:pass@example.com/phone'}),
     offer({originalCurrency:'USD',originalProductPrice:1500}),
+    offer({originalCurrency:'USD',originalProductPrice:1500,fx:{rate:3.75,source:'Frankfurter',observedAt:new Date(now).toISOString()}}), // valid-looking FX but wrong converted total
     offer({originalCurrency:'USD',originalProductPrice:1500,fx:{rate:-1,source:'FX',observedAt:new Date(now).toISOString()}}),
   ];
   let calls=0;
@@ -72,6 +74,7 @@ test('indexed recall rejects old legacy hits and invalid prices instead of prete
     offer({observedAt:null}),
     offer({productPrice:null}),
     offer({currency:'WRONG'}),
+    offer({currency:'USD'}),
     offer({originalCurrency:'EUR',originalProductPrice:4500}),
     offer(),
   ];
