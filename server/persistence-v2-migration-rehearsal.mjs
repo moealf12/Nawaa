@@ -88,6 +88,34 @@ async function assertExistingColumns(client){
    if(metadata.get('id')?.attidentity!=='a')
     throw new Error('incompatible_existing_schema:'+table+'.identity');
   }
+  // GENERATED ALWAYS is not sufficient: audit the PostgreSQL-owned sequence,
+  // its internal column dependency, matching owner/schema and safe generator settings.
+  // Reject competing AUTO dependencies as well as a missing INTERNAL dependency.
+  if(table==='nawaa_observation_v2'||table==='nawaa_v2_shadow_attempts'){
+   const sequences=await client.query(`SELECT seq.relname AS sequence_name,
+     (seq.relnamespace=tbl.relnamespace) AS same_schema,
+     (seq.relowner=tbl.relowner) AS same_owner,
+     d.deptype, pg_catalog.format_type(config.seqtypid,NULL) AS sequence_type,
+     config.seqincrement::text AS increment,config.seqmin::text AS minimum,
+     config.seqcache::text AS cache_size,config.seqcycle AS cycle
+     FROM pg_class tbl
+     JOIN pg_namespace ns ON ns.oid=tbl.relnamespace
+     JOIN pg_attribute col ON col.attrelid=tbl.oid AND col.attname='id'
+       AND col.attnum>0 AND NOT col.attisdropped
+     JOIN pg_depend d ON d.refclassid='pg_class'::regclass
+       AND d.refobjid=tbl.oid AND d.refobjsubid=col.attnum
+       AND d.classid='pg_class'::regclass AND d.objsubid=0
+       AND d.deptype IN ('i','a')
+     JOIN pg_class seq ON seq.oid=d.objid AND seq.relkind='S'
+     LEFT JOIN pg_sequence config ON config.seqrelid=seq.oid
+     WHERE ns.nspname='public' AND tbl.relname=$1`,[table]);
+   const seq=sequences.rows[0];
+   if(sequences.rows.length!==1||seq.deptype!=='i'||
+      seq.sequence_name!==table+'_id_seq'||!seq.same_schema||!seq.same_owner||
+      seq.sequence_type!=='bigint'||seq.increment!=='1'||seq.minimum!=='1'||
+      seq.cache_size!=='1'||seq.cycle!==false)
+    throw new Error('incompatible_existing_schema:'+table+'.identity_sequence');
+  }
   if(table==='nawaa_offer_v2'||table==='nawaa_observation_v2'){
    const checks=await client.query(`SELECT pg_get_constraintdef(c.oid) AS definition,c.convalidated
      FROM pg_catalog.pg_constraint c WHERE c.conrelid=to_regclass($1) AND c.contype='c'`,['public.'+table]);
