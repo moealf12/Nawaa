@@ -41,8 +41,8 @@ const REQUIRED_COLUMNS={
 };
 // Critical PG16 contract only: keep this narrower than a full schema fingerprint.
 // Match complete catalog expressions, never substring-match security constraints.
-const IMMUTABLE_TRIGGER_BODY=/RETURNS trigger LANGUAGE plpgsql AS \\$\\$([\\s\\S]*?)\\$\\$;/;
-const EXPECTED_TRIGGER_BODY=IMMUTABLE_TRIGGER_BODY.exec(CREATE_V2_SQL)?.[1]?.trim();
+// Pin the exact body emitted by CREATE_V2_SQL; no substring acceptance.
+const EXPECTED_TRIGGER_BODY="BEGIN RAISE EXCEPTION 'v2_observations_immutable'; END;";
 const REQUIRED_CHECK_DEFINITIONS={
  nawaa_v2_shadow_outbox:{
   status:"CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'dead'::text])))"
