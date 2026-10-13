@@ -21,6 +21,7 @@ let restoredClient;
 const measured={};
 const clock=()=>process.hrtime.bigint();
 const elapsedMs=start=>Number(process.hrtime.bigint()-start)/1e6;
+const keyIsTime=value=>Number.isFinite(value);
 const totalStarted=clock();
 try{
  run('pg_dump',['--version']);
@@ -121,7 +122,7 @@ try{
  if(JSON.stringify(postChecks)!==JSON.stringify(expected))throw Error('restored_integrity_changed_during_checks');
 
  measured.end_to_end_ms=elapsedMs(totalStarted);
- process.stdout.write('isolated_restore_verified postgres_version='+measured.postgres_version+' backup_bytes='+measured.fixture_backup_bytes+' tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1 actual_runner_replays=2 actual_runner_applied=0 '+Object.entries(measured).map(([key,value])=>key+'='+value.toFixed(2)).join(' ')+'\\n');
+ process.stdout.write('isolated_restore_verified postgres_version='+measured.postgres_version+' backup_bytes='+measured.fixture_backup_bytes+' tables=6 migration_versions=4 schema_invariants=3 immutability=2 constraints=2 ledger_checksums=4 replay_applied=0 unauthorized_target_rejected=1 actual_runner_replays=2 actual_runner_applied=0 '+Object.entries(measured).filter(([,value])=>typeof value==='number'&&keyIsTime(value)).map(([key,value])=>key+'='+value.toFixed(2)).join(' ')+'\\n');
 }finally{
  const cleanupStarted=clock();
  if(restoredClient)await restoredClient.end();
