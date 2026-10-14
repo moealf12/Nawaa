@@ -38,6 +38,10 @@ test("query deep link starts exactly one live search and URL submission requests
   await import("../src/search-page.mjs");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.filter((url) => url.includes("/api/search?")).length, 1);
+  assert.equal(requests.filter((url) => new URL(url).pathname === "/health").length, 0,
+    "the shopper search must not wait for a redundant health warmup");
+  assert.equal(new URL(requests[0]).pathname, "/api/search",
+    "send the actual search immediately, including on a cold API instance");
   assert.equal((element("#results").innerHTML.match(/data-group-key=/g) || []).length, 2);
   assert.ok(element("#results").innerHTML.indexOf("نفس النسخة، بين المتاجر") < element("#results").innerHTML.indexOf("المواصفات الموحّدة"), "merchant comparison should precede optional specifications");
   assert.match(element("#results").innerHTML, /id="availabilityFilter"/);
