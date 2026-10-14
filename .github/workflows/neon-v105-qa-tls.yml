@@ -1,0 +1,22 @@
+name: NAWAA Neon QA TLS Attestation
+on:
+  pull_request:
+    paths:
+      - 'scripts/neon-v105-tls-attest.mjs'
+      - '.github/workflows/neon-v105-qa-tls.yml'
+permissions:
+  contents: read
+concurrency:
+  group: neon-qa-tls-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-neon-tls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify QA hostname, certificate and wrong-host rejection
+        run: node scripts/neon-v105-tls-attest.mjs
