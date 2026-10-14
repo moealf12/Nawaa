@@ -791,6 +791,9 @@ const server = http.createServer(async (req, res) => {
 
     const normalized = normalizeSearchQuery(q);
     const key = searchCacheKey(normalized,0);
+    // Streamed searches must expose the same signed depth-1 cursor as /api/search.
+    // Without it, the UI cannot request additional sources after an SSE result.
+    const nextCursor = encodeSearchCursor(normalized, 1);
     const cached = cachedSearch.peek(key);
     res.writeHead(200,{
       "content-type":"text/event-stream; charset=utf-8",
@@ -811,7 +814,7 @@ const server = http.createServer(async (req, res) => {
     req.on("close",()=>{closed=true;});
     try {
       if (cached) {
-        send("snapshot",cached);
+        send("snapshot",{...cached,nextCursor});
         if (cached.cache?.mode === "fresh") {
           send("done",{cache:"fresh",offers:cached.offers?.length || 0});
           return res.end();
@@ -822,11 +825,11 @@ const server = http.createServer(async (req, res) => {
       let result;
       try {
         result=await streamSearchProgress(normalized,async(snapshot)=>{
-          if(!closed&&!res.writableEnded) send("snapshot",{...snapshot,cache:{hit:false,mode:"progress",stale:false,refreshing:true,ageMs:0}});
+          if(!closed&&!res.writableEnded) send("snapshot",{...snapshot,nextCursor,cache:{hit:false,mode:"progress",stale:false,refreshing:true,ageMs:0}});
         });
       } finally { clearInterval(heartbeat); }
       if (closed || res.writableEnded) return;
-      send("snapshot",{...result,coverage:{...(result.coverage||{}),partial:false,complete:true,providersPending:0},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
+      send("snapshot",{...result,nextCursor,coverage:{...(result.coverage||{}),partial:false,complete:true,providersPending:0},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
       send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
       return res.end();
     } catch(error) {
