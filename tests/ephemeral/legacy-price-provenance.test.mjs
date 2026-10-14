@@ -69,13 +69,17 @@ test('persistOffers rejects unverified FX, retaining valid same-currency evidenc
 });
 
 test('direct dormant recall rejects forged recency and retains valid alternative at requested limit',async()=>{
-  const good=base(randomUUID(),{title:'HP Laptop Alternative',productPrice:1800,observedAt:new Date(Date.now()-60_000).toISOString()});
-  await persistOffers('HP', [good]);
-  const bad=base(randomUUID(),{title:'HP Laptop Forged',productPrice:1,observedAt:new Date(Date.now()-24*3600_000).toISOString()});
+  // Prior cases in the same suite deliberately create other valid HP offers.
+  // Scope the query to this independent product family so ranking cannot pick
+  // a legitimate earlier fixture before the expected alternative.
+  const family='Recall'+randomUUID().replaceAll('-','');
+  const good=base(randomUUID(),{title:family+' HP Laptop Alternative',productPrice:1800,observedAt:new Date(Date.now()-60_000).toISOString()});
+  await persistOffers(family,[good]);
+  const bad=base(randomUUID(),{title:family+' HP Laptop Forged',productPrice:1,observedAt:new Date(Date.now()-24*3600_000).toISOString()});
   await pool.query(`INSERT INTO nawaa_offers(offer_key,query,title,source_url,currency,product_price,condition,observed_at,payload)
-    VALUES($1,'HP','HP Laptop Forged',$2,'SAR',1,'new',now(),$3::jsonb)`,
-    [keyOf(bad),bad.sourceUrl.replace('www.jarir.com','jarir.com'),JSON.stringify(bad)]);
-  const result=await searchPersistedOffers('HP',{limit:1});
+    VALUES($1,$4,$4,$2,'SAR',1,'new',now(),$3::jsonb)`,
+    [keyOf(bad),bad.sourceUrl.replace('www.jarir.com','jarir.com'),JSON.stringify(bad),bad.title]);
+  const result=await searchPersistedOffers(family,{limit:1});
   assert.equal(result.offers.length,1);
   assert.equal(result.offers[0].productPrice,1800);
   assert.equal(result.offers[0].dataKind,'persisted');
