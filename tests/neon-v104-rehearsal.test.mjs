@@ -53,8 +53,9 @@ test('unknown migration, checksum drift and sequence gaps fail closed',async()=>
     const db=new FakeClient();
     await rehearseNeonV2(db);
     mutation(db);
+    const before=JSON.stringify({rows:db.rows,tables:[...db.tables]});
     await assert.rejects(rehearseNeonV2(db),/migration_history_diverged|migration_version_gap/);
-    assert.equal(db.rows.length,db.rows.length);
+    assert.equal(JSON.stringify({rows:db.rows,tables:[...db.tables]}),before);
     assert.equal(db.queryLog.at(-1),'ROLLBACK');
   }
 });
