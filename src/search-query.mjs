@@ -236,10 +236,15 @@ export function buildProviderFallbackQueries(value = "") {
 }
 
 const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)?)\b/;
-const GAMING_ACCESSORY = /\b(?:controller|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|cover|case|accessory|accessories|gift card|recharge card)\b/;
+// A separate optical/disc drive is a peripheral even when a merchant title
+// mentions "PlayStation 5 Digital Edition". Disc-edition *consoles* remain consoles.
+const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
+const GAMING_ACCESSORY = /\b(?:controller|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|cover|case|accessory|accessories|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive)\b/;
+const CONSOLE_WITH_INCLUDED_DRIVE = /\bconsole\b.*\b(?:with|including|includes)\b.*\b(?:disc|disk|optical|blu ray) drive\b/;
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
+    if (CONSOLE_WITH_INCLUDED_DRIVE.test(query)) return "console";
     if (GAMING_ACCESSORY.test(query)) return "accessory";
     if (/\b(?:game|games)\b/.test(query)) return "game";
     const remainder = query.replace(GAMING_PLATFORM, "").replace(/\b(?:sony|microsoft|nintendo|console|slim|pro|digital|disc|edition|bundle|new|used|refurbished|black|white|\d+(?:gb|tb))\b/g, "").trim();
@@ -257,7 +262,10 @@ export function describeProduct(offer = {}) {
   let kind = "product";
   if (platform) {
     if (/\b(?:cover|case|accessory|accessories|gift card|recharge card)\b/.test(title + " " + metadata)) kind = "accessory";
-    else if (GAMING_ACCESSORY.test(title) && !(isBundle && /\bconsole\b/.test(title))) kind = "accessory";
+    else if (GAMING_ACCESSORY.test(title) && !(
+      (isBundle && /\bconsole\b/.test(title)) ||
+      (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
+    )) kind = "accessory";
     else if (/\bconsole\b/.test(title) || /^CFI[127]\d/i.test(sku) || /\b(?:digital|disc) edition\b/.test(title) || /\b(?:825gb|1tb|2tb)\b/.test(title)) kind = "console";
     else if (/^(?:sony )?ps[45](?: slim| pro)?$/.test(title)) kind = "console";
     else kind = "game";
@@ -270,6 +278,7 @@ export function describeProduct(offer = {}) {
 
 const ACCESSORY_TERMS = [
   "case","cover","screen protector","protector","charger","cable","adapter",
+  "disc drive","disk drive","optical drive","blu ray drive",
   "atomizer","perfume bottle","empty bottle","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
   "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه"
 ];
@@ -322,7 +331,10 @@ export function assessOfferMatch(query, offer) {
     explicitAccessoryQuery ||
     ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
     (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
-  const titleHasAccessory = ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
+  // A console sold *with* its drive is not an accessory. The same phrase
+  // on a separate "Disc Drive for PS5" listing must still be rejected.
+  const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
+  const titleHasAccessory = !includedConsoleDrive && ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
