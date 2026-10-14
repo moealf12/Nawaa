@@ -62,12 +62,17 @@ export function createSearchCache(search, {
         void startRefresh(key).catch(() => {});
         return { ...clone(entry.result), cache:cacheMeta("stale", age) };
       }
-      // Keep the expired snapshot until refresh succeeds; it can rescue a
-      // transient provider/deadline failure instead of flashing zero results.
+      // Past the hard stale deadline, never resurrect a potentially obsolete
+      // price when provider refresh fails. A failed refresh is not price evidence.
+      if (age >= staleTtl) entries.delete(key);
     }
-    const previous = entry ? clone(entry.result) : null;
+    const previous = entry && Math.max(0, now() - entry.at) < staleTtl
+      ? clone(entry.result) : null;
     const result = await startRefresh(key);
-    if ((!result.offers?.length) && previous?.offers?.length) {
+    // Recheck after the network wait: a once-eligible snapshot may have
+    // expired while the refresh was in flight.
+    if ((!result.offers?.length) && previous?.offers?.length &&
+        Math.max(0, now() - entry.at) < staleTtl) {
       touch(key, entry);
       return {
         ...previous,
