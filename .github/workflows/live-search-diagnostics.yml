@@ -4,6 +4,7 @@ on:
     paths:
       - 'scripts/diagnose-live-search.mjs'
       - 'scripts/diagnose-live-providers.mjs'
+      - 'scripts/diagnose-candidate-search.mjs'
       - '.github/workflows/live-search-diagnostics.yml'
   workflow_dispatch:
 permissions:
@@ -24,6 +25,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Check four existing merchant adapters independently (read only)
         run: node scripts/diagnose-live-providers.mjs
+      - name: Test candidate API against live stores locally (no deploy)
+        run: node scripts/diagnose-candidate-search.mjs
       - name: Query three public production searches (GET only)
         run: node scripts/diagnose-live-search.mjs
       - name: Keep sanitized evidence regardless of reachability
