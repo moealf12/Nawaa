@@ -1,0 +1,101 @@
+{
+  "description": "SYNTHETIC QA DATA ONLY. Not an operational backup. No user data or credentials.",
+  "source_branch_id": "br-long-snow-ba2k3bkj",
+  "database_name": "nawaa_catalog_db",
+  "source_commit": "13f8ea43e19fe478ab9eb07a551b570eec0bd513",
+  "canonical_postgres_jsonb_sha256": "5c9f45143cbeea63052ab25dd06f56a3658e1401fd37a37595d00aae6c1e7bdf",
+  "tables": {
+    "nawaa_offer_v2": [
+      {
+        "payload": {},
+        "currency": "SAR",
+        "condition": "new",
+        "offer_key": "v104-test-only",
+        "source_id": "fixture",
+        "source_url": "https://example.org/test",
+        "observed_at": "2026-10-14T22:29:08.920675+00:00",
+        "product_price": 10
+      }
+    ],
+    "nawaa_v2_receipts": [
+      {
+        "offer_key": "v104-test-only",
+        "ingestion_id": "00000000-0000-4000-8000-000000010105",
+        "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "nawaa_observation_v2": [
+      {
+        "id": 1,
+        "currency": "SAR",
+        "offer_key": "v104-test-only",
+        "source_id": "fixture",
+        "observed_at": "2026-10-14T22:29:08.92+00:00",
+        "ingestion_id": "00000000-0000-4000-8000-000000010105",
+        "product_price": 10
+      }
+    ],
+    "nawaa_v2_shadow_outbox": [
+      {
+        "offer": {
+          "offerKey": "v104-test-only",
+          "sourceId": "fixture"
+        },
+        "status": "pending",
+        "attempts": 0,
+        "event_id": "00000000-0000-4000-8000-000000010106",
+        "created_at": "2026-10-14T22:53:23.463472+00:00",
+        "last_error": null,
+        "claim_token": null,
+        "lease_until": null,
+        "completed_at": null,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-10-14T22:29:08.92+00:00"
+      }
+    ],
+    "nawaa_schema_migrations": [
+      {
+        "version": "v2_0001",
+        "applied_at": "2026-10-14T22:20:28.507057+00:00",
+        "applied_by": "isolated_neon_rehearsal",
+        "checksum_sha256": "1396086140fa82f566ef447cdd9d231083b58403df220de7021836aa2b47bb2a"
+      },
+      {
+        "version": "v2_0002",
+        "applied_at": "2026-10-14T22:20:28.507057+00:00",
+        "applied_by": "isolated_neon_rehearsal",
+        "checksum_sha256": "c3cba887eca9f57f747a96ca296679b3c096d45d1b33853b73ac6d2d9ef7f903"
+      },
+      {
+        "version": "v2_0003",
+        "applied_at": "2026-10-14T22:20:28.507057+00:00",
+        "applied_by": "isolated_neon_rehearsal",
+        "checksum_sha256": "e534ecf0ac2f90efc373239504a04cce8d98e48905202f33b0238703bb1cb025"
+      },
+      {
+        "version": "v2_0004",
+        "applied_at": "2026-10-14T22:20:28.507057+00:00",
+        "applied_by": "isolated_neon_rehearsal",
+        "checksum_sha256": "470da8feb6b4952442c2e74e164dcf8a14977d543587a93ca0f65f9ad91e6331"
+      }
+    ],
+    "nawaa_v2_shadow_attempts": [
+      {
+        "id": 1,
+        "error": null,
+        "attempt": 1,
+        "outcome": "retry",
+        "event_id": "00000000-0000-4000-8000-000000010106",
+        "claim_token": "00000000-0000-4000-8000-000000010107",
+        "recorded_at": "2026-10-14T22:30:00+00:00"
+      }
+    ],
+    "nawaa_v2_backfill_progress": [
+      {
+        "outcome": "unresolved",
+        "legacy_id": 104,
+        "processed_at": "2026-10-14T22:30:00+00:00"
+      }
+    ]
+  }
+}
