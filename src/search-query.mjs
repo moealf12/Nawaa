@@ -244,7 +244,8 @@ const CONSOLE_WITH_INCLUDED_DRIVE = /\bconsole\b.*\b(?:with|including|includes)\
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
-    if (GAMING_ACCESSORY.test(query) && !CONSOLE_WITH_INCLUDED_DRIVE.test(query)) return "accessory";
+    if (CONSOLE_WITH_INCLUDED_DRIVE.test(query)) return "console";
+    if (GAMING_ACCESSORY.test(query)) return "accessory";
     if (/\b(?:game|games)\b/.test(query)) return "game";
     const remainder = query.replace(GAMING_PLATFORM, "").replace(/\b(?:sony|microsoft|nintendo|console|slim|pro|digital|disc|edition|bundle|new|used|refurbished|black|white|\d+(?:gb|tb))\b/g, "").trim();
     return remainder ? "game" : "console";
