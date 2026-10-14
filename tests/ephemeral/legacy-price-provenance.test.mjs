@@ -87,3 +87,15 @@ test('direct dormant recall rejects forged recency and retains valid alternative
   assert.equal(result.offers[0].priceConfidence,'incomplete');
   assert.equal(result.offers[0].totalSAR,null);
 });
+
+test('dormant persisted freshness excludes the exact expiry boundary with an injected clock',async()=>{
+  const family='Window'+randomUUID().replaceAll('-','');
+  const at=Date.now()-3600_000+5_000;
+  const offer=base(randomUUID(),{title:family+' HP Laptop',productPrice:1749,observedAt:new Date(at).toISOString()});
+  await persistOffers(family,[offer]);
+  const earlier=await searchPersistedOffers(family,{maxAgeHours:1,limit:1,now:at+3600_000-1});
+  assert.equal(earlier.offers.length,1,'the last millisecond inside TTL is eligible');
+  assert.equal(earlier.offers[0].observedAt,new Date(at).toISOString());
+  const expired=await searchPersistedOffers(family,{maxAgeHours:1,limit:1,now:at+3600_000});
+  assert.deepEqual(expired.offers,[],'exact hard expiry must not claim a fresh price');
+});
