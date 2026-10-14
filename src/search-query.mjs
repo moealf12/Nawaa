@@ -330,7 +330,10 @@ export function assessOfferMatch(query, offer) {
     explicitAccessoryQuery ||
     ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
     (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
-  const titleHasAccessory = ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
+  // A console sold *with* its drive is not an accessory. The same phrase
+  // on a separate "Disc Drive for PS5" listing must still be rejected.
+  const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
+  const titleHasAccessory = !includedConsoleDrive && ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
