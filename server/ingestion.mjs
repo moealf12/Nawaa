@@ -1,4 +1,4 @@
-import {validatedObservedAt} from './persistence.mjs';
+import {validatedObservedAt} from './price-observation.mjs';
 const HTTPS_URL=/^https:\/\//i;
 export const INGEST_BATCH_LIMIT=500;
 
