@@ -87,7 +87,6 @@ export async function recordOffer(offerData={}, {now=Date.now()}={}){
   const healthStatus=String(offerData.healthStatus||"healthy").trim().toLowerCase();
   const condition=String(offerData.condition||"new").trim().toLowerCase()||"new";
   if(!sourceUrl||title.length<3||!Number.isFinite(price)||price<=0||!/^[A-Z]{3}$/.test(currency)||!sourceName) throw new Error("invalid_offer_record");
-  const {observedAt}=validatedPriceEvidence({...offerData,productPrice:price,currency},{now});
   const client=await db();
   if(!client) throw new Error("persistence_not_configured");
   // Shadow opt-in must be rejected before legacy schema initialization can write DDL.
@@ -96,6 +95,9 @@ export async function recordOffer(offerData={}, {now=Date.now()}={}){
     const {assertEphemeralDatabase}=await import('./persistence-v2.mjs');
     assertEphemeralDatabase();
   }
+  // The database owner/security guard runs first for opt-in shadow mode;
+  // source price evidence is still validated before any persistence DDL.
+  const {observedAt}=validatedPriceEvidence({...offerData,productPrice:price,currency},{now});
   await initPersistence();
   const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition,observedAt:observedAt.toISOString()};
   const key=keyOf(normalized);
