@@ -362,7 +362,7 @@ async function renderUrlState(query, requestId) {
   els.status.textContent = "نستخرج المنتج ونقارن عروضه…";
   els.results.innerHTML = '<div class="empty-state live-loading">جاري قراءة رابط المنتج والبحث عن عروضه في المتاجر…</div>';
   try {
-    await wakeSearchApi(apiBase);
+    // Resolve URL-based comparisons directly too; /health is not a prerequisite.
     const data = await fetchJsonWithRetry(apiBase + "/api/search?url=" + encodeURIComponent(query));
     if (!data.resolvedOffer || !Array.isArray(data.offers) || !data.offers.length) {
       throw new Error("product_identity_missing");
