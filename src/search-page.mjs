@@ -287,17 +287,6 @@ async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
   throw lastError || new Error("request_failed");
 }
 
-async function wakeSearchApi(apiBase) {
-  try {
-    await fetchJsonWithRetry(apiBase + "/health", {
-      headers: { accept: "application/json" },
-    }, 2);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function renderLiveSearchError(query, error) {
   state.product = null;
   const message = error?.name === "AbortError"
@@ -1258,7 +1247,9 @@ async function runSearch(rawQuery) {
     els.results.innerHTML = '<div class="empty-state live-loading">جاري إيقاظ محرك البحث وجمع العروض الحية من المتاجر… قد تستغرق المحاولة الأولى عدة ثوانٍ.</div>';
 
     try {
-      await wakeSearchApi(apiBase);
+      // The search request itself wakes a sleeping API instance. A sequential
+      // /health preflight can delay real shopping results by tens of seconds.
+      // Go directly to SSE (or JSON fallback) rather than blocking on health.
       if (requestId !== state.requestId) return;
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
