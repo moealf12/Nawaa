@@ -81,11 +81,11 @@ async function measureStreamFirstOffer(text){
     while(true){
       const {value,done:streamDone}=await reader.read();
       if(streamDone)break;
-      remaining+=decoder.decode(value,{stream:true}).replace(/\\r\\n/g,'\\n');
+      remaining+=decoder.decode(value,{stream:true}).replace(/\r\n/g,'\n');
       // Prevent a malformed server from accumulating an unbounded line buffer.
       if(remaining.length>2000000)throw Error('sse_buffer_limit');
       let end;
-      while((end=remaining.indexOf('\\n\\n'))!==-1){
+      while((end=remaining.indexOf('\n\n'))!==-1){
         const block=remaining.slice(0,end);
         remaining=remaining.slice(end+2);
         const event=block.match(/^event: (.+)$/m)?.[1];
