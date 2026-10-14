@@ -471,11 +471,28 @@ async function searchAll(query, { depth = 0 } = {}) {
     }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) })),
     () => ({ offers:[], error:"search_deadline_exceeded" }),
   );
+  // Preserve every already-completed provider result when the request deadline
+  // expires. A slow merchant must never erase valid prices returned by a fast one.
+  // This is the same incremental evidence path used by SSE, without sacrificing
+  // the existing bounded deadline on the synchronous JSON endpoint.
+  const completedPrimaryChunks = [];
   const [amazon,primary,indexed,persisted] = await Promise.all([
     amazonPromise,
     beforeRequestDeadline(
-      () => runProviderPass(providerQuery, "primary", query, { plan }),
-      () => ({ providers:[], errors:[{provider:"search",sourceId:"search",pass:"primary",error:"search_deadline_exceeded"}], offers:[] }),
+      () => runProviderPass(providerQuery, "primary", query, {
+        plan,
+        onChunk: (chunk) => { completedPrimaryChunks.push(chunk); },
+      }),
+      () => {
+        const completed = mergeProviderChunks(completedPrimaryChunks);
+        return {
+          ...completed,
+          errors:[...completed.errors,{
+            provider:"search",sourceId:"search",pass:"primary",
+            error:"search_deadline_exceeded",
+          }],
+        };
+      },
     ),
     beforeRequestDeadline(
       () => searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
