@@ -82,7 +82,7 @@ test('concurrent persistence initialization executes schema DDL once',async()=>{
 });
 
 test('recordOffer rolls back and releases the connection when canonical upsert fails',async()=>{
-  const result=await runPersistence({title:'HP Laptop',sourceUrl:'https://example.com/p',productPrice:2499,currency:'SAR'},{failUpsert:true});
+  const result=await runPersistence({title:'HP Laptop',sourceUrl:'https://example.com/p',productPrice:2499,currency:'SAR',observedAt:'2026-10-10T10:00:00Z'},{failUpsert:true});
   assert.equal(result.ok,false);
   assert.equal(result.error,'upsert_failed');
   const commands=result.calls.filter(call=>call[0]==='tx').map(call=>call[1]);
