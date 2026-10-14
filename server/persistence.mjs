@@ -54,6 +54,44 @@ const canonicalUrl=value=>{try{const u=new URL(value);u.hash="";for(const key of
 const keyOf=o=>[canonicalUrl(o.sourceUrl),o.condition||"new"].join("|");
 const recordUrl=value=>{try{const url=new URL(String(value||"").trim());if(url.protocol!=="https:"||url.username||url.password||!url.hostname)return "";return canonicalUrl(url.href);}catch{return "";}};
 
+// Persistence is not a new price observation. Only source-supplied, timezone-aware
+// evidence can establish observedAt; never repair a missing timestamp with now().
+const OBSERVED_AT_PATTERN=/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$/;
+export function validatedObservedAt(value,{now=Date.now()}={}){
+  const raw=value instanceof Date ? value.toISOString() : value;
+  if(typeof raw!=='string'||!OBSERVED_AT_PATTERN.test(raw))throw new Error('invalid_observed_at');
+  const millis=Date.parse(raw);
+  if(!Number.isFinite(millis)||millis>now)throw new Error('invalid_observed_at');
+  return new Date(millis);
+}
+export function validatedPriceEvidence(offer,{now=Date.now()}={}){
+  const value=Number(offer?.productPrice);
+  const currency=String(offer?.currency||'').trim().toUpperCase();
+  if(!Number.isFinite(value)||value<=0||!/^[A-Z]{3}$/.test(currency))throw new Error('invalid_price_evidence');
+  const observation=validatedObservedAt(offer?.observedAt,{now});
+  const original=offer?.originalCurrency;
+  if(original!==undefined&&original!==null&&original!==''){
+    const sourceCurrency=String(original).trim().toUpperCase();
+    if(!/^[A-Z]{3}$/.test(sourceCurrency))throw new Error('invalid_price_evidence');
+    if(sourceCurrency!==currency){
+      const amount=offer?.originalProductPrice;
+      const fx=offer?.fx;
+      if(currency!=='SAR'||typeof amount!=='number'||!Number.isFinite(amount)||amount<=0||
+        typeof fx?.rate!=='number'||!Number.isFinite(fx.rate)||fx.rate<=0||
+        typeof fx?.source!=='string'||!fx.source.trim()||
+        typeof fx?.observedAt!=='string'||!OBSERVED_AT_PATTERN.test(fx.observedAt)||
+        !Number.isFinite(Date.parse(fx.observedAt))||Date.parse(fx.observedAt)>now)
+        throw new Error('invalid_price_evidence');
+      // FX direction is originalCurrency -> SAR; the existing converter rounds
+      // to two decimals. A newer FX quote cannot refresh source observedAt.
+      const converted=Math.round(amount*fx.rate*100)/100;
+      if(!Number.isFinite(converted)||Math.abs(converted-value)>0.011)
+        throw new Error('invalid_price_evidence');
+    }
+  }
+  return {observedAt:observation,currency,price:value};
+}
+
 // Shared transactional legacy writer. This function deliberately does not commit.
 // It can be composed with optional outbox creation on the SAME connection.
 export async function writeLegacyOfferInTransaction(tx,{sourceUrl,sourceName,price,currency,observedAt,healthStatus,key,query,title,offerData,condition,normalized}){
@@ -71,13 +109,13 @@ export async function writeLegacyOfferInTransaction(tx,{sourceUrl,sourceName,pri
          product_price=excluded.product_price,total_sar=excluded.total_sar,sku=excluded.sku,
          availability=excluded.availability,match_confidence=excluded.match_confidence,
          exact_match=excluded.exact_match,observed_at=excluded.observed_at,payload=excluded.payload
-       where nawaa_offers.observed_at <= excluded.observed_at`,
+       where nawaa_offers.observed_at < excluded.observed_at`,
       [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
     );
     return observation;
 }
 
-export async function recordOffer(offerData={}){
+export async function recordOffer(offerData={}, {now=Date.now()}={}){
   const sourceUrl=recordUrl(offerData.sourceUrl);
   const title=String(offerData.title||"").trim();
   const price=Number(offerData.productPrice);
@@ -86,6 +124,7 @@ export async function recordOffer(offerData={}){
   const healthStatus=String(offerData.healthStatus||"healthy").trim().toLowerCase();
   const condition=String(offerData.condition||"new").trim().toLowerCase()||"new";
   if(!sourceUrl||title.length<3||!Number.isFinite(price)||price<=0||!/^[A-Z]{3}$/.test(currency)||!sourceName) throw new Error("invalid_offer_record");
+  const {observedAt}=validatedPriceEvidence({...offerData,productPrice:price,currency},{now});
   const client=await db();
   if(!client) throw new Error("persistence_not_configured");
   // Shadow opt-in must be rejected before legacy schema initialization can write DDL.
@@ -95,10 +134,8 @@ export async function recordOffer(offerData={}){
     assertEphemeralDatabase();
   }
   await initPersistence();
-  const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition};
+  const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition,observedAt:observedAt.toISOString()};
   const key=keyOf(normalized);
-  const observedAt=offerData.observedAt ? new Date(offerData.observedAt) : new Date();
-  if(Number.isNaN(observedAt.getTime())) throw new Error("invalid_observed_at");
   const query=String(offerData.query||sourceName||"crawler");
   const shadowEnabled=process.env.NAWAA_LEGACY_OUTBOX_SHADOW==='1';
   // Fail closed: only test-database experiments can turn on shadow mode.
@@ -136,38 +173,94 @@ export async function recordOffer(offerData={}){
   }
 }
 
-export async function persistOffers(query,offers=[]){const client=await db();if(!client||!offers.length)return {configured:Boolean(client),saved:0};await initPersistence();let saved=0;for(const o of offers){if(!o?.sourceUrl||!o?.title)continue;const key=keyOf(o);if(!key)continue;await client.query(`insert into nawaa_offers(offer_key,query,title,brand,merchant,merchant_country_code,source_url,image_url,currency,product_price,total_sar,sku,condition,availability,match_confidence,exact_match,observed_at,payload) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),$17::jsonb) on conflict(offer_key) do update set query=excluded.query,title=excluded.title,brand=excluded.brand,merchant=excluded.merchant,merchant_country_code=excluded.merchant_country_code,image_url=excluded.image_url,currency=excluded.currency,product_price=excluded.product_price,total_sar=excluded.total_sar,availability=excluded.availability,match_confidence=excluded.match_confidence,exact_match=excluded.exact_match,observed_at=now(),payload=excluded.payload`,[key,query,o.title,o.brand||o.specs?.brand||null,o.merchant||null,o.merchantCountryCode||null,o.sourceUrl,o.imageUrl||null,o.currency||null,o.productPrice??null,o.totalSAR??null,o.sku||null,o.condition||null,o.availability||null,o.matchConfidence??null,o.exactMatch===true,JSON.stringify(o)]);saved++;}return {configured:true,saved};}
-
-
-export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}){
+export async function persistOffers(query,offers=[],{now=Date.now()}={}){
   const client=await db();
-  if(!client||!String(query||"").trim()) return {configured:Boolean(client),offers:[]};
+  if(!client||!offers.length)return {configured:Boolean(client),saved:0};
   await initPersistence();
-  const q=String(query).trim();
-  const result=await client.query(`
-    select payload, observed_at
-    from nawaa_offers
-    where observed_at >= now() - ($2::text || ' hours')::interval
-      and (
-        to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(brand,''))
-          @@ plainto_tsquery('simple',$1)
-        or title ilike '%' || $1 || '%'
-        or brand ilike '%' || $1 || '%'
-      )
-    order by
-      ts_rank(
-        to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(brand,'')),
-        plainto_tsquery('simple',$1)
-      ) desc,
-      observed_at desc
-    limit $3
-  `,[q,String(Math.max(1,Number(maxAgeHours)||168)),Math.max(1,Math.min(500,Number(limit)||120))]);
-  return {
-    configured:true,
-    offers:result.rows.map(row=>({
-      ...(row.payload||{}),
-      dataKind:"persisted",
-      observedAt:row.observed_at instanceof Date ? row.observed_at.toISOString() : row.observed_at
-    }))
-  };
+  let saved=0;
+  for(const offer of offers){
+    if(!offer?.sourceUrl||!offer?.title)continue;
+    const sourceUrl=recordUrl(offer.sourceUrl);
+    if(!sourceUrl)throw new Error('invalid_offer_record');
+    const {observedAt,price,currency}=validatedPriceEvidence(offer,{now});
+    const normalized={...offer,sourceUrl,observedAt:observedAt.toISOString(),productPrice:price,currency};
+    const key=keyOf(normalized);
+    await client.query(`
+      INSERT INTO nawaa_offers(offer_key,query,title,brand,merchant,merchant_country_code,
+        source_url,image_url,currency,product_price,total_sar,sku,condition,availability,
+        match_confidence,exact_match,observed_at,payload)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
+      ON CONFLICT(offer_key) DO UPDATE SET
+        query=excluded.query,title=excluded.title,brand=excluded.brand,merchant=excluded.merchant,
+        merchant_country_code=excluded.merchant_country_code,image_url=excluded.image_url,
+        currency=excluded.currency,product_price=excluded.product_price,total_sar=excluded.total_sar,
+        sku=excluded.sku,availability=excluded.availability,
+        match_confidence=excluded.match_confidence,exact_match=excluded.exact_match,
+        observed_at=excluded.observed_at,payload=excluded.payload
+      WHERE nawaa_offers.observed_at < excluded.observed_at
+    `,[key,query,normalized.title,normalized.brand||normalized.specs?.brand||null,
+      normalized.merchant||null,normalized.merchantCountryCode||null,sourceUrl,
+      normalized.imageUrl||normalized.image||null,currency,price,normalized.totalSAR??null,
+      normalized.sku||null,normalized.condition||'new',normalized.availability||null,
+      normalized.matchConfidence??null,normalized.exactMatch===true,observedAt,
+      JSON.stringify(normalized)]);
+    saved++;
+  }
+  // Existing per-offer SQL atomicity is preserved. Unlike recordOffer this
+  // legacy batch API does not create immutable observation rows.
+  return {configured:true,saved};
+}
+
+export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168,now=Date.now()}={}){
+  const client=await db();
+  if(!client||!String(query||'').trim())return {configured:Boolean(client),offers:[]};
+  await initPersistence();
+  // Preserve the existing 168-hour default for this dormant path.
+  const maxAgeMs=Math.max(1,Number(maxAgeHours)||168)*3600_000;
+  const cap=Math.max(1,Math.min(500,Number(limit)||120));
+  const q=String(query).trim(),evaluatedAt=new Date(now).toISOString();
+  const batchSize=Math.max(20,Math.min(500,cap*2));
+  const eligible=[];
+  let offset=0;
+  while(eligible.length<cap){
+    const result=await client.query(`
+      SELECT id,payload,observed_at,product_price,currency,source_url
+      FROM nawaa_offers
+      WHERE observed_at > $5::timestamptz - ($2::text || ' milliseconds')::interval
+        AND observed_at <= $5::timestamptz
+        AND currency='SAR' AND product_price > 0
+        AND (
+          to_tsvector('simple',coalesce(title,'')||' '||coalesce(brand,''))
+            @@ plainto_tsquery('simple',$1)
+          OR title ILIKE '%' || $1 || '%'
+          OR brand ILIKE '%' || $1 || '%'
+        )
+      ORDER BY ts_rank(to_tsvector('simple',coalesce(title,'')||' '||coalesce(brand,'')),
+        plainto_tsquery('simple',$1)) DESC, observed_at DESC,id DESC
+      LIMIT $3 OFFSET $4
+    `,[q,String(maxAgeMs),batchSize,offset,evaluatedAt]);
+    for(const row of result.rows){
+      const payload=row.payload;
+      if(!payload||typeof payload!=='object')continue;
+      let verified;
+      try{verified=validatedPriceEvidence(payload,{now});}
+      catch{continue}
+      const observed=new Date(row.observed_at).getTime();
+      const age=now-observed;
+      if(!(age>=0&&age<maxAgeMs)||
+         verified.observedAt.getTime()!==observed||
+         verified.currency!==row.currency||
+         verified.price!==Number(row.product_price)||
+         recordUrl(payload.sourceUrl)!==row.source_url)continue;
+      eligible.push({
+        ...payload,dataKind:'persisted',observedAt:verified.observedAt.toISOString(),
+        productPrice:verified.price,currency:verified.currency,
+        availability:'unknown',priceConfidence:'incomplete',totalSAR:null,
+      });
+      if(eligible.length===cap)break;
+    }
+    if(result.rows.length<batchSize)break;
+    offset+=result.rows.length;
+  }
+  return {configured:true,offers:eligible};
 }
