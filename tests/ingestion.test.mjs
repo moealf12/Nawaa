@@ -9,7 +9,7 @@ test("ingestion rejects unverifiable offers",()=>{
 });
 
 test("ingestion normalizes accepted crawler offers",()=>{
-  const o=normalizeIngestOffer({title:"  HP Laptop  ",sourceUrl:"https://example.com/p",productPrice:"2499",currency:"sar",condition:"NEW"});
+  const o=normalizeIngestOffer({title:"  HP Laptop  ",sourceUrl:"https://example.com/p",productPrice:"2499",currency:"sar",condition:"NEW",observedAt:"2026-10-10T10:00:00Z"});
   assert.equal(o.title,"HP Laptop");
   assert.equal(o.productPrice,2499);
   assert.equal(o.currency,"SAR");
@@ -18,7 +18,7 @@ test("ingestion normalizes accepted crawler offers",()=>{
 });
 
 test("ingestion bounds batch size",()=>{
-  const rows=Array.from({length:INGEST_BATCH_LIMIT+20},(_,i)=>({title:"Product "+i,sourceUrl:"https://example.com/"+i,productPrice:i+1}));
+  const rows=Array.from({length:INGEST_BATCH_LIMIT+20},(_,i)=>({title:"Product "+i,sourceUrl:"https://example.com/"+i,productPrice:i+1,observedAt:"2026-10-10T10:00:00Z"}));
   assert.equal(normalizeIngestBatch(rows).length,INGEST_BATCH_LIMIT);
 });
 
@@ -28,4 +28,11 @@ test("ingestion preserves crawler observation metadata",()=>{
   const o=normalizeIngestOffer({title:"HP Laptop",sourceUrl:"https://example.com/p",productPrice:2499,currency:"sar",observedAt,healthStatus:"healthy"});
   assert.equal(o.observedAt,observedAt);
   assert.equal(o.healthStatus,"healthy");
+});
+
+
+test("crawler ingestion rejects missing, malformed and future timestamps without synthesizing now",()=>{
+  const valid={title:"HP Laptop",sourceUrl:"https://example.com/p",productPrice:2499,currency:"SAR"};
+  for(const observedAt of [undefined,"not-date",new Date(Date.now()+3600_000).toISOString()])
+    assert.equal(normalizeIngestOffer({...valid,observedAt}),null);
 });

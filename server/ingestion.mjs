@@ -1,3 +1,4 @@
+import {validatedObservedAt} from './price-observation.mjs';
 const HTTPS_URL=/^https:\/\//i;
 export const INGEST_BATCH_LIMIT=500;
 
@@ -6,6 +7,10 @@ export function normalizeIngestOffer(input={}){
   const sourceUrl=String(input.sourceUrl||"").trim();
   const price=Number(input.productPrice);
   if(title.length<3||!HTTPS_URL.test(sourceUrl)||!Number.isFinite(price)||price<=0)return null;
+  // Reject crawlers that omit evidence: receipt time is not observed price time.
+  let observedAt;
+  try{observedAt=validatedObservedAt(input.observedAt).toISOString();}
+  catch{return null;}
   return {
     ...input,
     title,
@@ -17,7 +22,7 @@ export function normalizeIngestOffer(input={}){
     condition:input.condition?String(input.condition).trim().toLowerCase():null,
     availability:input.availability?String(input.availability).trim().toLowerCase():null,
     dataKind:"ingested",
-    observedAt:input.observedAt||new Date().toISOString(),
+    observedAt,
   };
 }
 

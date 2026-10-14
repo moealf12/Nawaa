@@ -56,7 +56,7 @@ test('recordOffer commits an immutable observation and canonical upsert in one t
   assert.equal(tx[0][1],'BEGIN');
   assert.match(tx[1][1],/insert into offer_observations/);
   assert.match(tx[2][1],/insert into nawaa_offers/);
-  assert.match(tx[2][1],/where nawaa_offers\.observed_at <= excluded\.observed_at/);
+  assert.match(tx[2][1],/where nawaa_offers\.observed_at < excluded\.observed_at/);
   assert.equal(tx[3][1],'COMMIT');
   assert.deepEqual(result.calls.at(-1),['release']);
   assert.equal(tx[1][2][0],'https://example.com/p');
@@ -82,7 +82,7 @@ test('concurrent persistence initialization executes schema DDL once',async()=>{
 });
 
 test('recordOffer rolls back and releases the connection when canonical upsert fails',async()=>{
-  const result=await runPersistence({title:'HP Laptop',sourceUrl:'https://example.com/p',productPrice:2499,currency:'SAR'},{failUpsert:true});
+  const result=await runPersistence({title:'HP Laptop',sourceUrl:'https://example.com/p',productPrice:2499,currency:'SAR',observedAt:'2026-10-10T10:00:00Z'},{failUpsert:true});
   assert.equal(result.ok,false);
   assert.equal(result.error,'upsert_failed');
   const commands=result.calls.filter(call=>call[0]==='tx').map(call=>call[1]);

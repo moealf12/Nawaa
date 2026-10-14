@@ -135,7 +135,7 @@ test('ingestion returns a stable error without exposing database details',async(
    process.env.PORT='0';process.env.NAWAA_INGEST_TOKEN='test-token';
    const listen=http.Server.prototype.listen;
    http.Server.prototype.listen=function(...args){this.once('listening',()=>{
-     const payload=JSON.stringify({source:'crawler-a',offers:[{title:'HP Laptop',sourceUrl:'https://example.com/p',productPrice:2499,currency:'SAR'}]});
+     const payload=JSON.stringify({source:'crawler-a',offers:[{title:'HP Laptop',sourceUrl:'https://example.com/p',productPrice:2499,currency:'SAR',observedAt:'2026-10-10T10:00:00Z'}]});
      const req=http.request({host:'127.0.0.1',port:this.address().port,path:'/api/ingest/offers',method:'POST',headers:{authorization:'Bearer test-token','content-type':'application/json','content-length':Buffer.byteLength(payload)}},res=>{
        let body='';res.on('data',part=>body+=part);res.on('end',()=>{console.log('RESULT '+JSON.stringify({status:res.statusCode,body:JSON.parse(body)}));this.close(()=>process.exit(0));});
      });req.end(payload);
