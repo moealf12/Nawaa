@@ -22,6 +22,9 @@ export function attestQaTarget(env=process.env) {
     throw new Error('qa_tls_downgrade_rejected');
   if(url.searchParams.has('sslrootcert') || url.searchParams.has('sslcert') || url.searchParams.has('sslkey'))
     throw new Error('qa_custom_certificate_not_reviewed');
+  // A URL containing libpq SSL options can override the explicit TLS object in node-postgres.
+  // Strip sslmode after checking it, and rely exclusively on the verified Node TLS settings.
+  url.searchParams.delete('sslmode');
   return url.toString();
 }
 
@@ -36,6 +39,7 @@ export async function rehearseNeonV2(client,{failAfterVersion=null}={}){
     await client.query('SELECT pg_advisory_xact_lock(17033,40)');
     const identity=(await client.query("SELECT current_database() AS db,current_user AS usr")).rows[0];
     if(identity?.db!==DATABASE || identity?.usr!=='nawaa_catalog_db_owner')throw new Error('qa_session_mismatch');
+
     // Reject unrecognized objects before applying any migration. The ledger is
     // always checked in its entirety, not just for previously known versions.
     const objects=await client.query("SELECT tablename FROM pg_tables WHERE schemaname='public'");
@@ -74,7 +78,7 @@ export async function rehearseNeonV2(client,{failAfterVersion=null}={}){
 if(process.argv[1]?.endsWith('/neon-v104-rehearsal.mjs')){
   const connectionString=attestQaTarget();
   // Explicit TLS certificate/hostname validation through Node TLS.
-  const pool=new pg.Pool({connectionString,ssl:{rejectUnauthorized:true},max:1,connectionTimeoutMillis:10000});
+  const pool=new pg.Pool({connectionString,ssl:{rejectUnauthorized:true,servername:QA_HOST},max:1,connectionTimeoutMillis:10000});
   try{
     const client=await pool.connect();
     try{
