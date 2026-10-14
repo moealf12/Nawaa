@@ -1,3 +1,4 @@
+import {validatedPriceEvidence} from './price-observation.mjs';
 let pool, initialized=false, initializing=null, PoolCtor=null;
 export const persistenceConfigured=()=>Boolean(process.env.DATABASE_URL);
 async function db(){
@@ -53,44 +54,6 @@ try{return await initializing;}finally{initializing=null;}
 const canonicalUrl=value=>{try{const u=new URL(value);u.hash="";for(const key of [...u.searchParams.keys()])if(/^utm_|^(gclid|fbclid|ref|aff|affiliate)$/i.test(key))u.searchParams.delete(key);u.hostname=u.hostname.toLowerCase().replace(/^www\./,"");u.pathname=u.pathname.replace(/\/+$/,"")||"/";return u.toString();}catch{return String(value||"").trim();}};
 const keyOf=o=>[canonicalUrl(o.sourceUrl),o.condition||"new"].join("|");
 const recordUrl=value=>{try{const url=new URL(String(value||"").trim());if(url.protocol!=="https:"||url.username||url.password||!url.hostname)return "";return canonicalUrl(url.href);}catch{return "";}};
-
-// Persistence is not a new price observation. Only source-supplied, timezone-aware
-// evidence can establish observedAt; never repair a missing timestamp with now().
-const OBSERVED_AT_PATTERN=/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|[+-]\\d{2}:\\d{2})$/;
-export function validatedObservedAt(value,{now=Date.now()}={}){
-  const raw=value instanceof Date ? value.toISOString() : value;
-  if(typeof raw!=='string'||!OBSERVED_AT_PATTERN.test(raw))throw new Error('invalid_observed_at');
-  const millis=Date.parse(raw);
-  if(!Number.isFinite(millis)||millis>now)throw new Error('invalid_observed_at');
-  return new Date(millis);
-}
-export function validatedPriceEvidence(offer,{now=Date.now()}={}){
-  const value=Number(offer?.productPrice);
-  const currency=String(offer?.currency||'').trim().toUpperCase();
-  if(!Number.isFinite(value)||value<=0||!/^[A-Z]{3}$/.test(currency))throw new Error('invalid_price_evidence');
-  const observation=validatedObservedAt(offer?.observedAt,{now});
-  const original=offer?.originalCurrency;
-  if(original!==undefined&&original!==null&&original!==''){
-    const sourceCurrency=String(original).trim().toUpperCase();
-    if(!/^[A-Z]{3}$/.test(sourceCurrency))throw new Error('invalid_price_evidence');
-    if(sourceCurrency!==currency){
-      const amount=offer?.originalProductPrice;
-      const fx=offer?.fx;
-      if(currency!=='SAR'||typeof amount!=='number'||!Number.isFinite(amount)||amount<=0||
-        typeof fx?.rate!=='number'||!Number.isFinite(fx.rate)||fx.rate<=0||
-        typeof fx?.source!=='string'||!fx.source.trim()||
-        typeof fx?.observedAt!=='string'||!OBSERVED_AT_PATTERN.test(fx.observedAt)||
-        !Number.isFinite(Date.parse(fx.observedAt))||Date.parse(fx.observedAt)>now)
-        throw new Error('invalid_price_evidence');
-      // FX direction is originalCurrency -> SAR; the existing converter rounds
-      // to two decimals. A newer FX quote cannot refresh source observedAt.
-      const converted=Math.round(amount*fx.rate*100)/100;
-      if(!Number.isFinite(converted)||Math.abs(converted-value)>0.011)
-        throw new Error('invalid_price_evidence');
-    }
-  }
-  return {observedAt:observation,currency,price:value};
-}
 
 // Shared transactional legacy writer. This function deliberately does not commit.
 // It can be composed with optional outbox creation on the SAME connection.
