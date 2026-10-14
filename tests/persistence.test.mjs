@@ -56,7 +56,7 @@ test('recordOffer commits an immutable observation and canonical upsert in one t
   assert.equal(tx[0][1],'BEGIN');
   assert.match(tx[1][1],/insert into offer_observations/);
   assert.match(tx[2][1],/insert into nawaa_offers/);
-  assert.match(tx[2][1],/where nawaa_offers\.observed_at <= excluded\.observed_at/);
+  assert.match(tx[2][1],/where nawaa_offers\.observed_at < excluded\.observed_at/);
   assert.equal(tx[3][1],'COMMIT');
   assert.deepEqual(result.calls.at(-1),['release']);
   assert.equal(tx[1][2][0],'https://example.com/p');
