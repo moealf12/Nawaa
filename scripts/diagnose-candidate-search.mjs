@@ -119,9 +119,11 @@ async function measureStreamFirstOffer(text){
 }
 try{
   await waitForHealth();
+  // Cold-stream timing must run BEFORE the JSON search for the same query;
+  // otherwise cachedSearch returns a warm snapshot and masks real first-offer delay.
+  const stream=await measureStreamFirstOffer('iPhone 17');
   const iphone=await query('iPhone 17');
   const ps5=await query('PS5');
-  const stream=await measureStreamFirstOffer('iPhone 17');
   if(iphone.status!==200||ps5.status!==200)process.exitCode=2;
   if(ps5.falsePS5?.length)process.exitCode=3;
   if(stream.sseStatus!==200||!stream.done||stream.firstOfferMs===null)process.exitCode=4;
