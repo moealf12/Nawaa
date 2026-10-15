@@ -1307,7 +1307,7 @@ async function runSearch(rawQuery) {
       }
 
       if (requestId !== state.requestId) return;
-      for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor; step+=1) {
+      for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor && !data?.coverage?.partial && !data?.coverage?.deadlineExceeded; step+=1) {
         els.status.textContent = "لم تظهر نتائج في النطاق الأول؛ نوسّع البحث تلقائيًا…";
         data = await fetchJsonWithRetry(
           apiBase + "/api/search?q=" + encodeURIComponent(query) + "&cursor=" + encodeURIComponent(data.nextCursor),
