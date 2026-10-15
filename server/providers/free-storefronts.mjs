@@ -1422,7 +1422,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         ...result.value,
         provider:"free-storefronts",
         providerMarket:store.id,
-        merchant:result.value.merchant || store.name,
+        // Preserve the verified store identity, not a generic CDN/app subdomain.
+        merchant:store.name,
         merchantCountryCode:store.countryCode,
         merchantCountryNameAr:store.countryNameAr,
         canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
@@ -1432,6 +1433,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         sourceMeta:{
           ...(result.value.sourceMeta || {}),
           storefrontSearch:store.name,
+          resolvedMerchant:result.value.merchant || null,
           freeDiscovery:true,
           searchUrl,
         },
