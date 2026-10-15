@@ -1307,7 +1307,7 @@ async function runSearch(rawQuery) {
       }
 
       if (requestId !== state.requestId) return;
-      for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor; step+=1) {
+      for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor && !data?.coverage?.partial && !data?.coverage?.deadlineExceeded; step+=1) {
         els.status.textContent = "لم تظهر نتائج في النطاق الأول؛ نوسّع البحث تلقائيًا…";
         data = await fetchJsonWithRetry(
           apiBase + "/api/search?q=" + encodeURIComponent(query) + "&cursor=" + encodeURIComponent(data.nextCursor),
@@ -1342,13 +1342,19 @@ async function runSearch(rawQuery) {
       }
 
       const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);
+      const incomplete = Boolean(data.coverage?.partial || data.coverage?.deadlineExceeded ||
+        Number(data.coverage?.providersPending) > 0 || data.errors?.length);
       state.product = null;
-      els.status.textContent = `لم نجد عروضًا حية · تم فحص ${attempted} أسواق/متاجر`;
+      els.status.textContent = incomplete
+        ? `بحث جزئي · تعذر إكمال بعض المصادر · فُحص ${attempted} أسواق/متاجر`
+        : `لم نجد عروضًا حية · تم فحص ${attempted} أسواق/متاجر`;
       els.results.innerHTML = `
         <div class="no-match">
-          <span class="mini-kicker">NO LIVE OFFERS</span>
-          <h2>ما ظهر لنا عرض حي لهذا البحث.</h2>
-          <p>تم تنفيذ البحث على المصادر المتاحة بدون الرجوع إلى بيانات Demo.</p>
+          <span class="mini-kicker">${incomplete ? "PARTIAL SEARCH" : "NO LIVE OFFERS"}</span>
+          <h2>${incomplete ? "لم يكتمل فحص جميع المصادر بعد." : "ما ظهر لنا عرض حي لهذا البحث."}</h2>
+          <p>${incomplete
+            ? "بعض المتاجر تأخرت أو تعذر الاتصال بها؛ عدم ظهور عروض هنا لا يعني أن المنتج غير متوفر."
+            : "تم تنفيذ البحث على المصادر المتاحة بدون الرجوع إلى بيانات Demo."}</p>
           <button class="primary-action" id="retryLiveSearch">أعد البحث</button>
         </div>
       `;
