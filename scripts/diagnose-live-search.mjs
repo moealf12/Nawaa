@@ -81,12 +81,20 @@ for(const x of results){
     sample:x.samples?.slice(0,5),
   }));
 }
+const productiveQueries=results.filter(x=>x.ok&&x.count>0).length;
+const currentProductionDegraded=productiveQueries<results.length;
 console.log('LIVE_SEARCH_SUMMARY '+JSON.stringify({
   totalQueries:results.length,
   okQueries:results.filter(x=>x.ok).length,
+  productiveQueries,
+  degraded:currentProductionDegraded,
   totalOffers:results.reduce((s,x)=>s+(x.count||0),0),
-  complete:results.every(x=>x.ok)
+  transportComplete:results.every(x=>x.ok)
 }));
+if(currentProductionDegraded)console.warn(
+  '::warning::Live Render production search is DEGRADED: '+productiveQueries+'/'+results.length+
+  ' queries returned products. HTTP 200 alone is not customer readiness.'
+);
 // Explicitly fail on unreachable API, but NEVER infer that a successful empty
 // result means a particular source has a working connector.
 if(results.some(x=>!x.ok))process.exitCode=2;
