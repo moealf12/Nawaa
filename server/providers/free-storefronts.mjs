@@ -1585,22 +1585,22 @@ export async function searchFreeStorefronts(query, options = {}) {
     const forwardAbort=()=>controller.abort(options.signal.reason || new Error("search_client_disconnected"));
     if(options.signal?.aborted) forwardAbort();
     else options.signal?.addEventListener("abort",forwardAbort,{once:true});
-    let timeoutId;
-    const deadline=new Promise((_,reject)=>{
-      timeoutId=setTimeout(()=>{
-        const error=new Error("store_deadline_exceeded:"+storeId);
-        controller.abort(error);
-        reject(error);
-      },storeDeadlineMs);
+    let timeoutId, onAbort;
+    const cancelled=new Promise((_,reject)=>{
+      onAbort=()=>reject(controller.signal.reason || new Error("search_cancelled"));
+      if(controller.signal.aborted) onAbort();
+      else controller.signal.addEventListener("abort",onAbort,{once:true});
     });
+    timeoutId=setTimeout(()=>controller.abort(new Error("store_deadline_exceeded:"+storeId)),storeDeadlineMs);
     return Promise.race([
       Promise.resolve().then(()=>{
         controller.signal.throwIfAborted();
         return operation(controller.signal);
       }),
-      deadline,
+      cancelled,
     ]).finally(()=>{
       clearTimeout(timeoutId);
+      controller.signal.removeEventListener("abort",onAbort);
       options.signal?.removeEventListener("abort",forwardAbort);
     });
   };
