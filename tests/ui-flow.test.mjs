@@ -194,6 +194,24 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(element('#results').innerHTML,/لا يعني أن المنتج غير متوفر/);
   assert.doesNotMatch(element('#results').innerHTML,/NO LIVE OFFERS/);
 
+  // Older APIs may report provider failures in errors[] without coverage.partial.
+  // A failed source is not evidence of zero inventory and must not trigger
+  // further automatic requests.
+  let errorOnlyRequests=0;
+  globalThis.fetch=async ()=>{
+    errorOnlyRequests++;
+    return {ok:true,text:async()=>JSON.stringify({
+      offers:[],providers:[],errors:[{sourceId:'jarir',error:'provider_failed'}],
+      nextCursor:'signed-depth-1',
+    })};
+  };
+  element('#searchInput').value='partially failed legacy search';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(errorOnlyRequests,1,'provider errors alone must stop automatic expansion');
+  assert.match(element('#searchStatus').textContent,/بحث جزئي/);
+  assert.match(element('#results').innerHTML,/PARTIAL SEARCH/);
+
   globalThis.fetch=async ()=>({ok:true,text:async()=>JSON.stringify({
     offers:[],providers:[],errors:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
   })});
