@@ -362,47 +362,68 @@ async function streamSearchProgress(query, onSnapshot) {
   query=normalizeSearchQuery(query);
   const plan=acquisitionPlan(0,configuredFreeStorefronts().length);
   const providerQuery=parseSearchIntent(query).providerQuery;
+  const configuredDeadline=Number(process.env.SEARCH_STREAM_DEADLINE_MS);
+  const streamDeadlineMs=Number.isFinite(configuredDeadline) && configuredDeadline>0
+    ? Math.max(150,Math.min(25000,Math.floor(configuredDeadline))) : 11000;
+  const primaryCount=providerTasks(providerQuery,query,{plan}).length;
   let offers=[],providers=[],errors=[];
-  const emit=(progress={})=>onSnapshot(progressiveSnapshot(query,offers,providers,errors,progress));
+  let accepting=true,primaryCompleted=0,amazonSettled=false,localSettled=false;
+  const emit=(progress={})=>accepting
+    ? onSnapshot(progressiveSnapshot(query,offers,providers,errors,progress))
+    : Promise.resolve();
 
-  // Start durable catalog lookup and every live source immediately. Neither path
-  // is allowed to block the other from producing the first useful result.
-  const localPromise=Promise.all([
-    searchIndexedOffers(query).catch(()=>({offers:[]})),
-  ]).then(async local=>{
-    offers.push(...(local[0]?.offers||[]));
-    if(offers.length) await emit({completed:providers.length,pending:providerTasks(providerQuery,query,{plan}).length+1});
-    return local;
+  // Launch the catalog, core providers, and Amazon concurrently. Slow sources
+  // are never allowed to postpone stream completion indefinitely.
+  const localPromise=searchIndexedOffers(query).catch(()=>({offers:[]})).then(async local=>{
+    localSettled=true;
+    if(!accepting)return;
+    offers.push(...(local?.offers||[]));
+    if(local?.offers?.length)await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
   });
 
   const amazonPromise=searchFreeStorefrontById("amazon-sa",providerQuery,{
     perStore:Infinity,catalogLimit:Infinity,amazonPageStart:plan.amazonPageStart,
     amazonPageCount:plan.amazonPageCount,matchingQuery:query,
-  }).then(value=>({value})).catch(error=>({error}));
-
-  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,onChunk:async(chunk,progress)=>{
-    if(chunk.provider) providers.push(chunk.provider);
-    errors.push(...(chunk.errors||[]));
-    offers.push(...(chunk.offers||[]));
-    await emit({...progress,pending:progress.pending+1});
-  }});
-
-  const amazonResult=await amazonPromise;
-  if(amazonResult.value){
-    const value=amazonResult.value;
+  }).then(async value=>{
+    amazonSettled=true;
+    if(!accepting)return;
     const sourceId="free-storefronts:amazon-sa";
     providers.push({provider:"free-storefronts",sourceId,ok:Boolean(value.offers?.length),pass:"primary",query:providerQuery,returnedOffers:value.offers?.length||0,diagnostics:value.diagnostics||null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
     offers.push(...(value.offers||[]));
-    await emit({completed:providers.length,pending:1});
-  } else {
-    errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:amazonResult.error instanceof Error?amazonResult.error.message:String(amazonResult.error)});
-  }
-  await Promise.all([primaryPromise,localPromise]);
+    if(value.offers?.length)await emit({completed:primaryCompleted+1,pending:Math.max(0,primaryCount-primaryCompleted)});
+  }).catch(error=>{
+    amazonSettled=true;
+    if(accepting)errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:error instanceof Error?error.message:String(error)});
+  });
 
-  // Reuse the work already completed by the progressive pass. Do not replay the
-  // same providers a second time. Canonical search remains available to the JSON
-  // endpoint and deeper cursor passes; the stream returns the accumulated recall
-  // immediately and the UI can request deeper pages without losing any source.
+  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,onChunk:async(chunk,progress)=>{
+    if(!accepting)return;
+    primaryCompleted++;
+    if(chunk.provider)providers.push(chunk.provider);
+    errors.push(...(chunk.errors||[]));
+    offers.push(...(chunk.offers||[]));
+    await emit({...progress,pending:progress.pending+Number(!amazonSettled)});
+  }}).catch(error=>{
+    if(accepting)errors.push({provider:"search",sourceId:"search",pass:"primary",error:error instanceof Error?error.message:String(error)});
+  });
+
+  let timer;
+  const finished=Promise.allSettled([localPromise,amazonPromise,primaryPromise]).then(()=>"complete");
+  const deadline=new Promise(resolve=>{timer=setTimeout(()=>resolve("deadline"),streamDeadlineMs);});
+  const outcome=await Promise.race([finished,deadline]);
+  clearTimeout(timer);
+  // Freeze before assembling the response: a previously launched slow provider
+  // may settle later but cannot mutate already-returned results or emit again.
+  accepting=false;
+  const deadlineExceeded=outcome==="deadline";
+  const providersPending=deadlineExceeded
+    ? Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)+Number(!localSettled)
+    : 0;
+  if(deadlineExceeded)errors.push({
+    provider:"search",sourceId:"search",pass:"primary",
+    error:"search_stream_deadline_exceeded",providersPending,
+  });
+
   const assessed=retainRelatedOffers(query, offers);
   const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
@@ -416,6 +437,11 @@ async function streamSearchProgress(query, onSnapshot) {
       returnedMerchants:new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated:selectedOffers.length<allSelectedOffers.length,
       exhaustive:false,
+      partial:deadlineExceeded,
+      complete:!deadlineExceeded,
+      deadlineExceeded,
+      streamDeadlineMs,
+      providersPending,
       acquisitionDepth:plan.depth,
       moreAvailable:plan.depth<MAX_SEARCH_DEPTH,
     },
@@ -846,7 +872,7 @@ const server = http.createServer(async (req, res) => {
         });
       } finally { clearInterval(heartbeat); }
       if (closed || res.writableEnded) return;
-      send("snapshot",{...result,nextCursor,coverage:{...(result.coverage||{}),partial:false,complete:true,providersPending:0},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
+      send("snapshot",{...result,nextCursor,coverage:{...(result.coverage||{}),partial:Boolean(result.coverage?.deadlineExceeded),complete:!result.coverage?.deadlineExceeded},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
       send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
       return res.end();
     } catch(error) {
