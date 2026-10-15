@@ -8,7 +8,8 @@ test('JSON search retains a fast genuine offer when slower sources overrun the d
     import http from 'node:http';
     process.env.PORT='0';
     process.env.SEARCH_REQUEST_DEADLINE_MS='220';
-    globalThis.fetch=async url=>{
+    globalThis.cancelledNetworkCalls=0;
+    globalThis.fetch=async (url,options={})=>{
       if(String(url).startsWith('https://search.unbxd.io/')){
         return Response.json({response:{numberOfProducts:1,products:[{
           id:'qa-extra-hp-laptop',name:'HP Pavilion Laptop 16GB RAM',
@@ -16,7 +17,13 @@ test('JSON search retains a fast genuine offer when slower sources overrun the d
           featureEnBrandName:'HP',featureEnDeviceType:'Laptop',available:true
         }]}});
       }
-      return new Promise(()=>{});
+      return new Promise((_,reject)=>{
+        const signal=options.signal;
+        if(!signal)throw Error('outbound_fetch_missing_abort_signal');
+        const abort=()=>{globalThis.cancelledNetworkCalls++;reject(signal.reason||new Error('aborted'))};
+        if(signal.aborted)abort();
+        else signal.addEventListener('abort',abort,{once:true});
+      });
     };
     const listen=http.Server.prototype.listen;
     http.Server.prototype.listen=function(...args){
@@ -32,6 +39,7 @@ test('JSON search retains a fast genuine offer when slower sources overrun the d
               offers:body.offers?.map(o=>({provider:o.provider,price:o.productPrice,title:o.title})),
               deadlineExceeded:body.coverage?.deadlineExceeded,
               deadlineErrors:body.errors?.filter(e=>e.error==='search_deadline_exceeded').length,
+              cancelledNetworkCalls:globalThis.cancelledNetworkCalls,
             }));
             this.close(()=>process.exit(0));
           });
@@ -51,6 +59,7 @@ test('JSON search retains a fast genuine offer when slower sources overrun the d
   assert.ok(actual.elapsed<1750,'the deadline must remain bounded');
   assert.equal(actual.deadlineExceeded,true);
   assert.ok(actual.deadlineErrors>=1);
+  assert.ok(actual.cancelledNetworkCalls>=1,'JSON deadline must abort underlying merchant fetches');
   assert.ok(actual.offers.some(o=>o.provider==='extra-unbxd' && o.price===2799 &&
     o.title==='HP Pavilion Laptop 16GB RAM'),JSON.stringify(actual));
 });
