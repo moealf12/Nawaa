@@ -174,4 +174,33 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(location.href,/^\.\/product\.html\?/,'blocked storage cannot prevent product detail navigation');
   assert.match(new URL(location.href,'http://localhost').searchParams.get('source'),/https:\/\/example.com\/hp-/);
 
+  // An SSE deadline with no offers is not proof the product does not exist.
+  // Do not send automatic deeper requests while the initial search is partial.
+  let partialRequests=0;
+  globalThis.fetch=async ()=>{
+    partialRequests++;
+    return {ok:true,text:async()=>JSON.stringify({
+      offers:[],providers:[],errors:[{sourceId:'jarir-direct',error:'provider_deadline_exceeded'}],
+      coverage:{partial:true,deadlineExceeded:true,providersPending:2},
+      nextCursor:'signed-depth-1',
+    })};
+  };
+  element('#searchInput').value='temporarily unavailable device';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(partialRequests,1,'partial search must not recursively expand until its initial sources recover');
+  assert.match(element('#searchStatus').textContent,/بحث جزئي/);
+  assert.match(element('#results').innerHTML,/PARTIAL SEARCH/);
+  assert.match(element('#results').innerHTML,/لا يعني أن المنتج غير متوفر/);
+  assert.doesNotMatch(element('#results').innerHTML,/NO LIVE OFFERS/);
+
+  globalThis.fetch=async ()=>({ok:true,text:async()=>JSON.stringify({
+    offers:[],providers:[],errors:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+  })});
+  element('#searchInput').value='genuinely unmatched item';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.match(element('#results').innerHTML,/NO LIVE OFFERS/);
+  assert.doesNotMatch(element('#results').innerHTML,/PARTIAL SEARCH/);
+
 });
