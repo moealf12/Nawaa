@@ -43,11 +43,19 @@ async function query(text){
     const data=await r.json();
     const offers=Array.isArray(data.offers)?data.offers:[];
     const exact=offers.filter(x=>x.exactMatch===true);
+    const structurallyValid=offers.filter(o=>{
+      try{
+        return typeof o.title==='string' && o.title.trim().length>0 &&
+          Number.isFinite(o.productPrice) && o.productPrice>0 &&
+          o.currency==='SAR' && typeof o.merchant==='string' && o.merchant.trim() &&
+          new URL(o.sourceUrl).protocol==='https:';
+      }catch{return false}
+    });
     const falsePS5=exact.filter(o=>/\b(?:disc|disk|optical|blu ray)\s+drive\b/i.test(o.title||'') &&
       !/\bconsole\b.*\b(?:with|includes?|including)\b/i.test(o.title||''));
     const result={
       q:text,status:r.status,elapsedMs:Date.now()-start,
-      count:offers.length,exact:exact.length,
+      count:offers.length,exact:exact.length,structurallyValid:structurallyValid.length,
       merchants:[...new Set(offers.map(o=>o.merchant).filter(Boolean))].slice(0,15),
       providerSummary:(data.providers||[]).filter(p=>(p.returnedOffers||0)>0).map(p=>({sourceId:p.sourceId,offers:p.returnedOffers})),
       failures:(data.errors||[]).slice(0,7).map(e=>({id:e.sourceId,code:String(e.error||e.message||'').slice(0,110)})),
@@ -125,6 +133,11 @@ try{
   const iphone=await query('iPhone 17');
   const ps5=await query('PS5');
   if(iphone.status!==200||ps5.status!==200)process.exitCode=2;
+  // HTTP 200 + empty products is not a functional search success.
+  if([iphone,ps5].some(x=>!x.structurallyValid || x.exact<1 || x.merchants.length<2))
+    process.exitCode=5;
+  if([iphone,ps5].some(x=>x.merchants.includes('App')))
+    process.exitCode=6;
   if(ps5.falsePS5?.length)process.exitCode=3;
   if(stream.sseStatus!==200||!stream.done||stream.firstOfferMs===null)process.exitCode=4;
 }finally{
