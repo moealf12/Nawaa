@@ -1,4 +1,8 @@
 import { searchFreeStorefrontById, configuredFreeStorefronts } from "./providers/free-storefronts.mjs";
+import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
+import { searchJarir } from "./providers/jarir.mjs";
+import { searchSharafDG } from "./providers/sharafdg.mjs";
+import { searchSwarovskiSaudi } from "./providers/swarovski.mjs";
 
 const DEFAULT_QUERIES = {
   "shein-sa":"dress", "aliexpress-cn":"iphone 17 case", "temu-global":"iphone 17 case",
@@ -18,6 +22,8 @@ const DEFAULT_QUERIES = {
   "ssense-global":"nike shoes", "jomashop-global":"seiko watch", "fragrancex-global":"dior perfume",
   "lookfantastic-global":"dior perfume", "cultbeauty-global":"dior perfume",
   "stockx-global":"nike shoes", "goat-global":"nike shoes",
+  "extra":"iphone 17", "jarir":"hp laptop",
+  "sharafdg-sa":"iphone 17", "swarovski-sa":"bracelet",
 };
 
 function classify(result) {
@@ -27,8 +33,64 @@ function classify(result) {
   return "CONNECTED_NO_CANDIDATES";
 }
 
-export async function auditFreeStorefronts({ storeId = null, query = null } = {}) {
+// Core merchant APIs are not free-storefront HTML adapters. The source audit
+// matrix explicitly names these IDs, so probe their REAL adapters rather than
+// throwing "unknown storefront" before any source request is attempted.
+const DIRECT_AUDIT_SOURCES = {
+  extra:{name:"eXtra",countryCode:"SA",run:q=>searchExtraUnbxd(q,24,q)},
+  jarir:{name:"Jarir",countryCode:"SA",run:q=>searchJarir(q,24,q)},
+  "sharafdg-sa":{name:"Sharaf DG",countryCode:"SA",run:q=>searchSharafDG(q,24)},
+  "swarovski-sa":{name:"Swarovski",countryCode:"SA",run:q=>searchSwarovskiSaudi(q,24)},
+};
+
+function directAuditOfferValid(offer) {
+  if(typeof offer?.title!=="string" || !offer.title.trim()) return false;
+  if(!Number.isFinite(offer.productPrice) || offer.productPrice<=0) return false;
+  if(!/^[A-Z]{3}$/.test(offer.currency||"")) return false;
+  try{return new URL(offer.sourceUrl).protocol==="https:"}catch{return false}
+}
+
+async function auditDirectSource(storeId, query, adapter) {
+  const started=Date.now();
+  let item;
+  try {
+    const raw=await adapter.run(query);
+    const all=Array.isArray(raw?.offers)?raw.offers:[];
+    const offers=all.filter(directAuditOfferValid);
+    item={
+      id:storeId,name:adapter.name,countryCode:adapter.countryCode,query,
+      status:offers.length?"LIVE_VERIFIED":all.length?"CONNECTED_NO_VERIFIED_PRICE":raw?.errors?.length?"FAILING":"CONNECTED_NO_CANDIDATES",
+      candidates:all.length,verifiedOffers:offers.length,failures:raw?.errors?.length||0,
+      durationMs:Date.now()-started,
+      diagnostics:{adapter:"direct",rawOffers:all.length,providerDiagnostics:raw?.diagnostics||null,
+        errors:(raw?.errors||[]).slice(0,8)},
+      sampleOffers:offers.slice(0,3).map(offer=>({
+        title:offer.title,price:offer.productPrice,currency:offer.currency,
+        merchant:offer.merchant,sourceUrl:offer.sourceUrl,
+      })),
+    };
+  }catch(error){
+    item={
+      id:storeId,name:adapter.name,countryCode:adapter.countryCode,query,
+      status:"FAILING",candidates:0,verifiedOffers:0,failures:1,
+      durationMs:Date.now()-started,
+      error:error instanceof Error?error.message:String(error),
+    };
+  }
+  return {
+    observedAt:new Date().toISOString(),audited:1,
+    liveVerified:Number(item.status==="LIVE_VERIFIED"),
+    failing:Number(item.status==="FAILING"),totalVerifiedOffers:item.verifiedOffers,
+    slowest:[{id:item.id,durationMs:item.durationMs,status:item.status}],
+    results:[item],
+  };
+}
+
+export async function auditFreeStorefronts({ storeId = null, query = null, directSources = DIRECT_AUDIT_SOURCES } = {}) {
   const stores = configuredFreeStorefronts().filter(store => !storeId || store.id === storeId);
+  if(storeId && !stores.length && directSources[storeId]) {
+    return auditDirectSource(storeId,query || DEFAULT_QUERIES[storeId] || storeId,directSources[storeId]);
+  }
   if (storeId && stores.length === 0) throw new Error("unknown storefront: " + storeId);
 
   // Keep full source coverage while bounding simultaneous network-heavy probes.

@@ -1093,15 +1093,18 @@ function isRetryableAmazonSearchError(error){
   return /^HTTP (?:408|425|429|5\d\d)\b/.test(String(error?.message||error||""));
 }
 
-export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,deadlineMs=10000,fetchPage=fetchText,wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,deadlineMs=10000,signal,fetchPage=fetchText,wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
   const deadlineAt=Date.now()+Math.max(50,Math.min(15000,Number(deadlineMs)||10000));
   const controller=new AbortController();
+  const fetchSignal=signal ? AbortSignal.any([signal,controller.signal]) : controller.signal;
+  signal?.throwIfAborted();
   const pageUrls=Array.from({length:pageCount},(_,index)=>{
     const pageUrl=new URL(searchUrl);
     pageUrl.searchParams.set("page",String(pageStart+index));
     return {index,url:pageUrl.href};
   });
   const settleBeforeDeadline=async(operation)=>{
+    if(signal?.aborted) return {status:"rejected",reason:signal.reason || new Error("search_cancelled")};
     const remaining=deadlineAt-Date.now();
     if(remaining<=0){const error=new Error("amazon_page_deadline_exceeded");error.name="TimeoutError";return {status:"rejected",reason:error};}
     let timeoutId;
@@ -1113,15 +1116,17 @@ export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,
       ]);
     }finally{clearTimeout(timeoutId);}
   };
-  const first=await Promise.all(pageUrls.map(page=>settleBeforeDeadline(()=>fetchPage(page.url,{signal:controller.signal}))));
+  const first=await Promise.all(pageUrls.map(page=>settleBeforeDeadline(()=>fetchPage(page.url,{signal:fetchSignal}))));
   const results=first.map((result,index)=>({index,result}));
   const retryable=results.filter(({result})=>result.status==="rejected"&&isRetryableAmazonSearchError(result.reason));
   if(retryable.length&&Date.now()<deadlineAt){
     const retried=await Promise.all(retryable.map(async({index})=>{
+      signal?.throwIfAborted();
       const delay=Math.min(200*(index+1),Math.max(0,deadlineAt-Date.now()));
       if(delay)await wait(delay);
-      return {index,result:await settleBeforeDeadline(()=>fetchPage(pageUrls[index].url,{signal:controller.signal}))};
+      return {index,result:await settleBeforeDeadline(()=>fetchPage(pageUrls[index].url,{signal:fetchSignal}))};
     }));
+    signal?.throwIfAborted();
     for(const replacement of retried)results[replacement.index]=replacement;
   }
   const fulfilled=results
@@ -1261,6 +1266,7 @@ function virginAeCatalogUrl(query) {
 }
 
 async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore, options = {}) {
+  options.signal?.throwIfAborted();
   const started = Date.now();
   const searchUrl = store.search(query);
   try {
@@ -1278,7 +1284,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
         const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
-        const fulfilled = await fetchAmazonSearchPages(searchUrl,{pageStart,pageCount});
+        const fulfilled = await fetchAmazonSearchPages(searchUrl,{pageStart,pageCount,signal:options.signal});
         html = fulfilled.map(page => page.html).join("\n");
         searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
         searchDiagnostics = {
@@ -1296,6 +1302,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       htmlFirstAttempted = true;
       if (searchDiagnostics?.blockedReason) primarySearchError = "Storefront blocked: " + searchDiagnostics.blockedReason;
     } catch (error) {
+      if(options.signal?.aborted) throw options.signal.reason || error;
       htmlFirstAttempted = true;
       primarySearchError = error instanceof Error ? error.message : String(error);
       // Virgin's generic search endpoint can reject server-side clients while its
@@ -1333,6 +1340,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
         return merged;
       })();
+    options.signal?.throwIfAborted();
     if (!htmlFirstOffers.length) {
       if (store.id === "ikea-sa") {
         try { primarySearchOffers = await searchIkeaSik(query); primarySearchError = null; }
@@ -1361,7 +1369,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
           const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
           const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
-          const fulfilled = await fetchAmazonSearchPages(searchUrl,{pageStart,pageCount});
+          const fulfilled = await fetchAmazonSearchPages(searchUrl,{pageStart,pageCount,signal:options.signal});
           html = fulfilled.map((page) => page.html).join("\n");
           searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
           searchDiagnostics = {
@@ -1400,6 +1408,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         };
       }
     }
+    options.signal?.throwIfAborted();
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
     const links = html ? extractProductLinks(html, searchUrl, store, query, candidateLimit) : [];
     const jsonLdOffers = html ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query) : [];
@@ -1413,7 +1422,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         ...result.value,
         provider:"free-storefronts",
         providerMarket:store.id,
-        merchant:result.value.merchant || store.name,
+        // Preserve the verified store identity, not a generic CDN/app subdomain.
+        merchant:store.name,
         merchantCountryCode:store.countryCode,
         merchantCountryNameAr:store.countryNameAr,
         canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
@@ -1423,6 +1433,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         sourceMeta:{
           ...(result.value.sourceMeta || {}),
           storefrontSearch:store.name,
+          resolvedMerchant:result.value.merchant || null,
           freeDiscovery:true,
           searchUrl,
         },
@@ -1532,6 +1543,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       },
     };
   } catch (error) {
+    if(options.signal?.aborted) throw options.signal.reason || error;
     sourceReliability.record(store.id, {
       transportOk:false,
       offers:0,
@@ -1572,16 +1584,27 @@ export async function searchFreeStorefronts(query, options = {}) {
   const storeDeadlineMs = Math.max(1500, Math.min(7500, Number(options.storeDeadlineMs) || 6500));
   const withDeadline = (operation, storeId) => {
     const controller=new AbortController();
-    let timeoutId;
-    const deadline=new Promise((_,reject)=>{
-      timeoutId=setTimeout(()=>{
-        const error=new Error("store_deadline_exceeded:"+storeId);
-        controller.abort(error);
-        reject(error);
-      },storeDeadlineMs);
+    const forwardAbort=()=>controller.abort(options.signal.reason || new Error("search_client_disconnected"));
+    if(options.signal?.aborted) forwardAbort();
+    else options.signal?.addEventListener("abort",forwardAbort,{once:true});
+    let timeoutId, onAbort;
+    const cancelled=new Promise((_,reject)=>{
+      onAbort=()=>reject(controller.signal.reason || new Error("search_cancelled"));
+      if(controller.signal.aborted) onAbort();
+      else controller.signal.addEventListener("abort",onAbort,{once:true});
     });
-    return Promise.race([Promise.resolve().then(()=>operation(controller.signal)),deadline])
-      .finally(()=>clearTimeout(timeoutId));
+    timeoutId=setTimeout(()=>controller.abort(new Error("store_deadline_exceeded:"+storeId)),storeDeadlineMs);
+    return Promise.race([
+      Promise.resolve().then(()=>{
+        controller.signal.throwIfAborted();
+        return operation(controller.signal);
+      }),
+      cancelled,
+    ]).finally(()=>{
+      clearTimeout(timeoutId);
+      controller.signal.removeEventListener("abort",onAbort);
+      options.signal?.removeEventListener("abort",forwardAbort);
+    });
   };
   const settled = await Promise.allSettled(stores.map((store) =>
     withDeadline((signal)=>searchStore(store, query, productPageLimit, options.matchingQuery || query, catalogLimit, {...options,signal}), store.id)

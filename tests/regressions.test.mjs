@@ -41,6 +41,37 @@ test("PS5 device search rejects games, controllers and accessories despite platf
   assert.equal(assessOfferMatch("ps5", {title:"PS5, Console 1TB, Blu-Ray Disc",condition:"new"}).exactMatch,true);
 });
 
+test("live Jarir PS5 Disc Drive is not a 649 SAR console", () => {
+  const separateDrives=[
+    "Sony Disc Drive for PlayStation 5 Digital Edition Slim, White",
+    "PS5 Pro Disc Drive Bundle",
+    "Sony PlayStation 5 Optical Drive Replacement",
+    "Sony Disk Drive for PS5 Slim",
+  ];
+  for(const title of separateDrives){
+    const offer={title,condition:"new",productPrice:649,currency:"SAR",merchant:"Jarir"};
+    assert.equal(queries.describeProduct(offer).kind,"accessory",title);
+    assert.equal(queries.productCategory(offer),"accessory",title);
+    const match=assessOfferMatch("ps5",offer);
+    assert.equal(match.exactMatch,false,title);
+    assert.ok(match.matchConfidence<0.35,title);
+    assert.ok(queries.queryMatchReasons("ps5",offer).includes("query_mismatch"),title);
+  }
+  const separate={title:separateDrives[0],condition:"new"};
+  assert.equal(queries.parseSearchIntent("PS5 disc drive").kind,"accessory");
+  assert.equal(assessOfferMatch("PS5 disc drive",separate).exactMatch,true,
+    "explicit accessory shoppers may still find the separate drive");
+  for(const title of [
+    "Sony PlayStation 5 Slim Console Blu-ray Disc Edition, 1 TB White",
+    "Sony PlayStation 5 Slim Digital Console with Disc Drive 1TB",
+  ]){
+    const offer={title,condition:"new",productPrice:2500};
+    assert.equal(queries.describeProduct(offer).kind,"console",title);
+    assert.equal(assessOfferMatch("ps5",offer).exactMatch,true,title);
+  }
+  assert.equal(queries.parseSearchIntent("PS5 Console with Disc Drive").kind,"console");
+});
+
 test("explicit game and controller searches retain their intended product type", () => {
   assert.equal(assessOfferMatch("ps5 العاب", {title:"PS5 EA SPORTS FC 25",condition:"new"}).exactMatch,true);
   assert.equal(assessOfferMatch("ps5 العاب", {title:"Sony PS5 Slim Console",condition:"new"}).exactMatch,false);

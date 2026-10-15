@@ -1,0 +1,39 @@
+name: NAWAA Shopper Live Search Diagnostics
+on:
+  pull_request:
+    paths:
+      - 'scripts/diagnose-live-search.mjs'
+      - 'scripts/diagnose-live-providers.mjs'
+      - 'scripts/diagnose-candidate-search.mjs'
+      - '.github/workflows/live-search-diagnostics.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shopper-live-diagnostics-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  live-read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Check four existing merchant adapters independently (read only)
+        run: node scripts/diagnose-live-providers.mjs
+      - name: Test candidate API against live stores locally (no deploy)
+        run: node scripts/diagnose-candidate-search.mjs
+      - name: Query three public production searches (GET only)
+        run: node scripts/diagnose-live-search.mjs
+      - name: Keep sanitized evidence regardless of reachability
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-live-search-diagnostics
+          path: reports/nawaa-live-search-smoke.json
+          if-no-files-found: warn
+          retention-days: 3
