@@ -488,11 +488,16 @@ async function searchAll(query, { depth = 0 } = {}) {
     ? Math.max(100, Math.min(25000, Math.floor(configuredRequestDeadline)))
     : 12000;
   const requestDeadlineAt = Date.now() + requestDeadlineMs;
+  // The JSON cache coalesces identical searches. Abort one shared refresh only
+  // at its own deadline, never when a single subscribing client disconnects.
+  const requestController=new AbortController();
   let deadlineExceeded = false;
   const beforeRequestDeadline = async (operation, fallback) => {
     const remaining = requestDeadlineAt - Date.now();
     if (remaining <= 0) {
       deadlineExceeded = true;
+      if(!requestController.signal.aborted)
+        requestController.abort(new Error("search_deadline_exceeded"));
       return fallback();
     }
     const timeout = Symbol("search-request-deadline");
@@ -504,6 +509,8 @@ async function searchAll(query, { depth = 0 } = {}) {
       ]);
       if (result !== timeout) return result;
       deadlineExceeded = true;
+      if(!requestController.signal.aborted)
+        requestController.abort(new Error("search_deadline_exceeded"));
       return fallback();
     } finally {
       clearTimeout(timeoutId);
@@ -519,6 +526,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       amazonPageStart: plan.amazonPageStart,
       amazonPageCount: plan.amazonPageCount,
       matchingQuery: query,
+      signal:requestController.signal,
     }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) })),
     () => ({ offers:[], error:"search_deadline_exceeded" }),
   );
@@ -531,7 +539,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     amazonPromise,
     beforeRequestDeadline(
       () => runProviderPass(providerQuery, "primary", query, {
-        plan,
+        plan, signal:requestController.signal,
         onChunk: (chunk) => { completedPrimaryChunks.push(chunk); },
       }),
       () => {
@@ -601,7 +609,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
       const expansions = await Promise.all(expansionQueries.map((candidate) => beforeRequestDeadline(
-        () => runProviderPass(candidate, "fallback", query, { plan }),
+        () => runProviderPass(candidate, "fallback", query, { plan,signal:requestController.signal }),
         () => ({ providers:[], errors:[], offers:[] }),
       )));
       for (const fallback of expansions) {
