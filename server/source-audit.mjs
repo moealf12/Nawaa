@@ -59,7 +59,7 @@ async function auditDirectSource(storeId, query, adapter) {
     const offers=all.filter(directAuditOfferValid);
     item={
       id:storeId,name:adapter.name,countryCode:adapter.countryCode,query,
-      status:offers.length?"LIVE_VERIFIED":(raw?.errors?.length||raw?.ok===false?"FAILING":"CONNECTED_NO_CANDIDATES"),
+      status:offers.length?"LIVE_VERIFIED":all.length?"CONNECTED_NO_VERIFIED_PRICE":raw?.errors?.length?"FAILING":"CONNECTED_NO_CANDIDATES",
       candidates:all.length,verifiedOffers:offers.length,failures:raw?.errors?.length||0,
       durationMs:Date.now()-started,
       diagnostics:{adapter:"direct",rawOffers:all.length,providerDiagnostics:raw?.diagnostics||null,
