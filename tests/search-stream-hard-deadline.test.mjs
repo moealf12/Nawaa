@@ -8,7 +8,8 @@ test('SSE completes on deadline, keeps fast offers, and reports honest partial c
     import http from 'node:http';
     process.env.PORT='0';
     process.env.SEARCH_STREAM_DEADLINE_MS='300';
-    globalThis.fetch=async url=>{
+    globalThis.abortedNetworkCalls=0;
+    globalThis.fetch=async (url,options={})=>{
       if(String(url).startsWith('https://search.unbxd.io/')){
         return Response.json({response:{numberOfProducts:1,products:[{
           id:'qa-extra-hp-laptop',name:'HP Pavilion Laptop 16GB RAM',
@@ -16,7 +17,13 @@ test('SSE completes on deadline, keeps fast offers, and reports honest partial c
           featureEnBrandName:'HP',featureEnDeviceType:'Laptop',available:true
         }]}});
       }
-      return new Promise(()=>{});
+      return new Promise((_,reject)=>{
+        const signal=options.signal;
+        if(!signal)throw Error('outbound_fetch_missing_abort_signal');
+        const aborted=()=>{globalThis.abortedNetworkCalls++;reject(signal.reason||new Error('aborted'))};
+        if(signal.aborted)aborted();
+        else signal.addEventListener('abort',aborted,{once:true});
+      });
     };
     const listen=http.Server.prototype.listen;
     http.Server.prototype.listen=function(...args){
@@ -41,7 +48,8 @@ test('SSE completes on deadline, keeps fast offers, and reports honest partial c
                 complete:final.coverage?.complete,exceeded:final.coverage?.deadlineExceeded,
                 pending:final.coverage?.providersPending,streamDeadlineMs:final.coverage?.streamDeadlineMs,
                 timeoutErrors:final.errors?.filter(e=>e.error==='search_stream_deadline_exceeded').length||0,
-                signedCursor:Boolean(final.nextCursor)
+                signedCursor:Boolean(final.nextCursor),
+                abortedNetworkCalls:globalThis.abortedNetworkCalls
               }));
             }catch(e){console.log('ERROR '+e.stack);process.exitCode=1}
             this.close(()=>process.exit(process.exitCode||0));
@@ -75,4 +83,5 @@ test('SSE completes on deadline, keeps fast offers, and reports honest partial c
   assert.equal(actual.streamDeadlineMs,300);
   assert.ok(actual.timeoutErrors>=1);
   assert.equal(actual.signedCursor,true);
+  assert.ok(actual.abortedNetworkCalls>=1,'deadline must abort at least one in-flight network fetch');
 });
