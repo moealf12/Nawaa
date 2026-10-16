@@ -25,7 +25,7 @@ async function launch(root) {
       NOON_ENABLED:'false',CARREFOUR_ENABLED:'false',EBAY_ENABLED:'false',NODE_ENV:'test'},
     stdio:['ignore','pipe','pipe'],
   });
-  let lines='',stderr=''; const transport=[];
+  let lines='',stderr=''; const transport=[],extraPhases=[];
   child.stderr.on('data',part => {stderr=(stderr+part).slice(-3000)});
   child.stdout.on('data',part => {
     lines+=part;
@@ -33,9 +33,10 @@ async function launch(root) {
     while((end=lines.indexOf('\n'))>=0){
       const line=lines.slice(0,end);lines=lines.slice(end+1);
       if(line.startsWith('LATENCY_TRANSPORT '))transport.push(JSON.parse(line.slice(18)));
+      if(line.startsWith('EXTRA_PHASE_TIMING '))extraPhases.push(JSON.parse(line.slice(19)));
     }
   });
-  return {child,transport,get stderr(){return stderr}};
+  return {child,transport,extraPhases,get stderr(){return stderr}};
 }
 async function measure(base,q,phase) {
   const start=performance.now(); let firstOfferMs=null,firstValidOfferMs=null,firstSources=[],last={},remaining='',done=false;
@@ -98,9 +99,9 @@ for(let sample=1;sample<=samples;sample++)for(const q of queries){
         server.child.stdout.on('data',part=>{const match=String(part).match(/LATENCY_PORT (\d+)/);if(match){clearTimeout(timer);resolvePort(Number(match[1]));}});
       });
       for(const phase of ['process-cold','process-warm']){
-        server.transport.length=0;
+        server.transport.length=0;server.extraPhases.length=0;
         const result=await measure('http://127.0.0.1:'+port,q,phase);
-        const record={sha:version.sha,sample,...result,transport:[...server.transport]};
+        const record={sha:version.sha,sample,...result,transport:[...server.transport],extraPhases:[...server.extraPhases]};
         observations.push(record);console.log('LATENCY_SAMPLE '+JSON.stringify(record));
         if(!record.done || !record.valid || record.count!==record.valid || record.falsePS5)process.exitCode=1;
       }
