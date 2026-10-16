@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {assessOfferMatch,filterQueryOffers,queryMatchReasons} from '../src/search-query.mjs';
+import {assessOfferMatch,filterQueryOffers,queryMatchReasons,parseSearchIntent} from '../src/search-query.mjs';
 const base={merchant:'eXtra',sourceUrl:'https://www.extra.com/en-sa/item/1',productPrice:2499,
   currency:'SAR',observedAt:'2026-10-16T00:00:00Z',condition:'new'};
 const consoleOffer={...base,title:'Sony PS5 Console Disc Edition 1TB'};
@@ -87,5 +87,21 @@ test('model and storage constraints remain isolated across alternating batches',
     assert.ok(exact.offers.every(x=>!queryMatchReasons('iPhone 17 256GB',x).length));
     assert.ok(!exact.offers.some(x=>x.title.includes('Pro')));
     assert.deepStrictEqual(items,initial);
+  }
+});
+
+test('direct public matching with and without prepared intent is identical',()=>{
+  const offers=[consoleOffer,driveOffer,iphone,caseOffer,
+    {...iphone,sourceUrl:'https://example.com/iphone-pro',title:'iPhone 17 Pro 512GB Black',specs:{storage:'512GB',deviceType:'iPhone 17 Pro'}},
+    {...consoleOffer,sourceUrl:'https://example.com/pad',title:'PS5 Wireless Controller'}];
+  for(const query of ['PS5','PS5 disc drive','iPhone 17 256GB','ايفون 17 256 جيجا',
+    'Samsung Galaxy S25 Ultra 256GB','HP laptop','Nike','Logitech mouse','','PS5 DualSense controller']){
+    const parsed=parseSearchIntent(query);
+    for(const offer of offers){
+      assert.deepStrictEqual(assessOfferMatch(query,offer),assessOfferMatch(query,offer,parsed),query);
+      assert.deepStrictEqual(queryMatchReasons(query,offer),queryMatchReasons(query,offer,parsed),query);
+    }
+    const expected=offers.filter(offer=>queryMatchReasons(query,offer).length===0);
+    assert.deepStrictEqual(filterQueryOffers(query,offers).offers,expected,query);
   }
 });
