@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'scripts/diagnose-candidate-search.mjs'
+      - 'scripts/*latency*.mjs'
       - '.github/workflows/release-candidate-live-smoke.yml'
   workflow_dispatch:
 permissions:
@@ -13,9 +14,11 @@ concurrency:
 jobs:
   real-source-candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -28,3 +31,17 @@ jobs:
           MEILI_MASTER_KEY: ''
           NODE_ENV: test
         run: node scripts/diagnose-candidate-search.mjs
+      - name: Repeat cold and warm candidate timings (observational, not P95 certification)
+        env:
+          LATENCY_SAMPLES: '3'
+          LATENCY_OUTPUT: latency-results.json
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/measure-search-latency.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: candidate-latency-${{ github.event.pull_request.head.sha || github.sha }}
+          path: latency-results.json
+          retention-days: 7
