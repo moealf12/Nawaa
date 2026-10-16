@@ -46,6 +46,7 @@ jobs:
       - name: Alternate baseline and candidate cold/warm measurements (not P95 certification)
         env:
           LATENCY_SAMPLES: '3'
+          NAWAA_PROFILE_EXTRA: '1'
           LATENCY_OUTPUT: latency-results.json
           DATABASE_URL: ''
           MEILI_HOST: ''
