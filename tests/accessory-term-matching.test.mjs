@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {assessOfferMatch,filterQueryOffers} from '../src/search-query.mjs';
+import {assessOfferMatch,filterQueryOffers,queryMatchReasons} from '../src/search-query.mjs';
 const base={merchant:'eXtra',sourceUrl:'https://www.extra.com/en-sa/item/1',productPrice:2499,
   currency:'SAR',observedAt:'2026-10-16T00:00:00Z',condition:'new'};
 const consoleOffer={...base,title:'Sony PS5 Console Disc Edition 1TB'};
@@ -32,4 +32,34 @@ test('search matching does not mutate offer provenance or observed time',()=>{
     input.forEach(x=>assessOfferMatch(query,x));
   }
   assert.deepStrictEqual(input,original);
+});
+
+test('batch-shared intent has identical decisions to independent matching for every offer',()=>{
+  const items=[consoleOffer,driveOffer,iphone,caseOffer,
+    {...base,title:'Samsung Galaxy S25 Ultra 256GB',sourceUrl:'https://example.com/galaxy'},
+    {...base,title:'HP Laptop 16GB RAM',sourceUrl:'https://example.com/laptop'},
+    {...base,title:'iPhone 17 Pro Max 512GB',sourceUrl:'https://example.com/promax'}];
+  for(const query of ['PS5','PS5 disc drive','iPhone 17','iPhone 17 Pro Max',
+    'ايفون 17 256 جيجا','HP laptop','Samsung Galaxy S25 Ultra 256GB','Nike','']){
+    const expected=items.filter(item=>queryMatchReasons(query,item).length===0);
+    const actual=filterQueryOffers(query,items);
+    assert.deepStrictEqual(actual.offers,expected,'same accepted sources: '+query);
+    assert.equal(actual.queryFilter.input,items.length);
+    assert.equal(actual.queryFilter.retained,expected.length);
+  }
+});
+
+test('interleaved batches preserve matching for previous queries',()=>{
+  const items=[consoleOffer,driveOffer,iphone,caseOffer];
+  const ps5=filterQueryOffers('PS5',items);
+  const phone=filterQueryOffers('iPhone 17',items);
+  for(let i=0;i<5;i++){
+    assert.deepStrictEqual(filterQueryOffers('PS5',items),ps5);
+    assert.deepStrictEqual(filterQueryOffers('iPhone 17',items),phone);
+  }
+});
+
+test('empty provider batches retain their zero-result contract',()=>{
+  assert.deepStrictEqual(filterQueryOffers('PS5',[]),
+    {offers:[],queryFilter:{input:0,retained:0,removed:0}});
 });
