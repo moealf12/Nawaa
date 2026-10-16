@@ -25,6 +25,7 @@ import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarov
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonCreators } from "./providers/amazon-creators.mjs";
 import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontById } from "./providers/free-storefronts.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
+import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
@@ -219,6 +220,7 @@ function mergeProviderChunks(chunks) {
 
 async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery, options = {}) {
   const onChunk = typeof options.onChunk === "function" ? options.onChunk : null;
+  const trace = typeof options.onTrace === "function" ? options.onTrace : null;
   const tasks = providerTasks(providerQuery, matchingQuery, options);
   if (!tasks.length) return {providers:[],errors:[],offers:[]};
 
@@ -235,7 +237,8 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   const remaining=[...ordered];
   const inFlight=new Map();
   const launch=(task)=>{
-    const p=executeProviderTask(task,pass,providerQuery,{signal:options.signal}).then(chunk=>({task,chunk}));
+    const p=executeProviderTask(task,pass,providerQuery,{signal:options.signal})
+      .then(chunk=>({task,chunk,readyAt:trace ? performance.now() : 0}));
     inFlight.set(task.id,p);
   };
   // Providers already enforce their own deadlines. Start every eligible
@@ -247,11 +250,15 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   while(inFlight.size){
     const settled=await Promise.race(inFlight.values());
     inFlight.delete(settled.task.id);
+    const dispatchAt = trace ? performance.now() : 0;
+    if(trace) trace({stage:"providerCompleted",sourceId:settled.task.id,
+      offers:settled.chunk.offers?.length||0,queueMs:Math.max(0,dispatchAt-settled.readyAt)});
     chunks.push(settled.chunk);
     if (onChunk) {
       try { await onChunk(settled.chunk, { completed:chunks.length, total:ordered.length, pending:remaining.length + inFlight.size }); } catch {}
     }
-
+    if(trace) trace({stage:"providerCallbackReturned",sourceId:settled.task.id,
+      offers:settled.chunk.offers?.length||0,callbackMs:Math.max(0,performance.now()-dispatchAt)});
     relevant = retainRelatedOffers(matchingQuery, chunks.flatMap(chunk=>chunk.offers || []));
     const merchants=new Set(relevant.map(offerMerchantKey)).size;
     const enough=relevant.length>=usefulThreshold && merchants>=merchantThreshold;
@@ -382,6 +389,12 @@ function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
 }
 
 async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
+  const traceStarted = PROFILE_SEARCH_STREAM ? performance.now() : 0;
+  const trace = data => {
+    if (PROFILE_SEARCH_STREAM) console.log("SEARCH_SOURCE_TRACE "+JSON.stringify({
+      elapsedMs:performance.now()-traceStarted,...data,
+    }));
+  };
   query=normalizeSearchQuery(query);
   const plan=acquisitionPlan(0,configuredFreeStorefronts().length);
   const providerQuery=parseSearchIntent(query).providerQuery;
@@ -433,10 +446,12 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,signal:controller.signal,onOffers:async readyOffers=>{
     if(!accepting || controller.signal.aborted)return;
     offers.push(...readyOffers);
+    trace({stage:"jarirPageReady",sourceId:"jarir-direct",offers:readyOffers.length});
     // A ready page is not a completed provider. Retain pending/partial coverage
     // until its final result (including pagination errors) has settled.
     await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
-  },onChunk:async(chunk,progress)=>{
+    trace({stage:"jarirPagePublished",sourceId:"jarir-direct",offers:readyOffers.length});
+  },onTrace:trace,onChunk:async(chunk,progress)=>{
     if(!accepting)return;
     primaryCompleted++;
     if(chunk.provider)providers.push(chunk.provider);
@@ -898,6 +913,8 @@ const server = http.createServer(async (req, res) => {
     // Without it, the UI cannot request additional sources after an SSE result.
     const nextCursor = encodeSearchCursor(normalized, 1);
     const cached = cachedSearch.peek(key);
+    const requestStarted = PROFILE_SEARCH_STREAM ? performance.now() : 0;
+    let firstValidPublished=false,firstExactPublished=false;
     res.writeHead(200,{
       "content-type":"text/event-stream; charset=utf-8",
       "cache-control":"no-cache, no-transform",
@@ -914,6 +931,24 @@ const server = http.createServer(async (req, res) => {
       const serialized=JSON.stringify(data);
       const serializedAt=measuring ? performance.now() : 0;
       res.write("data: "+serialized+"\n\n");
+      if (measuring) {
+        const milestone=firstOfferMilestones(data?.offers);
+        // One per milestone per request, bounded diagnostic labels only.
+        const safeSource=o=>String(o?.providerMarket||o?.provider||"unknown").slice(0,48)
+          .replace(/[^a-zA-Z0-9_:-]/g,"");
+        if(!firstValidPublished && milestone.firstValid){
+          firstValidPublished=true;
+          console.log("SEARCH_FIRST_OFFER_TIMING "+JSON.stringify({kind:"valid",
+            serverPublishMs:performance.now()-requestStarted,
+            sourceId:safeSource(milestone.firstValid)}));
+        }
+        if(!firstExactPublished && milestone.firstExact){
+          firstExactPublished=true;
+          console.log("SEARCH_FIRST_OFFER_TIMING "+JSON.stringify({kind:"exact",
+            serverPublishMs:performance.now()-requestStarted,
+            sourceId:safeSource(milestone.firstExact)}));
+        }
+      }
       if (measuring) console.log("SEARCH_STREAM_PHASE "+JSON.stringify({
         stage:"snapshotWrite",bytes:Buffer.byteLength(serialized),
         serializeMs:serializedAt-serializeStarted,socketEnqueueMs:performance.now()-serializedAt,

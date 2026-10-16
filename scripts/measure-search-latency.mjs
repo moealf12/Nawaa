@@ -6,6 +6,7 @@ import {once} from 'node:events';
 import {resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {writeFile} from 'node:fs/promises';
+import {firstOfferMilestones,structurallyValidOffer} from '../src/search-first-offer-metrics.mjs';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const samples = Number(process.env.LATENCY_SAMPLES || 3);
 if (!Number.isInteger(samples) || samples < 1 || samples > 10) throw Error('LATENCY_SAMPLES must be 1..10');
@@ -14,18 +15,14 @@ const roots = process.argv.slice(2).length ? process.argv.slice(2).map(resolvePa
 const observations = [];
 const revision = root => execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
 const versions = roots.map(root => ({root,sha:revision(root)}));
-const valid = o => typeof o.title === 'string' && o.title.trim() &&
-  Number.isFinite(o.productPrice) && o.productPrice > 0 && o.currency === 'SAR' &&
-  typeof o.merchant === 'string' && o.merchant.trim() && o.merchant !== 'App' &&
-  typeof o.sourceUrl === 'string' && o.sourceUrl.startsWith('https://') &&
-  typeof o.observedAt === 'string' && Number.isFinite(Date.parse(o.observedAt));
+const valid = structurallyValidOffer;
 async function launch(root) {
   const child = spawn(process.execPath,['--import',resolve(scriptDir,'search-latency-preload.mjs'),'server/server.mjs'],{
     cwd:root,env:{...process.env,PORT:'0',DATABASE_URL:'',MEILI_HOST:'',MEILI_MASTER_KEY:'',
       NOON_ENABLED:'false',CARREFOUR_ENABLED:'false',EBAY_ENABLED:'false',NODE_ENV:'test'},
     stdio:['ignore','pipe','pipe'],
   });
-  let lines='',stderr=''; const transport=[],extraPhases=[],streamPhases=[];
+  let lines='',stderr=''; const transport=[],extraPhases=[],streamPhases=[],sourceTrace=[],firstOfferTrace=[];
   child.stderr.on('data',part => {stderr=(stderr+part).slice(-3000)});
   child.stdout.on('data',part => {
     lines+=part;
@@ -35,12 +32,16 @@ async function launch(root) {
       if(line.startsWith('LATENCY_TRANSPORT '))transport.push(JSON.parse(line.slice(18)));
       if(line.startsWith('EXTRA_PHASE_TIMING '))extraPhases.push(JSON.parse(line.slice(19)));
       if(line.startsWith('SEARCH_STREAM_PHASE '))streamPhases.push(JSON.parse(line.slice('SEARCH_STREAM_PHASE '.length)));
+      if(line.startsWith('SEARCH_SOURCE_TRACE '))sourceTrace.push(JSON.parse(line.slice('SEARCH_SOURCE_TRACE '.length)));
+      if(line.startsWith('SEARCH_FIRST_OFFER_TIMING '))firstOfferTrace.push(JSON.parse(line.slice('SEARCH_FIRST_OFFER_TIMING '.length)));
     }
   });
-  return {child,transport,extraPhases,streamPhases,get stderr(){return stderr}};
+  return {child,transport,extraPhases,streamPhases,sourceTrace,firstOfferTrace,get stderr(){return stderr}};
 }
 async function measure(base,q,phase) {
-  const start=performance.now(); let firstOfferMs=null,firstValidOfferMs=null,firstSources=[],last={},remaining='',done=false;
+  const start=performance.now();
+  let firstOfferMs=null,firstValidOfferMs=null,firstExactOfferMs=null,firstSources=[],firstExactSources=[],last={},remaining='',done=false;
+  let firstWinningMerchant=null,firstExactMerchant=null;
   const sourceFirstOfferMs={};
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),25000);
   try {
@@ -57,14 +58,22 @@ async function measure(base,q,phase) {
         if(event==='snapshot' && data){
           last=JSON.parse(data);
           const offers=last.offers||[];
+          const milestone=firstOfferMilestones(offers);
+          const receivedAt=Math.round(performance.now()-start);
           for(const offer of offers.filter(valid)){
             const source=offer.providerMarket||offer.provider;
-            sourceFirstOfferMs[source] ??= Math.round(performance.now()-start);
+            sourceFirstOfferMs[source] ??= receivedAt;
           }
-          if(firstOfferMs===null && offers.length)firstOfferMs=Math.round(performance.now()-start);
-          if(firstValidOfferMs===null && offers.some(valid)){
-            firstValidOfferMs=Math.round(performance.now()-start);
-            firstSources=[...new Set(offers.filter(valid).map(o=>o.providerMarket||o.provider))];
+          if(firstOfferMs===null && offers.length)firstOfferMs=receivedAt;
+          if(firstValidOfferMs===null && milestone.firstValid){
+            firstValidOfferMs=receivedAt;
+            firstSources=[milestone.firstValid.providerMarket||milestone.firstValid.provider];
+            firstWinningMerchant=milestone.firstValid.merchant;
+          }
+          if(firstExactOfferMs===null && milestone.firstExact){
+            firstExactOfferMs=receivedAt;
+            firstExactSources=[milestone.firstExact.providerMarket||milestone.firstExact.provider];
+            firstExactMerchant=milestone.firstExact.merchant;
           }
         }
         if(event==='done')done=true;
@@ -72,7 +81,8 @@ async function measure(base,q,phase) {
       }
     }
     const offers=last.offers||[];
-    return {q,phase,firstOfferMs,firstValidOfferMs,firstSources,sourceFirstOfferMs,finishedMs:Math.round(performance.now()-start),done,
+    return {q,phase,firstOfferMs,firstValidOfferMs,firstExactOfferMs,firstSources,firstExactSources,
+      firstWinningMerchant,firstExactMerchant,sourceFirstOfferMs,finishedMs:Math.round(performance.now()-start),done,
       cacheMode:last.cache?.mode,count:offers.length,valid:offers.filter(valid).length,
       exact:offers.filter(o=>o.exactMatch).length,merchants:[...new Set(offers.map(o=>o.merchant))],
       falsePS5:q==='PS5'?offers.filter(o=>o.exactMatch && /\b(?:disc|disk|optical|blu ray)\s+drive\b/i.test(o.title) && !/\bconsole\b.*\b(?:with|includes?|including)\b/i.test(o.title)).length:0,
@@ -81,7 +91,7 @@ async function measure(base,q,phase) {
         elapsedMs:p.elapsedMs,latencyEwmaMs:p.reliability?.latencyEwmaMs,
         stores:Array.isArray(p.diagnostics)?p.diagnostics.map(d=>({id:d.store,offers:d.verifiedOffers,latencyEwmaMs:d.reliability?.latencyEwmaMs})):undefined})),
     };
-  }catch(error){return {q,phase,firstOfferMs,firstValidOfferMs,error:error.message,finishedMs:Math.round(performance.now()-start)};}
+  }catch(error){return {q,phase,firstOfferMs,firstValidOfferMs,firstExactOfferMs,error:error.message,finishedMs:Math.round(performance.now()-start)};}
   finally{clearTimeout(timer);controller.abort();}
 }
 // Use an OS-assigned port without changing the production server's exports.
@@ -101,10 +111,14 @@ for(let sample=1;sample<=samples;sample++)for(const q of queries){
       });
       for(const phase of ['process-cold','process-warm']){
         server.transport.length=0;server.extraPhases.length=0;server.streamPhases.length=0;
+        server.sourceTrace.length=0;server.firstOfferTrace.length=0;
         const result=await measure('http://127.0.0.1:'+port,q,phase);
-        const record={sha:version.sha,sample,...result,transport:[...server.transport],extraPhases:[...server.extraPhases],streamPhases:[...server.streamPhases]};
+        const record={sha:version.sha,sample,...result,transport:[...server.transport],
+          extraPhases:[...server.extraPhases],streamPhases:[...server.streamPhases],
+          sourceTrace:[...server.sourceTrace],firstOfferTrace:[...server.firstOfferTrace]};
         observations.push(record);console.log('LATENCY_SAMPLE '+JSON.stringify(record));
-        if(!record.done || !record.valid || record.count!==record.valid || record.falsePS5)process.exitCode=1;
+        if(!record.done || !record.valid || record.count!==record.valid || record.falsePS5 ||
+           (record.firstExactOfferMs!==null && record.firstExactOfferMs<record.firstValidOfferMs))process.exitCode=1;
       }
     }finally{
       if(server.child.exitCode===null){const exited=once(server.child,'exit');server.child.kill('SIGTERM');await exited;}
@@ -115,7 +129,10 @@ const quantile=(values,p)=>values.length?[...values].sort((a,b)=>a-b)[Math.ceil(
 const summary=versions.flatMap(v=>queries.flatMap(q=>['process-cold','process-warm'].map(phase=>{
   const rows=observations.filter(r=>r.sha===v.sha&&r.q===q&&r.phase===phase);
   const times=rows.map(r=>r.firstValidOfferMs).filter(Number.isFinite);
-  return {sha:v.sha,q,phase,n:rows.length,successes:times.length,medianMs:quantile(times,.5),maxMs:quantile(times,1),
+  const exactTimes=rows.map(r=>r.firstExactOfferMs).filter(Number.isFinite);
+  return {sha:v.sha,q,phase,n:rows.length,successes:times.length,medianMs:quantile(times,.5),
+    maxMs:quantile(times,1),firstExactSuccesses:exactTimes.length,
+    firstExactMedianMs:quantile(exactTimes,.5),firstExactMaxMs:quantile(exactTimes,1),
     sampleP95Ms:times.length>=20?quantile(times,.95):null,sloCertified:false};
 })));
 console.log('LATENCY_SUMMARY '+JSON.stringify(summary));

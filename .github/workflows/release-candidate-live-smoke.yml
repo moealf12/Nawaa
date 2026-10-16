@@ -4,6 +4,7 @@ on:
     paths:
       - 'scripts/diagnose-candidate-search.mjs'
       - 'scripts/*latency*.mjs'
+      - 'src/search-first-offer-metrics.mjs'
       - 'scripts/benchmark-match-filter.mjs'
       - 'src/search-query.mjs'
       - 'server/server.mjs'
@@ -47,7 +48,7 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: 1ef2110f6ba6521bc36c281d494a3c1cbc35dc48
+          ref: bbd3b93d9bb543c740a7eb2024a2315e8b1dd532
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
