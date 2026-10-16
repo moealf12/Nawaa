@@ -142,6 +142,9 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
   url.searchParams.set("format", "json");
   const products = [], seen = new Set(), errors = [];
   const startedAt = Date.now();
+  // Opt-in, low-cardinality diagnostic timings; no price or identity data logged.
+  const timingEnabled = process.env.NAWAA_PROFILE_EXTRA === "1";
+  const timings = timingEnabled ? {networkBodyMs:0,normalizeMs:0,filterMs:0,pages:0} : null;
   const overallDeadlineMs = 7200;
   let start = 0, total = null, complete = false;
   while(products.length < fetchCap) {
@@ -150,20 +153,24 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
     try {
       const remainingMs = overallDeadlineMs - (Date.now() - startedAt);
       if (remainingMs <= 0) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
+      const transportStart = timingEnabled ? performance.now() : 0;
       const response = await fetch(url, {headers:{accept:"application/json"},signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(Math.min(3000, remainingMs))]) : AbortSignal.timeout(Math.min(3000, remainingMs))});
       if(!response.ok) throw new Error("extra-unbxd: HTTP " + response.status);
       const data = await response.json();
+      if (timings) { timings.networkBodyMs += performance.now() - transportStart; timings.pages++; }
       const page = data?.response?.products;
       if(!Array.isArray(page)) throw new Error("extra-unbxd: Malformed product response");
       const count = data.response.numberOfProducts;
       if(Number.isFinite(Number(count)) && count != null) total = Number(count);
       let added = 0;
+      const normalizeStart = timingEnabled ? performance.now() : 0;
       for(const product of page) {
         const offer = normalizeProduct(product);
         if(!offer || seen.has(offer.sourceUrl)) continue;
         seen.add(offer.sourceUrl); products.push(offer); added++;
         if(products.length >= fetchCap) break;
       }
+      if (timings) timings.normalizeMs += performance.now() - normalizeStart;
       start += page.length;
       // Live search requests at most one bounded UNBXD page. Return it immediately;
       // deeper recall belongs to cursor expansion, never the first interactive wave.
@@ -178,7 +185,12 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       errors.push({market:"extra-sa",error:error.message}); break;
     }
   }
+  const filterStart = timingEnabled ? performance.now() : 0;
   const {offers,queryFilter}=filterQueryOffers(matchingQuery,products);
+  if (timings) {
+    timings.filterMs = performance.now() - filterStart;
+    console.log("EXTRA_PHASE_TIMING "+JSON.stringify({queryLength:String(query).length,offers:offers.length,products:products.length,...timings}));
+  }
   return {provider:"extra-unbxd",ok:offers.length>0,
     searchedMarkets:[{id:"extra-sa",countryCode:"SA",countryNameAr:"السعودية"}],
     offers, errors, diagnostics:{queryFilter,pagination:{fetched:start,total,complete}}};
