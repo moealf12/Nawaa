@@ -144,7 +144,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
   const startedAt = Date.now();
   // Opt-in, low-cardinality diagnostic timings; no price or identity data logged.
   const timingEnabled = process.env.NAWAA_PROFILE_EXTRA === "1";
-  const timings = timingEnabled ? {networkBodyMs:0,normalizeMs:0,filterMs:0,pages:0} : null;
+  const timings = timingEnabled ? {networkBodyMs:0,headersMs:0,bodyAndJsonMs:0,normalizeMs:0,filterMs:0,pages:0} : null;
   const overallDeadlineMs = 7200;
   let start = 0, total = null, complete = false;
   while(products.length < fetchCap) {
@@ -155,9 +155,18 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       if (remainingMs <= 0) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
       const transportStart = timingEnabled ? performance.now() : 0;
       const response = await fetch(url, {headers:{accept:"application/json"},signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(Math.min(3000, remainingMs))]) : AbortSignal.timeout(Math.min(3000, remainingMs))});
+      const headersAt = timingEnabled ? performance.now() : 0;
       if(!response.ok) throw new Error("extra-unbxd: HTTP " + response.status);
       const data = await response.json();
-      if (timings) { timings.networkBodyMs += performance.now() - transportStart; timings.pages++; }
+      if (timings) {
+        const bodyParsedAt = performance.now();
+        timings.headersMs += headersAt - transportStart;
+        // Undici Response.json() combines body consumption and JSON parsing.
+        // Do not mislabel this as pure download or isolated JSON.parse CPU.
+        timings.bodyAndJsonMs += bodyParsedAt - headersAt;
+        timings.networkBodyMs += bodyParsedAt - transportStart;
+        timings.pages++;
+      }
       const page = data?.response?.products;
       if(!Array.isArray(page)) throw new Error("extra-unbxd: Malformed product response");
       const count = data.response.numberOfProducts;
