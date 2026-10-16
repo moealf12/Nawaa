@@ -38,6 +38,10 @@ const offers = Array.from({length:100},(_,i)=>({
   condition:i%20===17?'refurbished':'new'
 }));
 const queries = ['PS5','iPhone 17','PS5 disc drive','ايفون 17 256 جيجا','لابتوب hp','Nike','Logitech mouse','بلايستيشن 5 جهاز','iPhone 17 case','Samsung Galaxy S25 Ultra 256GB','HP','ايفون 17 256 جيجا','iPhone 17 256GB','Sony','PS5 controller'];
+for (const offer of offers) {
+  assert.deepStrictEqual(candidate.describeProduct(offer),baseline.describeProduct(offer),'description parity: '+offer.title);
+  assert.deepStrictEqual(candidate.productCategory(offer),baseline.productCategory(offer),'category parity: '+offer.title);
+}
 for (const q of queries) {
   assert.deepStrictEqual(candidate.filterQueryOffers(q,offers),baseline.filterQueryOffers(q,offers),'filter parity: '+q);
   for (const offer of offers) {

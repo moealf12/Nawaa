@@ -148,7 +148,12 @@ export const PRODUCT_CATEGORIES = [
   ['tool','أدوات', /\b(?:drill|saw|screwdriver|power tool)\b/],
 ];
 export function productCategory(offer = {}) {
-  const gaming = describeProduct(offer);
+  return productCategoryWithDescription(offer, describeProduct(offer));
+}
+
+// The matching path already computed describeProduct(offer); reuse that immutable
+// value rather than normalizing its title and metadata a second time.
+function productCategoryWithDescription(offer, gaming) {
   if (gaming.kind !== 'product') return gaming.kind;
   let urlSemantic = "";
   try {
@@ -335,7 +340,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const hits = q.filter((token) => titleTokens.has(token)).length;
   let confidence = q.length ? hits / q.length : 1;
   const description = describeProduct(offer);
-  const offerCategory = productCategory(offer);
+  const offerCategory = productCategoryWithDescription(offer, description);
   // Product-type words (mouse, laptop, perfume...) are structural intent rather
   // than free-text tokens: reward the matching category without polluting model/
   // variant token matching.
@@ -358,7 +363,6 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // For brand-only searches, prefer the brand's primary editorial categories and
   // strongly demote unrelated co-branded products.
   if (intent.discoveryMode === "brand" && intent.brand) {
-    const offerCategory = productCategory(offer);
     const priorities = BRAND_CATEGORY_PRIORITIES[intent.brand] || [];
     const priorityIndex = priorities.indexOf(offerCategory);
     // Editorial brand priorities apply only to true brand-only discovery.

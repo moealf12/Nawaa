@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {assessOfferMatch,filterQueryOffers,queryMatchReasons,parseSearchIntent} from '../src/search-query.mjs';
+import {assessOfferMatch,filterQueryOffers,queryMatchReasons,parseSearchIntent,productCategory} from '../src/search-query.mjs';
 const base={merchant:'eXtra',sourceUrl:'https://www.extra.com/en-sa/item/1',productPrice:2499,
   currency:'SAR',observedAt:'2026-10-16T00:00:00Z',condition:'new'};
 const consoleOffer={...base,title:'Sony PS5 Console Disc Edition 1TB'};
@@ -103,5 +103,24 @@ test('direct public matching with and without prepared intent is identical',()=>
     }
     const expected=offers.filter(offer=>queryMatchReasons(query,offer).length===0);
     assert.deepStrictEqual(filterQueryOffers(query,offers).offers,expected,query);
+  }
+});
+
+
+test('public product category contract preserves console and device/accessory distinction',()=>{
+  const cases=[
+    [consoleOffer,'console'],
+    [driveOffer,'accessory'],
+    [iphone,'phone'],
+    [caseOffer,'accessory'],
+  ];
+  for(const [offer,kind] of cases){
+    assert.equal(productCategory(offer),kind,offer.title);
+    const snapshot=structuredClone(offer);
+    for(const q of ['PS5','iPhone 17','Sony','Apple']){
+      assessOfferMatch(q,offer);
+      assert.equal(productCategory(offer),kind);
+    }
+    assert.deepStrictEqual(offer,snapshot);
   }
 });
