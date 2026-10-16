@@ -225,7 +225,7 @@ export function parseJarirSearchHtml(html, limit = 24) {
   return offers;
 }
 
-export async function searchViaConstructor(query, limit, requestSignal) {
+export async function searchViaConstructor(query, limit, requestSignal, onPage) {
   const cap = Math.max(1, Math.min(96, Math.floor(Number(limit) || 24)));
   const pageSize = Math.min(48, cap);
   const signal = requestSignal ? AbortSignal.any([requestSignal,AbortSignal.timeout(6200)]) : AbortSignal.timeout(6200);
@@ -273,14 +273,23 @@ export async function searchViaConstructor(query, limit, requestSignal) {
     }
 
     let added = 0;
+    const pageOffers = [];
     for (const offer of parsed) {
       const key = offer.sourceUrl || offer.sourceMeta?.productId;
       if (!key || seen.has(key)) continue;
       seen.add(key);
       offers.push(offer);
+      pageOffers.push(offer);
       added += 1;
       if (offers.length >= cap) break;
     }
+    // Publish only normalized, deduplicated page results. Later pages still run
+    // with the same cap/deadline and retain the existing partial-error contract.
+    requestSignal?.throwIfAborted();
+    const hasNextPage = page < Math.ceil(cap / pageSize) && offers.length < cap &&
+      rawCount >= Number(url.searchParams.get("num_results_per_page")) && added > 0;
+    if (hasNextPage && typeof onPage === "function") await onPage(pageOffers);
+    requestSignal?.throwIfAborted();
     if (rawCount < Number(url.searchParams.get("num_results_per_page")) || added === 0) break;
   }
 
@@ -333,7 +342,7 @@ export async function refreshJarirPrices(raw, matchingQuery, {resolvePage=resolv
   return {offers:refreshed.filter(Boolean),errors:failures.filter(Boolean),queryFilter,pageRefresh};
 }
 
-export async function searchJarir(query, limit = 24, matchingQuery = query, {signal} = {}) {
+export async function searchJarir(query, limit = 24, matchingQuery = query, {signal, onOffers} = {}) {
   const capped=Math.max(1,Math.min(96,Math.floor(Number(limit)||24))), errors=[];
   const classify=(raw)=>{
     const offers=raw.map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer),category:productCategory(offer)}));
@@ -342,7 +351,9 @@ export async function searchJarir(query, limit = 24, matchingQuery = query, {sig
     return {offers,categories,exactMatches:offers.filter(o=>o.exactMatch).length};
   };
   try {
-    const raw=await searchViaConstructor(query,capped,signal), {offers,categories,exactMatches}=classify(raw);
+    const raw=await searchViaConstructor(query,capped,signal,
+      typeof onOffers === "function" ? page => onOffers(classify(page).offers) : undefined
+    ), {offers,categories,exactMatches}=classify(raw);
     const paginationErrors=raw.paginationError?[{market:"jarir-sa",error:raw.paginationError}]:[];
     return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors:paginationErrors,
       diagnostics:{acquisition:{strategy:"search-results-first",discovered:raw.length,classified:offers.length,dropped:0,pdpFallback:{attempted:0,verified:0,failed:0}},classification:{categories,exactMatches},pagination:{partial:Boolean(raw.paginationError),error:raw.paginationError||null}}};

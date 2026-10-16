@@ -14,7 +14,7 @@ concurrency:
 jobs:
   real-source-candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,14 +31,24 @@ jobs:
           MEILI_MASTER_KEY: ''
           NODE_ENV: test
         run: node scripts/diagnose-candidate-search.mjs
-      - name: Repeat cold and warm candidate timings (observational, not P95 certification)
+      - name: Check out the pre-optimization baseline for same-runner comparison
+        uses: actions/checkout@v4
+        with:
+          ref: d50649bb476a307870007a11cbe909d166c291b1
+          path: .latency-baseline
+          persist-credentials: false
+      - name: Reuse identical locked dependencies for the baseline
+        run: |
+          cmp package-lock.json .latency-baseline/package-lock.json
+          ln -s "$GITHUB_WORKSPACE/node_modules" .latency-baseline/node_modules
+      - name: Alternate baseline and candidate cold/warm measurements (not P95 certification)
         env:
           LATENCY_SAMPLES: '3'
           LATENCY_OUTPUT: latency-results.json
           DATABASE_URL: ''
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
-        run: node scripts/measure-search-latency.mjs
+        run: node scripts/measure-search-latency.mjs .latency-baseline .
       - uses: actions/upload-artifact@v4
         if: always()
         with:

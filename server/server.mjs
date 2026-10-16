@@ -92,7 +92,7 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
-function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, plan = acquisitionPlan(0, configuredFreeStorefronts().length) } = {}) {
+function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, plan = acquisitionPlan(0, configuredFreeStorefronts().length), onOffers } = {}) {
   const tasks = [];
   const add = (id, run, { explicit = false, deadlineMs = null } = {}) => {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run, deadlineMs });
@@ -102,7 +102,7 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // still affects diagnostics/routing inside providers, but a temporary cooldown
   // must not collapse the whole public API into an instant empty response.
   add("extra-unbxd", (signal) => searchExtraUnbxd(providerQuery, 100, matchingQuery, {signal}), { explicit:true, deadlineMs:8000 });
-  add("jarir-direct", (signal) => searchJarir(providerQuery, plan.jarirLimit, matchingQuery, {signal}), { explicit:true, deadlineMs:8000 });
+  add("jarir-direct", (signal) => searchJarir(providerQuery, plan.jarirLimit, matchingQuery, {signal, onOffers}), { explicit:true, deadlineMs:8000 });
   // Virgin UAE is a certified core comparison source. Run it explicitly in the
   // first wave so Jarir cannot be the only merchant visible to the shopper.
   add("virgin-ae", (signal) => searchFreeStorefrontById("virgin-ae", providerQuery, {
@@ -418,7 +418,13 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
     if(accepting)errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:error instanceof Error?error.message:String(error)});
   });
 
-  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,signal:controller.signal,onChunk:async(chunk,progress)=>{
+  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,signal:controller.signal,onOffers:async readyOffers=>{
+    if(!accepting || controller.signal.aborted)return;
+    offers.push(...readyOffers);
+    // A ready page is not a completed provider. Retain pending/partial coverage
+    // until its final result (including pagination errors) has settled.
+    await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
+  },onChunk:async(chunk,progress)=>{
     if(!accepting)return;
     primaryCompleted++;
     if(chunk.provider)providers.push(chunk.provider);
