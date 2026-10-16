@@ -405,6 +405,13 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
     const sourceId="free-storefronts:amazon-sa";
     providers.push({provider:"free-storefronts",sourceId,ok:Boolean(value.offers?.length),pass:"primary",query:providerQuery,returnedOffers:value.offers?.length||0,diagnostics:value.diagnostics||null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
     offers.push(...(value.offers||[]));
+    // Retain diagnostic failures returned as data, not just rejected fetches.
+    for(const issue of Array.isArray(value.errors)?value.errors:[]){
+      errors.push({
+        provider:"free-storefronts",sourceId,pass:"primary",
+        error:typeof issue==="string"?issue:String(issue?.error||issue?.message||"amazon_search_failed"),
+      });
+    }
     if(value.offers?.length)await emit({completed:primaryCompleted+1,pending:Math.max(0,primaryCount-primaryCompleted)});
   }).catch(error=>{
     amazonSettled=true;
@@ -462,8 +469,8 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
       returnedMerchants:new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated:selectedOffers.length<allSelectedOffers.length,
       exhaustive:false,
-      partial:deadlineExceeded,
-      complete:!deadlineExceeded,
+      partial:deadlineExceeded || errors.length>0,
+      complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
       streamDeadlineMs,
       providersPending,
@@ -664,6 +671,8 @@ async function searchAll(query, { depth = 0 } = {}) {
         responseOffers:plan.returnLimit,
       },
       fallbackUsed: Boolean(fallbackQuery),
+      partial:deadlineExceeded || errors.length>0,
+      complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
       requestDeadlineMs,
     },
@@ -913,7 +922,7 @@ const server = http.createServer(async (req, res) => {
         },{signal:streamController.signal});
       } finally { clearInterval(heartbeat); }
       if (closed || res.writableEnded) return;
-      send("snapshot",{...result,nextCursor,coverage:{...(result.coverage||{}),partial:Boolean(result.coverage?.deadlineExceeded),complete:!result.coverage?.deadlineExceeded},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
+      send("snapshot",{...result,nextCursor,cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
       send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
       return res.end();
     } catch(error) {
