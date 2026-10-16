@@ -298,8 +298,8 @@ const UNREQUESTED_VARIANT_TERMS = [
   "برو","ماكس","بلس","الترا","اير"
 ];
 
-export function assessOfferMatch(query, offer) {
-  const intent = parseSearchIntent(query);
+export function assessOfferMatch(query, offer, preparedIntent = null) {
+  const intent = preparedIntent || parseSearchIntent(query);
   const normalizedQuery = intent.providerQuery;
   const matchedCategory = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const effectiveCategory = intent.category || matchedCategory?.[0] || null;
@@ -411,10 +411,11 @@ export function buildComparisonQuery(offer = {}) {
 
 // Shared by provider output and the stricter source audit. Metadata may not
 // hide a contradictory model or storage capacity explicitly present in a title.
-export function queryMatchReasons(query, offer) {
+export function queryMatchReasons(query, offer, preparedIntent = null) {
   const reasons = [];
-  const match = assessOfferMatch(query, offer);
-  const { model, storage } = parseSearchIntent(query);
+  const intent = preparedIntent || parseSearchIntent(query);
+  const match = assessOfferMatch(query, offer, intent);
+  const { model, storage } = intent;
   const models = [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
     .filter(Boolean).flatMap(explicitModels);
   const titleModels = [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels);
@@ -431,7 +432,10 @@ export function queryMatchReasons(query, offer) {
 }
 
 export function filterQueryOffers(query, offers) {
-  const retained = offers.filter(offer => queryMatchReasons(query, offer).length === 0);
+  // Share the immutable shopper intent across this provider batch.
+  // Preserve the prior lazy behavior for empty batches.
+  const intent = offers.length ? parseSearchIntent(query) : null;
+  const retained = offers.filter(offer => queryMatchReasons(query, offer, intent).length === 0);
   return { offers: retained, queryFilter: { input: offers.length, retained: retained.length, removed: offers.length - retained.length } };
 }
 
