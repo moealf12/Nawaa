@@ -38,7 +38,7 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: 806759063e3378dc02b5ab133045f6acb45ae8df
+          ref: dad859a9ab3e768b091ed6338de1480f6d28fdc3
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
@@ -53,6 +53,7 @@ jobs:
         env:
           LATENCY_SAMPLES: '3'
           NAWAA_PROFILE_EXTRA: '1'
+          NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
           NAWAA_PROFILE_STREAM: '1'
           LATENCY_OUTPUT: latency-results.json
           DATABASE_URL: ''

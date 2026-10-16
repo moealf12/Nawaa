@@ -145,6 +145,11 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
   // Opt-in, low-cardinality diagnostic timings; no price or identity data logged.
   const timingEnabled = process.env.NAWAA_PROFILE_EXTRA === "1";
   const timings = timingEnabled ? {networkBodyMs:0,headersMs:0,bodyAndJsonMs:0,normalizeMs:0,filterMs:0,pages:0} : null;
+  // Opt-in TEST-only diagnostic: Response.text() + JSON.parse lets us time body
+  // consumption/UTF-8 decoding separately from parse CPU. Production retains
+  // Response.json() unmodified. Prove parity with deterministic mock Responses.
+  const splitJsonTiming = timingEnabled && process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON === "1";
+  if (splitJsonTiming) Object.assign(timings,{bodyReadDecodeMs:0,jsonParseMs:0});
   const overallDeadlineMs = 7200;
   let start = 0, total = null, complete = false;
   while(products.length < fetchCap) {
@@ -157,7 +162,17 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       const response = await fetch(url, {headers:{accept:"application/json"},signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(Math.min(3000, remainingMs))]) : AbortSignal.timeout(Math.min(3000, remainingMs))});
       const headersAt = timingEnabled ? performance.now() : 0;
       if(!response.ok) throw new Error("extra-unbxd: HTTP " + response.status);
-      const data = await response.json();
+      let data;
+      if (splitJsonTiming) {
+        const raw = await response.text();
+        const readAt = performance.now();
+        data = JSON.parse(raw);
+        const parsedAt = performance.now();
+        timings.bodyReadDecodeMs += readAt - headersAt;
+        timings.jsonParseMs += parsedAt - readAt;
+      } else {
+        data = await response.json();
+      }
       if (timings) {
         const bodyParsedAt = performance.now();
         timings.headersMs += headersAt - transportStart;
