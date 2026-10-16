@@ -34,13 +34,15 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: d50649bb476a307870007a11cbe909d166c291b1
+          ref: 7838f109bc27ecf1f6b482b5380ce0c714d43920
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
         run: |
           cmp package-lock.json .latency-baseline/package-lock.json
           ln -s "$GITHUB_WORKSPACE/node_modules" .latency-baseline/node_modules
+      - name: Controlled normalization CPU A/B and cross-version semantic equivalence
+        run: node scripts/benchmark-query-normalization.mjs .latency-baseline .
       - name: Alternate baseline and candidate cold/warm measurements (not P95 certification)
         env:
           LATENCY_SAMPLES: '3'

@@ -44,6 +44,11 @@ const ALIASES = [
   ["سماعات", "headphones"], ["سماعه", "headphones"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
 
+// Compile immutable alias patterns once: offer matching calls normalization
+// repeatedly per result/snapshot. String.replace resets global RegExp.lastIndex.
+const COMPILED_ALIASES = ALIASES.map(([alias, canonical]) =>
+  [new RegExp("(^| )" + alias + "(?= |$)", "g"), canonical]);
+
 export function normalizeSearchQuery(value = "") {
   let text = String(value).normalize("NFKC").toLowerCase()
     .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
@@ -54,8 +59,8 @@ export function normalizeSearchQuery(value = "") {
 
   text = text.replace(/\b(\d+)(?:st|nd|rd|th)\b/g, "$1")
     .replace(/([ء-ي])(?=\d)/g, "$1 ").replace(/(\d)(?=جيجا|تيرا)/g, "$1 ");
-  for (const [alias, canonical] of ALIASES) {
-    text = text.replace(new RegExp("(^| )" + alias + "(?= |$)", "g"), "$1" + canonical);
+  for (const [pattern, canonical] of COMPILED_ALIASES) {
+    text = text.replace(pattern, "$1" + canonical);
   }
   if (/\b(?:iphone|galaxy)\b/.test(text)) text = text.replace(/\b(64|128|256|512|1024)(?= |$)(?!\s+(?:gb|tb)\b)/g, "$1gb");
   return text.replace(/(^| )(?:ابغي|ابي|اريد|ابحث|عن|لي|بافضل|افضل|ارخص|سعر|اشتري|please|find)(?= |$)/g, " ")
