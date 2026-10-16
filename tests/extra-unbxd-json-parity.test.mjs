@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {searchExtraUnbxd,EXTRA_PROJECTION_FIELDS} from '../server/providers/extra-unbxd.mjs';
 
 // A fresh WHATWG Response exercises Node's real text/json body readers.
@@ -118,4 +119,16 @@ test('eXtra projects all mapped fields by default while diagnostic opt-out retai
     if(split===undefined)delete process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON;
     else process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON=split;
   }
+});
+
+test('the Unbxd projection covers every product attribute referenced by normalization',()=>{
+  const source=readFileSync(new URL('../server/providers/extra-unbxd.mjs',import.meta.url),'utf8');
+  const normalizer=source.split('function normalizeProduct(product) {')[1]
+    ?.split('\nexport async function searchExtraUnbxd')[0];
+  assert.ok(normalizer,'normalizeProduct implementation must be present');
+  const referenced=[...normalizer.matchAll(/\bproduct\?\.([A-Za-z_$][\w$]*)/g)].map(x=>x[1]);
+  assert.ok(referenced.length>30,'normalizer mapping may have changed; review projection');
+  const missing=[...new Set(referenced)].filter(field=>!EXTRA_PROJECTION_FIELDS.includes(field));
+  assert.deepStrictEqual(missing,[],
+    'new source attributes must be added to the projection to preserve product identity and price');
 });
