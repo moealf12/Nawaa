@@ -4,6 +4,8 @@ on:
     paths:
       - 'scripts/diagnose-candidate-search.mjs'
       - 'scripts/*latency*.mjs'
+      - 'scripts/benchmark-match-filter.mjs'
+      - 'src/search-query.mjs'
       - '.github/workflows/release-candidate-live-smoke.yml'
   workflow_dispatch:
 permissions:
@@ -34,7 +36,7 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: 7838f109bc27ecf1f6b482b5380ce0c714d43920
+          ref: 0b57f51eaa7426557f8280b7bce19c61e4ffcb09
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
@@ -43,6 +45,8 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/node_modules" .latency-baseline/node_modules
       - name: Controlled normalization CPU A/B and cross-version semantic equivalence
         run: node scripts/benchmark-query-normalization.mjs .latency-baseline .
+      - name: Check matching semantics and benchmark filtering on one CPU
+        run: node scripts/benchmark-match-filter.mjs .latency-baseline .
       - name: Alternate baseline and candidate cold/warm measurements (not P95 certification)
         env:
           LATENCY_SAMPLES: '3'

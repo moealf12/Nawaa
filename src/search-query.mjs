@@ -288,6 +288,11 @@ const ACCESSORY_TERMS = [
   "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه"
 ];
 
+// Immutable phrase list: alias normalization is independent of the offer and query.
+// Reuse the exact normalized strings instead of processing every accessory term
+// once or twice for every product during match scoring.
+const NORMALIZED_ACCESSORY_TERMS = ACCESSORY_TERMS.map(term => normalizeSearchQuery(term));
+
 const UNREQUESTED_VARIANT_TERMS = [
   "pro","max","plus","ultra","air","fold","flip","fe",
   "برو","ماكس","بلس","الترا","اير"
@@ -326,7 +331,7 @@ export function assessOfferMatch(query, offer) {
   const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
 
-  const hasPhrase = (text, term) => (" " + text + " ").includes(" " + normalizeSearchQuery(term) + " ");
+  const hasPhrase = (text, normalizedTerm) => (" " + text + " ").includes(" " + normalizedTerm + " ");
   // Brand-only discovery must not be hijacked by accessories merely carrying the brand
   // name (e.g. "Nike" returning Apple Watch Nike bands). Accessories are allowed only
   // when the shopper actually asks for an accessory or the brand itself is accessory-led.
@@ -334,12 +339,12 @@ export function assessOfferMatch(query, offer) {
   const explicitAccessoryQuery = PRODUCT_CATEGORIES.find(([key]) => key === "accessory")?.[2]?.test(normalizedQuery) || false;
   const queryHasAccessoryIntent = effectiveCategory === "accessory" ||
     explicitAccessoryQuery ||
-    ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
+    NORMALIZED_ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
     (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
-  const titleHasAccessory = !includedConsoleDrive && ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
+  const titleHasAccessory = !includedConsoleDrive && NORMALIZED_ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
