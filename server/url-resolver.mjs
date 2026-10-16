@@ -485,10 +485,14 @@ function inferCountry(url, currency) {
     : { countryCode: "UN", countryNameAr: "دولي" };
 }
 
-function merchantName(url) {
-  const host = new URL(url).hostname.replace(/^www\./i, "");
-  const first = host.split(".")[0] || host;
-  return first.charAt(0).toUpperCase() + first.slice(1);
+export function merchantName(url) {
+  const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  const labels = host.split(".").filter(Boolean);
+  // Infrastructure subdomains are not retailer brands.
+  const infrastructure = new Set(["app","shop","store","mobile","m","web"]);
+  const first = labels.length >= 3 && infrastructure.has(labels[0]) ? labels[1] : labels[0];
+  const known = {virginmegastore:"Virgin Megastore",extra:"eXtra",jarir:"Jarir"};
+  return known[first] || (first ? first.charAt(0).toUpperCase() + first.slice(1) : host);
 }
 
 
