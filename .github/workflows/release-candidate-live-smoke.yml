@@ -37,7 +37,7 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: 8ef8baad26141e7d355b939a58848530460eb1e5
+          ref: d2fbd9837b399f8507827417b5e6517e6980c028
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
