@@ -7,6 +7,7 @@ on:
       - 'scripts/benchmark-match-filter.mjs'
       - 'src/search-query.mjs'
       - 'server/server.mjs'
+      - 'server/providers/extra-unbxd.mjs'
       - '.github/workflows/release-candidate-live-smoke.yml'
   workflow_dispatch:
 permissions:
@@ -37,7 +38,7 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: 8da2aadd0705505e683853df3e3014b189d42059
+          ref: 806759063e3378dc02b5ab133045f6acb45ae8df
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
