@@ -298,8 +298,11 @@ const UNREQUESTED_VARIANT_TERMS = [
   "برو","ماكس","بلس","الترا","اير"
 ];
 
-export function assessOfferMatch(query, offer, preparedIntent = null) {
-  const intent = preparedIntent || parseSearchIntent(query);
+// Match context is derived only from shopper intent, not offer contents.
+// Filter batches prepare it once; direct callers still obtain identical fresh values.
+const ACCESSORY_LED_BRANDS = new Set(["logitech"]);
+const hasNormalizedPhrase = (text, term) => (" " + text + " ").includes(" " + term + " ");
+function prepareMatchContext(intent) {
   const normalizedQuery = intent.providerQuery;
   const matchedCategory = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const effectiveCategory = intent.category || matchedCategory?.[0] || null;
@@ -307,6 +310,19 @@ export function assessOfferMatch(query, offer, preparedIntent = null) {
   const categoryTokenRequested = Boolean(matchedCategory);
   const semanticQuery = normalizedQuery.replace(categoryPattern, " ").replace(/\s+/g, " ").trim();
   const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
+  const explicitAccessoryQuery = PRODUCT_CATEGORIES.find(([key]) => key === "accessory")?.[2]?.test(normalizedQuery) || false;
+  const queryHasAccessoryIntent = effectiveCategory === "accessory" ||
+    explicitAccessoryQuery ||
+    NORMALIZED_ACCESSORY_TERMS.some(term => hasNormalizedPhrase(normalizedQuery,term)) ||
+    (intent.discoveryMode === "brand" && ACCESSORY_LED_BRANDS.has(intent.brand));
+  return {normalizedQuery,effectiveCategory,categoryTokenRequested,q,
+    queryTokens:new Set(q),queryHasAccessoryIntent};
+}
+
+export function assessOfferMatch(query, offer, preparedIntent = null, preparedContext = null) {
+  const intent = preparedIntent || parseSearchIntent(query);
+  const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent} =
+    preparedContext || prepareMatchContext(intent);
   let urlSemantic = "";
   try {
     const parsedUrl = new URL(String(offer?.sourceUrl || ""));
@@ -331,20 +347,12 @@ export function assessOfferMatch(query, offer, preparedIntent = null) {
   const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
 
-  const hasPhrase = (text, normalizedTerm) => (" " + text + " ").includes(" " + normalizedTerm + " ");
-  // Brand-only discovery must not be hijacked by accessories merely carrying the brand
-  // name (e.g. "Nike" returning Apple Watch Nike bands). Accessories are allowed only
-  // when the shopper actually asks for an accessory or the brand itself is accessory-led.
-  const accessoryLedBrands = new Set(["logitech"]);
-  const explicitAccessoryQuery = PRODUCT_CATEGORIES.find(([key]) => key === "accessory")?.[2]?.test(normalizedQuery) || false;
-  const queryHasAccessoryIntent = effectiveCategory === "accessory" ||
-    explicitAccessoryQuery ||
-    NORMALIZED_ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
-    (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
+  // Brand-only searches still reject accessories that merely carry the name.
+  // Query-only accessory intent was prepared outside the per-offer loop.
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
-  const titleHasAccessory = !includedConsoleDrive && NORMALIZED_ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
+  const titleHasAccessory = !includedConsoleDrive && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
@@ -362,7 +370,6 @@ export function assessOfferMatch(query, offer, preparedIntent = null) {
     }
   }
 
-  const queryTokens = new Set(q);
   const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
     intent.model && intent.category === 'accessory'
       ? explicitModels([offer?.title,offer?.specs?.deviceType,offer?.specs?.series].filter(Boolean).join(' ')).some(model=>model!==intent.model)
@@ -411,10 +418,10 @@ export function buildComparisonQuery(offer = {}) {
 
 // Shared by provider output and the stricter source audit. Metadata may not
 // hide a contradictory model or storage capacity explicitly present in a title.
-export function queryMatchReasons(query, offer, preparedIntent = null) {
+export function queryMatchReasons(query, offer, preparedIntent = null, preparedContext = null) {
   const reasons = [];
   const intent = preparedIntent || parseSearchIntent(query);
-  const match = assessOfferMatch(query, offer, intent);
+  const match = assessOfferMatch(query, offer, intent, preparedContext);
   const { model, storage } = intent;
   // Capacity and explicit-model extraction are only relevant when requested.
   // Broad queries should not repeatedly normalize storage fields or parse model
@@ -438,7 +445,8 @@ export function filterQueryOffers(query, offers) {
   // Share the immutable shopper intent across this provider batch.
   // Preserve the prior lazy behavior for empty batches.
   const intent = offers.length ? parseSearchIntent(query) : null;
-  const retained = offers.filter(offer => queryMatchReasons(query, offer, intent).length === 0);
+  const context = intent ? prepareMatchContext(intent) : null;
+  const retained = offers.filter(offer => queryMatchReasons(query, offer, intent, context).length === 0);
   return { offers: retained, queryFilter: { input: offers.length, retained: retained.length, removed: offers.length - retained.length } };
 }
 
