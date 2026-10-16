@@ -32,7 +32,7 @@ function stripNonSemantic(value){
 }
 async function observe(query,fields){
   const start=performance.now(),at=timings.length;
-  const response=await searchExtraUnbxd(query,100,query,fields?{probeFields:EXTRA_PROJECTION_FIELDS}:{});
+  const response=await searchExtraUnbxd(query,100,query,fields?{probeFields:EXTRA_PROJECTION_FIELDS}:{probeFields:[]});
   assert.equal(timings.length,at+1,'required diagnostic telemetry missing');
   assert.ok(Array.isArray(response.offers));
   assert.ok(response.offers.length>0,'provider returned no offers');

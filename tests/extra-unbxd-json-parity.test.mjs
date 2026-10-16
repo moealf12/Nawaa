@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {searchExtraUnbxd} from '../server/providers/extra-unbxd.mjs';
+import {searchExtraUnbxd,EXTRA_PROJECTION_FIELDS} from '../server/providers/extra-unbxd.mjs';
 
 // A fresh WHATWG Response exercises Node's real text/json body readers.
 const payloads=[
@@ -82,4 +82,40 @@ test('malformed JSON, invalid encoding replacement, status failures and pre-abor
   assert.deepStrictEqual({ok:b.ok,errorName:b.errorName,errorMessage:b.errorMessage,calls:b.calls},
     {ok:a.ok,errorName:a.errorName,errorMessage:a.errorMessage,calls:a.calls});
   assert.equal(a.calls,0);
+});
+
+test('eXtra projects all mapped fields by default while diagnostic opt-out retains full response',async()=>{
+  const original=globalThis.fetch;
+  const previousLog=console.log;
+  const profile=process.env.NAWAA_PROFILE_EXTRA;
+  const split=process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON;
+  const seen=[];
+  delete process.env.NAWAA_PROFILE_EXTRA;
+  delete process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON;
+  globalThis.fetch=async input=>{
+    const u=new URL(input);
+    seen.push(u.searchParams.get('fields'));
+    return new Response(JSON.stringify({response:{numberOfProducts:0,products:[]}}),{
+      status:200,headers:{'content-type':'application/json'}
+    });
+  };
+  try{
+    const a=await searchExtraUnbxd('PS5',100,'PS5');
+    const b=await searchExtraUnbxd('PS5',100,'PS5',{probeFields:[]});
+    assert.deepStrictEqual(a,b);
+    assert.equal(seen.length,2);
+    assert.deepStrictEqual(seen[0].split(','),[...EXTRA_PROJECTION_FIELDS]);
+    assert.equal(seen[1],null);
+    for(const required of ['_root_','uniqueId','name','currentPrice','imageUrl',
+      'available','featureEnMemoryInternal','modelNumber','barCode','nameAr']){
+      assert.ok(EXTRA_PROJECTION_FIELDS.includes(required),'essential field '+required);
+    }
+  }finally{
+    globalThis.fetch=original;
+    console.log=previousLog;
+    if(profile===undefined)delete process.env.NAWAA_PROFILE_EXTRA;
+    else process.env.NAWAA_PROFILE_EXTRA=profile;
+    if(split===undefined)delete process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON;
+    else process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON=split;
+  }
 });

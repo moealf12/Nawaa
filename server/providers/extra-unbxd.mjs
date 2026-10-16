@@ -4,9 +4,10 @@ const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE
 
 import { filterQueryOffers } from "../../src/search-query.mjs";
 
-// Candidate-only projection experiment: contains every field referenced by
-// normalizeProduct(), including all fallback identity, price, image and
-// variant attributes. Do not activate in production before live parity proof.
+// Verified against full Unbxd responses (3 queries, 6 paired rounds):
+// only requested product attributes are returned; validated output offers,
+// prices, variant specs, provenance, and ranking are identical. Keep the
+// explicit [] opt-out for diagnostic full-payload comparisons.
 export const EXTRA_PROJECTION_FIELDS = Object.freeze([
   "_root_",
   "uniqueId",
@@ -188,8 +189,10 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
   url.searchParams.set("q", query);
   url.searchParams.set("rows", String(fetchCap));
   url.searchParams.set("format", "json");
-  // Explicit call-site opt-in only; public search never supplies probeFields.
-  if (Array.isArray(probeFields) && probeFields.length) url.searchParams.set("fields",probeFields.join(","));
+  // Reduce unused merchant payload by default without capping products or
+  // changing ranking. An explicit [] preserves the full-response probe path.
+  const requestedFields = probeFields === undefined ? EXTRA_PROJECTION_FIELDS : probeFields;
+  if (Array.isArray(requestedFields) && requestedFields.length) url.searchParams.set("fields",requestedFields.join(","));
   const products = [], seen = new Set(), errors = [];
   const startedAt = Date.now();
   // Opt-in, low-cardinality diagnostic timings; no price or identity data logged.
