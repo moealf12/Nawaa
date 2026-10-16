@@ -37,7 +37,7 @@ const offers = Array.from({length:100},(_,i)=>({
   specs:{brand:i%2?'Apple':'Sony',storage:i%3?'256 GB':'1TB',color:i%2?'Black':'White'},
   condition:i%20===17?'refurbished':'new'
 }));
-const queries = ['PS5','iPhone 17','PS5 disc drive','ايفون 17 256 جيجا','لابتوب hp','Nike','Logitech mouse','بلايستيشن 5 جهاز','iPhone 17 case','Samsung Galaxy S25 Ultra 256GB'];
+const queries = ['PS5','iPhone 17','PS5 disc drive','ايفون 17 256 جيجا','لابتوب hp','Nike','Logitech mouse','بلايستيشن 5 جهاز','iPhone 17 case','Samsung Galaxy S25 Ultra 256GB','HP','ايفون 17 256 جيجا','iPhone 17 256GB','Sony','PS5 controller'];
 for (const q of queries) {
   assert.deepStrictEqual(candidate.filterQueryOffers(q,offers),baseline.filterQueryOffers(q,offers),'filter parity: '+q);
   for (const offer of offers) {
@@ -46,7 +46,7 @@ for (const q of queries) {
   }
   assert.deepStrictEqual(candidate.filterQueryOffers(q,offers),baseline.filterQueryOffers(q,offers),'repeat parity: '+q);
 }
-const measuredQueries=['PS5','iPhone 17'];
+const measuredQueries=['PS5','iPhone 17','HP laptop','Nike','iPhone 17 256GB','ايفون 17 256 جيجا'];
 let checksum=0;
 function measure(impl) {
   const start=performance.now();
