@@ -451,7 +451,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
     // until its final result (including pagination errors) has settled.
     await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
     trace({stage:"jarirPagePublished",sourceId:"jarir-direct",offers:readyOffers.length});
-  },onTrace:trace,onChunk:async(chunk,progress)=>{
+  },onTrace:PROFILE_SEARCH_STREAM ? trace : null,onChunk:async(chunk,progress)=>{
     if(!accepting)return;
     primaryCompleted++;
     if(chunk.provider)providers.push(chunk.provider);
