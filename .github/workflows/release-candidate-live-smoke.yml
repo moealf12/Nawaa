@@ -1,0 +1,30 @@
+name: NAWAA Release Candidate Live Smoke
+on:
+  pull_request:
+    paths:
+      - 'scripts/diagnose-candidate-search.mjs'
+      - '.github/workflows/release-candidate-live-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-release-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  real-source-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies (no lifecycle scripts)
+        run: npm ci --ignore-scripts
+      - name: Test disposable candidate HTTP API and live storefronts (no production writes)
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NODE_ENV: test
+        run: node scripts/diagnose-candidate-search.mjs
