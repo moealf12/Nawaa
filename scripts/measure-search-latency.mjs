@@ -39,6 +39,7 @@ async function launch(root) {
 }
 async function measure(base,q,phase) {
   const start=performance.now(); let firstOfferMs=null,firstValidOfferMs=null,firstSources=[],last={},remaining='',done=false;
+  const sourceFirstOfferMs={};
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),25000);
   try {
     const response=await fetch(base+'/api/search/stream?q='+encodeURIComponent(q),{signal:controller.signal});
@@ -54,6 +55,10 @@ async function measure(base,q,phase) {
         if(event==='snapshot' && data){
           last=JSON.parse(data);
           const offers=last.offers||[];
+          for(const offer of offers.filter(valid)){
+            const source=offer.providerMarket||offer.provider;
+            sourceFirstOfferMs[source] ??= Math.round(performance.now()-start);
+          }
           if(firstOfferMs===null && offers.length)firstOfferMs=Math.round(performance.now()-start);
           if(firstValidOfferMs===null && offers.some(valid)){
             firstValidOfferMs=Math.round(performance.now()-start);
@@ -65,7 +70,7 @@ async function measure(base,q,phase) {
       }
     }
     const offers=last.offers||[];
-    return {q,phase,firstOfferMs,firstValidOfferMs,firstSources,finishedMs:Math.round(performance.now()-start),done,
+    return {q,phase,firstOfferMs,firstValidOfferMs,firstSources,sourceFirstOfferMs,finishedMs:Math.round(performance.now()-start),done,
       cacheMode:last.cache?.mode,count:offers.length,valid:offers.filter(valid).length,
       exact:offers.filter(o=>o.exactMatch).length,merchants:[...new Set(offers.map(o=>o.merchant))],
       falsePS5:q==='PS5'?offers.filter(o=>o.exactMatch && /\b(?:disc|disk|optical|blu ray)\s+drive\b/i.test(o.title) && !/\bconsole\b.*\b(?:with|includes?|including)\b/i.test(o.title)).length:0,
