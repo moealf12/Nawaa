@@ -101,22 +101,24 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // Core search providers must always get a chance per user request. Reliability
   // still affects diagnostics/routing inside providers, but a temporary cooldown
   // must not collapse the whole public API into an instant empty response.
-  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 100, matchingQuery), { explicit:true, deadlineMs:8000 });
-  add("jarir-direct", () => searchJarir(providerQuery, plan.jarirLimit, matchingQuery), { explicit:true, deadlineMs:8000 });
+  add("extra-unbxd", (signal) => searchExtraUnbxd(providerQuery, 100, matchingQuery, {signal}), { explicit:true, deadlineMs:8000 });
+  add("jarir-direct", (signal) => searchJarir(providerQuery, plan.jarirLimit, matchingQuery, {signal}), { explicit:true, deadlineMs:8000 });
   // Virgin UAE is a certified core comparison source. Run it explicitly in the
   // first wave so Jarir cannot be the only merchant visible to the shopper.
-  add("virgin-ae", () => searchFreeStorefrontById("virgin-ae", providerQuery, {
+  add("virgin-ae", (signal) => searchFreeStorefrontById("virgin-ae", providerQuery, {
+    signal,
     matchingQuery,
     perStore:Infinity,
     catalogLimit:Infinity,
     productPageLimit:8,
     storeDeadlineMs:7000,
   }), { explicit:true, deadlineMs:8000 });
-  add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true, deadlineMs:8000 });
+  add("sharafdg-algolia", (signal) => searchSharafDG(providerQuery, 32, {signal}), { explicit:true, deadlineMs:8000 });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
   if (!skipFreeStorefronts) {
-    add("free-storefronts", () => searchFreeStorefronts(providerQuery, {
+    add("free-storefronts", (signal) => searchFreeStorefronts(providerQuery, {
+      signal,
       matchingQuery,
       excludeStoreIds:["amazon-sa"],
       storeOffset:plan.storefrontOffset,
@@ -134,57 +136,66 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   return tasks;
 }
 
-async function executeProviderTask(task, pass, providerQuery) {
+async function executeProviderTask(task, pass, providerQuery, {signal} = {}) {
   const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
   const deadlineMs = task.deadlineMs || providerDeadlineMs;
   const started = Date.now();
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(signal.reason || new Error("search_request_aborted"));
+  if (signal?.aborted) forwardAbort();
+  else signal?.addEventListener("abort", forwardAbort, {once:true});
+  let onAbort;
+  const aborted = new Promise((_, reject) => {
+    onAbort = () => reject(controller.signal.reason instanceof Error
+      ? controller.signal.reason : new Error("provider_aborted:"+task.id));
+    if(controller.signal.aborted) onAbort();
+    else controller.signal.addEventListener("abort", onAbort, {once:true});
+  });
+  const timer = setTimeout(() => controller.abort(new Error("provider_deadline_exceeded:"+task.id)),deadlineMs);
   try {
     const value = await Promise.race([
-      Promise.resolve().then(() => task.run()),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + task.id)), deadlineMs)),
+      Promise.resolve().then(() => {
+        controller.signal.throwIfAborted();
+        return task.run(controller.signal);
+      }),
+      aborted,
     ]);
+    if(controller.signal.aborted) throw controller.signal.reason;
     sourceReliability.record(task.id, {
-      transportOk:true,
-      offers:value.offers?.length || 0,
-      latencyMs:Date.now() - started,
-      relevant:true,
+      transportOk:true,offers:value.offers?.length || 0,
+      latencyMs:Date.now()-started,relevant:true,
     });
     return {
       provider:{
-        provider:value.provider,
-        sourceId:task.id,
-        ok:value.ok,
-        pass,
-        query:providerQuery,
-        reliability:sourceReliability.view(task.id),
+        provider:value.provider,sourceId:task.id,ok:value.ok,pass,
+        query:providerQuery,reliability:sourceReliability.view(task.id),
         diagnostics:value.diagnostics || null,
         returnedOffers:value.offers?.length || 0,
         searchedMarkets:value.searchedMarkets || value.searchedStores || [],
       },
       offers:value.offers || [],
-      errors:(value.errors || []).map((error)=>({provider:value.provider,sourceId:task.id,pass,...error})),
+      errors:(value.errors || []).map(error=>({provider:value.provider,sourceId:task.id,pass,...error})),
     };
-  } catch (error) {
-    sourceReliability.record(task.id, {
-      transportOk:false,
-      offers:0,
-      latencyMs:Date.now() - started,
-      relevant:true,
+  } catch(error) {
+    // A closed shopper request is not evidence that this merchant is broken.
+    if(signal?.aborted) return {provider:null,offers:[],errors:[]};
+    sourceReliability.record(task.id,{
+      transportOk:false,offers:0,latencyMs:Date.now()-started,relevant:true,
     });
     return {
-      provider:null,
-      offers:[],
+      provider:null,offers:[],
       errors:[{
-        provider:task.id,
-        sourceId:task.id,
-        pass,
-        error:error instanceof Error ? error.message : String(error),
+        provider:task.id,sourceId:task.id,pass,
+        error:error instanceof Error?error.message:String(error),
         reliability:sourceReliability.view(task.id),
       }],
     };
+  } finally {
+    clearTimeout(timer);
+    controller.signal.removeEventListener("abort",onAbort);
+    signal?.removeEventListener("abort",forwardAbort);
   }
 }
-
 
 function retainRelatedOffers(query, offers = []) {
   return dedupeNormalizedOffers(offers)
@@ -222,7 +233,7 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   const remaining=[...ordered];
   const inFlight=new Map();
   const launch=(task)=>{
-    const p=executeProviderTask(task,pass,providerQuery).then(chunk=>({task,chunk}));
+    const p=executeProviderTask(task,pass,providerQuery,{signal:options.signal}).then(chunk=>({task,chunk}));
     inFlight.set(task.id,p);
   };
   // Providers already enforce their own deadlines. Start every eligible
@@ -358,51 +369,86 @@ function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
   };
 }
 
-async function streamSearchProgress(query, onSnapshot) {
+async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   query=normalizeSearchQuery(query);
   const plan=acquisitionPlan(0,configuredFreeStorefronts().length);
   const providerQuery=parseSearchIntent(query).providerQuery;
+  const configuredDeadline=Number(process.env.SEARCH_STREAM_DEADLINE_MS);
+  const streamDeadlineMs=Number.isFinite(configuredDeadline) && configuredDeadline>0
+    ? Math.max(150,Math.min(25000,Math.floor(configuredDeadline))) : 11000;
+  const primaryCount=providerTasks(providerQuery,query,{plan}).length;
+  const controller=new AbortController();
+  const forwardAbort=()=>controller.abort(signal.reason || new Error("search_client_disconnected"));
+  if(signal?.aborted) forwardAbort();
+  else signal?.addEventListener("abort",forwardAbort,{once:true});
   let offers=[],providers=[],errors=[];
-  const emit=(progress={})=>onSnapshot(progressiveSnapshot(query,offers,providers,errors,progress));
+  let accepting=true,primaryCompleted=0,amazonSettled=false,localSettled=false;
+  const emit=(progress={})=>accepting
+    ? onSnapshot(progressiveSnapshot(query,offers,providers,errors,progress))
+    : Promise.resolve();
 
-  // Start durable catalog lookup and every live source immediately. Neither path
-  // is allowed to block the other from producing the first useful result.
-  const localPromise=Promise.all([
-    searchIndexedOffers(query).catch(()=>({offers:[]})),
-  ]).then(async local=>{
-    offers.push(...(local[0]?.offers||[]));
-    if(offers.length) await emit({completed:providers.length,pending:providerTasks(providerQuery,query,{plan}).length+1});
-    return local;
+  // Launch the catalog, core providers, and Amazon concurrently. Slow sources
+  // are never allowed to postpone stream completion indefinitely.
+  const localPromise=searchIndexedOffers(query).catch(()=>({offers:[]})).then(async local=>{
+    localSettled=true;
+    if(!accepting)return;
+    offers.push(...(local?.offers||[]));
+    if(local?.offers?.length)await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
   });
 
   const amazonPromise=searchFreeStorefrontById("amazon-sa",providerQuery,{
     perStore:Infinity,catalogLimit:Infinity,amazonPageStart:plan.amazonPageStart,
-    amazonPageCount:plan.amazonPageCount,matchingQuery:query,
-  }).then(value=>({value})).catch(error=>({error}));
-
-  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,onChunk:async(chunk,progress)=>{
-    if(chunk.provider) providers.push(chunk.provider);
-    errors.push(...(chunk.errors||[]));
-    offers.push(...(chunk.offers||[]));
-    await emit({...progress,pending:progress.pending+1});
-  }});
-
-  const amazonResult=await amazonPromise;
-  if(amazonResult.value){
-    const value=amazonResult.value;
+    amazonPageCount:plan.amazonPageCount,matchingQuery:query,signal:controller.signal,
+  }).then(async value=>{
+    amazonSettled=true;
+    if(!accepting)return;
     const sourceId="free-storefronts:amazon-sa";
     providers.push({provider:"free-storefronts",sourceId,ok:Boolean(value.offers?.length),pass:"primary",query:providerQuery,returnedOffers:value.offers?.length||0,diagnostics:value.diagnostics||null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
     offers.push(...(value.offers||[]));
-    await emit({completed:providers.length,pending:1});
-  } else {
-    errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:amazonResult.error instanceof Error?amazonResult.error.message:String(amazonResult.error)});
-  }
-  await Promise.all([primaryPromise,localPromise]);
+    if(value.offers?.length)await emit({completed:primaryCompleted+1,pending:Math.max(0,primaryCount-primaryCompleted)});
+  }).catch(error=>{
+    amazonSettled=true;
+    if(accepting)errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:error instanceof Error?error.message:String(error)});
+  });
 
-  // Reuse the work already completed by the progressive pass. Do not replay the
-  // same providers a second time. Canonical search remains available to the JSON
-  // endpoint and deeper cursor passes; the stream returns the accumulated recall
-  // immediately and the UI can request deeper pages without losing any source.
+  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,signal:controller.signal,onChunk:async(chunk,progress)=>{
+    if(!accepting)return;
+    primaryCompleted++;
+    if(chunk.provider)providers.push(chunk.provider);
+    errors.push(...(chunk.errors||[]));
+    offers.push(...(chunk.offers||[]));
+    await emit({...progress,pending:progress.pending+Number(!amazonSettled)});
+  }}).catch(error=>{
+    if(accepting)errors.push({provider:"search",sourceId:"search",pass:"primary",error:error instanceof Error?error.message:String(error)});
+  });
+
+  let timer;
+  const finished=Promise.allSettled([localPromise,amazonPromise,primaryPromise]).then(()=>"complete");
+  const deadline=new Promise(resolve=>{timer=setTimeout(()=>resolve("deadline"),streamDeadlineMs);});
+  let onRequestAbort;
+  const disconnected=new Promise(resolve=>{
+    onRequestAbort=()=>resolve("disconnected");
+    if(signal?.aborted) onRequestAbort();
+    else signal?.addEventListener("abort",onRequestAbort,{once:true});
+  });
+  const outcome=await Promise.race([finished,deadline,disconnected]);
+  clearTimeout(timer);
+  // Freeze the result before aborting the remaining transport. Late fulfillment
+  // cannot send more SSE data or corrupt the finalized offer list.
+  accepting=false;
+  const deadlineExceeded=outcome==="deadline";
+  if(outcome!=="complete") controller.abort(new Error(
+    deadlineExceeded?"search_stream_deadline_exceeded":"search_client_disconnected"));
+  signal?.removeEventListener("abort",forwardAbort);
+  signal?.removeEventListener("abort",onRequestAbort);
+  const providersPending=deadlineExceeded
+    ? Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)+Number(!localSettled)
+    : 0;
+  if(deadlineExceeded)errors.push({
+    provider:"search",sourceId:"search",pass:"primary",
+    error:"search_stream_deadline_exceeded",providersPending,
+  });
+
   const assessed=retainRelatedOffers(query, offers);
   const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
@@ -416,6 +462,11 @@ async function streamSearchProgress(query, onSnapshot) {
       returnedMerchants:new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated:selectedOffers.length<allSelectedOffers.length,
       exhaustive:false,
+      partial:deadlineExceeded,
+      complete:!deadlineExceeded,
+      deadlineExceeded,
+      streamDeadlineMs,
+      providersPending,
       acquisitionDepth:plan.depth,
       moreAvailable:plan.depth<MAX_SEARCH_DEPTH,
     },
@@ -437,11 +488,16 @@ async function searchAll(query, { depth = 0 } = {}) {
     ? Math.max(100, Math.min(25000, Math.floor(configuredRequestDeadline)))
     : 12000;
   const requestDeadlineAt = Date.now() + requestDeadlineMs;
+  // The JSON cache coalesces identical searches. Abort one shared refresh only
+  // at its own deadline, never when a single subscribing client disconnects.
+  const requestController=new AbortController();
   let deadlineExceeded = false;
   const beforeRequestDeadline = async (operation, fallback) => {
     const remaining = requestDeadlineAt - Date.now();
     if (remaining <= 0) {
       deadlineExceeded = true;
+      if(!requestController.signal.aborted)
+        requestController.abort(new Error("search_deadline_exceeded"));
       return fallback();
     }
     const timeout = Symbol("search-request-deadline");
@@ -453,6 +509,8 @@ async function searchAll(query, { depth = 0 } = {}) {
       ]);
       if (result !== timeout) return result;
       deadlineExceeded = true;
+      if(!requestController.signal.aborted)
+        requestController.abort(new Error("search_deadline_exceeded"));
       return fallback();
     } finally {
       clearTimeout(timeoutId);
@@ -468,14 +526,32 @@ async function searchAll(query, { depth = 0 } = {}) {
       amazonPageStart: plan.amazonPageStart,
       amazonPageCount: plan.amazonPageCount,
       matchingQuery: query,
+      signal:requestController.signal,
     }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) })),
     () => ({ offers:[], error:"search_deadline_exceeded" }),
   );
+  // Preserve every already-completed provider result when the request deadline
+  // expires. A slow merchant must never erase valid prices returned by a fast one.
+  // This is the same incremental evidence path used by SSE, without sacrificing
+  // the existing bounded deadline on the synchronous JSON endpoint.
+  const completedPrimaryChunks = [];
   const [amazon,primary,indexed,persisted] = await Promise.all([
     amazonPromise,
     beforeRequestDeadline(
-      () => runProviderPass(providerQuery, "primary", query, { plan }),
-      () => ({ providers:[], errors:[{provider:"search",sourceId:"search",pass:"primary",error:"search_deadline_exceeded"}], offers:[] }),
+      () => runProviderPass(providerQuery, "primary", query, {
+        plan, signal:requestController.signal,
+        onChunk: (chunk) => { completedPrimaryChunks.push(chunk); },
+      }),
+      () => {
+        const completed = mergeProviderChunks(completedPrimaryChunks);
+        return {
+          ...completed,
+          errors:[...completed.errors,{
+            provider:"search",sourceId:"search",pass:"primary",
+            error:"search_deadline_exceeded",
+          }],
+        };
+      },
     ),
     beforeRequestDeadline(
       () => searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
@@ -533,7 +609,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
       const expansions = await Promise.all(expansionQueries.map((candidate) => beforeRequestDeadline(
-        () => runProviderPass(candidate, "fallback", query, { plan }),
+        () => runProviderPass(candidate, "fallback", query, { plan,signal:requestController.signal }),
         () => ({ providers:[], errors:[], offers:[] }),
       )));
       for (const fallback of expansions) {
@@ -811,7 +887,15 @@ const server = http.createServer(async (req, res) => {
     send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString()});
 
     let closed=false;
-    req.on("close",()=>{closed=true;});
+    const streamController=new AbortController();
+    // IncomingMessage 'close' also fires on fully received GET requests; use
+    // ServerResponse 'close' to detect genuine client disconnects instead.
+    res.once("close",()=>{
+      if(!res.writableEnded) {
+        closed=true;
+        streamController.abort(new Error("search_client_disconnected"));
+      }
+    });
     try {
       if (cached) {
         send("snapshot",{...cached,nextCursor});
@@ -826,10 +910,10 @@ const server = http.createServer(async (req, res) => {
       try {
         result=await streamSearchProgress(normalized,async(snapshot)=>{
           if(!closed&&!res.writableEnded) send("snapshot",{...snapshot,nextCursor,cache:{hit:false,mode:"progress",stale:false,refreshing:true,ageMs:0}});
-        });
+        },{signal:streamController.signal});
       } finally { clearInterval(heartbeat); }
       if (closed || res.writableEnded) return;
-      send("snapshot",{...result,nextCursor,coverage:{...(result.coverage||{}),partial:false,complete:true,providersPending:0},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
+      send("snapshot",{...result,nextCursor,coverage:{...(result.coverage||{}),partial:Boolean(result.coverage?.deadlineExceeded),complete:!result.coverage?.deadlineExceeded},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
       send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
       return res.end();
     } catch(error) {
