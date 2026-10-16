@@ -36,6 +36,8 @@ import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
+// Diagnostic-only phase timing. Never log offer contents, URL paths or queries.
+const PROFILE_SEARCH_STREAM = process.env.NAWAA_PROFILE_STREAM === "1";
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STATIC_FILES = new Map([
   ["/", "index.html"],
@@ -348,9 +350,12 @@ async function searchExpansion(query, depth) {
 }
 
 function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
+  const started=PROFILE_SEARCH_STREAM ? performance.now() : 0;
   const assessed=retainRelatedOffers(query, offers);
+  const afterMatching=PROFILE_SEARCH_STREAM ? performance.now() : 0;
   const selected=selectDiverseOffers(assessed,Infinity).slice(0,acquisitionPlan(0,configuredFreeStorefronts().length).returnLimit);
-  return {
+  const afterSelection=PROFILE_SEARCH_STREAM ? performance.now() : 0;
+  const snapshot = {
     providersConfigured:configuredProviders(),
     normalizedQuery:query,
     offers:selected,
@@ -367,6 +372,13 @@ function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
       providersPending:progress.pending||0,
     },
   };
+  if (PROFILE_SEARCH_STREAM) console.log("SEARCH_STREAM_PHASE "+JSON.stringify({
+    stage:"progressiveSnapshot",inputOffers:offers.length,assessedOffers:assessed.length,
+    selectedOffers:selected.length,providerCount:providers.length,
+    matchingMs:afterMatching-started,selectionMs:afterSelection-afterMatching,
+    coverageMs:performance.now()-afterSelection,
+  }));
+  return snapshot;
 }
 
 async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
@@ -896,8 +908,16 @@ const server = http.createServer(async (req, res) => {
     });
     const send=(event,data)=>{
       if(res.writableEnded)return;
+      const measuring=PROFILE_SEARCH_STREAM && event==="snapshot";
       res.write("event: "+event+"\n");
-      res.write("data: "+JSON.stringify(data)+"\n\n");
+      const serializeStarted=measuring ? performance.now() : 0;
+      const serialized=JSON.stringify(data);
+      const serializedAt=measuring ? performance.now() : 0;
+      res.write("data: "+serialized+"\n\n");
+      if (measuring) console.log("SEARCH_STREAM_PHASE "+JSON.stringify({
+        stage:"snapshotWrite",bytes:Buffer.byteLength(serialized),
+        serializeMs:serializedAt-serializeStarted,socketEnqueueMs:performance.now()-serializedAt,
+      }));
     };
     send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString()});
 

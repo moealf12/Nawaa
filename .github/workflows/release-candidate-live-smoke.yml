@@ -6,6 +6,7 @@ on:
       - 'scripts/*latency*.mjs'
       - 'scripts/benchmark-match-filter.mjs'
       - 'src/search-query.mjs'
+      - 'server/server.mjs'
       - '.github/workflows/release-candidate-live-smoke.yml'
   workflow_dispatch:
 permissions:
@@ -36,7 +37,7 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: 0b57f51eaa7426557f8280b7bce19c61e4ffcb09
+          ref: 8ef8baad26141e7d355b939a58848530460eb1e5
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
@@ -51,6 +52,7 @@ jobs:
         env:
           LATENCY_SAMPLES: '3'
           NAWAA_PROFILE_EXTRA: '1'
+          NAWAA_PROFILE_STREAM: '1'
           LATENCY_OUTPUT: latency-results.json
           DATABASE_URL: ''
           MEILI_HOST: ''
