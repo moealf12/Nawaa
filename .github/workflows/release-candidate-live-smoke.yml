@@ -8,6 +8,7 @@ on:
       - 'src/search-query.mjs'
       - 'server/server.mjs'
       - 'server/providers/extra-unbxd.mjs'
+      - 'scripts/probe-extra-fields.mjs'
       - '.github/workflows/release-candidate-live-smoke.yml'
   workflow_dispatch:
 permissions:
@@ -35,10 +36,17 @@ jobs:
           MEILI_MASTER_KEY: ''
           NODE_ENV: test
         run: node scripts/diagnose-candidate-search.mjs
+      - name: Probe Unbxd projection safely (no change to customer-facing request)
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          NAWAA_PROFILE_EXTRA: '1'
+          NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
+        run: node scripts/probe-extra-fields.mjs
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: f9e11e68e480c3494bec6f63923f98fd9395d922
+          ref: 8cd8a8cad7fde6a62deb69385f2f2f23dd9e963f
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline

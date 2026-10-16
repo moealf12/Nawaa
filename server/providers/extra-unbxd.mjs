@@ -4,6 +4,54 @@ const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE
 
 import { filterQueryOffers } from "../../src/search-query.mjs";
 
+// Candidate-only projection experiment: contains every field referenced by
+// normalizeProduct(), including all fallback identity, price, image and
+// variant attributes. Do not activate in production before live parity proof.
+export const EXTRA_PROJECTION_FIELDS = Object.freeze([
+  "_root_",
+  "uniqueId",
+  "productId",
+  "id",
+  "code",
+  "name",
+  "productName",
+  "title",
+  "autosuggest",
+  "autosuggest_unstemmed",
+  "currentPrice",
+  "sellingPrice",
+  "specialPrice",
+  "basicPriceValueDiscount",
+  "priceValue",
+  "price",
+  "imageUrl",
+  "image",
+  "amplienceProductBaseUrl",
+  "available",
+  "homeDeliveryEnabled",
+  "inStock",
+  "featureEnBrandName",
+  "brandEn",
+  "featureEnSeriesName",
+  "featureEnDeviceType",
+  "featureEnColor",
+  "featureEnMemoryInternal",
+  "featureEnRAMSIZE",
+  "featureEnProcessor",
+  "featureEnProcessorCore",
+  "featureEnScreenSizeInch",
+  "featureEnNetwork",
+  "featureEnOperatingSystem",
+  "featureEnRearCamera",
+  "featureEnBatterySizeMAH",
+  "featureEnWaterproofYN",
+  "modelNumber",
+  "barCode",
+  "nameAr",
+  "collectFromStoreEnabled",
+  "isOnlineOnly"
+]);
+
 function firstFinite(...values) {
   for (const value of values) {
     if (value == null || typeof value === "boolean" || (typeof value === "string" && !value.trim())) continue;
@@ -133,13 +181,15 @@ function normalizeProduct(product) {
   };
 }
 
-export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal} = {}) {
+export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal, probeFields} = {}) {
   const cap = limit === Infinity ? Infinity : Math.max(1, Number(limit) || 12);
   const fetchCap = cap === Infinity ? 100 : Math.min(100, cap);
   const url = new URL(EXTRA_SEARCH_BASE);
   url.searchParams.set("q", query);
   url.searchParams.set("rows", String(fetchCap));
   url.searchParams.set("format", "json");
+  // Explicit call-site opt-in only; public search never supplies probeFields.
+  if (Array.isArray(probeFields) && probeFields.length) url.searchParams.set("fields",probeFields.join(","));
   const products = [], seen = new Set(), errors = [];
   const startedAt = Date.now();
   // Opt-in, low-cardinality diagnostic timings; no price or identity data logged.
@@ -166,6 +216,8 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       if (splitJsonTiming) {
         const raw = await response.text();
         const readAt = performance.now();
+        // Decoded UTF-8 byte count, NOT compressed HTTP wire bytes.
+        timings.decodedBodyBytes = (timings.decodedBodyBytes || 0) + Buffer.byteLength(raw,"utf8");
         data = JSON.parse(raw);
         const parsedAt = performance.now();
         timings.bodyReadDecodeMs += readAt - headersAt;
