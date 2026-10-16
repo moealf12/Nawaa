@@ -63,3 +63,29 @@ test('empty provider batches retain their zero-result contract',()=>{
   assert.deepStrictEqual(filterQueryOffers('PS5',[]),
     {offers:[],queryFilter:{input:0,retained:0,removed:0}});
 });
+
+test('capacity mismatches remain enforced while unrequested capacities are not',()=>{
+  const exact={...iphone,specs:{storage:'256GB'}};
+  const different={...iphone,title:'Apple iPhone 17 512GB Black',specs:{storage:'512GB'}};
+  assert.equal(queryMatchReasons('iPhone 17 256GB',exact).includes('capacity_conflict'),false);
+  assert.equal(queryMatchReasons('iPhone 17 256GB',different).includes('capacity_conflict'),true);
+  assert.equal(queryMatchReasons('iPhone 17',different).includes('capacity_conflict'),false);
+  assert.equal(queryMatchReasons('ايفون 17 256 جيجا',different).includes('capacity_conflict'),true);
+  assert.equal(queryMatchReasons('iPhone 17 256GB',exact).includes('model_conflict'),false);
+});
+test('model and storage constraints remain isolated across alternating batches',()=>{
+  const items=[
+    {...iphone,title:'Apple iPhone 17 256GB',specs:{storage:'256 GB',deviceType:'iPhone 17'}},
+    {...iphone,title:'Apple iPhone 17 Pro 512GB',specs:{storage:'512GB',deviceType:'iPhone 17 Pro'}},
+    {...iphone,title:'Apple iPhone 17 Case for 256GB',specs:{storage:'256GB'}},
+  ];
+  const initial=items.map(item=>structuredClone(item));
+  for(let n=0;n<4;n++){
+    const exact=filterQueryOffers('iPhone 17 256GB',items);
+    filterQueryOffers('iPhone 17 Pro 512GB',items);
+    filterQueryOffers('iPhone 17',items);
+    assert.ok(exact.offers.every(x=>!queryMatchReasons('iPhone 17 256GB',x).length));
+    assert.ok(!exact.offers.some(x=>x.title.includes('Pro')));
+    assert.deepStrictEqual(items,initial);
+  }
+});
