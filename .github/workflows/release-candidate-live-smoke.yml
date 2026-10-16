@@ -9,6 +9,7 @@ on:
       - 'server/server.mjs'
       - 'server/providers/extra-unbxd.mjs'
       - 'scripts/probe-extra-fields.mjs'
+      - 'tests/extra-unbxd-json-parity.test.mjs'
       - '.github/workflows/release-candidate-live-smoke.yml'
   workflow_dispatch:
 permissions:
