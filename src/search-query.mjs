@@ -416,13 +416,16 @@ export function queryMatchReasons(query, offer, preparedIntent = null) {
   const intent = preparedIntent || parseSearchIntent(query);
   const match = assessOfferMatch(query, offer, intent);
   const { model, storage } = intent;
-  const models = [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
-    .filter(Boolean).flatMap(explicitModels);
-  const titleModels = [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels);
+  // Capacity and explicit-model extraction are only relevant when requested.
+  // Broad queries should not repeatedly normalize storage fields or parse model
+  // patterns from every offer when no corresponding constraint is present.
+  const models = model ? [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
+    .filter(Boolean).flatMap(explicitModels) : [];
+  const titleModels = model ? [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels) : [];
   if (model && models.some(value => value !== model)) reasons.push('model_conflict');
-  const storageText = normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
-    .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ');
-  const capacities = storageText.match(/\b\d+(?:gb|tb)\b/g) || [];
+  const capacities = storage ? (normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
+    .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ')
+    .match(/\b\d+(?:gb|tb)\b/g) || []) : [];
   if (storage && capacities.some(value => value !== storage)) reasons.push('capacity_conflict');
   // Generic brand/category searches should retain strongly relevant products;
   // exact-match is reserved for model/variant-sensitive queries.
