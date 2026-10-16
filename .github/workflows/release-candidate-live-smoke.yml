@@ -5,6 +5,9 @@ on:
       - 'scripts/diagnose-candidate-search.mjs'
       - 'scripts/*latency*.mjs'
       - 'src/search-first-offer-metrics.mjs'
+      - 'scripts/measure-representative-first-offer.mjs'
+      - 'scripts/simulate-source-first-offer.mjs'
+      - 'tests/search-first-offer-source-simulation.test.mjs'
       - 'scripts/benchmark-match-filter.mjs'
       - 'src/search-query.mjs'
       - 'server/server.mjs'
@@ -38,6 +41,13 @@ jobs:
           MEILI_MASTER_KEY: ''
           NODE_ENV: test
         run: node scripts/diagnose-candidate-search.mjs
+      - name: Bounded cross-intent first-offer SSE (one request per query, no retries)
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/measure-representative-first-offer.mjs
       - name: Probe Unbxd projection safely (no change to customer-facing request)
         env:
           NODE_ENV: test
@@ -48,7 +58,7 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: bbd3b93d9bb543c740a7eb2024a2315e8b1dd532
+          ref: 234ab14d8e792dac7a2babc122dd76ef9c2dea53
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
