@@ -43,7 +43,7 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.equal(new URL(requests[0]).pathname, "/api/search",
     "send the actual search immediately, including on a cold API instance");
   assert.equal((element("#results").innerHTML.match(/data-group-key=/g) || []).length, 2);
-  assert.ok(element("#results").innerHTML.indexOf("نفس النسخة، بين المتاجر") < element("#results").innerHTML.indexOf("المواصفات الموحّدة"), "merchant comparison should precede optional specifications");
+  assert.ok(element("#results").innerHTML.indexOf("مقارنة عروض النسخة المختارة") < element("#results").innerHTML.indexOf("المواصفات الموحّدة"), "merchant comparison should be honest and precede optional specifications");
   assert.match(element("#results").innerHTML, /id="availabilityFilter"/);
   assert.match(element("#results").innerHTML, /id="merchantFilter"/);
   element("#searchInput").value = "https://example.com/black";
@@ -153,6 +153,9 @@ test("query deep link starts exactly one live search and URL submission requests
   // without a manufacturer model/SKU. The selected card must not claim a
   // verified 100% match based on a text relevance score.
   const selectedBrandHtml=element('#results').innerHTML;
+  assert.match(selectedBrandHtml,/مقارنة عروض النسخة المختارة/,'unverified manufacturer SKU must never be labeled same version across stores');
+  assert.match(selectedBrandHtml,/لا تتوفر أدلة كافية لتأكيد تطابق رقم الموديل بين جميع العروض/,'unverified SKU comparison needs a clear caution');
+  assert.doesNotMatch(selectedBrandHtml,/نفس النسخة، بين المتاجر/,'a broad HP brand is not independently verified cross-merchant SKU identity');
   assert.match(selectedBrandHtml,/صلة بالبحث: \d+% \(تقديرية\)/,
     'a relevance heuristic must be labeled as an estimate');
   assert.match(selectedBrandHtml,/ليست إثباتًا لتطابق رقم الموديل أو SKU/,
