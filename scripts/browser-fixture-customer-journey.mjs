@@ -51,6 +51,14 @@ function searchPayload(q,cursor) {
     return {offers:[first,second],errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
   }
+  if(q.includes('fixture-detail-pending')) return {
+    offers:[{...offer(5),image:'https://nawaa-detail-pending.invalid/photo.png'}],
+    errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+    nextCursor:null};
+  if(q.includes('fixture-detail-loaded')) return {
+    offers:[{...offer(5),image:'https://nawaa-detail-loaded.invalid/photo.svg'}],
+    errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+    nextCursor:null};
   if(q.includes('fixture-pending-image')) return {
     offers:[{...offer(5),image:'https://nawaa-pending.invalid/delayed-product.jpg'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
@@ -123,6 +131,16 @@ try{
   await context.route(url => new URL(url).hostname==='nawaa-pending.invalid', async route=>{
     await pendingImageGate;
     await route.abort('failed');
+  });
+  let releaseDetailImage=null;
+  const detailImageGate=new Promise(resolve=>{releaseDetailImage=resolve;});
+  await context.route(url=>new URL(url).hostname==='nawaa-detail-pending.invalid',async route=>{
+    await detailImageGate;
+    await route.abort('failed');
+  });
+  await context.route(url=>new URL(url).hostname==='nawaa-detail-loaded.invalid',async route=>{
+    await route.fulfill({status:200,contentType:'image/svg+xml',
+      body:'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#2563eb"/></svg>'});
   });
   async function navigate(q){
     const tab=await context.newPage();
@@ -247,6 +265,67 @@ try{
       getComputedStyle(image.nextElementSibling).display==='grid';
   },null,{timeout:10000});
   assertCheck('pending_image_failure_retains_fallback',true);
+  // Walk the same customer path into the ACTUAL product.html page while
+  // the independently intercepted product-detail image remains pending.
+  const detailPending=await navigate('fixture-detail-pending');
+  await detailPending.locator('#results .match-result-card').first().click();
+  await detailPending.locator('.selected-comparison[open] .product-detail-btn').first().click();
+  await detailPending.waitForURL(/product\\.html\\?/,{waitUntil:'domcontentloaded',timeout:12000});
+  await detailPending.locator('.product-media img').waitFor();
+  const detailBefore=await detailPending.evaluate(()=>{
+    const img=document.querySelector('.product-media img');
+    const fb=document.querySelector('.product-media .media-fallback');
+    return {pending:!img.complete,visible:!fb.hidden&&getComputedStyle(fb).display!=='none',
+      fallbackText:fb.textContent.trim(),status:fb.getAttribute('role'),
+      model:document.querySelector('.model-line')?.textContent?.trim(),
+      merchant:document.querySelector('.source-line')?.textContent?.trim(),
+      title:document.querySelector('.product-copy h1')?.textContent?.trim(),
+      price:document.querySelector('.price-block strong')?.textContent?.trim(),
+      observedAt:document.querySelector('.source-card p')?.textContent?.trim()};
+  });
+  assertCheck('pending_detail_hero_shows_truthful_loading_fallback',
+    detailBefore.pending&&detailBefore.visible&&
+    detailBefore.fallbackText.includes('جاري تحميل صورة')&&
+    detailBefore.status==='status',detailBefore);
+  assertCheck('detail_merchant_model_price_provenance_preserved',
+    detailBefore.title==='HP Pavilion Laptop Model 05 512GB Silver'&&
+    detailBefore.model?.includes('HP-LAP-05')&&
+    detailBefore.merchant?.includes('Jarir')&&
+    detailBefore.price?.includes(new Intl.NumberFormat('ar-SA').format(2515))&&
+    detailBefore.observedAt?.includes('آخر رصد'),detailBefore);
+  await detailPending.screenshot({path:'browser-artifacts/fixture-detail-image-pending-desktop.png',fullPage:true});
+  await detailPending.setViewportSize({width:390,height:844});
+  const detailMobile=await detailPending.evaluate(()=>({
+    viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,
+    visible:!document.querySelector('.product-media .media-fallback').hidden}));
+  assertCheck('pending_detail_mobile_no_overflow',
+    detailMobile.scrollWidth<=detailMobile.viewport+4&&detailMobile.visible,detailMobile);
+  await detailPending.screenshot({path:'browser-artifacts/fixture-detail-image-pending-mobile.png',fullPage:true});
+  releaseDetailImage();
+  await detailPending.waitForFunction(()=>{
+    const img=document.querySelector('.product-media img');
+    return img.complete&&img.naturalWidth===0&&
+      getComputedStyle(img).display==='none'&&
+      !document.querySelector('.product-media .media-fallback').hidden;
+  },null,{timeout:12000});
+  assertCheck('detail_image_failure_shows_fallback',
+    (await detailPending.locator('.product-media .media-fallback').textContent()).includes('تعذر تحميل'));
+
+  const detailLoaded=await navigate('fixture-detail-loaded');
+  await detailLoaded.locator('#results .match-result-card').first().click();
+  await detailLoaded.locator('.selected-comparison[open] .product-detail-btn').first().click();
+  await detailLoaded.waitForURL(/product\\.html\\?/,{waitUntil:'domcontentloaded',timeout:12000});
+  await detailLoaded.waitForFunction(()=>{
+    const img=document.querySelector('.product-media img');
+    return img?.complete&&img.naturalWidth>0;
+  },null,{timeout:12000});
+  const success=await detailLoaded.evaluate(()=>{
+    const img=document.querySelector('.product-media img'),fb=img.nextElementSibling;
+    return {loaded:img.naturalWidth>0,hidden:fb.hidden,
+      imageVisible:getComputedStyle(img).display!=='none'};
+  });
+  assertCheck('successful_detail_image_no_fallback',success.loaded&&success.hidden&&success.imageVisible,success);
+  await detailLoaded.screenshot({path:'browser-artifacts/fixture-detail-image-success-desktop.png',fullPage:true});
   // Explicitly simulate a browser-visible broken image without accessing a
   // third-party CDN. Onerror must reveal visible fallback.
   const imgTab=await navigate('HP');
