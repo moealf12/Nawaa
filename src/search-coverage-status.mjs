@@ -4,7 +4,7 @@ const CORE_SOURCES = new Set([
   "extra-unbxd", "jarir-direct", "sharafdg-algolia", "virgin-ae",
   "free-storefronts:amazon-sa", "swarovski-direct",
 ]);
-const safeId = value => typeof value === "string" && /^[a-z0-9_-]{1,80}$/i.test(value) ? value : null;
+const safeId = value => typeof value === "string" && /^[a-z0-9_:-]{1,80}$/i.test(value) ? value : null;
 
 export function summarizeSourceFailures(errors = []) {
   const types = {http:0,transport:0,timeout:0,unverifiedOffers:0,malformed:0,other:0};

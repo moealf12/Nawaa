@@ -1349,7 +1349,7 @@ async function runSearch(rawQuery) {
       state.product = null;
       const coverageNotice=coverageStatusText(data.coverage,data.errors);
       els.status.textContent = incomplete
-        ? `${coverageNotice || "تغطية البحث جزئية"} · فُحص ${attempted} أسواق/متاجر`
+        ? `بحث جزئي · ${coverageNotice || "تغطية البحث جزئية"} · فُحص ${attempted} أسواق/متاجر`
         : `لم نجد عروضًا حية · تم فحص ${attempted} أسواق/متاجر`;
       els.results.innerHTML = `
         <div class="no-match">
