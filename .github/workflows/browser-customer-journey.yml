@@ -3,7 +3,9 @@ on:
   pull_request:
     paths:
       - 'src/search-page.mjs'
+      - 'src/product-page.mjs'
       - 'search.html'
+      - 'product.html'
       - 'config.js'
       - 'scripts/browser-customer-journey.mjs'
       - 'scripts/browser-fixture-customer-journey.mjs'
