@@ -368,12 +368,13 @@ function prepareMatchContext(intent) {
     NORMALIZED_ACCESSORY_TERMS.some(term => hasNormalizedPhrase(normalizedQuery,term)) ||
     (intent.discoveryMode === "brand" && ACCESSORY_LED_BRANDS.has(intent.brand));
   return {normalizedQuery,effectiveCategory,categoryTokenRequested,q,
-    queryTokens:new Set(q),queryHasAccessoryIntent};
+    queryTokens:new Set(q),queryHasAccessoryIntent,
+    storageMediaRequested:GAMING_STORAGE_ACCESSORY.test(normalizedQuery)};
 }
 
 export function assessOfferMatch(query, offer, preparedIntent = null, preparedContext = null) {
   const intent = preparedIntent || parseSearchIntent(query);
-  const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent} =
+  const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent,storageMediaRequested} =
     preparedContext || prepareMatchContext(intent);
   let urlSemantic = "";
   try {
@@ -396,7 +397,13 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     // structural category is equivalent to that requested term matching.
     confidence = q.length ? Math.min(1, (hits + 1) / (q.length + 1)) : 1;
   }
-  const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== offerCategory));
+  // A storage query cannot exact-match a generic USB hub merely because both
+  // products belong to the broad gaming-accessory category.
+  const storageMediaMismatch = storageMediaRequested &&
+    !GAMING_STORAGE_ACCESSORY.test(normalizeSearchQuery(offer?.title || ""));
+  const kindMismatch = Boolean(storageMediaMismatch ||
+    (intent.kind && intent.kind !== description.kind) ||
+    (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
 
   // Brand-only searches still reject accessories that merely carry the name.
@@ -450,7 +457,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
       hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
