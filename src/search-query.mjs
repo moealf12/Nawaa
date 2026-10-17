@@ -255,6 +255,11 @@ const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|c
 // Storage-media nouns identify a sold component, not the PS5 it fits.
 // A title-leading real console subject remains a console when its SSD is included.
 const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
+// Item for sale versus the SSD it cools/houses: a part naming "NVMe SSD"
+// is not itself solid-state storage. A drive sold WITH its heatsink is.
+const STORAGE_PART_NOUN = /\b(?:heatsinks?|heat sinks?|cooling plates?|enclosures?|ssd cases?|thermal pads?|installation kits?)\b/;
+const COMPLETE_SSD_WITH_COOLING = /\b(?:ssds?|solid state drives?) (?:with|including|includes|plus)(?: [a-z]+){0,3} (?:heatsinks?|heat sinks?)\b/;
+const storagePartOnly = title => STORAGE_PART_NOUN.test(title) && !COMPLETE_SSD_WITH_COOLING.test(title);
 const GAMING_CONSOLE_PRIMARY = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|edition|standard|gaming|white|black|blu ray|\d+(?:gb|tb))){0,9}(?: console| (?:digital|disc) edition| (?:dig|digital|disc) \d+(?:gb|tb))\b/;
 const GAMING_GAME_PRODUCT = /\b(?:code in box|digital game code|download code|game card|video game|game disc)\b/;
 // Match already-normalized Arabic tokens using spaces, not JS \b (which does
@@ -308,9 +313,13 @@ export function describeProduct(offer = {}) {
   const platform = title.match(GAMING_PLATFORM)?.[0] || metadata.match(GAMING_PLATFORM)?.[0] || null;
   const sku = String(offer.specs?.modelNumber || "").replace(/[^a-z0-9]/gi, "");
   const isBundle = /\bbundle\b/.test(title) || explicitlyIncludedConsoleAccessory(title, offer.title);
+  // Trust chassis-model corroboration only for a Sony PS5 subject, never a
+  // standalone storage part that merely claims console compatibility.
+  const evidencedConsoleChassis = /^CFI[127]\d/i.test(sku) && /^sony ps[45]\b/.test(title) &&
+    !storagePartOnly(title);
   let kind = "product";
   if (platform) {
-    if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
+    if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
     else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       GENUINE_CONSOLE_BUNDLE(title) ||
       explicitlyIncludedConsoleAccessory(title, offer.title) ||
@@ -369,12 +378,13 @@ function prepareMatchContext(intent) {
     (intent.discoveryMode === "brand" && ACCESSORY_LED_BRANDS.has(intent.brand));
   return {normalizedQuery,effectiveCategory,categoryTokenRequested,q,
     queryTokens:new Set(q),queryHasAccessoryIntent,
-    storageMediaRequested:GAMING_STORAGE_ACCESSORY.test(normalizedQuery)};
+    storageMediaRequested:GAMING_STORAGE_ACCESSORY.test(normalizedQuery),
+    storagePartRequested:STORAGE_PART_NOUN.test(normalizedQuery)};
 }
 
 export function assessOfferMatch(query, offer, preparedIntent = null, preparedContext = null) {
   const intent = preparedIntent || parseSearchIntent(query);
-  const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent,storageMediaRequested} =
+  const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent,storageMediaRequested,storagePartRequested} =
     preparedContext || prepareMatchContext(intent);
   let urlSemantic = "";
   try {
@@ -399,8 +409,10 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   }
   // A storage query cannot exact-match a generic USB hub merely because both
   // products belong to the broad gaming-accessory category.
-  const storageMediaMismatch = storageMediaRequested &&
-    !GAMING_STORAGE_ACCESSORY.test(normalizeSearchQuery(offer?.title || ""));
+  const physicalTitle = normalizeSearchQuery(offer?.title || "");
+  const storageMediaMismatch = storageMediaRequested && (
+    !GAMING_STORAGE_ACCESSORY.test(physicalTitle) ||
+    (storagePartOnly(physicalTitle) && !storagePartRequested));
   const kindMismatch = Boolean(storageMediaMismatch ||
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
