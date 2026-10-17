@@ -119,8 +119,9 @@ try{
     }
   });
   let releasePendingImage=null;
+  const pendingImageGate=new Promise(resolve=>{releasePendingImage=resolve;});
   await context.route(url => new URL(url).hostname==='nawaa-pending.invalid', async route=>{
-    await new Promise(resolve=>{releasePendingImage=resolve;});
+    await pendingImageGate;
     await route.abort('failed');
   });
   async function navigate(q){
@@ -214,6 +215,31 @@ try{
     pendingState.pending&&pendingState.fallbackDisplay==='grid'&&
     pendingState.fallbackText.includes('صورة غير متاحة'),pendingState);
   await pendingTab.screenshot({path:'browser-artifacts/fixture-pending-cdn-image.png',fullPage:true});
+  // Selected comparison uses a distinct image renderer, not the search-card
+  // tile. The same stalled CDN must not produce an empty comparison hero.
+  await pendingTab.locator('#results .match-result-card').first().click();
+  await pendingTab.locator('.selected-comparison[open] .config-image img').waitFor();
+  const pendingComparisonImage=await pendingTab.evaluate(()=>{
+    const image=document.querySelector('.selected-comparison[open] .config-image img');
+    const tile=image?.closest('.config-image');
+    const fallback=image?.nextElementSibling;
+    const rect=tile?.getBoundingClientRect(),child=fallback?.getBoundingClientRect();
+    return {pending:!image?.complete,display:fallback?getComputedStyle(fallback).display:null,
+      centered:!!rect&&!!child&&child.width>=rect.width-3&&child.height>=rect.height-3,
+      alt:image?.getAttribute('alt')};
+  });
+  assertCheck('pending_selected_comparison_image_fallback_visible',
+    pendingComparisonImage.pending&&pendingComparisonImage.display==='grid'&&
+    pendingComparisonImage.centered,pendingComparisonImage);
+  await pendingTab.setViewportSize({width:390,height:844});
+  const pendingComparisonMobile=await pendingTab.evaluate(()=>({
+    viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,
+    display:getComputedStyle(document.querySelector('.selected-comparison[open] .config-image-fallback')).display
+  }));
+  assertCheck('pending_comparison_mobile_no_overflow',
+    pendingComparisonMobile.scrollWidth<=pendingComparisonMobile.viewport+4,
+    pendingComparisonMobile);
+  await pendingTab.screenshot({path:'browser-artifacts/fixture-pending-comparison-mobile.png',fullPage:true});
   releasePendingImage?.();
   await pendingTab.waitForFunction(()=>{
     const image=document.querySelector('.match-card-image img[src*="nawaa-pending.invalid"]');
