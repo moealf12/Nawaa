@@ -269,10 +269,17 @@ const CONSOLE_DEVICE_SUBJECT = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|ed
 const CONSOLE_INCLUSION_LINK = /^(?: with| including| includes| plus)\b/;
 function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normalizedTitle) {
   const subject = normalizedTitle.match(CONSOLE_DEVICE_SUBJECT);
-  // Normalization removes '+' and can make a real "Console + USB Hub"
-  // indistinguishable from the peripheral noun "Console USB Hub".
-  const explicitlyPlus = /\bconsole\s*\+\s*[\p{L}\p{N}]/iu.test(String(rawTitle));
-  if (!subject || (CONSOLE_HUB_PRODUCT.test(normalizedTitle) && !explicitlyPlus)) return false;
+  if (!subject) return false;
+  // Retailers can place colour/region/edition between "Console" and a '+'
+  // that introduces a bundled peripheral. Inspect the ORIGINAL separator;
+  // normalized text drops '+'. Do not upgrade an accessory product titled
+  // "PS5 Console Cover + Controller" or "PS5 Console Hub + Charger".
+  const original = String(rawTitle);
+  const beforePlus = original.split(/\s+\+\s+/u)[0];
+  const basePrefix = normalizeSearchQuery(beforePlus).slice(subject[0].length).trim();
+  const explicitlyPlus = beforePlus !== original &&
+    !GAMING_ACCESSORY.test(basePrefix) && !GAMING_ARABIC_ACCESSORY.test(basePrefix);
+  if (CONSOLE_HUB_PRODUCT.test(normalizedTitle) && !explicitlyPlus) return false;
   const remainder = normalizedTitle.slice(subject[0].length);
   const explicitlyWith = CONSOLE_INCLUSION_LINK.test(remainder);
   return (explicitlyWith || explicitlyPlus) &&
