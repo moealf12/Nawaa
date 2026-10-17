@@ -134,40 +134,105 @@ try{
   const stream=await measureStreamFirstOffer('iPhone 17');
   const iphone=await query('iPhone 17');
   const ps5=await query('PS5');
-  // v15.13: additional bounded live merchant metadata probe. This uses Jarir's
-  // existing public Constructor adapter, never a guessed retailer payload.
-  // Absence of target IDs is UNKNOWN, not a pass or fabricated observation.
-  try {
-    const found=await searchViaConstructor('Sony PlayStation 5 Slim',48,AbortSignal.timeout(8000));
-    const targetIds=new Set(['668751','677771']);
-    const targets=found.filter(o=>targetIds.has(o.sourceMeta?.productId) ||
-      [...targetIds].some(id=>String(o.sourceUrl||'').includes(id+'.html')));
-    const evidence=targets.map(o=>({
-      title:o.title,productId:o.sourceMeta?.productId||null,
-      sourceUrl:o.sourceUrl,price:o.productPrice,currency:o.currency,
-      observedAt:o.observedAt,deviceType:o.specs?.deviceType||null,
-      series:o.specs?.series||null,modelNumber:o.specs?.modelNumber||null,
-      productType:o.sourceMeta?.productType||null,
-      kind:describeProduct(o).kind,exactPS5:assessOfferMatch('PS5',o).exactMatch,
-      isBundle:describeProduct(o).isBundle,
-    }));
-    const conflicts=evidence.filter(x=>x.productId==='677771'&&
-      (x.kind!=='console'||x.exactPS5!==true||x.isBundle!==true));
-    console.log('JARIR_E1_LIVE_ADAPTER_METADATA '+JSON.stringify({
-      query:'Sony PlayStation 5 Slim',results:found.length,
-      observedIds:evidence.map(x=>x.productId),targets:evidence,
-      sourceStatus:evidence.length?'OBSERVED':'UNKNOWN_NOT_IN_BOUNDED_RESULTS',
-      conflicts,
-      caution:'Normalized adapter evidence only, not the complete raw Constructor JSON',
-    }));
-    // Real customer-visible merchant identity error is an actionable red gate.
-    if(conflicts.length)process.exitCode=7;
-  }catch(error){
-    console.log('JARIR_E1_LIVE_ADAPTER_METADATA '+JSON.stringify({
-      query:'Sony PlayStation 5 Slim',sourceStatus:'UNKNOWN_SOURCE_UNAVAILABLE',
-      error:String(error?.message||error).slice(0,180),
-    }));
-  }
+  // v15.14: bounded read-only real Constructor search and raw vs adapter
+  // evidence. This is diagnostic-only (no provider, product or DB writes).
+  // Intercept existing PUBLIC adapter fetch rather than guessing new endpoints
+  // or duplicating the storefront's public Constructor key.
+  const targets=new Set(['668751','677771']);
+  const probeQueries=[
+    {query:'677771',limit:12},
+    {query:'CFI2116BCFIZC',limit:12},
+    {query:'PS5 DualSense Bundle',limit:24},
+    {query:'Sony PlayStation 5 Slim DIG',limit:24},
+    {query:'Sony PlayStation 5 Slim',limit:48},
+  ];
+  const pickMetadata=meta=>{
+    const keys=['name','model','seri','ptyp','productcode_description',
+      'mpn','item_number','tsca','colo','cofa','brand','price',
+      'bundle','subtitle','sub_title','description','product_description'];
+    const fields={};
+    for(const key of keys){
+      const value=meta?.[key];
+      if(['string','number','boolean'].includes(typeof value))
+        fields[key]=String(value).slice(0,320);
+    }
+    return {keys:Object.keys(meta||{}).sort().slice(0,100),fields};
+  };
+  const extractRaw=raw=>({
+    id:String(raw?.data?.id||''),sku:String(raw?.data?.sku||''),
+    value:String(raw?.value||'').slice(0,320),
+    description:String(raw?.data?.description||'').slice(0,320),
+    url:String(raw?.data?.url||'').slice(0,320),
+    price:raw?.data?.price??null,
+    metadata:pickMetadata(raw?.data?.metadata||{}),
+  });
+  const originalFetch=globalThis.fetch;
+  const rawEvidence=[];
+  // Diagnostic instrumentation exists ONLY in this disposable GitHub runner
+  // process, never in the child server or the production Jarir adapter.
+  globalThis.fetch=async(input,init)=>{
+    const response=await originalFetch(input,init);
+    try{
+      const u=new URL(typeof input==='string'?input:input.url);
+      if(u.hostname==='ac.cnstrc.com'&&u.pathname.startsWith('/v1/search/')&&response.ok){
+        const length=Number(response.headers.get('content-length')||0);
+        if(!length||length<=2_000_000){
+          const body=await response.clone().text();
+          if(body.length<=2_000_000){
+            const parsed=JSON.parse(body);
+            for(const raw of parsed?.response?.results||[]){
+              const id=String(raw?.data?.id||raw?.data?.sku||'');
+              if(targets.has(id))rawEvidence.push({
+                query:u.pathname.slice('/v1/search/'.length),
+                captureTime:new Date().toISOString(),
+                raw:extractRaw(raw),
+              });
+            }
+          }
+        }
+      }
+    }catch(error){
+      console.log('JARIR_V1514_CAPTURE_WARNING '+JSON.stringify({
+        reason:String(error?.message||error).slice(0,120)}));
+    }
+    return response;
+  };
+  try{
+    for(const {query,limit} of probeQueries){
+      let found=[],error=null;
+      try{
+        found=await searchViaConstructor(query,limit,AbortSignal.timeout(8000));
+      }catch(e){error=String(e?.message||e).slice(0,160)}
+      const normalized=found.filter(o=>targets.has(String(o.sourceMeta?.productId||'')))
+        .map(o=>({
+          id:String(o.sourceMeta?.productId||''),
+          title:o.title,sourceUrl:o.sourceUrl,
+          productPrice:o.productPrice,currency:o.currency,observedAt:o.observedAt,
+          specs:{deviceType:o.specs?.deviceType||null,series:o.specs?.series||null,
+            modelNumber:o.specs?.modelNumber||null,storage:o.specs?.storage||null},
+          sourceMeta:{productType:o.sourceMeta?.productType||null,
+            parsedFrom:o.sourceMeta?.parsedFrom||null},
+          kind:describeProduct(o).kind,isBundle:describeProduct(o).isBundle,
+          exactPS5:assessOfferMatch('PS5',o).exactMatch,
+          exactPS5SSD:assessOfferMatch('PS5 SSD',o).exactMatch,
+        }));
+      const rawForQuery=rawEvidence.filter(x=>decodeURIComponent(x.query)===query);
+      const observed=normalized.some(x=>x.id==='677771')||
+        rawForQuery.some(x=>x.raw.id==='677771');
+      const status=error?'SOURCE_UNAVAILABLE':observed?'OBSERVED':'NOT_IN_BOUNDED_RESULTS';
+      console.log('JARIR_V1514_RAW_VS_ADAPTER '+JSON.stringify({
+        query,limit,returned:found.length,status,
+        raw:rawForQuery,normalized,error,
+        evidenceLevel:observed?'E1-live-Constructor':'E1-bounded-negative-observation',
+        note:'captureTime and observedAt are acquisition timestamps; neither is merchant listing update time',
+      }));
+      // Only an actual returned, normalized product can fail a customer
+      // certification. Missing SKU remains UNKNOWN, not a failed listing.
+      const conflicts=normalized.filter(x=>x.id==='677771'&&
+        (x.kind!=='console'||!x.exactPS5||x.exactPS5SSD));
+      if(conflicts.length)process.exitCode=7;
+    }
+  }finally{globalThis.fetch=originalFetch}
   if(iphone.status!==200||ps5.status!==200)process.exitCode=2;
   // HTTP 200 + empty products is not a functional search success.
   if([iphone,ps5].some(x=>!x.structurallyValid || x.exact<1 || x.merchants.length<2))
