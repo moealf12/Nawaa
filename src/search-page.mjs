@@ -875,6 +875,17 @@ function openProductDetails(product, offer, query) {
   location.href = "./product.html?" + params.toString();
 }
 
+// Grouping comparable offers does not independently prove an identical SKU.
+// Confirm merchant model agreement only when every included offer reports it.
+function sharedMerchantModelEvidence(offers = []) {
+  if (!Array.isArray(offers) || offers.length < 2) return false;
+  const merchants = new Set(offers.map(offer => offer?.merchant).filter(Boolean));
+  if (merchants.size < 2) return false;
+  const ids = offers.map(offer => String(offer?.specs?.modelNumber || "")
+    .normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g, ""));
+  return ids.every(Boolean) && ids.every(id => id === ids[0]);
+}
+
 function renderProduct(product, query) {
   const filteredOffers = product.offers.filter(offer =>
     (state.merchant === "all" || offer.merchant === state.merchant) &&
@@ -904,6 +915,7 @@ function renderProduct(product, query) {
   const featuredValue = selectedIntelligence?.baselineValue ?? selectedGroup?.bestValue ?? null;
   const featuredConfirmed = selectedIntelligence?.priceBasis === "comparable_total" && featuredOffer?.bucket === "confirmed";
   const canonicalProfile = buildCanonicalProductProfile(selectedGroup?.offers || []);
+  const sameModelEvidence = sharedMerchantModelEvidence(selectedGroup?.offers || []);
 
   const modelCount = selector.options.models.length;
   const storageCount = selector.options.storages.length;
@@ -961,7 +973,10 @@ function renderProduct(product, query) {
             <div class="comparison-head">
               <div>
                 <span class="mini-kicker">مقارنة المتاجر</span>
-                <h4>نفس النسخة، بين المتاجر</h4>
+                <h4>مقارنة عروض النسخة المختارة</h4>
+                <small class="model-identity-note">${sameModelEvidence
+                  ? "رقم الموديل متطابق بحسب بيانات المتاجر، وليس إثباتًا مستقلًا لتطابق SKU."
+                  : "لا تتوفر أدلة كافية لتأكيد تطابق رقم الموديل بين جميع العروض؛ راجع مواصفات كل متجر قبل الشراء."}</small>
               </div>
               ${Number.isFinite(selectedGroup.savingsToNext)
                 ? '<span class="saving-pill">فرق ' + fmt(selectedGroup.savingsToNext) + ' عن العرض التالي</span>'
