@@ -41,6 +41,59 @@ test("PS5 device search rejects games, controllers and accessories despite platf
   assert.equal(assessOfferMatch("ps5", {title:"PS5, Console 1TB, Blu-Ray Disc",condition:"new"}).exactMatch,true);
 });
 
+// Captured from real candidate SSE on 2026-10-17; preserve original
+// merchant identity/price, and never infer product kind from SAR 34.79.
+const mcbazelHub = {
+  title:"Mcbazel PS5 Console Hub USB2.0 5 Ports, High Speed Multiport Expansion Hub Data Transfer USB C Fast Charging Hub for PS5",
+  merchant:"Amazon Saudi", providerMarket:"amazon-sa", currency:"SAR",
+  productPrice:34.79, condition:"new",
+  sourceUrl:"https://www.amazon.sa/-/en/Mcbazel-Multiport-Expansion-Transfer-Charging/dp/B0B1Q2NQGL/ref=sr_1_74",
+  specs:{modelNumber:"B0B1Q2NQGL"},
+};
+
+test("real Amazon PS5 console USB expansion hub is an accessory, never an exact console",()=>{
+  assert.equal(queries.describeProduct(mcbazelHub).kind,"accessory",
+    "A console-compatible USB hub is not the console it connects to");
+  assert.equal(queries.productCategory(mcbazelHub),"accessory");
+  assert.equal(assessOfferMatch("PS5",mcbazelHub).exactMatch,false);
+  assert.equal(assessOfferMatch("بلايستيشن 5",mcbazelHub).exactMatch,false);
+  assert.equal(queries.parseSearchIntent("PS5 USB hub").kind,"accessory");
+  assert.equal(assessOfferMatch("PS5 USB hub",mcbazelHub).exactMatch,true,
+    "Accessory search must preserve this real, inexpensive offer");
+  assert.equal(mcbazelHub.productPrice,34.79);
+  assert.ok(mcbazelHub.sourceUrl.includes("B0B1Q2NQGL"));
+});
+
+test("hub matching adversarial cases preserve actual consoles and accessory intent",()=>{
+  const accessories=[
+    "PS5 Console Hub USB 2.0 Five Ports",
+    "PS5 USB-C multiport expansion hub",
+    "Sony PlayStation 5 USB docking station",
+    "USB port expander for PlayStation 5 Console",
+    "هب USB للبلايستيشن 5",
+  ];
+  for(const title of accessories){
+    const offer={title,condition:"new",merchant:"Independent source"};
+    assert.equal(queries.describeProduct(offer).kind,"accessory",title);
+    assert.equal(assessOfferMatch("PS5",offer).exactMatch,false,title);
+  }
+  for(const title of [
+    "Sony PS5 Slim Disc Console 1TB",
+    "Sony PS5 Digital Edition Console 825GB",
+    "Sony PS5 Slim Console 1TB Bundle with USB Hub and Controller",
+  ]) {
+    const offer={title,condition:"new",productPrice:34.79,merchant:"Any merchant"};
+    assert.equal(queries.describeProduct(offer).kind,"console",title);
+    assert.equal(assessOfferMatch("PS5",offer).exactMatch,true,title);
+  }
+  for(const merchant of ["Amazon Saudi","Jarir","eXtra"]){
+    const offer={...mcbazelHub,merchant,productPrice:2499};
+    assert.equal(queries.describeProduct(offer).kind,"accessory");
+    assert.equal(assessOfferMatch("PS5",offer).exactMatch,false);
+  }
+  assert.equal(queries.parseSearchIntent("هب USB للبلايستيشن 5").kind,"accessory");
+});
+
 test("live Jarir PS5 Disc Drive is not a 649 SAR console", () => {
   const separateDrives=[
     "Sony Disc Drive for PlayStation 5 Digital Edition Slim, White",
