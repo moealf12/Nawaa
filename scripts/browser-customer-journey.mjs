@@ -50,6 +50,48 @@ try{
   browser=await chromium.launch({executablePath:binary,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
   const context=await browser.newContext({viewport:desktop,locale:'ar-SA',timezoneId:'Asia/Riyadh',
     ignoreHTTPSErrors:false,serviceWorkers:'block'});
+  // Observe the SAME live SSE search used by the page: no duplicate merchant
+  // request and no interception of actual application results.
+  await context.addInitScript(() => {
+    const Native = window.EventSource;
+    if (!Native) return;
+    const simplify = o => {
+      let source = null;
+      try { const u = new URL(o.sourceUrl || ""); source = u.protocol === "https:" ? u.origin + u.pathname : null; } catch {}
+      return {
+        title: String(o.title || "").slice(0,180),
+        merchant: String(o.merchant || "").slice(0,65),
+        source, productPrice: Number.isFinite(o.productPrice) ? o.productPrice : null,
+        currency: o.currency, modelNumber: String(o.specs?.modelNumber || "").slice(0,80),
+        manufacturer: String(o.specs?.brand || "").slice(0,60),
+        sourceName: String(o.sourceMeta?.nameAr || "").slice(0,150),
+        exactMatch: o.exactMatch === true,
+        matchReason: String(o.matchReason || "").slice(0,150),
+        providerMarket: String(o.providerMarket || "").slice(0,70)
+      };
+    };
+    window.__nawaaObserved = {first:[],suspicious:[],done:false,snapshots:0};
+    window.EventSource = class extends Native {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener("snapshot", event => {
+          try {
+            const offers = JSON.parse(event.data)?.offers || [];
+            const record = window.__nawaaObserved;
+            record.snapshots++;
+            if (!record.first.length && offers.length) record.first = offers.slice(0,10).map(simplify);
+            for (const o of offers) {
+              if (Number.isFinite(o.productPrice) && o.productPrice < 1000 &&
+                !record.suspicious.some(x => x.source && x.source === simplify(o).source))
+                record.suspicious.push(simplify(o));
+              if(record.suspicious.length>=14)break;
+            }
+          } catch {}
+        });
+        this.addEventListener("done",()=>{window.__nawaaObserved.done=true;});
+      }
+    };
+  });
   page=await context.newPage();
   page.setDefaultTimeout(12000);
   page.on('pageerror',err=>report.consoleErrors.push(sanitize(err.message)));
@@ -80,6 +122,12 @@ try{
       categoryExpand:result?.querySelectorAll('.show-category').length||0};
   });
   report.firstVisibleResultsMs=Math.round(performance.now()-began);
+  if (/ps5/i.test(query)) {
+    // Capture product identity from the very same SSE event the shopper saw.
+    // Wait only for existing stream completion; never initiate another search.
+    await page.waitForFunction(() => window.__nawaaObserved?.done, null, {timeout:22000}).catch(()=>{});
+    report.ps5SourceEvidence=await page.evaluate(()=>window.__nawaaObserved);
+  }
   await page.screenshot({path:prefix+'-search-desktop.png',fullPage:true,timeout:20000});
   report.assertions.searchPageRendered=Boolean(navigation?.ok());
   report.assertions.realOfferCards=report.results.cards>0;
@@ -103,6 +151,22 @@ try{
     }
     await page.screenshot({path:prefix+'-comparison-desktop.png',fullPage:true,timeout:20000});
   }
+  const imageQA=await page.evaluate(()=>{
+    const cards=[...document.querySelectorAll('.match-card-image')].slice(0,10);
+    const details=cards.map(card=>{
+      const img=card.querySelector('img'),fallback=card.querySelector('.match-card-fallback');
+      if(!img)return {state:'no-image',fallbackVisible:!!fallback&&getComputedStyle(fallback).display!=='none'};
+      return {state:img.complete?(img.naturalWidth>0?'loaded':'broken'):'pending',
+        fallbackVisible:!!fallback&&getComputedStyle(fallback).display!=='none'};
+    });
+    return {tested:details.length,loaded:details.filter(x=>x.state==='loaded').length,
+      broken:details.filter(x=>x.state==='broken').length,
+      pending:details.filter(x=>x.state==='pending').length,
+      brokenWithoutFallback:details.filter(x=>x.state==='broken'&&!x.fallbackVisible).length,
+      noImageWithoutFallback:details.filter(x=>x.state==='no-image'&&!x.fallbackVisible).length};
+  });
+  report.imageQA=imageQA;
+  report.assertions.imageFallbackSafe=imageQA.brokenWithoutFallback===0&&imageQA.noImageWithoutFallback===0;
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(500);
   const mobile=await page.evaluate(()=>({viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,

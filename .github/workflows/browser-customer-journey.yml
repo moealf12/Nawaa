@@ -6,6 +6,7 @@ on:
       - 'search.html'
       - 'config.js'
       - 'scripts/browser-customer-journey.mjs'
+      - 'scripts/browser-fixture-customer-journey.mjs'
       - 'tests/ui-flow.test.mjs'
       - '.github/workflows/browser-customer-journey.yml'
   workflow_dispatch:
@@ -47,6 +48,13 @@ jobs:
           MEILI_MASTER_KEY: ''
           NAWAA_BROWSER_QUERY: PS5
         run: node scripts/browser-customer-journey.mjs candidate
+      - name: Replay fixture buyer journeys with zero external merchant requests
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/browser-fixture-customer-journey.mjs
       - name: Observe the currently published GitHub Pages and Render UI
         continue-on-error: true
         env:
