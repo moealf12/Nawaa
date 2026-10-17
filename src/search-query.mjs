@@ -253,13 +253,17 @@ const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
 // Reject peripheral product nouns before trusting 'Console / Digital Edition'.
 const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure)\b/;
 const GAMING_GAME_PRODUCT = /\b(?:code in box|digital game code|download code|game card|video game|game disc)\b/;
+// Match already-normalized Arabic tokens using spaces, not JS \b (which does
+// not recognize Arabic letters as word characters). Keep console bundles safe.
+const GAMING_ARABIC_ACCESSORY = /(?:^| )(?:غطاء|اغطيه|مروحه تبريد|حامل جداري|حامل حائط|قارئ disc|قارئ disk|قارئ اقراص|هارد خارجي|قرص صلب خارجي)(?= |$)/;
+const GAMING_STANDALONE_GAME = /^(?:game|games)(?: |$)|(?:^| )شريط(?: |$)/;
 const CONSOLE_WITH_INCLUDED_DRIVE = /\bconsole\b.*\b(?:with|including|includes)\b.*\b(?:disc|disk|optical|blu ray) drive\b/;
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
     if (CONSOLE_WITH_INCLUDED_DRIVE.test(query)) return "console";
-    if (GAMING_ACCESSORY.test(query)) return "accessory";
-    if (GAMING_GAME_PRODUCT.test(query) || /\b(?:game|games)\b/.test(query)) return "game";
+    if (GAMING_ACCESSORY.test(query) || GAMING_ARABIC_ACCESSORY.test(query)) return "accessory";
+    if (GAMING_GAME_PRODUCT.test(query) || GAMING_STANDALONE_GAME.test(query) || /\b(?:game|games)\b/.test(query)) return "game";
     const remainder = query.replace(GAMING_PLATFORM, "").replace(/\b(?:sony|microsoft|nintendo|console|slim|pro|digital|disc|edition|bundle|new|used|refurbished|black|white|\d+(?:gb|tb))\b/g, "").trim();
     return remainder ? "game" : "console";
   }
@@ -274,12 +278,14 @@ export function describeProduct(offer = {}) {
   const isBundle = /\bbundle\b/.test(title);
   let kind = "product";
   if (platform) {
-    if (GAMING_ACCESSORY.test(title + " " + metadata) && !(
+    if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       (isBundle && /\bconsole\b/.test(title)) ||
       (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
     )) kind = "accessory";
-    else if (GAMING_GAME_PRODUCT.test(title) ||
-      /\/playstation-games(?:\/|$)/i.test(String(offer.sourceUrl || ""))) kind = "game";
+    else if ((GAMING_GAME_PRODUCT.test(title) ||
+      GAMING_STANDALONE_GAME.test(title) ||
+      /\/playstation-games(?:\/|$)/i.test(String(offer.sourceUrl || ""))) &&
+      !(isBundle && /\bconsole\b/.test(title))) kind = "game";
     else if (/\bconsole\b/.test(title) || /^CFI[127]\d/i.test(sku) || /\b(?:digital|disc) edition\b/.test(title) || /\b(?:825gb|1tb|2tb)\b/.test(title)) kind = "console";
     else if (/^(?:sony )?ps[45](?: slim| pro)?$/.test(title)) kind = "console";
     else kind = "game";
@@ -294,7 +300,9 @@ const ACCESSORY_TERMS = [
   "case","cover","screen protector","protector","charger","cable","adapter",
   "disc drive","disk drive","optical drive","blu ray drive",
   "atomizer","perfume bottle","empty bottle","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
-  "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه"
+  "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه",
+  "غطاء","اغطيه","مروحه تبريد","حامل جداري","حامل حائط",
+  "قارئ اقراص","هارد خارجي","قرص صلب خارجي"
 ];
 
 // Immutable phrase list: alias normalization is independent of the offer and query.
