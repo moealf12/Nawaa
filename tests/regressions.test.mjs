@@ -472,6 +472,15 @@ test("E1 Amazon WD_BLACK SN850 NVMe drive never becomes a PS5 console", () => {
   assert.equal(assessOfferMatch("PS5",persisted).exactMatch,false,"stale exact flags are re-scored");
 });
 
+test("PS5 SSD search must not certify a non-storage PS5 USB hub",()=>{
+  // RED in actual Chromium customer fixture: 2026-10-17 candidate emitted
+  // both the E1 WD_BLACK SSD and unrelated Mcbazel USB hub as search cards.
+  assert.equal(assessOfferMatch("PS5 SSD",mcbazelHub).exactMatch,false,
+    "Shared PS5 and accessory category are insufficient for exact SSD subtype");
+  assert.equal(assessOfferMatch("PS5 USB hub",wdBlackSn850Ps5Ssd).exactMatch,false);
+  assert.ok(queries.queryMatchReasons("PS5 SSD",mcbazelHub).includes("query_mismatch"));
+});
+
 test("PS5 SSD kind withstands adversarial wording, merchants and price changes",()=>{
   const storageComponentTitles=[
     "WD_BLACK 1TB SN850 NVMe SSD for PS5 Consoles Solid State Drive with Heatsink",
