@@ -2,7 +2,7 @@
 const ALIASES = [
   ["قهوه", "coffee"], ["بن", "coffee"], ["قميص", "shirt"], ["ملابس", "clothing"],
   ["اي فون", "iphone"], ["ايفون", "iphone"], ["اير بودز", "airpods"], ["ايربودز", "airpods"],
-  ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"],
+  ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"], ["للبلايستيشن", "playstation"],
   ["سامسونج", "samsung"], ["جالاكسي", "galaxy"], ["جالكسي", "galaxy"],
   ["ابل", "apple"], ["دايسون", "dyson"], ["سوني", "sony"],
   ["سواروفسكي", "swarovski"], ["سوارفسكي", "swarovski"],
@@ -111,7 +111,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|laptop bags?|stylus|stylus pen|photo paper|printhead|print head)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|laptop bags?|stylus|stylus pen|photo paper|printhead|print head)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -251,13 +251,16 @@ const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)
 const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
 // Console accessories may mention a complete PS5 console in compatibility text.
 // Reject peripheral product nouns before trusting 'Console / Digital Edition'.
-const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure)\b/;
+const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?)\b/;
 const GAMING_GAME_PRODUCT = /\b(?:code in box|digital game code|download code|game card|video game|game disc)\b/;
 // Match already-normalized Arabic tokens using spaces, not JS \b (which does
 // not recognize Arabic letters as word characters). Keep console bundles safe.
-const GAMING_ARABIC_ACCESSORY = /(?:^| )(?:غطاء|اغطيه|مروحه تبريد|حامل جداري|حامل حائط|قارئ disc|قارئ disk|قارئ اقراص|هارد خارجي|قرص صلب خارجي)(?= |$)/;
+const GAMING_ARABIC_ACCESSORY = /(?:^| )(?:غطاء|اغطيه|مروحه تبريد|حامل جداري|حامل حائط|قارئ disc|قارئ disk|قارئ اقراص|هارد خارجي|قرص صلب خارجي|هب|موزع منافذ)(?= |$)/;
 const GAMING_STANDALONE_GAME = /^(?:game|games)(?: |$)|(?:^| )شريط(?: |$)/;
 const CONSOLE_WITH_INCLUDED_DRIVE = /\bconsole\b.*\b(?:with|including|includes)\b.*\b(?:disc|disk|optical|blu ray) drive\b/;
+// An accessory sold as a 'PS5 Console Hub Bundle' is not a console bundle.
+const CONSOLE_HUB_PRODUCT = /\bconsole\s+(?:(?:usb|multiport|expansion)\s+)?hubs?\b/;
+const GENUINE_CONSOLE_BUNDLE = title => /\bbundle\b/.test(title) && /\bconsole\b/.test(title) && !CONSOLE_HUB_PRODUCT.test(title);
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
@@ -279,7 +282,7 @@ export function describeProduct(offer = {}) {
   let kind = "product";
   if (platform) {
     if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
-      (isBundle && /\bconsole\b/.test(title)) ||
+      GENUINE_CONSOLE_BUNDLE(title) ||
       (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
     )) kind = "accessory";
     else if ((GAMING_GAME_PRODUCT.test(title) ||
@@ -299,6 +302,7 @@ export function describeProduct(offer = {}) {
 const ACCESSORY_TERMS = [
   "case","cover","screen protector","protector","charger","cable","adapter",
   "disc drive","disk drive","optical drive","blu ray drive",
+  "usb hub","expansion hub","multiport hub","hub","docking station","port expander","هب","موزع منافذ",
   "atomizer","perfume bottle","empty bottle","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
   "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه",
   "غطاء","اغطيه","مروحه تبريد","حامل جداري","حامل حائط",
@@ -369,7 +373,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
-  const titleHasAccessory = !includedConsoleDrive && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
+  const titleHasAccessory = !includedConsoleDrive && !(description.kind === "console" && GENUINE_CONSOLE_BUNDLE(title)) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
