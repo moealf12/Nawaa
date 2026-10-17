@@ -124,3 +124,54 @@ test('public product category contract preserves console and device/accessory di
     assert.deepStrictEqual(offer,snapshot);
   }
 });
+
+
+// Actual source listings observed in the candidate's own PS5 SSE on
+// 2026-10-17. These items are not standalone PS5 consoles, regardless of
+// source-supplied exactMatch or whether their title mentions 'Console'.
+test('PS5 generic search never certifies observed covers, fans, mounts, HDDs or game codes as consoles',()=>{
+  const observed=[
+    ['Sony Console Covers for PlayStation 5 Slim Edition (Blu-ray/Digital), Chroma Pearl',
+      'https://www.jarir.com/sa-en/sony-chroma-pearl-other-gaming-accessories-644723.html','accessory'],
+    ['KASTWAVE PS5 Cooling Fan Horizontal Compatible With PlayStation 5 Disc & Digital Edition Console - Includes Light',
+      'https://www.amazon.sa/-/en/KASTWAVE-Cooling-Horizontal-Compatible-PlayStation/dp/B09DRTJ194','accessory'],
+    ['PS5 Wall Mount for Playstation 5 Disc Edition and Digital Edition (Mount The Console on Wall Near or Behind TV)',
+      'https://www.amazon.sa/-/en/Playstation-Digital-Invisible-Including-Accessories/dp/B08VW55CSZ','accessory'],
+    ['Seagate Game Drive for PS5, 2 TB, External HDD, 2.5 inch, USB 3.0',
+      'https://www.amazon.sa/-/en/Seagate-External-Officially-Licensed-STLV2000202/dp/B0CQD48RJS','accessory'],
+    ['Grand Theft Auto VI - Digital Edition - PS5 (Code In Box) - Standard',
+      'https://app.virginmegastore.ae/en/gaming/playstation-hardware-accessories/playstation-games/grand-theft-auto-vi---digital-edition---ps5-code-in-box---standard/p/1146304','game'],
+  ].map(([title,sourceUrl,kind])=>({...base,title,sourceUrl,expectedKind:kind,
+    exactMatch:true,matchConfidence:1}));
+  for(const source of observed){
+    const result=assessOfferMatch('PS5',source);
+    assert.equal(result.productKind,source.expectedKind,
+      'must classify the physical item itself: '+source.title);
+    assert.equal(result.exactMatch,false,
+      'console exactMatch must reject accessory/game: '+source.title);
+    assert.ok(result.matchConfidence<0.65,'category mismatch cannot be high-confidence');
+  }
+  const accepted=filterQueryOffers('PS5',[consoleOffer,...observed]);
+  assert.ok(accepted.offers.some(o=>o.sourceUrl===consoleOffer.sourceUrl),
+    'genuine console remains available');
+  assert.ok(accepted.offers.every(o=>!observed.some(item=>item.sourceUrl===o.sourceUrl)),
+    'accessory/game must never enter top console results');
+});
+test('requested PS5 accessories remain discoverable without damaging console bundles',()=>{
+  const accessoryTitles=[
+    ['PS5 Cooling Fan Horizontal Compatible With PlayStation Console','PS5 cooling fan'],
+    ['PS5 Wall Mount for Digital Edition Console','PS5 wall mount'],
+    ['Seagate Game Drive for PS5 2TB External HDD','PS5 game drive'],
+  ];
+  for(const [title,q] of accessoryTitles){
+    const offer={...base,title,sourceUrl:'https://example.com/accessory-'+accessoryTitles.indexOf(accessoryTitles.find(x=>x[0]===title))};
+    assert.equal(assessOfferMatch(q,offer).productKind,'accessory',title);
+    assert.equal(assessOfferMatch('PS5',offer).exactMatch,false);
+  }
+  for(const title of ['Sony PS5 Slim Console Disc Edition 1TB',
+    'Sony PS5 Console Bundle with Disc Drive and Controller 1TB']){
+    const matching=assessOfferMatch('PS5', {...base,title});
+    assert.equal(matching.productKind,'console',title);
+    assert.equal(matching.exactMatch,true,title);
+  }
+});
