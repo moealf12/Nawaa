@@ -261,10 +261,26 @@ const CONSOLE_WITH_INCLUDED_DRIVE = /\bconsole\b.*\b(?:with|including|includes)\
 // An accessory sold as a 'PS5 Console Hub Bundle' is not a console bundle.
 const CONSOLE_HUB_PRODUCT = /\bconsole\s+(?:(?:usb|multiport|expansion)\s+)?hubs?\b/;
 const GENUINE_CONSOLE_BUNDLE = title => /\bbundle\b/.test(title) && /\bconsole\b/.test(title) && !CONSOLE_HUB_PRODUCT.test(title);
+// Explicit console subject + inclusion is different from a "console hub"
+// accessory. Anchoring the console at the start prevents "stand for console
+// with USB hub" and "hub for PS5 console with charger" false positives.
+// The raw title is needed because normalization removes '+' separators.
+const CONSOLE_DEVICE_SUBJECT = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|edition|standard|gaming|\d+(?:gb|tb))){0,7} console\b/;
+const CONSOLE_INCLUSION_LINK = /^(?: with| including| includes| plus)\b/;
+function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normalizedTitle) {
+  const subject = normalizedTitle.match(CONSOLE_DEVICE_SUBJECT);
+  if (!subject || CONSOLE_HUB_PRODUCT.test(normalizedTitle)) return false;
+  const remainder = normalizedTitle.slice(subject[0].length);
+  const explicitlyWith = CONSOLE_INCLUSION_LINK.test(remainder);
+  const explicitlyPlus = /\bconsole\s*\+\s*[\p{L}\p{N}]/iu.test(String(rawTitle));
+  return (explicitlyWith || explicitlyPlus) &&
+    (GAMING_ACCESSORY.test(normalizedTitle) || GAMING_ARABIC_ACCESSORY.test(normalizedTitle));
+}
+
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
-    if (CONSOLE_WITH_INCLUDED_DRIVE.test(query)) return "console";
+    if (CONSOLE_WITH_INCLUDED_DRIVE.test(query) || explicitlyIncludedConsoleAccessory(query)) return "console";
     if (GAMING_ACCESSORY.test(query) || GAMING_ARABIC_ACCESSORY.test(query)) return "accessory";
     if (GAMING_GAME_PRODUCT.test(query) || GAMING_STANDALONE_GAME.test(query) || /\b(?:game|games)\b/.test(query)) return "game";
     const remainder = query.replace(GAMING_PLATFORM, "").replace(/\b(?:sony|microsoft|nintendo|console|slim|pro|digital|disc|edition|bundle|new|used|refurbished|black|white|\d+(?:gb|tb))\b/g, "").trim();
@@ -283,6 +299,7 @@ export function describeProduct(offer = {}) {
   if (platform) {
     if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       GENUINE_CONSOLE_BUNDLE(title) ||
+      explicitlyIncludedConsoleAccessory(title, offer.title) ||
       (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
     )) kind = "accessory";
     else if ((GAMING_GAME_PRODUCT.test(title) ||
@@ -373,7 +390,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
-  const titleHasAccessory = !includedConsoleDrive && !(description.kind === "console" && GENUINE_CONSOLE_BUNDLE(title)) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
+  const titleHasAccessory = !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
