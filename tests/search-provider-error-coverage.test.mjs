@@ -48,6 +48,8 @@ test('provider failures retain honest partial SSE and JSON coverage without miss
             streamOffer:last?.offers?.some(o=>o.provider==='extra-unbxd'&&o.productPrice===2799),
             jsonStatus:json.status,jsonPartial:parsed.coverage?.partial,
             jsonComplete:parsed.coverage?.complete,jsonErrors:parsed.errors?.length||0,
+            streamSummary:last?.coverage?.sourceFailures,
+            jsonSummary:parsed.coverage?.sourceFailures,
           }));
         }catch(error){console.log('FAIL '+error.stack);process.exitCode=1;}
         finally{this.close(()=>process.exit(process.exitCode||0));}
@@ -76,4 +78,8 @@ test('provider failures retain honest partial SSE and JSON coverage without miss
   assert.ok(actual.jsonErrors>=1);
   assert.equal(actual.jsonPartial,true);
   assert.equal(actual.jsonComplete,false);
+  assert.ok(actual.streamSummary?.coreSourcesAffected>=1,'Jarir failure remains a core-source error');
+  assert.ok(actual.jsonSummary?.coreSourcesAffected>=1);
+  assert.equal(actual.streamSummary.errorsReported,actual.streamErrors);
+  assert.equal(actual.jsonSummary.errorsReported,actual.jsonErrors);
 });

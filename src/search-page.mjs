@@ -14,6 +14,7 @@ import {
   offerVariantDimensions,
 } from "./search-core.mjs";
 import {selectSearchStreamResult} from "./search-stream.mjs";
+import {coverageStatusText} from "./search-coverage-status.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -1336,7 +1337,8 @@ async function runSearch(rawQuery) {
         const countries = new Set(data.offers.map((o) => o.merchantCountryCode).filter(Boolean)).size;
         const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);
         els.status.textContent = `بحث حي: ${data.offers.length} عرضًا · ${countries} دول · ${data.providersConfigured?.length || 0} موصلات · ${attempted} أسواق/متاجر تم فحصها`;
-        if (data.errors?.length) els.status.textContent += " · نتائج جزئية: تعذر فحص بعض المصادر";
+        const coverageNotice=coverageStatusText(data.coverage,data.errors);
+        if (coverageNotice) els.status.textContent += " · " + coverageNotice;
         else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";
         return;
       }
@@ -1345,15 +1347,20 @@ async function runSearch(rawQuery) {
       const incomplete = Boolean(data.coverage?.partial || data.coverage?.deadlineExceeded ||
         Number(data.coverage?.providersPending) > 0 || data.errors?.length);
       state.product = null;
+      const coverageNotice=coverageStatusText(data.coverage,data.errors);
       els.status.textContent = incomplete
-        ? `بحث جزئي · تعذر إكمال بعض المصادر · فُحص ${attempted} أسواق/متاجر`
+        ? `${coverageNotice || "تغطية البحث جزئية"} · فُحص ${attempted} أسواق/متاجر`
         : `لم نجد عروضًا حية · تم فحص ${attempted} أسواق/متاجر`;
       els.results.innerHTML = `
         <div class="no-match">
           <span class="mini-kicker">${incomplete ? "PARTIAL SEARCH" : "NO LIVE OFFERS"}</span>
-          <h2>${incomplete ? "لم يكتمل فحص جميع المصادر بعد." : "ما ظهر لنا عرض حي لهذا البحث."}</h2>
+          <h2>${incomplete
+            ? (data.coverage?.deadlineExceeded || Number(data.coverage?.providersPending)>0
+              ? "انتهى الوقت قبل اكتمال فحص جميع المصادر."
+              : "لم تظهر عروض، وتعذر التحقق من بعض المصادر.")
+            : "ما ظهر لنا عرض حي لهذا البحث."}</h2>
           <p>${incomplete
-            ? "بعض المتاجر تأخرت أو تعذر الاتصال بها؛ عدم ظهور عروض هنا لا يعني أن المنتج غير متوفر."
+            ? "اكتمل فحص المصادر المستجيبة، لكن بعض المصادر لم تقدم نتائج يمكن التحقق منها؛ قد تتوفر عروض أخرى لم تظهر في هذا البحث."
             : "تم تنفيذ البحث على المصادر المتاحة بدون الرجوع إلى بيانات Demo."}</p>
           <button class="primary-action" id="retryLiveSearch">أعد البحث</button>
         </div>

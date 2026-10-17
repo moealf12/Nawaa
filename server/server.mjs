@@ -26,6 +26,7 @@ import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonC
 import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontById } from "./providers/free-storefronts.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
 import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
+import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
@@ -347,6 +348,7 @@ async function searchExpansion(query, depth) {
         responseOffers:plan.returnLimit,
       },
       fallbackUsed:false,
+      sourceFailures:summarizeSourceFailures(errors),
     },
     providers,
     normalizedQuery:query,
@@ -377,6 +379,7 @@ function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
       complete:false,
       providersCompleted:progress.completed||0,
       providersPending:progress.pending||0,
+      sourceFailures:summarizeSourceFailures(errors),
     },
   };
   if (PROFILE_SEARCH_STREAM) console.log("SEARCH_STREAM_PHASE "+JSON.stringify({
@@ -507,6 +510,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
       deadlineExceeded,
       streamDeadlineMs,
       providersPending,
+      sourceFailures:summarizeSourceFailures(errors),
       acquisitionDepth:plan.depth,
       moreAvailable:plan.depth<MAX_SEARCH_DEPTH,
     },
@@ -708,6 +712,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
       requestDeadlineMs,
+      sourceFailures:summarizeSourceFailures(errors),
     },
     providers,
     normalizedQuery: query,
