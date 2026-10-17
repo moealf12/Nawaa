@@ -163,6 +163,48 @@ test("accessory bundles and compatibility-only console mentions cannot be promot
   assert.equal(res.productKind,"accessory");
 });
 
+
+// E1: independently verified 2026-10-17 Sharaf DG UAE product pages.
+// These are TWO actual merchant retail packages with same Sony chassis SKU,
+// not synthetic merchant titles; neither URL lists a current price (out of stock).
+const sharafHeadsetConsole = {
+  title:"Sony PlayStation 5 Disc Console White – Middle East Version + PS5 PULSE 3D Wireless Headset + PS5 DualSense Wireless Controller",
+  merchant:"Sharaf DG UAE",providerMarket:"sharafdg-ae",condition:"new",
+  sourceUrl:"https://uae.sharafdg.com/product/sony-playstation-5-console-ps5-pulse-3d-wireless-headset-ps5-dualsense-wireless-controller/",
+  specs:{brand:"Sony",modelNumber:"CFI1016A01",storage:"825GB",merchantItemNumber:"S100581518",regionVersion:"Middle East",deviceType:"Home Console"},
+};
+const sharafRemoteConsole = {
+  ...sharafHeadsetConsole,
+  title:"Sony PlayStation 5 Disc Console White – Middle East Version + PS5 PULSE 3D Wireless Headset + PS5 DualSense Wireless Controller + PS5 Media Remote",
+  sourceUrl:"https://uae.sharafdg.com/product/sony-playstation-5-console-ps5-pulse-3d-wireless-headset-ps5-dualsense-wireless-controller-ps5-media-remote/",
+  specs:{...sharafHeadsetConsole.specs,merchantItemNumber:"S100581519"},
+};
+
+test("actual Sharaf DG console-plus-accessories listings stay consoles without literal bundle",()=>{
+  for(const offer of [sharafHeadsetConsole,sharafRemoteConsole]){
+    const d=queries.describeProduct(offer);
+    assert.equal(d.kind,"console",offer.sourceUrl);
+    assert.equal(d.isBundle,true,"Actual merchant package includes PULSE headset and controller");
+    const match=assessOfferMatch("PS5",offer);
+    assert.equal(match.productKind,"console",offer.title);
+    assert.equal(match.exactMatch,true,offer.title);
+  }
+  const groups=groupComparableOffers([sharafHeadsetConsole,sharafRemoteConsole].map(o=>({...o,...assessOfferMatch("PS5",o)})));
+  assert.equal(groups.length,2,"Remote included in S100581519, absent in S100581518");
+  assert.deepEqual(groups.map(x=>x.offers.length).sort(),[1,1]);
+  assert.equal(sharafHeadsetConsole.specs.modelNumber,sharafRemoteConsole.specs.modelNumber);
+});
+
+test("authentic Noon cooling stand mentioning Sony PlayStation 5 console stays accessory",()=>{
+  const stand={
+    title:"XForm PS5 Stand and Cooling Station with Dual Controller Charging Station for Sony PlayStation 5 Console, PS5 Accessories Incl. Controller Charger, Cooling fan, Headset holder ( Fit PS5 FAT , SLIM ,SLIM PRO Versions) Black",
+    merchant:"Noon Saudi",
+    sourceUrl:"https://supermall.noon.com/saudi-en/ps5-stand-and-cooling-station-with-dual-controller-charging-station-for-sony-playstation-5-console-ps5-accessories-incl-controller-charger-cooling-fan-headset-holder-fit-ps5-fat-slim-slim-pro-versions-black/ZABDD93C1403C45E9B096Z/p/",
+    condition:"new",
+  };
+  assert.equal(queries.describeProduct(stand).kind,"accessory");
+  assert.equal(assessOfferMatch("PS5",stand).exactMatch,false);
+});
 test("live Jarir PS5 Disc Drive is not a 649 SAR console", () => {
   const separateDrives=[
     "Sony Disc Drive for PlayStation 5 Digital Edition Slim, White",
