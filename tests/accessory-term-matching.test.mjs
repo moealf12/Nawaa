@@ -222,3 +222,15 @@ test('Arabic PS5 accessory queries keep intentionally requested peripheral resul
     assert.equal(assessOfferMatch(q,record).productKind,'accessory','item must be accessory for '+title);
   }
 });
+
+
+test('Arabic iPhone covers are not listed as complete iPhone 17 phones',()=>{
+  const phone={...base,title:'Apple iPhone 17 256GB Black',sourceUrl:'https://example.com/iphone17'};
+  const cover={...base,title:'غطاء هاتف ايفون 17 اسود',sourceUrl:'https://example.com/iphone17-arabic-cover'};
+  for(const query of ['iPhone 17','ايفون 17','iPhone 17 256GB']){
+    const result=filterQueryOffers(query,[phone,cover]);
+    assert.ok(result.offers.some(x=>x.sourceUrl===phone.sourceUrl),'genuine handset must remain: '+query);
+    assert.ok(!result.offers.some(x=>x.sourceUrl===cover.sourceUrl),'phone cover must not be exact: '+query);
+    assert.equal(assessOfferMatch(query,cover).exactMatch,false);
+  }
+});
