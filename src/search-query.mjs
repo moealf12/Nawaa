@@ -269,10 +269,12 @@ const CONSOLE_DEVICE_SUBJECT = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|ed
 const CONSOLE_INCLUSION_LINK = /^(?: with| including| includes| plus)\b/;
 function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normalizedTitle) {
   const subject = normalizedTitle.match(CONSOLE_DEVICE_SUBJECT);
-  if (!subject || CONSOLE_HUB_PRODUCT.test(normalizedTitle)) return false;
+  // Normalization removes '+' and can make a real "Console + USB Hub"
+  // indistinguishable from the peripheral noun "Console USB Hub".
+  const explicitlyPlus = /\bconsole\s*\+\s*[\p{L}\p{N}]/iu.test(String(rawTitle));
+  if (!subject || (CONSOLE_HUB_PRODUCT.test(normalizedTitle) && !explicitlyPlus)) return false;
   const remainder = normalizedTitle.slice(subject[0].length);
   const explicitlyWith = CONSOLE_INCLUSION_LINK.test(remainder);
-  const explicitlyPlus = /\bconsole\s*\+\s*[\p{L}\p{N}]/iu.test(String(rawTitle));
   return (explicitlyWith || explicitlyPlus) &&
     (GAMING_ACCESSORY.test(normalizedTitle) || GAMING_ARABIC_ACCESSORY.test(normalizedTitle));
 }
