@@ -94,6 +94,56 @@ test("hub matching adversarial cases preserve actual consoles and accessory inte
   assert.equal(queries.parseSearchIntent("هب USB للبلايستيشن 5").kind,"accessory");
 });
 
+// Real externally source-backed positive control:
+// https://zgames.ae/ps5-digital-console-kgaming-bag-k10-headset-usb-hub-bundle
+// PS5-5-AE includes an actual PS5 Digital Edition console and accessories.
+// "with" variants below are deliberately synthetic adversarial rephrasings,
+// not claims that ZGames published a different title.
+test("console with included USB hub stays a console without literal bundle token",()=>{
+  const sourceBacked={
+    title:"PS5 Digital Console + KGaming Bag + K10 Headset + USB Hub Bundle",
+    merchant:"ZGames UAE",sourceUrl:"https://zgames.ae/ps5-digital-console-kgaming-bag-k10-headset-usb-hub-bundle",
+    currency:"AED",productPrice:2499,condition:"new",
+    specs:{brand:"Sony",modelNumber:"ps5-5-ae"},
+  };
+  assert.equal(queries.describeProduct(sourceBacked).kind,"console");
+  assert.equal(assessOfferMatch("PS5",sourceBacked).exactMatch,true);
+  const consoleWithIncludedHub=[
+    "Sony PS5 Slim Console with USB Hub",
+    "PS5 Digital Console with a USB Hub",
+    "Sony PlayStation 5 Console including USB Hub",
+    "PS5 Console + USB Hub",
+  ];
+  for(const title of consoleWithIncludedHub){
+    const offer={...sourceBacked,title,specs:{brand:"Sony",modelNumber:"CFI2116B01Y"}};
+    assert.equal(queries.describeProduct(offer).kind,"console",title);
+    assert.equal(assessOfferMatch("PS5",offer).exactMatch,true,title);
+  }
+  // Query with explicit console + included peripheral should request a console;
+  // an accessory-only query must continue to request the accessory.
+  assert.equal(queries.parseSearchIntent("PS5 Console with USB Hub").kind,"console");
+  assert.equal(queries.parseSearchIntent("PS5 USB Hub").kind,"accessory");
+});
+
+test("accessory bundles and compatibility-only console mentions cannot be promoted",()=>{
+  const peripherals=[
+    "PS5 Console Hub Bundle",
+    "PS5 Console Hub with Charging Adapter",
+    "PS5 USB Hub with Controller Charging Bundle",
+    "PS5 Cooling Stand for Console with USB Hub",
+    "USB Hub for PS5 Slim Console with Controller Charger",
+  ];
+  for(const title of peripherals){
+    const offer={title,condition:"new",merchant:"Unspecified sample",productPrice:2799};
+    assert.equal(queries.describeProduct(offer).kind,"accessory",title);
+    assert.equal(assessOfferMatch("PS5",offer).exactMatch,false,title);
+  }
+  const oldPersisted={...mcbazelHub,dataKind:"persisted",exactMatch:true,matchConfidence:1};
+  const res=assessOfferMatch("PS5",oldPersisted);
+  assert.equal(res.exactMatch,false,"persisted flags must be superseded by current classification");
+  assert.equal(res.productKind,"accessory");
+});
+
 test("live Jarir PS5 Disc Drive is not a 649 SAR console", () => {
   const separateDrives=[
     "Sony Disc Drive for PlayStation 5 Digital Edition Slim, White",
