@@ -59,7 +59,19 @@ function searchPayload(q,cursor) {
     const packaged={...consoleOffer,merchant:'Fixture Package Merchant',
       title:'Sony PS5 Slim Disc Console with USB Hub 1TB',productPrice:2899,
       sourceUrl:'https://www.example.org/ps5-console-with-included-hub'};
-    const raw=[hub,consoleOffer,packaged];
+    // E1 merchant evidence from the Sharaf DG UAE page, retrieved in Oct 2026.
+    // Page snapshot showed AED 2,599 sold by Gamez Geek LLC FZ, Item S200794860;
+    // this isolated replay is NOT a claim about current stock/price.
+    const sharafActual={
+      merchant:'Gamez Geek LLC FZ',merchantCountryCode:'AE',
+      merchantCountryNameAr:'الإمارات',providerMarket:'sharafdg-ae',
+      title:'Sony PlayStation 5 Digital Console White + PS5 PULSE 3D wireless headset + PS5 Dual Sense Wireless Controller',
+      productPrice:2599,currency:'AED',condition:'new',
+      sourceUrl:'https://uae.sharafdg.com/product/sony-playstation-5-digital-console-ps5-pulse-3d-wireless-headset-ps5-dual-sense-wireless-controller/',
+      image:null,availability:'unknown',dataKind:'live',
+      specs:{brand:'Sony',deviceType:'Home Console',modelNumber:'PlayStation PS5',color:'White',merchantItemNumber:'S200794860'},
+    };
+    const raw=[hub,consoleOffer,packaged,sharafActual];
     const offers=raw.map(o=>({...o,...assessOfferMatch(q,o)}));
     return {offers,errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
@@ -406,17 +418,30 @@ try{
     hubFixture?.productPrice===34.79&&hubFixture?.specs?.modelNumber==='B0B1Q2NQGL',
     {title:hubFixture?.title,kind:hubFixture?.productKind,exact:hubFixture?.exactMatch});
   assertCheck('actual_console_remains_visible_while_usb_hub_excluded',
-    consoleOnly.length===2&&consoleOnly.every(x=>/PS5/i.test(x))&&
+    consoleOnly.length===3&&consoleOnly.every(x=>/PS5|PlayStation 5/i.test(x))&&
     !consoleOnly.some(x=>/Mcbazel|USB Hub/i.test(x)),consoleOnly);
   const exactPS5=searchPayload('PS5',null).offers.filter(o=>o.exactMatch===true);
   const standalone=exactPS5.find(o=>o.merchant==='Jarir');
   const includedHub=exactPS5.find(o=>o.merchant==='Fixture Package Merchant');
   assertCheck('included_hub_console_and_standalone_keep_distinct_product_cards',
-    exactPS5.length===2&&consoleOnly.length===2&&
+    exactPS5.length===3&&consoleOnly.length===3&&
     describeProduct(includedHub).isBundle===true&&
     describeProduct(standalone).isBundle===false&&
     includedHub.specs.modelNumber===standalone.specs.modelNumber,
     {exactPS5:exactPS5.map(o=>({title:o.title,merchant:o.merchant,exact:o.exactMatch})),consoleOnly});
+  const sharaf=searchPayload('PS5',null).offers.find(o=>o.providerMarket==='sharafdg-ae');
+  assertCheck('real_sharaf_uae_bundle_kept_as_console_in_customer_results',
+    sharaf?.exactMatch===true&&sharaf?.productKind==='console'&&
+    describeProduct(sharaf).isBundle===true&&sharaf?.productPrice===2599&&
+    sharaf?.currency==='AED'&&
+    consoleOnly.some(t=>t.includes('PULSE 3D'))&&
+    sharaf?.sourceUrl?.includes('sharafdg.com/product/'),
+    {kind:sharaf?.productKind,exact:sharaf?.exactMatch,title:sharaf?.title,displayed:consoleOnly});
+  await ps5IdentityTab.setViewportSize({width:390,height:844});
+  const sharafMobile=await ps5IdentityTab.evaluate(()=>({
+    viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
+  assertCheck('real_sharaf_bundle_mobile_no_overflow',sharafMobile.scrollWidth<=sharafMobile.viewport+4,sharafMobile);
+  await ps5IdentityTab.screenshot({path:'browser-artifacts/fixture-ps5-sharaf-bundle-mobile.png',fullPage:true});
   await ps5IdentityTab.screenshot({path:'browser-artifacts/fixture-ps5-console-vs-usb-hub.png',fullPage:true});
   const hubShoppingTab=await navigate('PS5 USB hub');
   await hubShoppingTab.locator('#results .match-result-card').first().waitFor();
