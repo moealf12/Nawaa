@@ -815,12 +815,21 @@ function productImageMarkup(offer, group, title, fallbackClass) {
   return '<img src="' + escapeHtml(images[0]) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" data-image-options="' + escapeHtml(JSON.stringify(images)) + '" data-image-index="0" onerror="const urls=JSON.parse(this.dataset.imageOptions);const next=Number(this.dataset.imageIndex)+1;this.dataset.imageIndex=next;if(next &lt; urls.length){this.src=urls[next]}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';}">' + fallback;
 }
 
-function exactMatchCard(group, selectedGroup, comparisonMarkup = "") {
+function normalizedCardDisplayName(offer) {
+  return productDisplayTitle(offer).normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDisplayNames = new Set()) {
   const available = (group.offers || []).filter(item => item.availability !== "out_of_stock" && item.canShipToSaudi !== false);
   const priced = available.filter(item => Number.isFinite(item.productPrice)).sort((a,b)=>a.productPrice-b.productPrice);
   const offer = priced[0] || group.bestOffer || group.offers?.[0];
   if (!offer) return "";
   const title = productDisplayTitle(offer);
+  // Do not merge distinct manufacturer model numbers merely to avoid a
+  // duplicate-looking card. Explain why visually identical cards stay separate.
+  const variantClarifier = repeatedDisplayNames.has(normalizedCardDisplayName(offer))
+    ? `<small class="card-model-identifier">رقم الموديل: ${escapeHtml(String(offer.specs?.modelNumber || "غير مذكور"))} · ${escapeHtml(offer.merchant || "المتجر غير محدد")} (بحسب المتجر)</small>`
+    : "";
   const uniqueMerchants = new Set((group.offers || []).map(item => item.merchant).filter(Boolean)).size;
   const countries = [...new Map((group.offers || []).filter(item => item.merchantCountryCode).map(item => [item.merchantCountryCode,item.merchantCountryNameAr || item.merchantCountryCode])).entries()];
   const selected = selectedGroup?.key === group.key;
@@ -836,6 +845,7 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "") {
       <div class="match-card-copy">
         <span class="mini-kicker">${escapeHtml(categoryLabel(productCategory(offer)))}</span>
         <strong>${escapeHtml(title)}</strong>
+        ${variantClarifier}
         <div class="card-specs">${specs.map(([label,value])=>`<span>${escapeHtml(label)}: ${escapeHtml(value)}</span>`).join("")}<span>${conditionDisplay(offer.condition || "unknown")}</span></div>
         <div class="card-coverage"><small>${group.offers.length} عروض · ${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
           <span class="card-countries">${countries.slice(0,3).map(([code,name])=>`<span aria-label="${escapeHtml(name)}" title="${escapeHtml(name)}">${countryFlag(code)}</span>`).join("")}${countries.length > 3 ? `<small>+${countries.length-3}</small>` : ""}</span>
@@ -905,6 +915,21 @@ function renderProduct(product, query) {
   const selectorGroups = state.selectedGroupKey ? exactGroups.filter(group => group.key === state.selectedGroupKey) : discoverySections.flatMap(section=>section.groups);
   const selectorGroupKeys = new Set(exactGroups.map((group) => group.key));
   const relatedGroups = groups.filter((group) => !selectorGroupKeys.has(group.key));
+  // Duplicate-looking names can refer to distinct regional manufacturer
+  // models or unverified merchant SKUs. Annotate rather than merge them.
+  const cardNameCounts = new Map();
+  for (const group of exactGroups) {
+    const available = (group.offers || []).filter(item =>
+      item.availability !== "out_of_stock" && item.canShipToSaudi !== false);
+    const priced = available.filter(item => Number.isFinite(item.productPrice))
+      .sort((a,b)=>a.productPrice-b.productPrice);
+    const representative = priced[0] || group.bestOffer || group.offers?.[0];
+    if(!representative) continue;
+    const name=normalizedCardDisplayName(representative);
+    cardNameCounts.set(name,(cardNameCounts.get(name)||0)+1);
+  }
+  const repeatedDisplayNames = new Set([...cardNameCounts.entries()]
+    .filter(([,count])=>count>1).map(([name])=>name));
 
   const selector = buildVariantSelectorState(selectorGroups, state.selectorSelection);
   state.selectorSelection = { ...selector.selection };
@@ -1058,7 +1083,7 @@ function renderProduct(product, query) {
       const limit = state.visibleCounts[section.key] || 10;
       return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
         <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
-        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup)).join('')}</div>
+        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup,repeatedDisplayNames)).join('')}</div>
         ${section.groups.length > limit ? `<button type="button" class="show-category" data-show-category="${escapeHtml(section.key)}">عرض المزيد من ${escapeHtml(section.label)} (${section.groups.length-limit})</button>` : ''}
       </section>`;
     }).join('')}
