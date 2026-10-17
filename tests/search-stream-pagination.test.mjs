@@ -7,6 +7,7 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
   const script=`
     import http from 'node:http';
     import dns from 'node:dns/promises';
+    import {encodeSearchCursor} from './server/search-cursor.mjs';
     dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
     process.env.PORT='0';
     process.env.SEARCH_REQUEST_DEADLINE_MS='10000';
@@ -42,6 +43,17 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
             throw Error('sse_cursor_not_accepted');
           const wrong=await fetchLocal(port,'/api/search?q=ps5&cursor='+encodeURIComponent(snapshot.nextCursor));
           if(wrong.status!==400)throw Error('cursor_not_bound_to_original_query');
+          const raw=String(snapshot.nextCursor);
+          const [body,sig]=raw.split('.');
+          const tampered=(body[0]==='A'?'B':'A')+body.slice(1)+'.'+sig;
+          const altered=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query)+'&cursor='+encodeURIComponent(tampered));
+          if(altered.status!==400)throw Error('modified_cursor_signature_accepted');
+          const expired=encodeSearchCursor(query,1,{now:Date.now()-16*60*1000});
+          const expiredResult=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query)+'&cursor='+encodeURIComponent(expired));
+          if(expiredResult.status!==400)throw Error('expired_cursor_accepted');
+          const premature=encodeSearchCursor(query,1,{now:Date.now()+120000});
+          const futureResult=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query)+'&cursor='+encodeURIComponent(premature));
+          if(futureResult.status!==400)throw Error('future_dated_cursor_accepted');
           const json=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query));
           if(json.status!==200)throw Error('plain_search_failed');
           const cached=await fetchLocal(port,'/api/search/stream?q='+encodeURIComponent(query));
@@ -50,6 +62,7 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
           console.log('RESULT '+JSON.stringify({
             cursor:true,expansionDepth:expanded.coverage.acquisitionDepth,
             nextCursor:true,wrongQueryRejected:true,
+            tamperedRejected:true,expiredRejected:true,futureRejected:true,
             cachedCursor:true,cachedMode:cachedLast.cache?.mode||null,
           }));
         } catch(e){console.log('FAIL '+e.stack);process.exitCode=1}
@@ -71,5 +84,8 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
   assert.equal(result.expansionDepth,1);
   assert.equal(result.nextCursor,true);
   assert.equal(result.wrongQueryRejected,true);
+  assert.equal(result.tamperedRejected,true);
+  assert.equal(result.expiredRejected,true);
+  assert.equal(result.futureRejected,true);
   assert.equal(result.cachedCursor,true);
 });

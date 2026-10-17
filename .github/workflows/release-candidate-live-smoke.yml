@@ -15,6 +15,7 @@ on:
       - 'server/providers/extra-unbxd.mjs'
       - 'scripts/probe-extra-fields.mjs'
       - 'tests/extra-unbxd-json-parity.test.mjs'
+      - 'tests/search-stream-pagination.test.mjs'
       - '.github/workflows/release-candidate-live-smoke.yml'
   workflow_dispatch:
 permissions:
@@ -59,7 +60,7 @@ jobs:
       - name: Check out the pre-optimization baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: f529bf03ee53fc3e7a7976206c2952d61ab0c6b5
+          ref: 5f73bfdb2b4357cfdaa0d5801a8d9996e987c55e
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline

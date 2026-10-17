@@ -40,6 +40,17 @@ const initial=Array.from({length:25},(_,i)=>offer(i+1));
 const extra=Array.from({length:5},(_,i)=>offer(i+26));
 const corsHeaders={'access-control-allow-origin':'*'};
 function searchPayload(q,cursor) {
+  if(q.includes('fixture-iphone-models')) {
+    const template=offer(1);
+    const first={...template,merchant:'eXtra',title:'Apple iPhone 17 256GB Black',
+      sourceUrl:'https://www.example.org/iphone-model-a',
+      specs:{brand:'Apple',deviceType:'iPhone 17',storage:'256GB',color:'Black',modelNumber:'MG674AH/A'}};
+    const second={...first,merchant:'Jarir',
+      sourceUrl:'https://www.example.org/iphone-model-b',
+      specs:{...first.specs,modelNumber:'MG674LL/A'}};
+    return {offers:[first,second],errors:[],providers:[],
+      coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
+  }
   if(q.includes('fixture-no-results')) return {
     offers:[],errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
@@ -194,6 +205,22 @@ try{
   assertCheck('mobile_no_horizontal_overflow',mobile.scrollWidth<=mobile.viewport+4,mobile);
   assertCheck('mobile_image_fallback_visible',mobile.fallback==='grid',mobile);
   await imgTab.screenshot({path:'browser-artifacts/fixture-mobile-image-fallback.png',fullPage:true});
+  // The same visible phone/model/storage/color may have DIFFERENT manufacturer
+  // codes: preserve separate groups, and show the distinguishing codes.
+  const duplicated=await navigate('fixture-iphone-models');
+  await duplicated.locator('#results .match-result-card').first().waitFor();
+  const duplicateCards=duplicated.locator('#results .match-result-card');
+  const duplicateCount=await duplicateCards.count();
+  const labels=await duplicated.locator('#results .card-model-identifier').allTextContents();
+  const titles=await duplicated.locator('#results .match-card-copy strong').allTextContents();
+  assertCheck('identical_phone_label_but_distinct_skus_stay_separate',duplicateCount===2,
+    {duplicateCount,titles});
+  assertCheck('iphone_ambiguous_variant_labels_disclose_model_codes',
+    labels.length===2&&labels.some(x=>x.includes('MG674AH/A'))&&
+    labels.some(x=>x.includes('MG674LL/A')),{labels});
+  assertCheck('phone_identity_not_merged_by_title',
+    new Set(titles.map(x=>x.toLowerCase().trim())).size===1,{titles});
+  await duplicated.screenshot({path:'browser-artifacts/fixture-iphone-distinct-sku-cards.png',fullPage:true});
   assertCheck('no_browser_script_errors',browserErrors.length===0,browserErrors);
   summary.counts={...summary.counts,filtered,searchRequests,cursorRequests,blockedImages};
   summary.mobile=mobile;
