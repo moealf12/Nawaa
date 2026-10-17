@@ -173,7 +173,7 @@ try{
   globalThis.fetch=async(input,init)=>{
     const response=await originalFetch(input,init);
     try{
-      const u=new URL(typeof input==='string'?input:input.url);
+      const u=new URL(typeof input==='string'?input:input instanceof URL?input.href:input?.url);
       if(u.hostname==='ac.cnstrc.com'&&u.pathname.startsWith('/v1/search/')&&response.ok){
         const length=Number(response.headers.get('content-length')||0);
         if(!length||length<=2_000_000){
