@@ -296,7 +296,7 @@ export function describeProduct(offer = {}) {
   const metadata = normalizeSearchQuery([offer.specs?.deviceType, offer.specs?.series].filter(Boolean).join(" "));
   const platform = title.match(GAMING_PLATFORM)?.[0] || metadata.match(GAMING_PLATFORM)?.[0] || null;
   const sku = String(offer.specs?.modelNumber || "").replace(/[^a-z0-9]/gi, "");
-  const isBundle = /\bbundle\b/.test(title);
+  const isBundle = /\bbundle\b/.test(title) || explicitlyIncludedConsoleAccessory(title, offer.title);
   let kind = "product";
   if (platform) {
     if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
