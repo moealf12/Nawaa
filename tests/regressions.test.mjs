@@ -518,3 +518,83 @@ test("PS5 SSD kind withstands adversarial wording, merchants and price changes",
   const groups=groupComparableOffers([console,wdBlackSn850Ps5Ssd].map(x=>({...x,...assessOfferMatch("PS5",x)})));
   assert.equal(groups.length,2,"SSD and PS5 console must never group as one physical product");
 });
+
+
+// v15.12 E1: real Saudi merchant pages checked on 2026-10-17.
+// Listed prices are indexed page observations, not current market-price claims.
+// No manufacturer SKU or exact observedAt is invented.
+const noonPs5Heatsink = {
+  title:"Heatsink for PS5 NVMe SSD",
+  merchant:"GLOTRENDS",providerMarket:"noon-sa",currency:"SAR",productPrice:64,
+  sourceIdentifier:"Z78E6BD03E487FC7156B1Z",
+  sourceUrl:"https://www.noon.com/saudi-en/heatsink-for-ps5-nvme-ssd/Z78E6BD03E487FC7156B1Z/p/",
+  condition:"new",
+};
+const noonExceforeHeatsink = {
+  title:"M.2 Heatsink for PS5, NVMe SSD Aluminum Heatsink with 4 Thermal Pads for Playstation 5 Internal M.2 Gen4 NVME PCIE 4.0 SSD with Graphene and Silicone Thermal Pads",
+  merchant:"ZARIO",providerMarket:"noon-sa",currency:"SAR",productPrice:156,
+  sourceIdentifier:"Z93526034EEDFE197439CZ",
+  sourceUrl:"https://www.noon.com/saudi-en/m-2-heatsink-for-ps5-nvme-ssd-aluminum-heatsink-with-4-thermal-pads-for-playstation-5-internal-m-2-gen4-nvme-pcie-4-0-ssd-with-graphene-and-silicone-thermal-pads/Z93526034EEDFE197439CZ/p/",
+  specs:{modelNumber:"NA8292"},condition:"new",
+};
+const geekayWdBlackSn850p = {
+  title:"WD_BLACK 1TB SN850P NVMe SSD with Heatsink",
+  merchant:"Geekay Saudi",providerMarket:"geekay-sa",currency:"SAR",productPrice:1049,
+  sourceUrl:"https://www.geekay.com/saudi_en/sandisk-wd-black-sn850p-nvme-ssd-with-heatsink",
+  specs:{brand:"Western Digital",storage:"1TB"},condition:"new",
+};
+const jarirRealDigConsole = {
+  title:"Sony PlayStation 5 Slim (DIG) 825 GB SSD, White",
+  merchant:"Jarir",providerMarket:"jarir-sa",currency:"SAR",productPrice:2529,
+  sourceIdentifier:"668751",
+  sourceUrl:"https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-668751.html",
+  specs:{brand:"Sony",modelNumber:"CFI2116B01Y",storage:"825GB"},condition:"new",
+};
+
+test("v15.12 E1 real Noon PS5 heatsinks are not exact complete SSDs",()=>{
+  for(const offer of [noonPs5Heatsink,noonExceforeHeatsink]){
+    assert.equal(queries.describeProduct(offer).kind,"accessory",offer.sourceUrl);
+    assert.equal(assessOfferMatch("PS5",offer).exactMatch,false,offer.title);
+    assert.equal(assessOfferMatch("PS5 SSD",offer).exactMatch,false,
+      "heatsink-only must never be certified as an SSD "+offer.title);
+    assert.ok(assessOfferMatch("PS5 SSD heatsink",offer).exactMatch,
+      "explicit heatsink shopper should still find the accessory "+offer.title);
+    assert.equal(offer.currency,"SAR");
+    assert.ok(offer.sourceUrl.includes(offer.sourceIdentifier));
+  }
+  assert.equal(noonPs5Heatsink.productPrice,64);
+  assert.equal(noonExceforeHeatsink.productPrice,156);
+});
+
+test("v15.12 E1 real complete SSD and authentic PS5 console remain discoverable",()=>{
+  assert.equal(queries.describeProduct(geekayWdBlackSn850p).kind,"accessory");
+  assert.equal(assessOfferMatch("PS5",geekayWdBlackSn850p).exactMatch,false);
+  // The E1 title has no PS5 word; do not require a query-specific exactMatch
+  // based on brand claims or the compatibility description not in title.
+  assert.equal(queries.describeProduct(jarirRealDigConsole).kind,"console");
+  assert.equal(assessOfferMatch("PS5",jarirRealDigConsole).exactMatch,true);
+  assert.equal(jarirRealDigConsole.specs.modelNumber,"CFI2116B01Y");
+  assert.equal(jarirRealDigConsole.productPrice,2529);
+});
+
+test("v15.12 E2 source-derived SSD subcomponents and abbreviations keep physical identity",()=>{
+  const derivedFromNoon=[
+    {...noonPs5Heatsink,title:"PS5 SSD Heatsink for NVMe M.2 storage"},
+    {...noonPs5Heatsink,title:"M.2 SSD heatsink only for PS5"},
+    {...noonPs5Heatsink,title:"PS5 NVMe SSD cooling plate replacement"},
+    {...noonPs5Heatsink,title:"PS5 NVMe SSD enclosure case"},
+  ];
+  for(const offer of derivedFromNoon){
+    assert.equal(assessOfferMatch("PS5 SSD",offer).exactMatch,false,offer.title);
+  }
+  const shortenedRealConsole={...jarirRealDigConsole,
+    title:"Sony PlayStation 5 Slim 825 GB SSD, White"};
+  assert.equal(queries.describeProduct(shortenedRealConsole).kind,"console",
+    "manufacturer-backed actual PS5 must remain console if seller drops DIG");
+  assert.equal(assessOfferMatch("PS5",shortenedRealConsole).exactMatch,true);
+  assert.equal(assessOfferMatch("PS5 SSD",shortenedRealConsole).exactMatch,false,
+    "embedded console storage does not turn the console into a standalone SSD");
+  const unknownBrand={...noonPs5Heatsink,merchant:"Unrelated Merchant",productPrice:5000};
+  assert.equal(assessOfferMatch("PS5 SSD",unknownBrand).exactMatch,false);
+});
+
