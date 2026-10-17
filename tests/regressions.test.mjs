@@ -635,3 +635,66 @@ test("v15.12 E3 contradictory metadata cannot promote a real heatsink to console
 // bounded hypothesis, NOT a certified source defect or a green product test.
 // Do not alter production rules for unobserved contradictory merchant metadata.
 test.todo("E3: source-verify whether genuine CFI console records carry contradictory storage-accessory metadata");
+
+
+// v15.13 E1: separate actual Jarir Saudi product pages independently verified
+// on 2026-10-17. Manufacturer numbers and retailer item numbers are from
+// product-page specifications (not assumed Constructor API metadata).
+// Prices below are observed page values, NOT promises of current live quotes.
+const jarirDigWithDualSenseBundleE1={
+  title:"Sony PlayStation 5 Slim (DIG) 825 GB SSD, Bundle with DualSense Wireless Controller, White",
+  merchant:"Jarir",providerMarket:"jarir-sa",productPrice:2829,currency:"SAR",
+  sourceUrl:"https://www.jarir.com/sa-en/sony-playstation-5-slim-dig-gaming-consoles-and-handheld-677771.html",
+  condition:"new",
+  sourceMeta:{productId:"677771",parsedFrom:"public-jarir-product-page"},
+  specs:{brand:"Sony",modelNumber:"CFI2116BCFIZC",storage:"825 GB SSD"},
+};
+const jarirDigBaseConsoleE1={
+  title:"Sony PlayStation 5 Slim (DIG) 825 GB SSD, White",
+  merchant:"Jarir",providerMarket:"jarir-sa",productPrice:2529,currency:"SAR",
+  sourceUrl:"https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-668751.html",
+  condition:"new",
+  sourceMeta:{productId:"668751",parsedFrom:"public-jarir-product-page"},
+  specs:{brand:"Sony",modelNumber:"CFI2116B01Y",storage:"825 GB SSD"},
+};
+
+test("v15.13 E1 Jarir PS5 677771 DualSense bundle is a real console without literal console word",()=>{
+  const bundle=jarirDigWithDualSenseBundleE1,base=jarirDigBaseConsoleE1;
+  assert.equal(queries.describeProduct(base).kind,"console","genuine standalone console control");
+  assert.equal(queries.describeProduct(bundle).kind,"console",
+    "Jarir console with included DualSense cannot become an accessory because controller is mentioned");
+  assert.equal(queries.describeProduct(bundle).isBundle,true,"additional controller defines distinct package");
+  assert.equal(assessOfferMatch("PS5",bundle).exactMatch,true,"real console bundle must be discoverable");
+  assert.equal(assessOfferMatch("PS5 SSD",bundle).exactMatch,false,"console storage is not standalone SSD");
+  assert.equal(assessOfferMatch("PS5 controller",bundle).exactMatch,false,
+    "included controller is not sold as standalone controller");
+  const groups=groupComparableOffers([base,bundle].map(o=>({...o,...assessOfferMatch("PS5",o)})));
+  assert.equal(groups.length,2,"different real Jarir retail packages and manufacturer codes remain separate");
+  assert.equal(groups.reduce((n,g)=>n+g.offers.length,0),2);
+  assert.equal(bundle.sourceMeta.productId,"677771");
+  assert.equal(base.sourceMeta.productId,"668751");
+  assert.equal(bundle.specs.modelNumber,"CFI2116BCFIZC");
+  assert.equal(base.specs.modelNumber,"CFI2116B01Y");
+  assert.equal(bundle.productPrice,2829);
+  assert.equal(base.productPrice,2529);
+  assert.equal(bundle.currency,"SAR");
+  assert.equal(bundle.sourceUrl,"https://www.jarir.com/sa-en/sony-playstation-5-slim-dig-gaming-consoles-and-handheld-677771.html");
+});
+
+test("v15.13 E2 Jarir included-controller subject has no accessory-only false promotion",()=>{
+  const originals=[jarirDigWithDualSenseBundleE1.title];
+  const derived=[
+    "Sony PS5 Slim (DIG) 825GB SSD Bundle with DualSense Wireless Controller White",
+    "Sony PlayStation 5 Slim (DIG) 825 GB SSD + DualSense Wireless Controller",
+    "Sony PS5 Slim Digital 825GB SSD including DualSense Controller Bundle",
+  ];
+  for(const title of [...originals,...derived]){
+    const o={...jarirDigWithDualSenseBundleE1,title};
+    assert.equal(queries.describeProduct(o).kind,"console",title);
+    assert.equal(assessOfferMatch("PS5",o).exactMatch,true,title);
+    assert.equal(assessOfferMatch("PS5 SSD",o).exactMatch,false,title);
+  }
+  const cooling={title:"PS5 NVMe SSD Heatsink + Controller",specs:{brand:"Sony",modelNumber:"CFI2116BCFIZC"},condition:"new"};
+  assert.notEqual(queries.describeProduct(cooling).kind,"console","lying CFI must not upgrade heatsink");
+  assert.equal(assessOfferMatch("PS5",cooling).exactMatch,false);
+});
