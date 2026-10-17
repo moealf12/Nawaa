@@ -80,8 +80,8 @@ function render(snapshot) {
     <section class="product-hero">
       <div class="product-media">
         ${offer.image
-          ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(title) + '" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';this.nextElementSibling.hidden=false;"><div class="media-fallback" hidden>تعذر تحميل صورة المنتج</div>'
-          : '<div class="media-fallback">صورة المنتج غير متاحة</div>'}
+          ? '<img src="' + escapeHtml(offer.image) + '" alt="' + escapeHtml(title) + '" referrerpolicy="no-referrer" onload="this.nextElementSibling.hidden=true" onerror="this.style.display=\'none\';this.nextElementSibling.textContent=\'تعذر تحميل صورة المنتج\';this.nextElementSibling.hidden=false;"><div class="media-fallback" role="status" aria-live="polite">جاري تحميل صورة المنتج…</div>'
+          : '<div class="media-fallback" role="status">صورة المنتج غير متاحة</div>'}
       </div>
 
       <div class="product-copy">
