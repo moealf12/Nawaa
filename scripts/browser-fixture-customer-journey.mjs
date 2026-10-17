@@ -97,7 +97,29 @@ function searchPayload(q,cursor) {
       sourceIdentifier:'Z93526034EEDFE197439CZ',
       sourceUrl:'https://www.noon.com/saudi-en/m-2-heatsink-for-ps5-nvme-ssd-aluminum-heatsink-with-4-thermal-pads-for-playstation-5-internal-m-2-gen4-nvme-pcie-4-0-ssd-with-graphene-and-silicone-thermal-pads/Z93526034EEDFE197439CZ/p/',
     };
-    const raw=[hub,consoleOffer,packaged,sharafActual,wdBlackSsd,noonHeatsink,noonExcefore];
+    // E1 direct Jarir product pages independently inspected 2026-10-17.
+    // Item 677771 is a complete PS5 bundled with DualSense, not a separate
+    // controller. Item 668751 is a distinct bare console retail package.
+    // CFI manufacturer references come from public PDP specifications,
+    // not a claimed Constructor API raw response. Prices are page observations.
+    const jarirDigBase={
+      merchant:'Jarir',providerMarket:'jarir-sa',merchantCountryCode:'SA',
+      title:'Sony PlayStation 5 Slim (DIG) 825 GB SSD, White',
+      productPrice:2529,currency:'SAR',condition:'new',
+      sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-668751.html',
+      sourceMeta:{productId:'668751',parsedFrom:'public-jarir-product-page'},
+      specs:{brand:'Sony',modelNumber:'CFI2116B01Y',storage:'825 GB SSD'},
+    };
+    const jarirDigBundle={
+      merchant:'Jarir',providerMarket:'jarir-sa',merchantCountryCode:'SA',
+      title:'Sony PlayStation 5 Slim (DIG) 825 GB SSD, Bundle with DualSense Wireless Controller, White',
+      productPrice:2829,currency:'SAR',condition:'new',
+      sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-dig-gaming-consoles-and-handheld-677771.html',
+      sourceMeta:{productId:'677771',parsedFrom:'public-jarir-product-page'},
+      specs:{brand:'Sony',modelNumber:'CFI2116BCFIZC',storage:'825 GB SSD'},
+    };
+    const raw=[hub,consoleOffer,packaged,sharafActual,wdBlackSsd,
+      noonHeatsink,noonExcefore,jarirDigBase,jarirDigBundle];
     const offers=raw.map(o=>({...o,...assessOfferMatch(q,o)}));
     return {offers,errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
@@ -444,17 +466,31 @@ try{
     hubFixture?.productPrice===34.79&&hubFixture?.specs?.modelNumber==='B0B1Q2NQGL',
     {title:hubFixture?.title,kind:hubFixture?.productKind,exact:hubFixture?.exactMatch});
   assertCheck('actual_console_remains_visible_while_usb_hub_excluded',
-    consoleOnly.length===3&&consoleOnly.every(x=>/PS5|PlayStation 5/i.test(x))&&
+    consoleOnly.length===5&&consoleOnly.every(x=>/PS5|PlayStation 5/i.test(x))&&
     !consoleOnly.some(x=>/Mcbazel|USB Hub/i.test(x)),consoleOnly);
   const exactPS5=searchPayload('PS5',null).offers.filter(o=>o.exactMatch===true);
   const standalone=exactPS5.find(o=>o.merchant==='Jarir');
   const includedHub=exactPS5.find(o=>o.merchant==='Fixture Package Merchant');
   assertCheck('included_hub_console_and_standalone_keep_distinct_product_cards',
-    exactPS5.length===3&&consoleOnly.length===3&&
+    exactPS5.length===5&&consoleOnly.length===5&&
     describeProduct(includedHub).isBundle===true&&
     describeProduct(standalone).isBundle===false&&
     includedHub.specs.modelNumber===standalone.specs.modelNumber,
     {exactPS5:exactPS5.map(o=>({title:o.title,merchant:o.merchant,exact:o.exactMatch})),consoleOnly});
+  const jarirE1=exactPS5.filter(o=>['668751','677771'].includes(o.sourceMeta?.productId));
+  assertCheck('E1_jarir_real_bare_and_dualsense_bundle_raw_sse_stay_consoles',
+    jarirE1.length===2&&jarirE1.every(o=>o.productKind==='console'&&o.exactMatch===true&&
+      o.currency==='SAR'&&o.sourceUrl.includes(o.sourceMeta.productId))&&
+    jarirE1.find(o=>o.sourceMeta.productId==='677771')?.productPrice===2829&&
+    jarirE1.find(o=>o.sourceMeta.productId==='668751')?.productPrice===2529,
+    jarirE1.map(o=>({title:o.title,kind:o.productKind,price:o.productPrice,code:o.specs.modelNumber})));
+  assertCheck('E1_jarir_bare_and_additional_controller_distinct_customer_cards',
+    consoleOnly.length===5&&new Set(jarirE1.map(o=>o.specs.modelNumber)).size===2&&
+    consoleOnly.some(t=>t.includes('حزمة'))&&
+    describeProduct(jarirE1.find(o=>o.sourceMeta.productId==='677771')).isBundle===true&&
+    describeProduct(jarirE1.find(o=>o.sourceMeta.productId==='668751')).isBundle===false,
+    {visible:consoleOnly,jarirE1:jarirE1.map(o=>o.title)});
+  await ps5IdentityTab.screenshot({path:'browser-artifacts/fixture-ps5-jarir-real-dualsense-package-desktop.png',fullPage:true});
   const sharaf=searchPayload('PS5',null).offers.find(o=>o.providerMarket==='sharafdg-ae');
   assertCheck('real_sharaf_uae_bundle_kept_as_console_in_customer_results',
     sharaf?.exactMatch===true&&sharaf?.productKind==='console'&&
@@ -477,8 +513,12 @@ try{
     wdSse?.sourceUrl?.includes('/dp/B0B4SQB1HY/'),
     {kind:wdSse?.productKind,exact:wdSse?.exactMatch,reason:wdSse?.matchReason,
       price:wdSse?.productPrice,source:wdSse?.sourceUrl});
+  const jarirSsdQuery=searchPayload('PS5 SSD',null).offers.filter(o=>['668751','677771'].includes(o.sourceMeta?.productId));
+  assertCheck('E1_jarir_console_and_bundle_not_false_ssd_shop_items',
+    jarirSsdQuery.length===2&&jarirSsdQuery.every(o=>o.productKind==='console'&&o.exactMatch===false),
+    jarirSsdQuery.map(o=>({title:o.title,kind:o.productKind,exact:o.exactMatch})));
   assertCheck('real_wd_black_ssd_absent_from_ps5_console_cards',
-    consoleOnly.length===3&&!consoleOnly.some(x=>/WD_BLACK|SN850|NVMe/i.test(x)),consoleOnly);
+    consoleOnly.length===5&&!consoleOnly.some(x=>/WD_BLACK|SN850|NVMe/i.test(x)),consoleOnly);
   const noonSsds=searchPayload('PS5 SSD',null).offers
     .filter(o=>o.providerMarket==='noon-sa');
   assertCheck('E1_noon_heatsinks_not_exact_ssd_in_raw_sse',
