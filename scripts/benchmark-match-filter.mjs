@@ -38,9 +38,10 @@ const offers = Array.from({length:100},(_,i)=>({
   condition:i%20===17?'refurbished':'new'
 }));
 const queries = ['PS5','iPhone 17','PS5 disc drive','ايفون 17 256 جيجا','لابتوب hp','Nike','Logitech mouse','بلايستيشن 5 جهاز','iPhone 17 case','Samsung Galaxy S25 Ultra 256GB','HP','ايفون 17 256 جيجا','iPhone 17 256GB','Sony','PS5 controller'];
-// v15.3 intentionally corrects Arabic phone covers previously accepted as
-// complete iPhones. Only this documented fixture is excluded from cross-version
-// strict parity; all other 95 offers must match under all 15 queries.
+// Baselines before v15.3 intentionally accepted Arabic phone covers as phones.
+// If the immediate predecessor is already v15.3+ (such as v15.4), the fix
+// must remain present in both implementations and strict parity must hold
+// across all 100 offers, not just the 95 unaffected historical fixtures.
 const knownArabicCover = 'غطاء هاتف ايفون 17 اسود';
 const intentional = offers.filter(offer=>offer.title===knownArabicCover);
 const unaffected = offers.filter(offer=>offer.title!==knownArabicCover);
@@ -59,13 +60,18 @@ for (const q of queries) {
 }
 const iphoneBefore = baseline.filterQueryOffers('iPhone 17',offers).offers;
 const iphoneAfter = candidate.filterQueryOffers('iPhone 17',offers).offers;
-assert.ok(iphoneBefore.some(o=>o.title===knownArabicCover),
-  'historical baseline must reproduce the false positive');
+const historicalFalsePositive=iphoneBefore.some(o=>o.title===knownArabicCover);
 assert.ok(!iphoneAfter.some(o=>o.title===knownArabicCover),
   'candidate must reject Arabic covers from a bare iPhone search');
-assert.deepStrictEqual(iphoneAfter.map(o=>o.sourceUrl),
-  iphoneBefore.filter(o=>o.title!==knownArabicCover).map(o=>o.sourceUrl),
-  'candidate must remove only known Arabic cover offers from iPhone results');
+if (historicalFalsePositive) {
+  assert.deepStrictEqual(iphoneAfter.map(o=>o.sourceUrl),
+    iphoneBefore.filter(o=>o.title!==knownArabicCover).map(o=>o.sourceUrl),
+    'candidate must remove only the documented Arabic cover false positives');
+} else {
+  assert.deepStrictEqual(candidate.filterQueryOffers('iPhone 17',offers),
+    baseline.filterQueryOffers('iPhone 17',offers),
+    'post-v15.3 baseline must preserve strict full-list semantic parity');
+}
 const measuredQueries=['PS5','iPhone 17','HP laptop','Nike','iPhone 17 256GB','ايفون 17 256 جيجا'];
 let checksum=0;
 function measure(impl) {
@@ -83,11 +89,14 @@ const median = a=>{const b=[...a].sort((x,y)=>x-y);return (b[2]+b[3])/2;};
 const baseMs=median(timings.baseline),candidateMs=median(timings.candidate);
 console.log('MATCH_FILTER_BENCHMARK '+JSON.stringify({
   queries:measuredQueries,offersPerQuery:offers.length,
-  parityQueries:queries.length,parityOffers:offers.length,rounds:6,
+  parityQueries:queries.length,parityOffers:historicalFalsePositive?unaffected.length:offers.length,rounds:6,
   baselineMedianMs:baseMs,candidateMedianMs:candidateMs,
   relativeSpeedup:Number((baseMs/candidateMs).toFixed(3)),
-  semanticallyEquivalent:false,unaffectedOfferParity:true,
-  intentionalChange:{reason:'Arabic covers no longer falsely match iPhone 17 handsets',
-    excludedOfferCount:iphoneBefore.length-iphoneAfter.length,fixtureCount:intentional.length},
+  semanticallyEquivalent:!historicalFalsePositive,unaffectedOfferParity:true,
+  intentionalChange:historicalFalsePositive?{
+    reason:'Arabic covers no longer falsely match iPhone 17 handsets',
+    excludedOfferCount:iphoneBefore.length-iphoneAfter.length,
+    fixtureCount:intentional.length,
+  }:null,
   checksum,timings
 }));
