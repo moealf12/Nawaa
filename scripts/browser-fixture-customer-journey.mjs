@@ -51,6 +51,10 @@ function searchPayload(q,cursor) {
     return {offers:[first,second],errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
   }
+  if(q.includes('fixture-pending-image')) return {
+    offers:[{...offer(5),image:'https://nawaa-pending.invalid/delayed-product.jpg'}],
+    errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+    nextCursor:null};
   if(q.includes('fixture-no-results')) return {
     offers:[],errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
@@ -113,6 +117,11 @@ try{
       await route.fulfill({status:200,contentType:'application/json',headers:corsHeaders,
         body:JSON.stringify(payload)});
     }
+  });
+  let releasePendingImage=null;
+  await context.route(url => new URL(url).hostname==='nawaa-pending.invalid', async route=>{
+    await new Promise(resolve=>{releasePendingImage=resolve;});
+    await route.abort('failed');
   });
   async function navigate(q){
     const tab=await context.newPage();
@@ -186,6 +195,32 @@ try{
   const remoteStatus=await remaining.locator('#searchStatus').innerText();
   assertCheck('remote_expansion_added_5',/أضفنا 5 عرضًا جديدًا|30 عرضًا/.test(remoteStatus),remoteStatus);
   await remaining.screenshot({path:'browser-artifacts/fixture-remote-expanded.png',fullPage:true});
+  // A stalled external CDN must not leave a silent blank image tile:
+  // the accessible placeholder should be visible until an image loads.
+  const pendingTab=await navigate('fixture-pending-image');
+  const pendingImage=pendingTab.locator('.match-card-image img[src*="nawaa-pending.invalid"]');
+  await pendingImage.scrollIntoViewIfNeeded();
+  await pendingTab.waitForFunction(()=>{
+    const image=document.querySelector('.match-card-image img[src*="nawaa-pending.invalid"]');
+    return image&&!image.complete;
+  },null,{timeout:10000});
+  const pendingState=await pendingTab.evaluate(()=>{
+    const image=document.querySelector('.match-card-image img[src*="nawaa-pending.invalid"]');
+    const fallback=image.nextElementSibling;
+    return {pending:!image.complete,fallbackDisplay:getComputedStyle(fallback).display,
+      fallbackText:fallback.textContent.trim()};
+  });
+  assertCheck('pending_cdn_image_keeps_visible_fallback',
+    pendingState.pending&&pendingState.fallbackDisplay==='grid'&&
+    pendingState.fallbackText.includes('صورة غير متاحة'),pendingState);
+  await pendingTab.screenshot({path:'browser-artifacts/fixture-pending-cdn-image.png',fullPage:true});
+  releasePendingImage?.();
+  await pendingTab.waitForFunction(()=>{
+    const image=document.querySelector('.match-card-image img[src*="nawaa-pending.invalid"]');
+    return image?.complete&&image.naturalWidth===0&&
+      getComputedStyle(image.nextElementSibling).display==='grid';
+  },null,{timeout:10000});
+  assertCheck('pending_image_failure_retains_fallback',true);
   // Explicitly simulate a browser-visible broken image without accessing a
   // third-party CDN. Onerror must reveal visible fallback.
   const imgTab=await navigate('HP');
