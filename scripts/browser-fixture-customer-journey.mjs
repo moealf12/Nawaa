@@ -54,7 +54,12 @@ function searchPayload(q,cursor) {
       title:'Sony PS5 Slim Disc Console 1TB',productPrice:2749,
       sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-668744.html',
       specs:{brand:'Sony',modelNumber:'CFI2116A01Y',storage:'1TB'}};
-    const raw=[hub,consoleOffer];
+    // Adversarial package composition; synthetic merchant, not a claimed live
+    // Jarir product. Both offers share a console chassis SKU but not contents.
+    const packaged={...consoleOffer,merchant:'Fixture Package Merchant',
+      title:'Sony PS5 Slim Disc Console with USB Hub 1TB',productPrice:2899,
+      sourceUrl:'https://www.example.org/ps5-console-with-included-hub'};
+    const raw=[hub,consoleOffer,packaged];
     const offers=raw.map(o=>({...o,...assessOfferMatch(q,o)}));
     return {offers,errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
@@ -401,8 +406,17 @@ try{
     hubFixture?.productPrice===34.79&&hubFixture?.specs?.modelNumber==='B0B1Q2NQGL',
     {title:hubFixture?.title,kind:hubFixture?.productKind,exact:hubFixture?.exactMatch});
   assertCheck('actual_console_remains_visible_while_usb_hub_excluded',
-    consoleOnly.length===1&&consoleOnly.every(x=>/PS5/i.test(x))&&
+    consoleOnly.length===2&&consoleOnly.every(x=>/PS5/i.test(x))&&
     !consoleOnly.some(x=>/Mcbazel|USB Hub/i.test(x)),consoleOnly);
+  const exactPS5=searchPayload('PS5',null).offers.filter(o=>o.exactMatch===true);
+  const standalone=exactPS5.find(o=>o.merchant==='Jarir');
+  const includedHub=exactPS5.find(o=>o.merchant==='Fixture Package Merchant');
+  assertCheck('included_hub_console_and_standalone_keep_distinct_product_cards',
+    exactPS5.length===2&&consoleOnly.length===2&&
+    describeProduct(includedHub).isBundle===true&&
+    describeProduct(standalone).isBundle===false&&
+    includedHub.specs.modelNumber===standalone.specs.modelNumber,
+    {exactPS5:exactPS5.map(o=>({title:o.title,merchant:o.merchant,exact:o.exactMatch})),consoleOnly});
   await ps5IdentityTab.screenshot({path:'browser-artifacts/fixture-ps5-console-vs-usb-hub.png',fullPage:true});
   const hubShoppingTab=await navigate('PS5 USB hub');
   await hubShoppingTab.locator('#results .match-result-card').first().waitFor();
