@@ -434,7 +434,7 @@ try{
     sharaf?.exactMatch===true&&sharaf?.productKind==='console'&&
     describeProduct(sharaf).isBundle===true&&sharaf?.productPrice===2599&&
     sharaf?.currency==='AED'&&
-    consoleOnly.some(t=>t.includes('PULSE 3D'))&&
+    consoleOnly.some(t=>t.includes('نسخة رقمية')&&t.includes('حزمة'))&&
     sharaf?.sourceUrl?.includes('sharafdg.com/product/'),
     {kind:sharaf?.productKind,exact:sharaf?.exactMatch,title:sharaf?.title,displayed:consoleOnly});
   await ps5IdentityTab.setViewportSize({width:390,height:844});
