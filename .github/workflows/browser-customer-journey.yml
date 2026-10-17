@@ -39,6 +39,14 @@ jobs:
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
         run: node scripts/browser-customer-journey.mjs candidate
+      - name: Repeat real PS5 journey on candidate for like-for-like website comparison
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_BROWSER_QUERY: PS5
+        run: node scripts/browser-customer-journey.mjs candidate
       - name: Observe the currently published GitHub Pages and Render UI
         continue-on-error: true
         env:
