@@ -96,8 +96,15 @@ try{
   page.setDefaultTimeout(12000);
   page.on('pageerror',err=>report.consoleErrors.push(sanitize(err.message)));
   page.on('requestfailed',req=>{
-    if(report.resourceFailures.length<15)report.resourceFailures.push({
-      type:req.resourceType(),reason:sanitize(req.failure()?.errorText)});
+    if(report.resourceFailures.length>=20)return;
+    const type=req.resourceType();
+    // Hostname only: diagnose CDN embed restrictions without storing signed
+    // image URLs, query parameters, cookies or private image paths.
+    let imageDomain=null;
+    if(type==='image'){try{imageDomain=new URL(req.url()).hostname}catch{}}
+    report.resourceFailures.push({
+      type,reason:sanitize(req.failure()?.errorText),
+      ...(imageDomain?{imageDomain}:{})});
   });
   const began=performance.now();
   const url=base+'/search.html?q='+encodeURIComponent(query);
@@ -171,10 +178,14 @@ try{
       broken:details.filter(x=>x.state==='broken').length,
       pending:details.filter(x=>x.state==='pending').length,
       brokenWithoutFallback:details.filter(x=>x.state==='broken'&&!x.fallbackVisible).length,
+      pendingWithoutFallback:details.filter(x=>x.state==='pending'&&!x.fallbackVisible).length,
+      loadedWithFallback:details.filter(x=>x.state==='loaded'&&x.fallbackVisible).length,
       noImageWithoutFallback:details.filter(x=>x.state==='no-image'&&!x.fallbackVisible).length};
   });
   report.imageQA=imageQA;
-  report.assertions.imageFallbackSafe=imageQA.brokenWithoutFallback===0&&imageQA.noImageWithoutFallback===0;
+  report.assertions.imageFallbackSafe=imageQA.brokenWithoutFallback===0&&
+    imageQA.pendingWithoutFallback===0&&imageQA.loadedWithFallback===0&&
+    imageQA.noImageWithoutFallback===0;
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(500);
   const mobile=await page.evaluate(()=>({viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,
