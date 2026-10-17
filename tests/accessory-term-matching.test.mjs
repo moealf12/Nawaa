@@ -177,3 +177,48 @@ test('requested PS5 accessories remain discoverable without damaging console bun
     assert.equal(matching.exactMatch,true,title);
   }
 });
+
+
+test('Arabic and bilingual PS5 listing titles distinguish peripherals and game codes from a complete console',()=>{
+  const peripherals=[
+    ['غطاء سوني بلايستيشن 5 سليم النسخة الرقمية 825 جيجا','accessory'],
+    ['مروحة تبريد لجهاز PS5 Slim Console Digital Edition 825GB','accessory'],
+    ['حامل جداري بلايستيشن 5 سليم نسخة الديجيتال 825 جيجا','accessory'],
+    ['قارئ أقراص منفصل بلايستيشن 5 رقمي 825 جيجا','accessory'],
+    ['هارد خارجي لجهاز PS5 نسخة الأقراص 1TB','accessory'],
+    ['قرص صلب خارجي متوافق مع PS5 1TB','accessory'],
+    ['لعبة PS5 رقمية كود تحميل 1TB','game'],
+    ['شريط لعبة بلايستيشن 5 إصدار رقمي 825 جيجا','game'],
+  ];
+  const console={...base,title:'جهاز بلايستيشن 5 سليم رقمي 825 جيجا'};
+  for(const [title,kind] of peripherals){
+    const x={...base,title,sourceUrl:'https://example.com/ps5-arabic-accessory'};
+    const parsed=assessOfferMatch('بلايستيشن 5',x);
+    assert.equal(parsed.productKind,kind,'product kind must describe item, not console compatibility: '+title);
+    assert.equal(parsed.exactMatch,false,'peripheral/game cannot be an exact console: '+title);
+    assert.ok(parsed.matchConfidence<0.65,'kind mismatch must demote irrelevant console result: '+title);
+    const filtered=filterQueryOffers('بلايستيشن 5',[console,x]);
+    assert.ok(filtered.offers.every(o=>o.title!==title),'console search must not include accessory/game: '+title);
+  }
+  assert.equal(assessOfferMatch('بلايستيشن 5',console).productKind,'console');
+  assert.equal(assessOfferMatch('بلايستيشن 5',console).exactMatch,true);
+  for(const title of ['جهاز PS5 سليم 1TB مع يد تحكم إضافية Bundle',
+    'Sony PS5 Console Bundle with Disc Drive and Controller 1TB']){
+    const actual=assessOfferMatch('PS5',{...base,title});
+    assert.equal(actual.productKind,'console','complete bundle remains console: '+title);
+  }
+});
+
+test('Arabic PS5 accessory queries keep intentionally requested peripheral results discoverable',()=>{
+  const fixtures=[
+    ['غطاء بلايستيشن 5','غطاء PS5 سليم النسخة الرقمية 825 جيجا'],
+    ['مروحة تبريد PS5','مروحة تبريد PS5 Slim 825GB'],
+    ['حامل جداري PS5','حامل جداري بلايستيشن 5 825 جيجا'],
+    ['قارئ اقراص PS5','قارئ أقراص منفصل بلايستيشن 5'],
+  ];
+  for(const [q,title] of fixtures){
+    const record={...base,title};
+    assert.equal(parseSearchIntent(q).kind,'accessory','intent must be accessory for '+q);
+    assert.equal(assessOfferMatch(q,record).productKind,'accessory','item must be accessory for '+title);
+  }
+});
