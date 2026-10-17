@@ -312,16 +312,25 @@ export function describeProduct(offer = {}) {
   const metadata = normalizeSearchQuery([offer.specs?.deviceType, offer.specs?.series].filter(Boolean).join(" "));
   const platform = title.match(GAMING_PLATFORM)?.[0] || metadata.match(GAMING_PLATFORM)?.[0] || null;
   const sku = String(offer.specs?.modelNumber || "").replace(/[^a-z0-9]/gi, "");
-  const isBundle = /\bbundle\b/.test(title) || explicitlyIncludedConsoleAccessory(title, offer.title);
   // Trust chassis-model corroboration only for a Sony PS5 subject, never a
   // standalone storage part that merely claims console compatibility.
   const evidencedConsoleChassis = /^CFI[127]\d/i.test(sku) && /^sony ps[45]\b/.test(title) &&
     !storagePartOnly(title);
+  // E1 Jarir product 677771: the item is a complete PS5 Slim (DIG) 825GB SSD
+  // plus a DualSense controller, even though the listing omits 'console'.
+  // Require actual Sony chassis corroboration, console edition+capacity, and
+  // an explicit retail-package inclusion marker before ignoring accessory nouns.
+  const identifiedConsoleBundle = evidencedConsoleChassis &&
+    /\b(?:digital|dig|disc)\b/.test(title) && /\b\d+(?:gb|tb)\b/.test(title) &&
+    (/\b(?:bundle|including|includes|with)\b/.test(title) || /\s+\+\s+/.test(String(offer.title||"")));
+  const isBundle = /\bbundle\b/.test(title) ||
+    explicitlyIncludedConsoleAccessory(title, offer.title) || identifiedConsoleBundle;
   let kind = "product";
   if (platform) {
     if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
     else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       GENUINE_CONSOLE_BUNDLE(title) ||
+      identifiedConsoleBundle ||
       explicitlyIncludedConsoleAccessory(title, offer.title) ||
       (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
     )) kind = "accessory";
