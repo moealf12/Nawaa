@@ -111,7 +111,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|laptop bags?|stylus|stylus pen|photo paper|printhead|print head)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|laptop bags?|stylus|stylus pen|photo paper|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -252,6 +252,10 @@ const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
 // Console accessories may mention a complete PS5 console in compatibility text.
 // Reject peripheral product nouns before trusting 'Console / Digital Edition'.
 const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?)\b/;
+// Storage-media nouns identify a sold component, not the PS5 it fits.
+// A title-leading real console subject remains a console when its SSD is included.
+const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
+const GAMING_CONSOLE_PRIMARY = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|edition|standard|gaming|white|black|blu ray|\d+(?:gb|tb))){0,9}(?: console| (?:digital|disc) edition)\b/;
 const GAMING_GAME_PRODUCT = /\b(?:code in box|digital game code|download code|game card|video game|game disc)\b/;
 // Match already-normalized Arabic tokens using spaces, not JS \b (which does
 // not recognize Arabic letters as word characters). Keep console bundles safe.
@@ -283,14 +287,14 @@ function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normaliz
   const remainder = normalizedTitle.slice(subject[0].length);
   const explicitlyWith = CONSOLE_INCLUSION_LINK.test(remainder);
   return (explicitlyWith || explicitlyPlus) &&
-    (GAMING_ACCESSORY.test(normalizedTitle) || GAMING_ARABIC_ACCESSORY.test(normalizedTitle));
+    (GAMING_ACCESSORY.test(normalizedTitle) || GAMING_ARABIC_ACCESSORY.test(normalizedTitle) || GAMING_STORAGE_ACCESSORY.test(normalizedTitle));
 }
 
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
     if (CONSOLE_WITH_INCLUDED_DRIVE.test(query) || explicitlyIncludedConsoleAccessory(query)) return "console";
-    if (GAMING_ACCESSORY.test(query) || GAMING_ARABIC_ACCESSORY.test(query)) return "accessory";
+    if (GAMING_ACCESSORY.test(query) || GAMING_ARABIC_ACCESSORY.test(query) || GAMING_STORAGE_ACCESSORY.test(query) || /\bstorage\b/.test(query)) return "accessory";
     if (GAMING_GAME_PRODUCT.test(query) || GAMING_STANDALONE_GAME.test(query) || /\b(?:game|games)\b/.test(query)) return "game";
     const remainder = query.replace(GAMING_PLATFORM, "").replace(/\b(?:sony|microsoft|nintendo|console|slim|pro|digital|disc|edition|bundle|new|used|refurbished|black|white|\d+(?:gb|tb))\b/g, "").trim();
     return remainder ? "game" : "console";
@@ -306,7 +310,8 @@ export function describeProduct(offer = {}) {
   const isBundle = /\bbundle\b/.test(title) || explicitlyIncludedConsoleAccessory(title, offer.title);
   let kind = "product";
   if (platform) {
-    if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
+    if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
+    else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       GENUINE_CONSOLE_BUNDLE(title) ||
       explicitlyIncludedConsoleAccessory(title, offer.title) ||
       (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
