@@ -7,6 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import net from 'node:net';
+import {assessOfferMatch,describeProduct} from '../src/search-query.mjs';
 
 if(process.env.NODE_ENV !== 'test') throw Error('fixture_browser_requires_test_env');
 mkdirSync('browser-artifacts',{recursive:true});
@@ -40,6 +41,24 @@ const initial=Array.from({length:25},(_,i)=>offer(i+1));
 const extra=Array.from({length:5},(_,i)=>offer(i+26));
 const corsHeaders={'access-control-allow-origin':'*'};
 function searchPayload(q,cursor) {
+  // Merchant-derived regression for the exact product that was incorrectly
+  // certified as a console in the real 2026-10-17 candidate SSE.
+  if(/^(?:ps5|ps5 usb hub)$/i.test(q.trim())) {
+    const hub={...offer(5),
+      merchant:'Amazon Saudi',providerMarket:'amazon-sa',
+      title:'Mcbazel PS5 Console Hub USB2.0 5 Ports, High Speed Multiport Expansion Hub Data Transfer USB C Fast Charging Hub for PS5',
+      productPrice:34.79,currency:'SAR',
+      sourceUrl:'https://www.amazon.sa/-/en/Mcbazel-Multiport-Expansion-Transfer-Charging/dp/B0B1Q2NQGL/ref=sr_1_74',
+      specs:{modelNumber:'B0B1Q2NQGL'}};
+    const consoleOffer={...offer(6),merchant:'Jarir',providerMarket:'jarir-sa',
+      title:'Sony PS5 Slim Disc Console 1TB',productPrice:2749,
+      sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-668744.html',
+      specs:{brand:'Sony',modelNumber:'CFI2116A01Y',storage:'1TB'}};
+    const raw=[hub,consoleOffer];
+    const offers=raw.map(o=>({...o,...assessOfferMatch(q,o)}));
+    return {offers,errors:[],providers:[],
+      coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
+  }
   if(q.includes('fixture-iphone-models')) {
     const template=offer(1);
     const first={...template,merchant:'eXtra',title:'Apple iPhone 17 256GB Black',
@@ -372,6 +391,31 @@ try{
   assertCheck('phone_identity_not_merged_by_title',
     new Set(titles.map(x=>x.toLowerCase().trim())).size===1,{titles});
   await duplicated.screenshot({path:'browser-artifacts/fixture-iphone-distinct-sku-cards.png',fullPage:true});
+  // Assert both the actual matching function and the customer-visible UI.
+  const ps5IdentityTab=await navigate('PS5');
+  await ps5IdentityTab.locator('#results .match-result-card').first().waitFor();
+  const consoleOnly=await ps5IdentityTab.locator('#results .match-card-copy strong').allTextContents();
+  const hubFixture=searchPayload('PS5',null).offers.find(o=>o.merchant==='Amazon Saudi');
+  assertCheck('real_mcbazel_sse_is_accessory_not_console',
+    hubFixture?.productKind==='accessory'&&hubFixture?.exactMatch===false&&
+    hubFixture?.productPrice===34.79&&hubFixture?.specs?.modelNumber==='B0B1Q2NQGL',
+    {title:hubFixture?.title,kind:hubFixture?.productKind,exact:hubFixture?.exactMatch});
+  assertCheck('actual_console_remains_visible_while_usb_hub_excluded',
+    consoleOnly.length===1&&consoleOnly.every(x=>/PS5/i.test(x))&&
+    !consoleOnly.some(x=>/Mcbazel|USB Hub/i.test(x)),consoleOnly);
+  await ps5IdentityTab.screenshot({path:'browser-artifacts/fixture-ps5-console-vs-usb-hub.png',fullPage:true});
+  const hubShoppingTab=await navigate('PS5 USB hub');
+  await hubShoppingTab.locator('#results .match-result-card').first().waitFor();
+  const hubResults=await hubShoppingTab.locator('#results .match-card-copy strong').allTextContents();
+  const hubAccessory=searchPayload('PS5 USB hub',null).offers.find(o=>o.merchant==='Amazon Saudi');
+  assertCheck('usb_hub_shop_search_preserves_real_mcbazel_offer',
+    hubAccessory?.productKind==='accessory'&&hubAccessory?.exactMatch===true&&
+    hubResults.some(x=>/Mcbazel/i.test(x)),{hubResults,exact:hubAccessory?.exactMatch});
+  await hubShoppingTab.setViewportSize({width:390,height:844});
+  const hubMobile=await hubShoppingTab.evaluate(()=>({
+    viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
+  assertCheck('usb_hub_mobile_layout_no_overflow',hubMobile.scrollWidth<=hubMobile.viewport+4,hubMobile);
+  await hubShoppingTab.screenshot({path:'browser-artifacts/fixture-ps5-usb-hub-mobile.png',fullPage:true});
   assertCheck('no_browser_script_errors',browserErrors.length===0,browserErrors);
   summary.counts={...summary.counts,filtered,searchRequests,cursorRequests,blockedImages};
   summary.mobile=mobile;
