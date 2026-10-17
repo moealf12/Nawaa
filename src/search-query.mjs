@@ -409,7 +409,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   }
   // A storage query cannot exact-match a generic USB hub merely because both
   // products belong to the broad gaming-accessory category.
-  const physicalTitle = normalizeSearchQuery(offer?.title || "");
+  const physicalTitle = storageMediaRequested ? normalizeSearchQuery(offer?.title || "") : "";
   const storageMediaMismatch = storageMediaRequested && (
     !GAMING_STORAGE_ACCESSORY.test(physicalTitle) ||
     (storagePartOnly(physicalTitle) && !storagePartRequested));
