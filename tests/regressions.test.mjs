@@ -567,7 +567,8 @@ test("v15.12 E1 real Noon PS5 heatsinks are not exact complete SSDs",()=>{
 });
 
 test("v15.12 E1 real complete SSD and authentic PS5 console remain discoverable",()=>{
-  assert.equal(queries.describeProduct(geekayWdBlackSn850p).kind,"accessory");
+  assert.equal(queries.productCategory(geekayWdBlackSn850p),"accessory",
+    "Non-gaming generic SSD is categorized by productCategory, not gaming-only describeProduct.kind");
   assert.equal(assessOfferMatch("PS5",geekayWdBlackSn850p).exactMatch,false);
   // The E1 title has no PS5 word; do not require a query-specific exactMatch
   // based on brand claims or the compatibility description not in title.
