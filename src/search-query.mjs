@@ -255,7 +255,7 @@ const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|c
 // Storage-media nouns identify a sold component, not the PS5 it fits.
 // A title-leading real console subject remains a console when its SSD is included.
 const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
-const GAMING_CONSOLE_PRIMARY = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|edition|standard|gaming|white|black|blu ray|\d+(?:gb|tb))){0,9}(?: console| (?:digital|disc) edition)\b/;
+const GAMING_CONSOLE_PRIMARY = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|edition|standard|gaming|white|black|blu ray|\d+(?:gb|tb))){0,9}(?: console| (?:digital|disc) edition| (?:dig|digital|disc) \d+(?:gb|tb))\b/;
 const GAMING_GAME_PRODUCT = /\b(?:code in box|digital game code|download code|game card|video game|game disc)\b/;
 // Match already-normalized Arabic tokens using spaces, not JS \b (which does
 // not recognize Arabic letters as word characters). Keep console bundles safe.
