@@ -125,6 +125,25 @@ test("console with included USB hub stays a console without literal bundle token
   assert.equal(queries.parseSearchIntent("PS5 USB Hub").kind,"accessory");
 });
 
+test("console plus included hub is not merged into the bare console offer for identical chassis SKU",()=>{
+  // A manufacturer chassis SKU does not guarantee identical retail package
+  // contents. These are deliberately synthetic same-SKU metamorphic inputs.
+  const standalone={
+    title:"Sony PS5 Slim Digital Console 825GB",
+    condition:"new",merchant:"Merchant A",productPrice:2529,currency:"SAR",
+    specs:{brand:"Sony",modelNumber:"CFI2116B01Y",storage:"825GB"},
+  };
+  const withHub={...standalone,title:"Sony PS5 Slim Digital Console with USB Hub 825GB",
+    merchant:"Merchant B",productPrice:2729};
+  assert.equal(queries.describeProduct(standalone).isBundle,false);
+  assert.equal(queries.describeProduct(withHub).kind,"console");
+  assert.equal(queries.describeProduct(withHub).isBundle,true,
+    "Included peripheral changes the retail package even without the word bundle");
+  const groups=groupComparableOffers([standalone,withHub]);
+  assert.equal(groups.length,2,"Never claim equal retail bundles based only on console chassis SKU");
+  assert.equal(groups.reduce((count,g)=>count+g.offers.length,0),2);
+});
+
 test("accessory bundles and compatibility-only console mentions cannot be promoted",()=>{
   const peripherals=[
     "PS5 Console Hub Bundle",
