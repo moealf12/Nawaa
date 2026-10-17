@@ -142,6 +142,17 @@ try{
     await route.fulfill({status:200,contentType:'image/svg+xml',
       body:'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#2563eb"/></svg>'});
   });
+  async function capturePendingScreenshot(tab,path){
+    // Playwright screenshots wait on document.fonts.ready, which can remain
+    // unsettled while the deliberately stalled image holds the load event.
+    const client=await tab.context().newCDPSession(tab);
+    try{
+      const screenshot=await client.send('Page.captureScreenshot',
+        {format:'png',fromSurface:true,captureBeyondViewport:false});
+      writeFileSync(path,Buffer.from(screenshot.data,'base64'));
+      summary.screenshotPaths.push(path);
+    }finally{await client.detach();}
+  }
   async function navigate(q){
     const tab=await context.newPage();
     tab.setDefaultTimeout(10000);
@@ -293,14 +304,14 @@ try{
     detailBefore.merchant?.includes('Jarir')&&
     detailBefore.price?.includes(new Intl.NumberFormat('ar-SA').format(2515))&&
     detailBefore.observedAt?.includes('آخر رصد'),detailBefore);
-  await detailPending.screenshot({path:'browser-artifacts/fixture-detail-image-pending-desktop.png',fullPage:true});
+  await capturePendingScreenshot(detailPending,'browser-artifacts/fixture-detail-image-pending-desktop.png');
   await detailPending.setViewportSize({width:390,height:844});
   const detailMobile=await detailPending.evaluate(()=>({
     viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,
     visible:!document.querySelector('.product-media .media-fallback').hidden}));
   assertCheck('pending_detail_mobile_no_overflow',
     detailMobile.scrollWidth<=detailMobile.viewport+4&&detailMobile.visible,detailMobile);
-  await detailPending.screenshot({path:'browser-artifacts/fixture-detail-image-pending-mobile.png',fullPage:true});
+  await capturePendingScreenshot(detailPending,'browser-artifacts/fixture-detail-image-pending-mobile.png');
   releaseDetailImage();
   await detailPending.waitForFunction(()=>{
     const img=document.querySelector('.product-media img');
