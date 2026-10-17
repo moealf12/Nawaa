@@ -249,14 +249,17 @@ const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)
 // A separate optical/disc drive is a peripheral even when a merchant title
 // mentions "PlayStation 5 Digital Edition". Disc-edition *consoles* remain consoles.
 const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
-const GAMING_ACCESSORY = /\b(?:controller|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|cover|case|accessory|accessories|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive)\b/;
+// Console accessories may mention a complete PS5 console in compatibility text.
+// Reject peripheral product nouns before trusting 'Console / Digital Edition'.
+const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure)\b/;
+const GAMING_GAME_PRODUCT = /\b(?:code in box|digital game code|download code|game card|video game|game disc)\b/;
 const CONSOLE_WITH_INCLUDED_DRIVE = /\bconsole\b.*\b(?:with|including|includes)\b.*\b(?:disc|disk|optical|blu ray) drive\b/;
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
     if (CONSOLE_WITH_INCLUDED_DRIVE.test(query)) return "console";
     if (GAMING_ACCESSORY.test(query)) return "accessory";
-    if (/\b(?:game|games)\b/.test(query)) return "game";
+    if (GAMING_GAME_PRODUCT.test(query) || /\b(?:game|games)\b/.test(query)) return "game";
     const remainder = query.replace(GAMING_PLATFORM, "").replace(/\b(?:sony|microsoft|nintendo|console|slim|pro|digital|disc|edition|bundle|new|used|refurbished|black|white|\d+(?:gb|tb))\b/g, "").trim();
     return remainder ? "game" : "console";
   }
@@ -271,11 +274,12 @@ export function describeProduct(offer = {}) {
   const isBundle = /\bbundle\b/.test(title);
   let kind = "product";
   if (platform) {
-    if (/\b(?:cover|case|accessory|accessories|gift card|recharge card)\b/.test(title + " " + metadata)) kind = "accessory";
-    else if (GAMING_ACCESSORY.test(title) && !(
+    if (GAMING_ACCESSORY.test(title + " " + metadata) && !(
       (isBundle && /\bconsole\b/.test(title)) ||
       (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
     )) kind = "accessory";
+    else if (GAMING_GAME_PRODUCT.test(title) ||
+      /\/playstation-games(?:\/|$)/i.test(String(offer.sourceUrl || ""))) kind = "game";
     else if (/\bconsole\b/.test(title) || /^CFI[127]\d/i.test(sku) || /\b(?:digital|disc) edition\b/.test(title) || /\b(?:825gb|1tb|2tb)\b/.test(title)) kind = "console";
     else if (/^(?:sony )?ps[45](?: slim| pro)?$/.test(title)) kind = "console";
     else kind = "game";

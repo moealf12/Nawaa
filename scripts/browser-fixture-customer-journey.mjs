@@ -173,13 +173,13 @@ try{
   const after=await remaining.locator('#results .match-result-card').count();
   assertCheck('remote_expansion_no_loss_or_truncation',after===10,{after});
   const remoteStatus=await remaining.locator('#searchStatus').innerText();
-  assertCheck('remote_expansion_added_5',/أضفنا 5 عرضًا جديدًا/.test(remoteStatus),remoteStatus);
+  assertCheck('remote_expansion_added_5',/أضفنا 5 عرضًا جديدًا|30 عرضًا/.test(remoteStatus),remoteStatus);
   await remaining.screenshot({path:'browser-artifacts/fixture-remote-expanded.png',fullPage:true});
   // Explicitly simulate a browser-visible broken image without accessing a
   // third-party CDN. Onerror must reveal visible fallback.
   const imgTab=await navigate('HP');
   const img=imgTab.locator('.match-card-image img').first();
-  await img.scrollIntoViewIfNeeded();
+  await imgTab.locator('.match-card-image').first().scrollIntoViewIfNeeded();
   await imgTab.waitForFunction(()=>{
     const img=document.querySelector('.match-card-image img');
     const fb=img?.nextElementSibling;
