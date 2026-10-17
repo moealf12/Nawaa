@@ -470,7 +470,7 @@ try{
   const ssdCardText=await ssdShoppingTab.locator('#results .match-result-card').first().innerText();
   assertCheck('explicit_ps5_ssd_search_preserves_real_wd_black_offer',
     ssdExact?.productKind==='accessory'&&ssdExact?.exactMatch===true&&
-    ssdResults.some(x=>/WD_BLACK|SN850|SSD/i.test(x))&&ssdCardText.includes('799'),
+    ssdResults.some(x=>/WD_BLACK|SN850|SSD/i.test(x))&&/799|٧٩٩|۷۹۹/u.test(ssdCardText),
     {results:ssdResults,cardText:ssdCardText.slice(0,450),exact:ssdExact?.exactMatch});
   await ssdShoppingTab.screenshot({path:'browser-artifacts/fixture-ps5-ssd-desktop.png',fullPage:true});
   await ssdShoppingTab.setViewportSize({width:390,height:844});
