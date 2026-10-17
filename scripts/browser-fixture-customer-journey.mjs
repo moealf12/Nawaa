@@ -43,7 +43,7 @@ const corsHeaders={'access-control-allow-origin':'*'};
 function searchPayload(q,cursor) {
   // Merchant-derived regression for the exact product that was incorrectly
   // certified as a console in the real 2026-10-17 candidate SSE.
-  if(/^(?:ps5|ps5 usb hub)$/i.test(q.trim())) {
+  if(/^(?:ps5|ps5 usb hub|ps5 ssd)$/i.test(q.trim())) {
     const hub={...offer(5),
       merchant:'Amazon Saudi',providerMarket:'amazon-sa',
       title:'Mcbazel PS5 Console Hub USB2.0 5 Ports, High Speed Multiport Expansion Hub Data Transfer USB C Fast Charging Hub for PS5',
@@ -71,7 +71,17 @@ function searchPayload(q,cursor) {
       image:null,availability:'unknown',dataKind:'live',
       specs:{brand:'Sony',deviceType:'Home Console',modelNumber:'PlayStation PS5',color:'White',merchantItemNumber:'S200794860'},
     };
-    const raw=[hub,consoleOffer,packaged,sharafActual];
+    // E1: actual Amazon Saudi WD_BLACK PS5-compatible SN850 SSD observed
+    // in raw candidate SSE on 2026-10-17. SAR 799 is a historical observation,
+    // not a newly verified merchant price. ASIN is NOT a manufacturer SKU.
+    const wdBlackSsd={
+      merchant:'Amazon Saudi',merchantCountryCode:'SA',merchantCountryNameAr:'السعودية',
+      providerMarket:'amazon-sa',title:'WD_BLACK 1TB SN850 NVMe SSD for PS5 Consoles Solid State Drive with Heatsink',
+      productPrice:799,currency:'SAR',condition:'new',
+      sourceIdentifier:'B0B4SQB1HY',image:null,availability:'unknown',
+      sourceUrl:'https://www.amazon.sa/-/en/WD_BLACK-SN850-Consoles-Solid-Heatsink/dp/B0B4SQB1HY/ref=sr_1_140',
+    };
+    const raw=[hub,consoleOffer,packaged,sharafActual,wdBlackSsd];
     const offers=raw.map(o=>({...o,...assessOfferMatch(q,o)}));
     return {offers,errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
@@ -443,6 +453,32 @@ try{
   assertCheck('real_sharaf_bundle_mobile_no_overflow',sharafMobile.scrollWidth<=sharafMobile.viewport+4,sharafMobile);
   await ps5IdentityTab.screenshot({path:'browser-artifacts/fixture-ps5-sharaf-bundle-mobile.png',fullPage:true});
   await ps5IdentityTab.screenshot({path:'browser-artifacts/fixture-ps5-console-vs-usb-hub.png',fullPage:true});
+  const wdSse=searchPayload('PS5',null).offers.find(o=>o.sourceIdentifier==='B0B4SQB1HY');
+  assertCheck('real_wd_black_ssd_raw_sse_is_not_exact_console',
+    wdSse?.productKind==='accessory'&&wdSse?.exactMatch===false&&
+    wdSse?.matchReason!=='يطابق مواصفات بحثك'&&
+    wdSse?.currency==='SAR'&&wdSse?.productPrice===799&&
+    wdSse?.sourceUrl?.includes('/dp/B0B4SQB1HY/'),
+    {kind:wdSse?.productKind,exact:wdSse?.exactMatch,reason:wdSse?.matchReason,
+      price:wdSse?.productPrice,source:wdSse?.sourceUrl});
+  assertCheck('real_wd_black_ssd_absent_from_ps5_console_cards',
+    consoleOnly.length===3&&!consoleOnly.some(x=>/WD_BLACK|SN850|NVMe/i.test(x)),consoleOnly);
+  const ssdShoppingTab=await navigate('PS5 SSD');
+  await ssdShoppingTab.locator('#results .match-result-card').first().waitFor();
+  const ssdResults=await ssdShoppingTab.locator('#results .match-card-copy strong').allTextContents();
+  const ssdExact=searchPayload('PS5 SSD',null).offers.find(o=>o.sourceIdentifier==='B0B4SQB1HY');
+  const ssdCardText=await ssdShoppingTab.locator('#results .match-result-card').first().innerText();
+  assertCheck('explicit_ps5_ssd_search_preserves_real_wd_black_offer',
+    ssdExact?.productKind==='accessory'&&ssdExact?.exactMatch===true&&
+    ssdResults.some(x=>/WD_BLACK|SN850|SSD/i.test(x))&&ssdCardText.includes('799'),
+    {results:ssdResults,cardText:ssdCardText.slice(0,450),exact:ssdExact?.exactMatch});
+  await ssdShoppingTab.screenshot({path:'browser-artifacts/fixture-ps5-ssd-desktop.png',fullPage:true});
+  await ssdShoppingTab.setViewportSize({width:390,height:844});
+  const ssdMobile=await ssdShoppingTab.evaluate(()=>({
+    viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
+  assertCheck('wd_black_ssd_mobile_no_horizontal_overflow',
+    ssdMobile.scrollWidth<=ssdMobile.viewport+4,ssdMobile);
+  await ssdShoppingTab.screenshot({path:'browser-artifacts/fixture-ps5-ssd-mobile.png',fullPage:true});
   const hubShoppingTab=await navigate('PS5 USB hub');
   await hubShoppingTab.locator('#results .match-result-card').first().waitFor();
   const hubResults=await hubShoppingTab.locator('#results .match-card-copy strong').allTextContents();
