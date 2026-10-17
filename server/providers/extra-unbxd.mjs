@@ -4,6 +4,55 @@ const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE
 
 import { filterQueryOffers } from "../../src/search-query.mjs";
 
+// Verified against full Unbxd responses (3 queries, 6 paired rounds):
+// only requested product attributes are returned; validated output offers,
+// prices, variant specs, provenance, and ranking are identical. Keep the
+// explicit [] opt-out for diagnostic full-payload comparisons.
+export const EXTRA_PROJECTION_FIELDS = Object.freeze([
+  "_root_",
+  "uniqueId",
+  "productId",
+  "id",
+  "code",
+  "name",
+  "productName",
+  "title",
+  "autosuggest",
+  "autosuggest_unstemmed",
+  "currentPrice",
+  "sellingPrice",
+  "specialPrice",
+  "basicPriceValueDiscount",
+  "priceValue",
+  "price",
+  "imageUrl",
+  "image",
+  "amplienceProductBaseUrl",
+  "available",
+  "homeDeliveryEnabled",
+  "inStock",
+  "featureEnBrandName",
+  "brandEn",
+  "featureEnSeriesName",
+  "featureEnDeviceType",
+  "featureEnColor",
+  "featureEnMemoryInternal",
+  "featureEnRAMSIZE",
+  "featureEnProcessor",
+  "featureEnProcessorCore",
+  "featureEnScreenSizeInch",
+  "featureEnNetwork",
+  "featureEnOperatingSystem",
+  "featureEnRearCamera",
+  "featureEnBatterySizeMAH",
+  "featureEnWaterproofYN",
+  "modelNumber",
+  "barCode",
+  "nameAr",
+  "collectFromStoreEnabled",
+  "isOnlineOnly"
+]);
+
 function firstFinite(...values) {
   for (const value of values) {
     if (value == null || typeof value === "boolean" || (typeof value === "string" && !value.trim())) continue;
@@ -133,36 +182,74 @@ function normalizeProduct(product) {
   };
 }
 
-export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query) {
+export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal, probeFields} = {}) {
   const cap = limit === Infinity ? Infinity : Math.max(1, Number(limit) || 12);
   const fetchCap = cap === Infinity ? 100 : Math.min(100, cap);
   const url = new URL(EXTRA_SEARCH_BASE);
   url.searchParams.set("q", query);
   url.searchParams.set("rows", String(fetchCap));
   url.searchParams.set("format", "json");
+  // Reduce unused merchant payload by default without capping products or
+  // changing ranking. An explicit [] preserves the full-response probe path.
+  const requestedFields = probeFields === undefined ? EXTRA_PROJECTION_FIELDS : probeFields;
+  if (Array.isArray(requestedFields) && requestedFields.length) url.searchParams.set("fields",requestedFields.join(","));
   const products = [], seen = new Set(), errors = [];
   const startedAt = Date.now();
+  // Opt-in, low-cardinality diagnostic timings; no price or identity data logged.
+  const timingEnabled = process.env.NAWAA_PROFILE_EXTRA === "1";
+  const timings = timingEnabled ? {networkBodyMs:0,headersMs:0,bodyAndJsonMs:0,normalizeMs:0,filterMs:0,pages:0} : null;
+  // Opt-in TEST-only diagnostic: Response.text() + JSON.parse lets us time body
+  // consumption/UTF-8 decoding separately from parse CPU. Production retains
+  // Response.json() unmodified. Prove parity with deterministic mock Responses.
+  const splitJsonTiming = timingEnabled && process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON === "1";
+  if (splitJsonTiming) Object.assign(timings,{bodyReadDecodeMs:0,jsonParseMs:0});
   const overallDeadlineMs = 7200;
   let start = 0, total = null, complete = false;
   while(products.length < fetchCap) {
+    signal?.throwIfAborted();
     url.searchParams.set("start", String(start));
     try {
       const remainingMs = overallDeadlineMs - (Date.now() - startedAt);
       if (remainingMs <= 0) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
-      const response = await fetch(url, {headers:{accept:"application/json"},signal:AbortSignal.timeout(Math.min(3000, remainingMs))});
+      const transportStart = timingEnabled ? performance.now() : 0;
+      const response = await fetch(url, {headers:{accept:"application/json"},signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(Math.min(3000, remainingMs))]) : AbortSignal.timeout(Math.min(3000, remainingMs))});
+      const headersAt = timingEnabled ? performance.now() : 0;
       if(!response.ok) throw new Error("extra-unbxd: HTTP " + response.status);
-      const data = await response.json();
+      let data;
+      if (splitJsonTiming) {
+        const raw = await response.text();
+        const readAt = performance.now();
+        // Decoded UTF-8 byte count, NOT compressed HTTP wire bytes.
+        timings.decodedBodyBytes = (timings.decodedBodyBytes || 0) + Buffer.byteLength(raw,"utf8");
+        data = JSON.parse(raw);
+        const parsedAt = performance.now();
+        timings.bodyReadDecodeMs += readAt - headersAt;
+        timings.jsonParseMs += parsedAt - readAt;
+      } else {
+        data = await response.json();
+      }
+      if (timings) {
+        const bodyParsedAt = performance.now();
+        timings.headersMs += headersAt - transportStart;
+        // Undici Response.json() combines body consumption and JSON parsing.
+        // Do not mislabel this as pure download or isolated JSON.parse CPU.
+        timings.bodyAndJsonMs += bodyParsedAt - headersAt;
+        timings.networkBodyMs += bodyParsedAt - transportStart;
+        timings.pages++;
+      }
       const page = data?.response?.products;
       if(!Array.isArray(page)) throw new Error("extra-unbxd: Malformed product response");
       const count = data.response.numberOfProducts;
       if(Number.isFinite(Number(count)) && count != null) total = Number(count);
       let added = 0;
+      const normalizeStart = timingEnabled ? performance.now() : 0;
       for(const product of page) {
         const offer = normalizeProduct(product);
         if(!offer || seen.has(offer.sourceUrl)) continue;
         seen.add(offer.sourceUrl); products.push(offer); added++;
         if(products.length >= fetchCap) break;
       }
+      if (timings) timings.normalizeMs += performance.now() - normalizeStart;
       start += page.length;
       // Live search requests at most one bounded UNBXD page. Return it immediately;
       // deeper recall belongs to cursor expansion, never the first interactive wave.
@@ -172,11 +259,17 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query)
       if(total===null && page.length < Number(url.searchParams.get("rows"))) {complete=true;break;}
       if(Date.now() - startedAt >= overallDeadlineMs) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
     } catch(error) {
+      if(signal?.aborted) throw signal.reason || error;
       if(!products.length) throw error;
       errors.push({market:"extra-sa",error:error.message}); break;
     }
   }
+  const filterStart = timingEnabled ? performance.now() : 0;
   const {offers,queryFilter}=filterQueryOffers(matchingQuery,products);
+  if (timings) {
+    timings.filterMs = performance.now() - filterStart;
+    console.log("EXTRA_PHASE_TIMING "+JSON.stringify({queryLength:String(query).length,offers:offers.length,products:products.length,...timings}));
+  }
   return {provider:"extra-unbxd",ok:offers.length>0,
     searchedMarkets:[{id:"extra-sa",countryCode:"SA",countryNameAr:"السعودية"}],
     offers, errors, diagnostics:{queryFilter,pagination:{fetched:start,total,complete}}};

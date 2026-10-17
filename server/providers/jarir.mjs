@@ -225,15 +225,16 @@ export function parseJarirSearchHtml(html, limit = 24) {
   return offers;
 }
 
-export async function searchViaConstructor(query, limit) {
+export async function searchViaConstructor(query, limit, requestSignal, onPage) {
   const cap = Math.max(1, Math.min(96, Math.floor(Number(limit) || 24)));
   const pageSize = Math.min(48, cap);
-  const signal = AbortSignal.timeout(6200);
+  const signal = requestSignal ? AbortSignal.any([requestSignal,AbortSignal.timeout(6200)]) : AbortSignal.timeout(6200);
   const offers = [];
   const seen = new Set();
   let paginationError = null;
 
   for (let page = 1; page <= Math.ceil(cap / pageSize) && offers.length < cap; page += 1) {
+    signal.throwIfAborted();
     const url = new URL(JARIR_CONSTRUCTOR_BASE + encodeURIComponent(query));
     url.searchParams.set("key", JARIR_CONSTRUCTOR_KEY);
     url.searchParams.set("section", "Products");
@@ -257,6 +258,7 @@ export async function searchViaConstructor(query, limit) {
       payload = await response.json();
       if (!Array.isArray(payload?.response?.results)) throw new Error("jarir-constructor: Malformed product response");
     } catch (error) {
+      if(requestSignal?.aborted) throw requestSignal.reason || error;
       if (!offers.length) throw error;
       paginationError = error?.message || String(error);
       break;
@@ -271,14 +273,23 @@ export async function searchViaConstructor(query, limit) {
     }
 
     let added = 0;
+    const pageOffers = [];
     for (const offer of parsed) {
       const key = offer.sourceUrl || offer.sourceMeta?.productId;
       if (!key || seen.has(key)) continue;
       seen.add(key);
       offers.push(offer);
+      pageOffers.push(offer);
       added += 1;
       if (offers.length >= cap) break;
     }
+    // Publish only normalized, deduplicated page results. Later pages still run
+    // with the same cap/deadline and retain the existing partial-error contract.
+    requestSignal?.throwIfAborted();
+    const hasNextPage = page < Math.ceil(cap / pageSize) && offers.length < cap &&
+      rawCount >= Number(url.searchParams.get("num_results_per_page")) && added > 0;
+    if (hasNextPage && typeof onPage === "function") await onPage(pageOffers);
+    requestSignal?.throwIfAborted();
     if (rawCount < Number(url.searchParams.get("num_results_per_page")) || added === 0) break;
   }
 
@@ -286,7 +297,7 @@ export async function searchViaConstructor(query, limit) {
   return offers;
 }
 
-async function searchViaHtml(query, limit) {
+async function searchViaHtml(query, limit, signal) {
   const url = "https://www.jarir.com/sa-en/catalogsearch/result/?q=" + encodeURIComponent(query);
   const response = await fetch(url, {
     headers: {
@@ -295,7 +306,7 @@ async function searchViaHtml(query, limit) {
       "user-agent": "Mozilla/5.0 (compatible; NAWAA-Search/0.4; +https://moealf12.github.io/Nawaa/)",
     },
     redirect: "follow",
-    signal: AbortSignal.timeout(12000),
+    signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
   });
   if (!response.ok) throw new Error("jarir-html: HTTP " + response.status);
   const html = await response.text();
@@ -331,7 +342,7 @@ export async function refreshJarirPrices(raw, matchingQuery, {resolvePage=resolv
   return {offers:refreshed.filter(Boolean),errors:failures.filter(Boolean),queryFilter,pageRefresh};
 }
 
-export async function searchJarir(query, limit = 24, matchingQuery = query) {
+export async function searchJarir(query, limit = 24, matchingQuery = query, {signal, onOffers} = {}) {
   const capped=Math.max(1,Math.min(96,Math.floor(Number(limit)||24))), errors=[];
   const classify=(raw)=>{
     const offers=raw.map(offer=>({...offer,...assessOfferMatch(matchingQuery,offer),category:productCategory(offer)}));
@@ -340,16 +351,25 @@ export async function searchJarir(query, limit = 24, matchingQuery = query) {
     return {offers,categories,exactMatches:offers.filter(o=>o.exactMatch).length};
   };
   try {
-    const raw=await searchViaConstructor(query,capped), {offers,categories,exactMatches}=classify(raw);
+    const raw=await searchViaConstructor(query,capped,signal,
+      typeof onOffers === "function" ? page => onOffers(classify(page).offers) : undefined
+    ), {offers,categories,exactMatches}=classify(raw);
     const paginationErrors=raw.paginationError?[{market:"jarir-sa",error:raw.paginationError}]:[];
     return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors:paginationErrors,
       diagnostics:{acquisition:{strategy:"search-results-first",discovered:raw.length,classified:offers.length,dropped:0,pdpFallback:{attempted:0,verified:0,failed:0}},classification:{categories,exactMatches},pagination:{partial:Boolean(raw.paginationError),error:raw.paginationError||null}}};
-  } catch(error){errors.push({market:"jarir-sa",error:error?.message||String(error)});}
+  } catch(error){
+    if(signal?.aborted) throw signal.reason || error;
+    errors.push({market:"jarir-sa",error:error?.message||String(error)});
+  }
+  signal?.throwIfAborted();
   try {
-    const raw=await searchViaHtml(query,capped), {offers,categories,exactMatches}=classify(raw);
+    const raw=await searchViaHtml(query,capped,signal), {offers,categories,exactMatches}=classify(raw);
     if(raw.length) return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors,
       diagnostics:{acquisition:{strategy:"html-search-results",discovered:raw.length,classified:offers.length,dropped:0,pdpFallback:{attempted:0,verified:0,failed:0}},classification:{categories,exactMatches}}};
     errors.push({market:"jarir-sa",error:"HTML fallback returned no products"});
-  } catch(error){errors.push({market:"jarir-sa",error:error?.message||String(error)});}
+  } catch(error){
+    if(signal?.aborted) throw signal.reason || error;
+    errors.push({market:"jarir-sa",error:error?.message||String(error)});
+  }
   return {provider:"jarir-direct",ok:false,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers:[],errors};
 }

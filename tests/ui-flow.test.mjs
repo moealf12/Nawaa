@@ -38,8 +38,12 @@ test("query deep link starts exactly one live search and URL submission requests
   await import("../src/search-page.mjs");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.filter((url) => url.includes("/api/search?")).length, 1);
+  assert.equal(requests.filter((url) => new URL(url).pathname === "/health").length, 0,
+    "the shopper search must not wait for a redundant health warmup");
+  assert.equal(new URL(requests[0]).pathname, "/api/search",
+    "send the actual search immediately, including on a cold API instance");
   assert.equal((element("#results").innerHTML.match(/data-group-key=/g) || []).length, 2);
-  assert.ok(element("#results").innerHTML.indexOf("نفس النسخة، بين المتاجر") < element("#results").innerHTML.indexOf("المواصفات الموحّدة"), "merchant comparison should precede optional specifications");
+  assert.ok(element("#results").innerHTML.indexOf("مقارنة عروض النسخة المختارة") < element("#results").innerHTML.indexOf("المواصفات الموحّدة"), "merchant comparison should be honest and precede optional specifications");
   assert.match(element("#results").innerHTML, /id="availabilityFilter"/);
   assert.match(element("#results").innerHTML, /id="merchantFilter"/);
   element("#searchInput").value = "https://example.com/black";
@@ -144,6 +148,21 @@ test("query deep link starts exactly one live search and URL submission requests
 
   assert.match(element('#results').innerHTML,/<details class="selected-comparison" open>/);
   assert.match(element('#results').innerHTML, /المنتج المختار[\s\S]*HP Pavilion Laptop/);
+
+  // Failure-first counterexample: broad HP discovery can have exactMatch=true
+  // without a manufacturer model/SKU. The selected card must not claim a
+  // verified 100% match based on a text relevance score.
+  const selectedBrandHtml=element('#results').innerHTML;
+  assert.match(selectedBrandHtml,/مقارنة عروض النسخة المختارة/,'unverified manufacturer SKU must never be labeled same version across stores');
+  assert.match(selectedBrandHtml,/لا تتوفر أدلة كافية لتأكيد تطابق رقم الموديل بين جميع العروض/,'unverified SKU comparison needs a clear caution');
+  assert.doesNotMatch(selectedBrandHtml,/نفس النسخة، بين المتاجر/,'a broad HP brand is not independently verified cross-merchant SKU identity');
+  assert.match(selectedBrandHtml,/صلة بالبحث: \d+% \(تقديرية\)/,
+    'a relevance heuristic must be labeled as an estimate');
+  assert.match(selectedBrandHtml,/ليست إثباتًا لتطابق رقم الموديل أو SKU/,
+    'customers need an explicit SKU-level confidence boundary');
+  assert.doesNotMatch(selectedBrandHtml,/>تطابق \d+%<\/span>/,
+    'bare exact-match percentages misrepresent unverified SKUs');
+
   assert.doesNotMatch(element('#results').innerHTML, /data-dimension="modelKey"/, 'selected product comparison must not offer unrelated HP products as model variants');
 
   element(".selected-comparison").events.toggle({target:{open:false,isConnected:false}});
@@ -151,6 +170,27 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.doesNotMatch(element("#results").innerHTML, /المصدر ↗/);
   element(".selected-comparison").events.toggle({target:{open:false,isConnected:true}});
   assert.match(element("#results").innerHTML,/<details class="selected-comparison" hidden>/,"closing the comparison clears its expanded card state");
+
+  // Two stores can report different manufacturer SKUs for what looks like the
+  // same phone/color/capacity. The conservative groups MUST stay separate, but
+  // the buyer must be shown why the two otherwise-identical cards exist.
+  const differentSkuSameAppearance = [
+    offer,
+    {...offer,merchant:'Jarir',sourceUrl:'https://example.com/black-import',
+      specs:{...offer.specs,modelNumber:'MG674LL/A'}},
+  ];
+  globalThis.fetch=async url=>({ok:true,text:async()=>JSON.stringify(
+    String(url).includes('/health')?{ok:true}:{offers:differentSkuSameAppearance,providers:[]})});
+  element('#searchInput').value='iPhone 17';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  const duplicatePhonesHtml=element('#results').innerHTML;
+  assert.equal((duplicatePhonesHtml.match(/class="match-result-card/g)||[]).length,2,
+    'distinct reported manufacturer models must not be silently merged');
+  assert.match(duplicatePhonesHtml,/رقم الموديل: MG674AH\/A/,
+    'first otherwise-indistinguishable card must display its reported model');
+  assert.match(duplicatePhonesHtml,/رقم الموديل: MG674LL\/A/,
+    'second otherwise-indistinguishable card must display its different model');
 
   const manyOffers=Array.from({length:25},(_,i)=>({...offer,title:`HP Pavilion Laptop ${i+1}`,sourceUrl:`https://example.com/hp-${i+1}`,specs:{brand:'HP',modelNumber:`HP-LAP-${i+1}`}}));
   globalThis.fetch=async url=>({ok:true,text:async()=>JSON.stringify(String(url).includes('/health')?{ok:true}:{offers:manyOffers,providers:[]})});
@@ -163,11 +203,61 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.equal(loadMoreButtons.length,0,'no Load more remains after all products are visible');
   element('#resetResultFilters').events.click();assert.equal(countCards(),10,'reset filters restores the first ten products');
   renderedCards[0].events.click();
+  assert.match(element('#results').innerHTML,/صلة بالبحث: \d+% \(تقديرية\)/,
+    'model/category searches must also use honest estimated relevance wording');
+  assert.doesNotMatch(element('#results').innerHTML,/>تطابق \d+%<\/span>/);
   assert.ok(detailButtons.length>0,'selected product must expose its detail action');
   globalThis.sessionStorage={setItem(){throw Error('storage blocked');}};
   globalThis.localStorage={getItem(){return null;},setItem(){throw Error('storage blocked');}};
   detailButtons[0].events.click();
   assert.match(location.href,/^\.\/product\.html\?/,'blocked storage cannot prevent product detail navigation');
   assert.match(new URL(location.href,'http://localhost').searchParams.get('source'),/https:\/\/example.com\/hp-/);
+
+  // An SSE deadline with no offers is not proof the product does not exist.
+  // Do not send automatic deeper requests while the initial search is partial.
+  let partialRequests=0;
+  globalThis.fetch=async ()=>{
+    partialRequests++;
+    return {ok:true,text:async()=>JSON.stringify({
+      offers:[],providers:[],errors:[{sourceId:'jarir-direct',error:'provider_deadline_exceeded'}],
+      coverage:{partial:true,deadlineExceeded:true,providersPending:2},
+      nextCursor:'signed-depth-1',
+    })};
+  };
+  element('#searchInput').value='temporarily unavailable device';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(partialRequests,1,'partial search must not recursively expand until its initial sources recover');
+  assert.match(element('#searchStatus').textContent,/بحث جزئي/);
+  assert.match(element('#results').innerHTML,/PARTIAL SEARCH/);
+  assert.match(element('#results').innerHTML,/لا يعني أن المنتج غير متوفر/);
+  assert.doesNotMatch(element('#results').innerHTML,/NO LIVE OFFERS/);
+
+  // Older APIs may report provider failures in errors[] without coverage.partial.
+  // A failed source is not evidence of zero inventory and must not trigger
+  // further automatic requests.
+  let errorOnlyRequests=0;
+  globalThis.fetch=async ()=>{
+    errorOnlyRequests++;
+    return {ok:true,text:async()=>JSON.stringify({
+      offers:[],providers:[],errors:[{sourceId:'jarir',error:'provider_failed'}],
+      nextCursor:'signed-depth-1',
+    })};
+  };
+  element('#searchInput').value='partially failed legacy search';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(errorOnlyRequests,1,'provider errors alone must stop automatic expansion');
+  assert.match(element('#searchStatus').textContent,/بحث جزئي/);
+  assert.match(element('#results').innerHTML,/PARTIAL SEARCH/);
+
+  globalThis.fetch=async ()=>({ok:true,text:async()=>JSON.stringify({
+    offers:[],providers:[],errors:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+  })});
+  element('#searchInput').value='genuinely unmatched item';
+  element('#searchForm').events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.match(element('#results').innerHTML,/NO LIVE OFFERS/);
+  assert.doesNotMatch(element('#results').innerHTML,/PARTIAL SEARCH/);
 
 });

@@ -325,7 +325,7 @@ export function parseSharafAlgoliaPayload(payload, limit = 32) {
   return offers;
 }
 
-export async function searchSharafDG(query, limit = 32) {
+export async function searchSharafDG(query, limit = 32, {signal} = {}) {
   let response;
   try {
     response = await fetch(SHARAF_ALGOLIA_URL, {
@@ -343,9 +343,10 @@ export async function searchSharafDG(query, limit = 32) {
         page: 0,
         attributesToRetrieve: ["*"],
       }),
-      signal: AbortSignal.timeout(10000),
+      signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
     });
   } catch (error) {
+    if(signal?.aborted) throw signal.reason || error;
     const cause = error?.cause;
     const detail = [error?.message, cause?.code, cause?.errno, cause?.syscall, cause?.hostname]
       .filter(Boolean).join(" | ");

@@ -116,8 +116,8 @@
     .comparison-layout{grid-template-columns:minmax(0,1.5fr) .58fr}
     .product-configurator{border:1px solid rgba(119,185,255,.18);background:linear-gradient(180deg,rgba(14,30,47,.94),rgba(9,21,34,.9));border-radius:28px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.16)}
     .config-hero{display:grid;grid-template-columns:142px minmax(0,1fr) 175px;gap:20px;align-items:center;padding:22px}
-    .config-image{width:142px;height:142px;border-radius:21px;background:#fff;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(255,255,255,.1)}
-    .config-image img{width:100%;height:100%;object-fit:contain;padding:9px;display:block}
+    .config-image{position:relative;width:142px;height:142px;border-radius:21px;background:#fff;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(255,255,255,.1)}
+    .config-image img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:9px;display:block}
     .config-image-fallback{display:none;place-items:center;width:100%;height:100%;padding:10px;text-align:center;color:#6f8192;background:rgba(255,255,255,.04);font-size:9px}
     .config-image-fallback.visible{display:grid}
     .config-title{min-width:0}.config-title h3{font-size:22px;line-height:1.32;margin:6px 0 10px;letter-spacing:-.025em}

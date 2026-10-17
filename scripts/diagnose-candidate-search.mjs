@@ -1,0 +1,247 @@
+// Run the CANDIDATE server locally on the GitHub runner against real, public
+// merchant endpoints. This tests product search wiring without deploying Render.
+// No database/Meili credentials, writes, or production activation.
+import {spawn} from 'node:child_process';
+import net from 'node:net';
+import {once} from 'node:events';
+import {searchViaConstructor} from '../server/providers/jarir.mjs';
+import {assessOfferMatch,describeProduct} from '../src/search-query.mjs';
+
+const port=await new Promise((resolve,reject)=>{
+  const s=net.createServer();
+  s.once('error',reject);
+  s.listen(0,'127.0.0.1',()=>{
+    const p=s.address().port;
+    s.close(()=>resolve(p));
+  });
+});
+const env={
+  ...process.env,PORT:String(port),DATABASE_URL:'',MEILI_HOST:'',MEILI_MASTER_KEY:'',
+  NOON_ENABLED:'false',CARREFOUR_ENABLED:'false',EBAY_ENABLED:'false',
+  SEARCH_REQUEST_DEADLINE_MS:'12000',
+};
+const child=spawn(process.execPath,['server/server.mjs'],{env,stdio:['ignore','pipe','pipe']});
+let out='',err='';
+child.stdout.on('data',chunk=>{out=(out+chunk).slice(-2000)});
+child.stderr.on('data',chunk=>{err=(err+chunk).slice(-2000)});
+const base='http://127.0.0.1:'+port;
+async function waitForHealth(){
+  for(let i=0;i<55;i++){
+    if(child.exitCode!==null)throw Error('candidate_server_exited:'+child.exitCode);
+    try{
+      const r=await fetch(base+'/health',{signal:AbortSignal.timeout(1000)});
+      if(r.status===200)return;
+    }catch{}
+    await new Promise(r=>setTimeout(r,100));
+  }
+  throw Error('candidate_health_timeout:'+err.slice(0,250));
+}
+async function query(text){
+  const start=Date.now();
+  try{
+    const r=await fetch(base+'/api/search?q='+encodeURIComponent(text),{
+      headers:{accept:'application/json'},signal:AbortSignal.timeout(32000),
+    });
+    const data=await r.json();
+    const offers=Array.isArray(data.offers)?data.offers:[];
+    const exact=offers.filter(x=>x.exactMatch===true);
+    const structurallyValid=offers.filter(o=>{
+      try{
+        return typeof o.title==='string' && o.title.trim().length>0 &&
+          Number.isFinite(o.productPrice) && o.productPrice>0 &&
+          o.currency==='SAR' && typeof o.merchant==='string' && o.merchant.trim() &&
+          new URL(o.sourceUrl).protocol==='https:';
+      }catch{return false}
+    });
+    const falsePS5=exact.filter(o=>/\b(?:disc|disk|optical|blu ray)\s+drive\b/i.test(o.title||'') &&
+      !/\bconsole\b.*\b(?:with|includes?|including)\b/i.test(o.title||''));
+    const result={
+      q:text,status:r.status,elapsedMs:Date.now()-start,
+      count:offers.length,exact:exact.length,structurallyValid:structurallyValid.length,
+      merchants:[...new Set(offers.map(o=>o.merchant).filter(Boolean))].slice(0,15),
+      providerSummary:(data.providers||[]).filter(p=>(p.returnedOffers||0)>0).map(p=>({sourceId:p.sourceId,offers:p.returnedOffers})),
+      failures:(data.errors||[]).slice(0,7).map(e=>({id:e.sourceId,code:String(e.error||e.message||'').slice(0,110)})),
+      falsePS5: falsePS5.map(o=>({title:o.title,price:o.productPrice})),
+    };
+    console.log('CANDIDATE_LIVE_SEARCH '+JSON.stringify(result));
+    return result;
+  }catch(error){
+    const result={q:text,status:null,elapsedMs:Date.now()-start,error:String(error?.message||error).slice(0,200)};
+    console.log('CANDIDATE_LIVE_SEARCH '+JSON.stringify(result));
+    return result;
+  }
+}
+async function measureStreamFirstOffer(text){
+  const start=Date.now();
+  let firstOfferMs=null;
+  let firstMerchantCount=0;
+  let finalOfferCount=0;
+  let done=false;
+  let snapshots=0;
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(new Error('sse_diagnostic_timeout')),25000);
+  try{
+    const r=await fetch(base+'/api/search/stream?q='+encodeURIComponent(text),{
+      headers:{accept:'text/event-stream'},signal:controller.signal,
+    });
+    if(r.status!==200)throw Error('sse_status_'+r.status);
+    const reader=r.body.getReader();
+    const decoder=new TextDecoder();
+    let remaining='';
+    while(true){
+      const {value,done:streamDone}=await reader.read();
+      if(streamDone)break;
+      remaining+=decoder.decode(value,{stream:true}).replace(/\r\n/g,'\n');
+      // Prevent a malformed server from accumulating an unbounded line buffer.
+      if(remaining.length>2000000)throw Error('sse_buffer_limit');
+      let end;
+      while((end=remaining.indexOf('\n\n'))!==-1){
+        const block=remaining.slice(0,end);
+        remaining=remaining.slice(end+2);
+        const event=block.match(/^event: (.+)$/m)?.[1];
+        const data=block.match(/^data: (.+)$/m)?.[1];
+        if(event==='snapshot'&&data){
+          snapshots++;
+          const parsed=JSON.parse(data);
+          const offers=Array.isArray(parsed.offers)?parsed.offers:[];
+          if(firstOfferMs===null&&offers.length){
+            firstOfferMs=Date.now()-start;
+            firstMerchantCount=new Set(offers.map(o=>o.merchant).filter(Boolean)).size;
+          }
+          finalOfferCount=offers.length;
+        }
+        if(event==='done'){done=true;break}
+      }
+      if(done)break;
+    }
+    const measurement={
+      q:text,sseStatus:r.status,firstOfferMs,firstMerchants:firstMerchantCount,
+      snapshots,finalOffers:finalOfferCount,finishedMs:Date.now()-start,done,
+    };
+    console.log('CANDIDATE_SSE_TIMING '+JSON.stringify(measurement));
+    return measurement;
+  } catch(error){
+    const measurement={q:text,error:String(error?.message||error).slice(0,180),firstOfferMs,
+      elapsedMs:Date.now()-start};
+    console.log('CANDIDATE_SSE_TIMING '+JSON.stringify(measurement));
+    return measurement;
+  }finally{clearTimeout(timeout);controller.abort()}
+}
+try{
+  await waitForHealth();
+  // Cold-stream timing must run BEFORE the JSON search for the same query;
+  // otherwise cachedSearch returns a warm snapshot and masks real first-offer delay.
+  const stream=await measureStreamFirstOffer('iPhone 17');
+  const iphone=await query('iPhone 17');
+  const ps5=await query('PS5');
+  // v15.14: bounded read-only real Constructor search and raw vs adapter
+  // evidence. This is diagnostic-only (no provider, product or DB writes).
+  // Intercept existing PUBLIC adapter fetch rather than guessing new endpoints
+  // or duplicating the storefront's public Constructor key.
+  const targets=new Set(['668751','677771']);
+  const probeQueries=[
+    {query:'677771',limit:12},
+    {query:'CFI2116BCFIZC',limit:12},
+    {query:'PS5 DualSense Bundle',limit:24},
+    {query:'Sony PlayStation 5 Slim DIG',limit:24},
+    {query:'Sony PlayStation 5 Slim',limit:48},
+  ];
+  const pickMetadata=meta=>{
+    const keys=['name','model','seri','ptyp','productcode_description',
+      'mpn','item_number','tsca','colo','cofa','brand','price',
+      'bundle','subtitle','sub_title','description','product_description'];
+    const fields={};
+    for(const key of keys){
+      const value=meta?.[key];
+      if(['string','number','boolean'].includes(typeof value))
+        fields[key]=String(value).slice(0,320);
+    }
+    return {keys:Object.keys(meta||{}).sort().slice(0,100),fields};
+  };
+  const extractRaw=raw=>({
+    id:String(raw?.data?.id||''),sku:String(raw?.data?.sku||''),
+    value:String(raw?.value||'').slice(0,320),
+    description:String(raw?.data?.description||'').slice(0,320),
+    url:String(raw?.data?.url||'').slice(0,320),
+    price:raw?.data?.price??null,
+    metadata:pickMetadata(raw?.data?.metadata||{}),
+  });
+  const originalFetch=globalThis.fetch;
+  const rawEvidence=[];
+  // Diagnostic instrumentation exists ONLY in this disposable GitHub runner
+  // process, never in the child server or the production Jarir adapter.
+  globalThis.fetch=async(input,init)=>{
+    const response=await originalFetch(input,init);
+    try{
+      const u=new URL(typeof input==='string'?input:input instanceof URL?input.href:input?.url);
+      if(u.hostname==='ac.cnstrc.com'&&u.pathname.startsWith('/v1/search/')&&response.ok){
+        const length=Number(response.headers.get('content-length')||0);
+        if(!length||length<=2_000_000){
+          const body=await response.clone().text();
+          if(body.length<=2_000_000){
+            const parsed=JSON.parse(body);
+            for(const raw of parsed?.response?.results||[]){
+              const id=String(raw?.data?.id||raw?.data?.sku||'');
+              if(targets.has(id))rawEvidence.push({
+                query:u.pathname.slice('/v1/search/'.length),
+                captureTime:new Date().toISOString(),
+                raw:extractRaw(raw),
+              });
+            }
+          }
+        }
+      }
+    }catch(error){
+      console.log('JARIR_V1514_CAPTURE_WARNING '+JSON.stringify({
+        reason:String(error?.message||error).slice(0,120)}));
+    }
+    return response;
+  };
+  try{
+    for(const {query,limit} of probeQueries){
+      let found=[],error=null;
+      try{
+        found=await searchViaConstructor(query,limit,AbortSignal.timeout(8000));
+      }catch(e){error=String(e?.message||e).slice(0,160)}
+      const normalized=found.filter(o=>targets.has(String(o.sourceMeta?.productId||'')))
+        .map(o=>({
+          id:String(o.sourceMeta?.productId||''),
+          title:o.title,sourceUrl:o.sourceUrl,
+          productPrice:o.productPrice,currency:o.currency,observedAt:o.observedAt,
+          specs:{deviceType:o.specs?.deviceType||null,series:o.specs?.series||null,
+            modelNumber:o.specs?.modelNumber||null,storage:o.specs?.storage||null},
+          sourceMeta:{productType:o.sourceMeta?.productType||null,
+            parsedFrom:o.sourceMeta?.parsedFrom||null},
+          kind:describeProduct(o).kind,isBundle:describeProduct(o).isBundle,
+          exactPS5:assessOfferMatch('PS5',o).exactMatch,
+          exactPS5SSD:assessOfferMatch('PS5 SSD',o).exactMatch,
+        }));
+      const rawForQuery=rawEvidence.filter(x=>decodeURIComponent(x.query)===query);
+      const observed=normalized.some(x=>x.id==='677771')||
+        rawForQuery.some(x=>x.raw.id==='677771');
+      const status=error?'SOURCE_UNAVAILABLE':observed?'OBSERVED':'NOT_IN_BOUNDED_RESULTS';
+      console.log('JARIR_V1514_RAW_VS_ADAPTER '+JSON.stringify({
+        query,limit,returned:found.length,status,
+        raw:rawForQuery,normalized,error,
+        evidenceLevel:observed?'E1-live-Constructor':'E1-bounded-negative-observation',
+        note:'captureTime and observedAt are acquisition timestamps; neither is merchant listing update time',
+      }));
+      // Only an actual returned, normalized product can fail a customer
+      // certification. Missing SKU remains UNKNOWN, not a failed listing.
+      const conflicts=normalized.filter(x=>x.id==='677771'&&
+        (x.kind!=='console'||!x.exactPS5||x.exactPS5SSD));
+      if(conflicts.length)process.exitCode=7;
+    }
+  }finally{globalThis.fetch=originalFetch}
+  if(iphone.status!==200||ps5.status!==200)process.exitCode=2;
+  // HTTP 200 + empty products is not a functional search success.
+  if([iphone,ps5].some(x=>!x.structurallyValid || x.exact<1 || x.merchants.length<2))
+    process.exitCode=5;
+  if([iphone,ps5].some(x=>x.merchants.includes('App')))
+    process.exitCode=6;
+  if(ps5.falsePS5?.length)process.exitCode=3;
+  if(stream.sseStatus!==200||!stream.done||stream.firstOfferMs===null)process.exitCode=4;
+}finally{
+  if(child.exitCode===null)child.kill('SIGTERM');
+  await Promise.race([once(child,'exit').catch(()=>{}),new Promise(r=>setTimeout(r,2000))]);
+}
