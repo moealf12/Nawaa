@@ -133,6 +133,8 @@ test('PS5 generic search never certifies observed covers, fans, mounts, HDDs or 
   const observed=[
     ['Sony Console Covers for PlayStation 5 Slim Edition (Blu-ray/Digital), Chroma Pearl',
       'https://www.jarir.com/sa-en/sony-chroma-pearl-other-gaming-accessories-644723.html','accessory'],
+    ['Sony Disc Drive for PlayStation 5 Digital Edition Slim, White',
+      'https://www.jarir.com/sa-en/sony-digital-edition-slim-other-gaming-accessories-629492.html','accessory'],
     ['KASTWAVE PS5 Cooling Fan Horizontal Compatible With PlayStation 5 Disc & Digital Edition Console - Includes Light',
       'https://www.amazon.sa/-/en/KASTWAVE-Cooling-Horizontal-Compatible-PlayStation/dp/B09DRTJ194','accessory'],
     ['PS5 Wall Mount for Playstation 5 Disc Edition and Digital Edition (Mount The Console on Wall Near or Behind TV)',

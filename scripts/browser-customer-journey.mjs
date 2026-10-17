@@ -127,6 +127,14 @@ try{
     // Wait only for existing stream completion; never initiate another search.
     await page.waitForFunction(() => window.__nawaaObserved?.done, null, {timeout:22000}).catch(()=>{});
     report.ps5SourceEvidence=await page.evaluate(()=>window.__nawaaObserved);
+    if(mode==='candidate'){
+      // Real merchant-product regression using the already received SSE events.
+      // Accessories may be offered as related products, but cannot be exact PS5 consoles.
+      const accessoryPath=/(?:other-gaming-accessories-644723|other-gaming-accessories-629492|B09DRTJ194|B08VW55CSZ|B0CQD48RJS|\/playstation-games\/)/i;
+      const captured=[...(report.ps5SourceEvidence?.first||[]),...(report.ps5SourceEvidence?.suspicious||[])];
+      report.assertions.noKnownAccessoryCertifiedConsole=!captured.some(
+        offer=>accessoryPath.test(offer.source||'') && offer.exactMatch === true);
+    }
   }
   await page.screenshot({path:prefix+'-search-desktop.png',fullPage:true,timeout:20000});
   report.assertions.searchPageRendered=Boolean(navigation?.ok());
