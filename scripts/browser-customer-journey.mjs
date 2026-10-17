@@ -14,8 +14,9 @@ mkdirSync(dir,{recursive:true});
 const report={mode,generatedAt:new Date().toISOString(),result:'INCOMPLETE',
   environment:mode==='candidate'?'isolated_pr_head':'currently_published_site',
   assertions:{},errors:[],consoleErrors:[],resourceFailures:[],deploymentClaim:false};
-const prefix=dir+'/'+mode;
-const query=mode==='candidate'?'iPhone 17':'PS5';
+const query=process.env.NAWAA_BROWSER_QUERY || (mode==='candidate'?'iPhone 17':'PS5');
+const prefix=dir+'/'+mode+'-'+query.toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,35);
+report.query=query;
 let child=null,browser=null;
 const env={...process.env,PORT:'0',NODE_ENV:'test',DATABASE_URL:'',MEILI_HOST:'',MEILI_MASTER_KEY:'',
   NOON_ENABLED:'false',CARREFOUR_ENABLED:'false',EBAY_ENABLED:'false',
@@ -71,7 +72,9 @@ try{
     return {cards:result?.querySelectorAll('.match-result-card').length||0,
       status:document.querySelector('#searchStatus')?.textContent?.slice(0,320)||'',
       noMatch:Boolean(result?.querySelector('.no-match')),
-      priceLabels:[...result?.querySelectorAll('.match-card-price b')||[]].slice(0,3).map(x=>x.textContent?.trim()),
+      priceLabels:[...result?.querySelectorAll('.match-card-price b')||[]].slice(0,6).map(x=>x.textContent?.trim()),
+      cardTitles:[...result?.querySelectorAll('.match-card-copy strong')||[]].slice(0,6).map(x=>x.textContent?.trim()),
+      cardCoverage:[...result?.querySelectorAll('.card-coverage')||[]].slice(0,6).map(x=>x.textContent?.trim()),
       merchantOffers:result?.querySelectorAll('.merchant-row').length||0,
       remoteExpand:Boolean(result?.querySelector('#loadMoreRemote')),
       categoryExpand:result?.querySelectorAll('.show-category').length||0};
