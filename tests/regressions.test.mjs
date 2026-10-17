@@ -438,3 +438,74 @@ test('marketplace title condition overrides optimistic API condition',async()=>{
  assert.equal(match.exactMatch,false);
  assert.equal(match.matchReason,'حالة المنتج تختلف عن المطلوب');
 });
+
+
+// E1: source-backed candidate raw SSE, 2026-10-17, Amazon Saudi.
+// Source identifier is an Amazon ASIN, not a claimed manufacturer SKU.
+// SAR 799 was observed in that capture; NOT a verified current market price.
+const wdBlackSn850Ps5Ssd = {
+  title:"WD_BLACK 1TB SN850 NVMe SSD for PS5 Consoles Solid State Drive with Heatsink",
+  merchant:"Amazon Saudi",providerMarket:"amazon-sa",currency:"SAR",
+  productPrice:799,condition:"new",sourceIdentifier:"B0B4SQB1HY",
+  sourceUrl:"https://www.amazon.sa/-/en/WD_BLACK-SN850-Consoles-Solid-Heatsink/dp/B0B4SQB1HY/ref=sr_1_140",
+};
+
+test("E1 Amazon WD_BLACK SN850 NVMe drive never becomes a PS5 console", () => {
+  const source=wdBlackSn850Ps5Ssd;
+  assert.equal(queries.describeProduct(source).kind,"accessory");
+  assert.equal(queries.productCategory(source),"accessory");
+  for(const query of ["PS5","بلايستيشن 5"]){
+    const m=assessOfferMatch(query,source);
+    assert.equal(m.exactMatch,false,query);
+    assert.equal(m.productKind,"accessory",query);
+    assert.notEqual(m.matchReason,"يطابق مواصفات بحثك",query);
+  }
+  assert.equal(queries.parseSearchIntent("PS5 SSD").kind,"accessory");
+  assert.equal(assessOfferMatch("PS5 SSD",source).exactMatch,true);
+  assert.equal(assessOfferMatch("SSD للبلايستيشن 5",source).exactMatch,true);
+  assert.equal(source.merchant,"Amazon Saudi");
+  assert.equal(source.currency,"SAR");
+  assert.equal(source.productPrice,799);
+  assert.equal(source.sourceIdentifier,"B0B4SQB1HY");
+  assert.equal(source.sourceUrl,"https://www.amazon.sa/-/en/WD_BLACK-SN850-Consoles-Solid-Heatsink/dp/B0B4SQB1HY/ref=sr_1_140");
+  const persisted={...source,exactMatch:true,matchConfidence:1,dataKind:"persisted"};
+  assert.equal(assessOfferMatch("PS5",persisted).exactMatch,false,"stale exact flags are re-scored");
+});
+
+test("PS5 SSD kind withstands adversarial wording, merchants and price changes",()=>{
+  const storageComponentTitles=[
+    "WD_BLACK 1TB SN850 NVMe SSD for PS5 Consoles Solid State Drive with Heatsink",
+    "1TB SSD for Sony PlayStation 5 Console",
+    "PS5 SSD M.2 NVMe 2TB storage expansion drive",
+    "External USB SSD for PS5 Console",
+    "PS5 compatible NVMe solid state drive with heatsink",
+    "هارد SSD للبلايستيشن 5",
+  ];
+  for(const title of storageComponentTitles){
+    const offer={...wdBlackSn850Ps5Ssd,title};
+    assert.equal(queries.describeProduct(offer).kind,"accessory",title);
+    assert.equal(assessOfferMatch("PS5",offer).exactMatch,false,title);
+  }
+  for(const merchant of ["Amazon Saudi","Jarir","Some Other Merchant"]){
+    for(const price of [34.79,799,2999]){
+      const offer={...wdBlackSn850Ps5Ssd,merchant,productPrice:price};
+      assert.equal(queries.describeProduct(offer).kind,"accessory",merchant+"/"+price);
+      assert.equal(assessOfferMatch("PS5",offer).exactMatch,false);
+    }
+  }
+  const actualConsoles=[
+    "Sony PS5 Slim Digital Console 1TB",
+    "Sony PlayStation 5 Slim Disc Edition 1TB SSD",
+    "Sony PS5 Slim Disc Console 1TB SSD included",
+    "PS5 Console with 1TB SSD storage",
+    "Sony PS5 Slim Digital Console 1TB Bundle with WD_BLACK SSD",
+  ];
+  for(const title of actualConsoles){
+    const offer={title,condition:"new",productPrice:249,merchant:"Fixture"};
+    assert.equal(queries.describeProduct(offer).kind,"console",title);
+    assert.equal(assessOfferMatch("PS5",offer).exactMatch,true,title);
+  }
+  const console={title:"Sony PS5 Slim Digital Console 1TB",merchant:"Fixture",condition:"new",currency:"SAR",productPrice:249};
+  const groups=groupComparableOffers([console,wdBlackSn850Ps5Ssd].map(x=>({...x,...assessOfferMatch("PS5",x)})));
+  assert.equal(groups.length,2,"SSD and PS5 console must never group as one physical product");
+});
