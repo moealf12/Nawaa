@@ -599,3 +599,38 @@ test("v15.12 E2 source-derived SSD subcomponents and abbreviations keep physical
   assert.equal(assessOfferMatch("PS5 SSD",unknownBrand).exactMatch,false);
 });
 
+
+
+// v15.12 E1: Noon Saudi listing identifies an empty external NVMe enclosure
+// compatible with PS5. The item's indexed price is NOT certified current.
+const noonRayihniNvmeEnclosure={
+  title:"UA0423 - ULTRA SMALL USB 3.2 (GEN2X1) SSD ENCLOSURE, USB-C TO PCIE NVME",
+  merchant:"rayihni",providerMarket:"noon-sa",currency:"SAR",productPrice:238,
+  sourceIdentifier:"Z0A934666AB277F6B215FZ",
+  sourceUrl:"https://www.noon.com/saudi-en/ua0423-ultra-small-usb-3-2-gen2x1-ssd-enclosure-usb-c-to-pcie-nvme/Z0A934666AB277F6B215FZ/p/",
+  specs:{deviceType:"Suitable for PS5"},condition:"new",
+};
+test("v15.12 E1 SSD enclosure sold without SSD is not exact storage media",()=>{
+  assert.equal(queries.productCategory(noonRayihniNvmeEnclosure),"accessory");
+  assert.equal(queries.describeProduct(noonRayihniNvmeEnclosure).kind,"accessory");
+  for(const q of ["NVMe SSD","PS5 SSD"]){
+    assert.equal(assessOfferMatch(q,noonRayihniNvmeEnclosure).exactMatch,false,q);
+  }
+  assert.ok(noonRayihniNvmeEnclosure.sourceUrl.includes(noonRayihniNvmeEnclosure.sourceIdentifier));
+  assert.equal(noonRayihniNvmeEnclosure.productPrice,238);
+  assert.equal(noonRayihniNvmeEnclosure.currency,"SAR");
+});
+
+test("v15.12 E3 contradictory metadata cannot promote a real heatsink to console or full SSD",()=>{
+  // E3 deliberately untrusted/conflicting fields; NOT an actual merchant claim.
+  const polluted={...noonPs5Heatsink,productType:"PS5 Console",
+    specs:{brand:"Sony",deviceType:"PS5 Console",modelNumber:"CFI2116B01Y"}};
+  assert.equal(queries.describeProduct(polluted).kind,"accessory");
+  assert.equal(assessOfferMatch("PS5",polluted).exactMatch,false);
+  assert.equal(assessOfferMatch("PS5 SSD",polluted).exactMatch,false);
+  const conflictingConsole={...jarirRealDigConsole,productType:"SSD enclosure",
+    specs:{...jarirRealDigConsole.specs,deviceType:"Storage accessory"}};
+  assert.equal(queries.describeProduct(conflictingConsole).kind,"console",
+    "verified Sony PS5 subject with CFI model is not a stand-alone storage part");
+  assert.equal(assessOfferMatch("PS5",conflictingConsole).exactMatch,true);
+});
