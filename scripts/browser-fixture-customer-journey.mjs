@@ -270,7 +270,7 @@ try{
   const detailPending=await navigate('fixture-detail-pending');
   await detailPending.locator('#results .match-result-card').first().click();
   await detailPending.locator('.selected-comparison[open] .product-detail-btn').first().click();
-  await detailPending.waitForURL(/product\\.html\\?/,{waitUntil:'domcontentloaded',timeout:12000});
+  await detailPending.waitForURL(url=>url.pathname.endsWith('/product.html')&&url.searchParams.has('source'),{waitUntil:'domcontentloaded',timeout:12000});
   await detailPending.locator('.product-media img').waitFor();
   const detailBefore=await detailPending.evaluate(()=>{
     const img=document.querySelector('.product-media img');
@@ -314,7 +314,7 @@ try{
   const detailLoaded=await navigate('fixture-detail-loaded');
   await detailLoaded.locator('#results .match-result-card').first().click();
   await detailLoaded.locator('.selected-comparison[open] .product-detail-btn').first().click();
-  await detailLoaded.waitForURL(/product\\.html\\?/,{waitUntil:'domcontentloaded',timeout:12000});
+  await detailLoaded.waitForURL(url=>url.pathname.endsWith('/product.html')&&url.searchParams.has('source'),{waitUntil:'domcontentloaded',timeout:12000});
   await detailLoaded.waitForFunction(()=>{
     const img=document.querySelector('.product-media img');
     return img?.complete&&img.naturalWidth>0;
