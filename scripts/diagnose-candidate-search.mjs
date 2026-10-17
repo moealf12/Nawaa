@@ -4,6 +4,8 @@
 import {spawn} from 'node:child_process';
 import net from 'node:net';
 import {once} from 'node:events';
+import {searchViaConstructor} from '../server/providers/jarir.mjs';
+import {assessOfferMatch,describeProduct} from '../src/search-query.mjs';
 
 const port=await new Promise((resolve,reject)=>{
   const s=net.createServer();
@@ -132,6 +134,40 @@ try{
   const stream=await measureStreamFirstOffer('iPhone 17');
   const iphone=await query('iPhone 17');
   const ps5=await query('PS5');
+  // v15.13: additional bounded live merchant metadata probe. This uses Jarir's
+  // existing public Constructor adapter, never a guessed retailer payload.
+  // Absence of target IDs is UNKNOWN, not a pass or fabricated observation.
+  try {
+    const found=await searchViaConstructor('Sony PlayStation 5 Slim',48,AbortSignal.timeout(8000));
+    const targetIds=new Set(['668751','677771']);
+    const targets=found.filter(o=>targetIds.has(o.sourceMeta?.productId) ||
+      [...targetIds].some(id=>String(o.sourceUrl||'').includes(id+'.html')));
+    const evidence=targets.map(o=>({
+      title:o.title,productId:o.sourceMeta?.productId||null,
+      sourceUrl:o.sourceUrl,price:o.productPrice,currency:o.currency,
+      observedAt:o.observedAt,deviceType:o.specs?.deviceType||null,
+      series:o.specs?.series||null,modelNumber:o.specs?.modelNumber||null,
+      productType:o.sourceMeta?.productType||null,
+      kind:describeProduct(o).kind,exactPS5:assessOfferMatch('PS5',o).exactMatch,
+      isBundle:describeProduct(o).isBundle,
+    }));
+    const conflicts=evidence.filter(x=>x.productId==='677771'&&
+      (x.kind!=='console'||x.exactPS5!==true||x.isBundle!==true));
+    console.log('JARIR_E1_LIVE_ADAPTER_METADATA '+JSON.stringify({
+      query:'Sony PlayStation 5 Slim',results:found.length,
+      observedIds:evidence.map(x=>x.productId),targets:evidence,
+      sourceStatus:evidence.length?'OBSERVED':'UNKNOWN_NOT_IN_BOUNDED_RESULTS',
+      conflicts,
+      caution:'Normalized adapter evidence only, not the complete raw Constructor JSON',
+    }));
+    // Real customer-visible merchant identity error is an actionable red gate.
+    if(conflicts.length)process.exitCode=7;
+  }catch(error){
+    console.log('JARIR_E1_LIVE_ADAPTER_METADATA '+JSON.stringify({
+      query:'Sony PlayStation 5 Slim',sourceStatus:'UNKNOWN_SOURCE_UNAVAILABLE',
+      error:String(error?.message||error).slice(0,180),
+    }));
+  }
   if(iphone.status!==200||ps5.status!==200)process.exitCode=2;
   // HTTP 200 + empty products is not a functional search success.
   if([iphone,ps5].some(x=>!x.structurallyValid || x.exact<1 || x.merchants.length<2))
