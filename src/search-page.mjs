@@ -810,9 +810,12 @@ function additionalResultsSection(label, groups) {
 
 function productImageMarkup(offer, group, title, fallbackClass) {
   const images = [...new Set([offer, ...(group?.offers || [])].map(item => item?.image).filter(url => /^https?:\/\//i.test(url || "")))];
-  const fallback = '<span class="' + fallbackClass + '" style="display:' + (images.length ? 'none' : 'grid') + '">صورة غير متاحة</span>';
+  // Product tiles must remain informative while a lazy third-party image is pending.
+  // Other layouts retain their sizing until separately verified in Chrome.
+  const pendingFallback = fallbackClass === "match-card-fallback";
+  const fallback = '<span class="' + fallbackClass + '" style="display:' + (images.length && !pendingFallback ? 'none' : 'grid') + '">صورة غير متاحة</span>';
   if (!images.length) return fallback;
-  return '<img src="' + escapeHtml(images[0]) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" data-image-options="' + escapeHtml(JSON.stringify(images)) + '" data-image-index="0" onerror="const urls=JSON.parse(this.dataset.imageOptions);const next=Number(this.dataset.imageIndex)+1;this.dataset.imageIndex=next;if(next &lt; urls.length){this.src=urls[next]}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';}">' + fallback;
+  return '<img src="' + escapeHtml(images[0]) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" data-image-options="' + escapeHtml(JSON.stringify(images)) + '" data-image-index="0" onload="this.nextElementSibling.style.display=\\'none\\'" onerror="const urls=JSON.parse(this.dataset.imageOptions);const next=Number(this.dataset.imageIndex)+1;this.dataset.imageIndex=next;if(next &lt; urls.length){this.src=urls[next]}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';}">' + fallback;
 }
 
 function normalizedCardDisplayName(offer) {
