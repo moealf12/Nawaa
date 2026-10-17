@@ -148,6 +148,18 @@ test("query deep link starts exactly one live search and URL submission requests
 
   assert.match(element('#results').innerHTML,/<details class="selected-comparison" open>/);
   assert.match(element('#results').innerHTML, /المنتج المختار[\s\S]*HP Pavilion Laptop/);
+
+  // Failure-first counterexample: broad HP discovery can have exactMatch=true
+  // without a manufacturer model/SKU. The selected card must not claim a
+  // verified 100% match based on a text relevance score.
+  const selectedBrandHtml=element('#results').innerHTML;
+  assert.match(selectedBrandHtml,/صلة بالبحث: \d+% \(تقديرية\)/,
+    'a relevance heuristic must be labeled as an estimate');
+  assert.match(selectedBrandHtml,/ليست إثباتًا لتطابق رقم الموديل أو SKU/,
+    'customers need an explicit SKU-level confidence boundary');
+  assert.doesNotMatch(selectedBrandHtml,/>تطابق \d+%<\/span>/,
+    'bare exact-match percentages misrepresent unverified SKUs');
+
   assert.doesNotMatch(element('#results').innerHTML, /data-dimension="modelKey"/, 'selected product comparison must not offer unrelated HP products as model variants');
 
   element(".selected-comparison").events.toggle({target:{open:false,isConnected:false}});
