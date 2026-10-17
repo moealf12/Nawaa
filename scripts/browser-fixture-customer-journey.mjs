@@ -81,7 +81,23 @@ function searchPayload(q,cursor) {
       sourceIdentifier:'B0B4SQB1HY',image:null,availability:'unknown',
       sourceUrl:'https://www.amazon.sa/-/en/WD_BLACK-SN850-Consoles-Solid-Heatsink/dp/B0B4SQB1HY/ref=sr_1_140',
     };
-    const raw=[hub,consoleOffer,packaged,sharafActual,wdBlackSsd];
+    // E1 independently inspected Noon Saudi product pages. These products
+    // contain cooling hardware, NOT an SSD, despite SSD/NVMe compatibility nouns.
+    // Prices are documented indexed-page observations, not live quotes.
+    const noonHeatsink={
+      merchant:'GLOTRENDS',merchantCountryCode:'SA',providerMarket:'noon-sa',
+      title:'Heatsink for PS5 NVMe SSD',productPrice:64,currency:'SAR',
+      sourceIdentifier:'Z78E6BD03E487FC7156B1Z',condition:'new',
+      sourceUrl:'https://www.noon.com/saudi-en/heatsink-for-ps5-nvme-ssd/Z78E6BD03E487FC7156B1Z/p/',
+    };
+    const noonExcefore={
+      merchant:'ZARIO',merchantCountryCode:'SA',providerMarket:'noon-sa',
+      title:'M.2 Heatsink for PS5, NVMe SSD Aluminum Heatsink with 4 Thermal Pads for Playstation 5 Internal M.2 Gen4 NVME PCIE 4.0 SSD with Graphene and Silicone Thermal Pads',
+      productPrice:156,currency:'SAR',condition:'new',
+      sourceIdentifier:'Z93526034EEDFE197439CZ',
+      sourceUrl:'https://www.noon.com/saudi-en/m-2-heatsink-for-ps5-nvme-ssd-aluminum-heatsink-with-4-thermal-pads-for-playstation-5-internal-m-2-gen4-nvme-pcie-4-0-ssd-with-graphene-and-silicone-thermal-pads/Z93526034EEDFE197439CZ/p/',
+    };
+    const raw=[hub,consoleOffer,packaged,sharafActual,wdBlackSsd,noonHeatsink,noonExcefore];
     const offers=raw.map(o=>({...o,...assessOfferMatch(q,o)}));
     return {offers,errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
@@ -463,11 +479,21 @@ try{
       price:wdSse?.productPrice,source:wdSse?.sourceUrl});
   assertCheck('real_wd_black_ssd_absent_from_ps5_console_cards',
     consoleOnly.length===3&&!consoleOnly.some(x=>/WD_BLACK|SN850|NVMe/i.test(x)),consoleOnly);
+  const noonSsds=searchPayload('PS5 SSD',null).offers
+    .filter(o=>o.providerMarket==='noon-sa');
+  assertCheck('E1_noon_heatsinks_not_exact_ssd_in_raw_sse',
+    noonSsds.length===2&&noonSsds.every(o=>o.productKind==='accessory'&&
+      o.exactMatch===false&&o.matchReason!=='يطابق مواصفات بحثك'&&
+      o.currency==='SAR'&&o.sourceUrl.includes(o.sourceIdentifier)),
+    noonSsds.map(o=>({title:o.title,exact:o.exactMatch,reason:o.matchReason,price:o.productPrice})));
   const ssdShoppingTab=await navigate('PS5 SSD');
   await ssdShoppingTab.locator('#results .match-result-card').first().waitFor();
   const ssdResults=await ssdShoppingTab.locator('#results .match-card-copy strong').allTextContents();
   const ssdExact=searchPayload('PS5 SSD',null).offers.find(o=>o.sourceIdentifier==='B0B4SQB1HY');
   const ssdCardText=await ssdShoppingTab.locator('#results .match-result-card').first().innerText();
+  assertCheck('real_noon_heatsinks_excluded_from_complete_ssd_cards',
+    ssdResults.length===1&&!ssdResults.some(s=>/glotrends|excefore|heatsink for ps5/i.test(s)),
+    {ssdResults});
   assertCheck('explicit_ps5_ssd_search_preserves_real_wd_black_offer',
     ssdExact?.productKind==='accessory'&&ssdExact?.exactMatch===true&&
     ssdResults.some(x=>/WD_BLACK|SN850|SSD/i.test(x))&&/799|٧٩٩|۷۹۹/u.test(ssdCardText),
