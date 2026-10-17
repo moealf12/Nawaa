@@ -936,7 +936,8 @@ function renderProduct(product, query) {
                   <span>${conditionDisplay(featuredOffer.condition || "unknown")}</span>
                   ${selectedSpecs.regionVersion ? '<span>' + escapeHtml(selectedSpecs.regionVersion) + '</span>' : ""}
                   ${selectedSpecs.sim ? '<span>' + escapeHtml(selectedSpecs.sim) + '</span>' : ""}
-                  <span>تطابق ${Math.round((featuredOffer.matchConfidence || 0) * 100)}%</span>
+                  <span>صلة بالبحث: ${Math.round((featuredOffer.matchConfidence || 0) * 100)}% (تقديرية)</span>
+                  <small class="match-confidence-note">هذه النسبة ليست إثباتًا لتطابق رقم الموديل أو SKU.</small>
                 </div>
               </div>
               <div class="config-price">

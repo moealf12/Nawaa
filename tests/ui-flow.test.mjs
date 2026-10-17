@@ -179,6 +179,9 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.equal(loadMoreButtons.length,0,'no Load more remains after all products are visible');
   element('#resetResultFilters').events.click();assert.equal(countCards(),10,'reset filters restores the first ten products');
   renderedCards[0].events.click();
+  assert.match(element('#results').innerHTML,/صلة بالبحث: \d+% \(تقديرية\)/,
+    'model/category searches must also use honest estimated relevance wording');
+  assert.doesNotMatch(element('#results').innerHTML,/>تطابق \d+%<\/span>/);
   assert.ok(detailButtons.length>0,'selected product must expose its detail action');
   globalThis.sessionStorage={setItem(){throw Error('storage blocked');}};
   globalThis.localStorage={getItem(){return null;},setItem(){throw Error('storage blocked');}};
