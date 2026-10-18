@@ -115,7 +115,11 @@ export async function publishCanonicalOutbox({limit=40}={}){
 }
 export async function guardedCanonicalSearch(query,{limit=80,now=Date.now()}={}){
   await initializeCanonicalIndex();
-  const search=await (await index()).search(String(query),{
+  // The customer normalizer maps "PlayStation 5" to "ps5", while source
+  // titles may contain only the expanded spelling. Expand for candidate
+  // discovery, then let the existing current-query classifier judge relevance.
+  const discoveryQuery=String(query).replace(/\bps5\b/gi,"playstation 5");
+  const search=await (await index()).search(discoveryQuery,{
     limit:Math.max(1,Math.min(500,limit)),
     attributesToRetrieve:["offerKey","canonicalRevision","canonicalFingerprint",
       "sourceUrl","observedAt","title","productPrice","availability"]});
