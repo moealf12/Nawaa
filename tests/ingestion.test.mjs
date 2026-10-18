@@ -29,3 +29,11 @@ test("ingestion preserves crawler observation metadata",()=>{
   assert.equal(o.observedAt,observedAt);
   assert.equal(o.healthStatus,"healthy");
 });
+
+
+test("missing, invalid, or future merchant observation must never be minted at ingestion",()=>{
+  const input={title:"HP Laptop",sourceUrl:"https://example.com/p",productPrice:2499,currency:"SAR"};
+  assert.equal(normalizeIngestOffer(input),null,"ingestion time is not merchant observation");
+  assert.equal(normalizeIngestOffer({...input,observedAt:"not-a-timestamp"}),null);
+  assert.equal(normalizeIngestOffer({...input,observedAt:new Date(Date.now()+120_000).toISOString()}),null);
+});

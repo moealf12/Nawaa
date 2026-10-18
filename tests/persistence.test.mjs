@@ -105,3 +105,14 @@ test('recordOffer rejects malformed URLs and currencies before opening the datab
     assert.deepEqual(result.calls,[]);
   }
 });
+
+
+test("recordOffer rejects missing and future source timestamps before opening database",async()=>{
+  const input={title:"HP Laptop",sourceUrl:"https://example.com/p",productPrice:2499,currency:"SAR"};
+  for(const body of [input,{...input,observedAt:new Date(Date.now()+120_000).toISOString()}]){
+    const result=await runPersistence(body);
+    assert.equal(result.ok,false,"unobserved evidence must not become a canonical offer");
+    assert.equal(result.error,"invalid_observed_at");
+    assert.deepEqual(result.calls,[]);
+  }
+});
