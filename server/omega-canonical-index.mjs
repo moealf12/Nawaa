@@ -82,35 +82,90 @@ function indexedDocument(key,state){
   return {...state.offer,id:identity.documentId,offerKey:key,
     canonicalRevision:state.revision,canonicalFingerprint:state.fingerprint};
 }
-async function submit(key,state){
+// One bounded remote task per selected identity batch, not per document.
+// No global Meilisearch CAS is assumed: every customer read still hydrates
+// PostgreSQL canonical revisions and repair is idempotent after task races.
+async function submitDocuments(documents){
   const target=await index();
-  const task=await target.addDocuments([indexedDocument(key,state)]);
+  const task=await target.addDocuments(documents);
   if(!Number.isInteger(task?.taskUid))throw Error("index_task_uid_missing");
   const settled=await target.waitForTask(task.taskUid,{timeOutMs:15000,intervalMs:100});
-  if(settled.status!=="succeeded")throw Error("index_task_failed");
+  if(settled.status!=="succeeded"){
+    const error=new Error("index_task_failed");
+    error.code="index_task_failed";
+    error.taskErrorCode=settled.error?.code||null;
+    throw error;
+  }
   return task.taskUid;
 }
+async function submit(key,state){
+  return submitDocuments([indexedDocument(key,state)]);
+}
+const documentRejection=error=>error?.code==="index_task_failed"&&
+  ["invalid_document_id","invalid_document_fields","invalid_document_field",
+   "invalid_document_content","missing_document_id"].includes(error.taskErrorCode);
 export async function publishCanonicalOutbox({limit=40}={}){
   await initializeCanonicalIndex();
   const pg=await database();
   const rows=(await pg.query("SELECT id,offer_key,revision FROM "+O+
     " WHERE publication_status='pending' ORDER BY id LIMIT $1",
     [Math.max(1,Math.min(100,limit))])).rows;
-  const outcomes=[];
+  if(!rows.length)return [];
+  const keys=[...new Set(rows.map(r=>r.offer_key))];
+  const states=(await pg.query("SELECT offer_key,revision,fingerprint,offer FROM "+T+
+    " WHERE offer_key=ANY($1::text[])",[keys])).rows;
+  const current=new Map(states.map(row=>[row.offer_key,{
+    revision:Number(row.revision),fingerprint:row.fingerprint,offer:row.offer
+  }]));
+  const ready=[],outcomes=[];
   for(const event of rows){
-    const state=await currentCanonical(event.offer_key);
+    const state=current.get(event.offer_key);
     if(!state)throw Error("outbox_canonical_missing");
     if(state.revision!==Number(event.revision)){
       await pg.query("UPDATE "+O+
-        " SET publication_status='superseded',updated_at=now() WHERE id=$1 AND publication_status='pending'",[event.id]);
-      outcomes.push({revision:Number(event.revision),status:"superseded"});continue;
+        " SET publication_status='superseded',updated_at=now()"+
+        " WHERE id=$1 AND publication_status='pending'",[event.id]);
+      outcomes.push({revision:Number(event.revision),status:"superseded"});
+      continue;
     }
-    // Remote tasks may be delayed past this transaction; do not rely on write order.
-    const taskUid=await submit(event.offer_key,state);
-    await pg.query("UPDATE "+O+
-      " SET publication_status='published',task_uid=$2,updated_at=now() WHERE id=$1 AND publication_status='pending'",
-      [event.id,taskUid]);
-    outcomes.push({revision:state.revision,status:"published",taskUid});
+    try{
+      ready.push({event,doc:indexedDocument(event.offer_key,state)});
+    }catch(error){
+      if(error?.message!=="canonical_identity_drift")throw error;
+      // Corrupt durable identity cannot block unrelated canonical offers.
+      await pg.query("UPDATE "+O+" SET publication_status='failed',updated_at=now()"+
+        " WHERE id=$1 AND publication_status='pending'",[event.id]);
+      outcomes.push({revision:state.revision,status:"failed",reason:"canonical_identity_drift"});
+    }
+  }
+  if(!ready.length)return outcomes;
+  const mark=async(entry,status,uid=null)=>
+    pg.query("UPDATE "+O+
+      " SET publication_status=$2,task_uid=$3,updated_at=now()"+
+      " WHERE id=$1 AND publication_status='pending'",[entry.event.id,status,uid]);
+  try{
+    const uid=await submitDocuments(ready.map(x=>x.doc));
+    // A crash after remote task completion and before this ACK leaves pending
+    // events. Their retry uses the same stable document IDs and revisions.
+    await pg.query("UPDATE "+O+" SET publication_status='published',task_uid=$2,"+
+      " updated_at=now() WHERE id=ANY($1::bigint[]) AND publication_status='pending'",
+      [ready.map(x=>x.event.id),uid]);
+    outcomes.push(...ready.map(x=>({revision:Number(x.event.revision),status:"published",taskUid:uid})));
+  }catch(error){
+    // Only an explicit remote document-validation failure is isolated.
+    // Transport/timeouts/service errors MUST remain pending for durable retry.
+    if(!documentRejection(error))throw error;
+    for(const entry of ready){
+      try{
+        const uid=await submitDocuments([entry.doc]);
+        await mark(entry,"published",uid);
+        outcomes.push({revision:Number(entry.event.revision),status:"published",taskUid:uid});
+      }catch(singleError){
+        if(!documentRejection(singleError))throw singleError;
+        await mark(entry,"failed");
+        outcomes.push({revision:Number(entry.event.revision),status:"failed",reason:"invalid_index_document"});
+      }
+    }
   }
   return outcomes;
 }
