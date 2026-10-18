@@ -34,7 +34,9 @@ const port=await new Promise((resolve,reject)=>{
   });
 });
 if(!port)throw Error('ephemeral_port_unavailable');
-const env={...process.env,PORT:String(port),DATABASE_URL:'',MEILI_HOST:'',MEILI_MASTER_KEY:'',
+const omega=process.env.NAWAA_CANONICAL_INDEX_TEST==='1';
+if(omega&&(process.env.MEILI_HOST!=='http://127.0.0.1:7700'||process.env.MEILI_INDEX!=='nawaa_ci_omega'))throw Error('isolated_omega_required');
+const env={...process.env,PORT:String(port),DATABASE_URL:'',MEILI_HOST:omega?process.env.MEILI_HOST:'',MEILI_MASTER_KEY:omega?process.env.MEILI_MASTER_KEY:'',
   NOON_ENABLED:'false',CARREFOUR_ENABLED:'false',EBAY_ENABLED:'false',
   SEARCH_STREAM_DEADLINE_MS:'8000',NODE_ENV:'test'};
 const child=spawn(process.execPath,['server/server.mjs'],{env,stdio:['ignore','pipe','pipe']});
@@ -78,6 +80,8 @@ async function observe(entry){
         events++;
         const snapshot=JSON.parse(data),ms=Math.round(performance.now()-start);
         const offers=Array.isArray(snapshot.offers)?snapshot.offers:[];
+        if(omega&&offers.some(o=>!Number.isInteger(o.canonicalRevision)||o.canonicalRevision<1))
+          throw Error('unguarded_offer_reached_live_SSE');
         lastOfferProvenance=offers.filter(o=>o.providerMarket==='jarir-sa'&&
           ['627671','627678','670688','668751','677770','677771']
             .includes(String(o.sourceMeta?.productId||'')))

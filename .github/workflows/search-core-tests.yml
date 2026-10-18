@@ -225,8 +225,6 @@ jobs:
         run: node scripts/certify-omega-mixed.mjs
       - name: Kill worker after real submission before task ACK
         run: node scripts/certify-omega-worker-crash.mjs
-      - name: Independently acquired Jarir observation versus simulated predecessor
-        run: node scripts/certify-omega-live-acceptance.mjs
       - name: Demonstrate 121-key prefix starvation before fairness repair
         run: |
           git fetch --depth=1 origin 8038edce5219cc30c420e266e0e60ac014904073
@@ -234,3 +232,7 @@ jobs:
           node scripts/certify-omega-scale.mjs --baseline
       - name: Fair durable traversal, real batch overhead and recall
         run: node scripts/certify-omega-scale.mjs
+      - name: Independently acquired Jarir observation versus simulated predecessor
+        run: node scripts/certify-omega-live-acceptance.mjs
+      - name: Seventeen live customer SSE queries including all ten PS5 intents with canonical guard
+        run: node scripts/measure-representative-first-offer.mjs
