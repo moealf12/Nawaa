@@ -41,6 +41,28 @@ const initial=Array.from({length:25},(_,i)=>offer(i+1));
 const extra=Array.from({length:5},(_,i)=>offer(i+26));
 const corsHeaders={'access-control-allow-origin':'*'};
 function searchPayload(q,cursor) {
+  // v15.17: authentic 2026-10-18 Jarir SKU/MPN/price/title in intercepted
+  // browser fixtures; explicitly not a fresh merchant stock observation.
+  if(q==='PS5 DualSense Bundle'||q==='بلايستيشن 5 مع يد إضافية'){
+    const specs=[
+      ['677770','CFI2116ACFIZC',3049,'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with DualSense Wireless Controller, White'],
+      ['670688','CFI2116AFNTVC',2299,'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with Fornite Flowering Chaos, White'],
+    ];
+    const packages=specs.map(([sku,model,productPrice,title])=>({
+      merchant:'Jarir',providerMarket:'jarir-sa',merchantCountryCode:'SA',
+      title,productPrice,currency:'SAR',condition:'new',availability:'in_stock',
+      sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-'+sku+'.html',
+      sourceMeta:{productId:sku,parsedFrom:'jarir-category-jsonld'},
+      specs:{brand:'Sony',modelNumber:model},image:null,dataKind:'live'
+    }));
+    const controller={...offer(5),merchant:'Fixture Accessory',
+      title:'Sony PS5 DualSense Wireless Controller',productPrice:249,
+      sourceUrl:'https://www.example.org/fixture-standalone-controller',image:null};
+    const offers=[...packages,controller].map(o=>({...o,...assessOfferMatch(q,o)}));
+    return {offers,errors:[],providers:[],
+      coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+      nextCursor:null};
+  }
   // Merchant-derived regression for the exact product that was incorrectly
   // certified as a console in the real 2026-10-17 candidate SSE.
   if(/^(?:ps5|ps5 usb hub|ps5 ssd)$/i.test(q.trim())) {
@@ -473,6 +495,27 @@ try{
     new Set(titles.map(x=>x.toLowerCase().trim())).size===1,{titles});
   await duplicated.screenshot({path:'browser-artifacts/fixture-iphone-distinct-sku-cards.png',fullPage:true});
   // Assert both the actual matching function and the customer-visible UI.
+  for (const [q,label] of [['PS5 DualSense Bundle','en'],['بلايستيشن 5 مع يد إضافية','ar']]) {
+    const raw=searchPayload(q,null).offers.filter(o=>o.exactMatch);
+    assertCheck('v1517_exact_source_controller_bundle_'+label,
+      raw.length===1&&raw[0].sourceMeta.productId==='677770'&&raw[0].productPrice===3049,
+      raw.map(o=>({sku:o.sourceMeta?.productId,title:o.title})));
+    const bundleTab=await navigate(q);
+    await bundleTab.locator('#results .match-result-card').first().waitFor({timeout:15000});
+    const visible=await bundleTab.locator('#results .match-card-copy strong').allTextContents();
+    assertCheck('v1517_browser_only_real_controller_console_'+label,
+      visible.length===1&&!visible.some(x=>/fortnite|fornite|charging/i.test(x)),
+      {visible,query:q});
+    await bundleTab.screenshot({path:'browser-artifacts/v1517-dualsense-'+label+'-desktop.png',fullPage:true});
+    await bundleTab.setViewportSize({width:390,height:844});
+    const mobile=await bundleTab.evaluate(()=>({width:innerWidth,
+      scrollWidth:document.documentElement.scrollWidth,
+      cards:document.querySelectorAll('#results .match-result-card').length}));
+    assertCheck('v1517_bundle_390px_mobile_'+label,
+      mobile.cards===1&&mobile.scrollWidth<=mobile.width+4,mobile);
+    await bundleTab.screenshot({path:'browser-artifacts/v1517-dualsense-'+label+'-mobile.png',fullPage:true});
+    await bundleTab.close();
+  }
   const ps5IdentityTab=await navigate('PS5');
   await ps5IdentityTab.locator('#results .match-result-card').first().waitFor();
   const consoleOnly=await ps5IdentityTab.locator('#results .match-card-copy strong').allTextContents();
