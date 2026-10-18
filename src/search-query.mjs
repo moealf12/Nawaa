@@ -431,12 +431,17 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // The actual merchant retail-package title, never platform compatibility,
   // capacity, price, URL or a shared generation, must prove the included
   // DualSense/controller. A Fortnite-game bundle cannot satisfy this query.
-  const retailPackageTitle=normalizeSearchQuery(offer?.title||"");
-  const controllerBundleMismatch=requestsIncludedPs5ControllerBundle(normalizedQuery) &&
-    !(description.kind==="console" && description.isBundle &&
+  // Only parse the retail package title when the shopper explicitly asked
+  // for an included controller. Normal iPhone/HP/general queries keep their
+  // exact pre-v15.17 CPU path and matching semantics.
+  let controllerBundleMismatch=false;
+  if(requestsIncludedPs5ControllerBundle(normalizedQuery)){
+    const retailPackageTitle=normalizeSearchQuery(offer?.title||"");
+    controllerBundleMismatch=!(description.kind==="console" && description.isBundle &&
       /\b(?:dualsense|controllers?)\b/.test(retailPackageTitle) &&
       /\b(?:bundle|including|includes|with)\b/.test(retailPackageTitle) &&
       !/\b(?:controller (?:holders?|stands?|chargers?|charging stations?)|dualsense (?:charging|dock))\b/.test(retailPackageTitle));
+  }
   const offerCategory = productCategoryWithDescription(offer, description);
   // Product-type words (mouse, laptop, perfume...) are structural intent rather
   // than free-text tokens: reward the matching category without polluting model/
