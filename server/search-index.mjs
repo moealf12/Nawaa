@@ -19,6 +19,9 @@ async function index(){if(!searchIndexConfigured())return null;if(!MeiliCtor) Me
 // an authoritative transactional upstream source; see release NO-GO.
 let writeQueue=Promise.resolve();
 export function indexOffers(offers=[]){
+  // Explicit v16.1 test-only canonical proof; dormant in production.
+  if(process.env.NODE_ENV==='test'&&process.env.NAWAA_CANONICAL_INDEX_TEST==='1')
+    return import('./omega-canonical-index.mjs').then(m=>m.isolatedCanonicalIndexOffers(offers));
   const pending=writeQueue.then(()=>writeOffers(offers));
   writeQueue=pending.catch(()=>{});
   return pending;
@@ -77,6 +80,8 @@ async function writeOffers(offers=[]){
   return {configured:true,indexed:accepted.length,skippedOlder:docs.length-accepted.length};
 }
 export async function searchIndexedOffers(query,{limit=80,now=Date.now()}={}){
+  if(process.env.NODE_ENV==='test'&&process.env.NAWAA_CANONICAL_INDEX_TEST==='1')
+    return (await import('./omega-canonical-index.mjs')).guardedCanonicalSearch(query,{limit,now});
   const target=await index();
   if(!target||!String(query||"").trim())return {configured:Boolean(target),offers:[]};
   const result=await target.search(String(query),{limit,
