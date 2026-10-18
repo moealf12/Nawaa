@@ -839,7 +839,7 @@ const server = http.createServer(async (req, res) => {
       /^\/api\/(?:quotes|quote-admin)\//.test(url.pathname)) {
     if (!quoteWorkflowEnabled())return jsonResponse(res,404,{error:"not_found"},origin||"*");
     if (!enforceRateLimit(req,res,"quote-workflow",
-      {capacity:15,refillPerSecond:0.2},origin||"*"))return;
+      {capacity:40,refillPerSecond:0.2},origin||"*"))return;
     return handleQuoteWorkflow(req,res,url,origin);
   }
 
