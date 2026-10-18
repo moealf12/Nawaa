@@ -13,7 +13,17 @@ const validSourceObservation = (value, now) => {
 let client, MeiliCtor;
 export const searchIndexConfigured=()=>Boolean(process.env.MEILI_HOST&&process.env.MEILI_MASTER_KEY);
 async function index(){if(!searchIndexConfigured())return null;if(!MeiliCtor) MeiliCtor=(await import("meilisearch")).MeiliSearch;client ||= new MeiliCtor({host:process.env.MEILI_HOST,apiKey:process.env.MEILI_MASTER_KEY});return client.index(process.env.MEILI_INDEX||"offers");}
-export async function indexOffers(offers=[]){
+// Meilisearch does not implement conditional compare-and-set updates. Use a
+// bounded preflight check against committed source observations and serialize
+// writes in this process. Cross-instance simultaneous writers still require
+// an authoritative transactional upstream source; see release NO-GO.
+let writeQueue=Promise.resolve();
+export function indexOffers(offers=[]){
+  const pending=writeQueue.then(()=>writeOffers(offers));
+  writeQueue=pending.catch(()=>{});
+  return pending;
+}
+async function writeOffers(offers=[]){
   const target=await index();
   if(!target||!offers.length)return {configured:Boolean(target),indexed:0};
   const now=Date.now();
@@ -37,8 +47,34 @@ export async function indexOffers(offers=[]){
     }];
   });
   if(!docs.length)return {configured:true,indexed:0};
-  await target.addDocuments(docs);
-  return {configured:true,indexed:docs.length};
+  // A delayed source observation must not overwrite a later committed
+  // observation just because it arrived at the index after a service restart.
+  // Limit HTTP concurrency; the index is an optional background accelerator.
+  const accepted=[];
+  for(let i=0;i<docs.length;i+=12){
+    const decisions=await Promise.all(docs.slice(i,i+12).map(async doc=>{
+      let current=null;
+      try{current=await target.getDocument(doc.id);}
+      catch(error){
+        const missing=error?.code==="document_not_found"||
+          error?.status===404||error?.cause?.status===404;
+        if(!missing)throw error; // Transport errors must never cause blind writes.
+      }
+      if(current){
+        const previousTime=Date.parse(current.observedAt);
+        const incomingTime=Date.parse(doc.observedAt);
+        if(Number.isFinite(previousTime)&&previousTime>=incomingTime)return null;
+      }
+      return doc;
+    }));
+    accepted.push(...decisions.filter(Boolean));
+  }
+  if(!accepted.length)return {configured:true,indexed:0,skippedOlder:docs.length};
+  const task=await target.addDocuments(accepted);
+  // Ensures a next writer in THIS process compares against materialized
+  // indexed evidence, not a pending asynchronous task.
+  if(Number.isInteger(task?.taskUid))await target.waitForTask(task.taskUid,{timeOutMs:15_000,intervalMs:100});
+  return {configured:true,indexed:accepted.length,skippedOlder:docs.length-accepted.length};
 }
 export async function searchIndexedOffers(query,{limit=80,now=Date.now()}={}){
   const target=await index();
