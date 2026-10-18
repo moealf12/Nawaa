@@ -27,6 +27,9 @@ process.env.PORT="17777";
 process.env.SEARCH_STREAM_DEADLINE_MS="1400";
 process.env.SEARCH_REQUEST_DEADLINE_MS="1400";
 process.env.NAWAA_CURSOR_SECRET="test-only-cursor-signing-key-omega";
+// Prove indexed read consistency in isolation: real merchant observations can
+// legitimately be newer than simulated canonical price transitions.
+process.env.NAWAA_OMEGA_INDEX_ONLY="1";
 const nativeFetch=globalThis.fetch;
 let blockedExternal=0;
 globalThis.fetch=async(input,options={})=>{

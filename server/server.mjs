@@ -38,6 +38,11 @@ import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
+// Isolated canonical HTTP proof: synthetic canonical prices must not be mixed
+// with independently acquired live merchant evidence in one assertion.
+const OMEGA_INDEX_ONLY = process.env.NODE_ENV==='test' &&
+  process.env.NAWAA_CANONICAL_INDEX_TEST==='1' &&
+  process.env.NAWAA_OMEGA_INDEX_ONLY==='1';
 // Diagnostic-only phase timing. Never log offer contents, URL paths or queries.
 const PROFILE_SEARCH_STREAM = process.env.NAWAA_PROFILE_STREAM === "1";
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -405,7 +410,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   const configuredDeadline=Number(process.env.SEARCH_STREAM_DEADLINE_MS);
   const streamDeadlineMs=Number.isFinite(configuredDeadline) && configuredDeadline>0
     ? Math.max(150,Math.min(25000,Math.floor(configuredDeadline))) : 11000;
-  const primaryCount=providerTasks(providerQuery,query,{plan}).length;
+  const primaryCount=OMEGA_INDEX_ONLY?0:providerTasks(providerQuery,query,{plan}).length;
   const controller=new AbortController();
   const forwardAbort=()=>controller.abort(signal.reason || new Error("search_client_disconnected"));
   if(signal?.aborted) forwardAbort();
@@ -425,7 +430,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
     if(local?.offers?.length)await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
   });
 
-  const amazonPromise=searchFreeStorefrontById("amazon-sa",providerQuery,{
+  const amazonPromise=OMEGA_INDEX_ONLY ? Promise.resolve().then(()=>{ amazonSettled=true; }) : searchFreeStorefrontById("amazon-sa",providerQuery,{
     perStore:Infinity,catalogLimit:Infinity,amazonPageStart:plan.amazonPageStart,
     amazonPageCount:plan.amazonPageCount,matchingQuery:query,signal:controller.signal,
   }).then(async value=>{
@@ -447,7 +452,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
     if(accepting)errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:error instanceof Error?error.message:String(error)});
   });
 
-  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,signal:controller.signal,onOffers:async readyOffers=>{
+  const primaryPromise=OMEGA_INDEX_ONLY ? Promise.resolve() : runProviderPass(providerQuery,"primary",query,{plan,signal:controller.signal,onOffers:async readyOffers=>{
     if(!accepting || controller.signal.aborted)return;
     offers.push(...readyOffers);
     trace({stage:"jarirPageReady",sourceId:"jarir-direct",offers:readyOffers.length});
@@ -526,6 +531,20 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
 async function searchAll(query, { depth = 0 } = {}) {
   if (Number(depth) > 0) return searchExpansion(query, Number(depth));
   query = normalizeSearchQuery(query);
+  if(OMEGA_INDEX_ONLY){
+    const indexed=await searchIndexedOffers(query);
+    const related=retainRelatedOffers(query,indexed.offers||[]);
+    const selected=selectDiverseOffers(related,Infinity);
+    return {
+      normalizedQuery:query,offers:selected,providers:[],errors:[],
+      providersConfigured:configuredProviders(),
+      coverage:{...sourceCoverageSummary(currentSources()),
+        returnedOffers:selected.length,availableOffers:selected.length,
+        returnedMerchants:new Set(selected.map(offerMerchantKey)).size,
+        partial:true,complete:false,exhaustive:false,
+        sourceFailures:summarizeSourceFailures([])}
+    };
+  }
   const plan = acquisitionPlan(0, configuredFreeStorefronts().length);
   const providerQuery = parseSearchIntent(query).providerQuery;
   const configuredRequestDeadline = Number(process.env.SEARCH_REQUEST_DEADLINE_MS);
