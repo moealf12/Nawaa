@@ -10,7 +10,7 @@ test('v15.19 RED real PostgreSQL two-process replay must not turn old Jarir obse
   const initial=String.raw`
     import {recordOffer,persistOffers} from './server/persistence.mjs';
     const now=Date.now();
-    const current=new Date(now-60_000).toISOString();
+    const current=new Date(now-3_000).toISOString();
     const old=new Date(now-24*60*60_000).toISOString();
     const game={
       sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-670688.html',
@@ -42,13 +42,22 @@ test('v15.19 RED real PostgreSQL two-process replay must not turn old Jarir obse
     import {assessOfferMatch} from './src/search-query.mjs';
     const rows=(await searchPersistedOffers('PS5',{maxAgeHours:168})).offers;
     const a=rows.find(x=>x.sku==='670688');
-    const b=rows.find(x=>x.sku==='677770');
+    const leaked=rows.some(x=>x.sku==='677770');
+    // Audit durable storage directly, without routing the old document to
+    // customer search. Historical price provenance should still exist in DB.
+    const pg=(await import('pg')).default;
+    const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false});
+    const raw=await pool.query('select payload, observed_at from nawaa_offers where sku=$1',['677770']);
+    await pool.end();
+    const stored=raw.rows[0];
+    const b=stored&&{...stored.payload,
+      observedAt:stored.observed_at instanceof Date?stored.observed_at.toISOString():stored.observed_at};
     console.log('STAGE2 '+JSON.stringify({a:a&&{
       price:a.productPrice,stock:a.availability,observedAt:a.observedAt,
       exact:assessOfferMatch('PS5 DualSense Bundle',a).exactMatch},
       b:b&&{price:b.productPrice,stock:b.availability,
         observedAt:b.observedAt,exact:assessOfferMatch('PS5 DualSense Bundle',b).exactMatch},
-      count:rows.length}));
+      historicalLeakedToCustomer:leaked,count:rows.length}));
     process.exit(0);
   `;
   const run=async(script)=>{
@@ -72,6 +81,8 @@ test('v15.19 RED real PostgreSQL two-process replay must not turn old Jarir obse
   assert.equal(new Date(actual.a?.observedAt).getTime(),
     new Date(sourceTime.current).getTime(),'merchant observedAt must survive upsert unchanged');
   assert.equal(actual.a?.exact,false,'Fortnite-only game bundle cannot match DualSense intent');
+  assert.equal(actual.historicalLeakedToCustomer,false,
+    'seven-day old persisted offers must not be re-certified as fresh customer stock/price');
   assert.equal(actual.b?.price,3049);
   assert.equal(actual.b?.stock,'unknown');
   assert.equal(new Date(actual.b?.observedAt).getTime(),
