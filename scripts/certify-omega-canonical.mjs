@@ -44,6 +44,7 @@ if(stage==="worker"){
   const incoming=futureFixture(process.argv[3],Number(process.argv[4]),process.argv[5]);
   const outcome=await commitCanonicalObservation(incoming);
   console.log("OMEGA_WORKER "+JSON.stringify({pid:process.pid,outcome}));
+  process.exit(0);
 }else if(stage==="write"){
   await initializeCanonicalIndex();
   const now=Date.now();
@@ -115,6 +116,7 @@ if(stage==="worker"){
     firstReconcileRepairs:repair.repaired.length,
     durablePendingRevision:after.revision,crashedWorkerPid:crashingWorker.pid,
     syntheticPrices:true}));
+  process.exit(0);
 }else if(stage==="read"){
   const saved=JSON.parse(await readFile(stateFile,"utf8"));
   const committed=await currentCanonical(saved.key);
@@ -141,4 +143,5 @@ if(stage==="worker"){
     durableOutboxRecovered:true,taskUid:pending.find(x=>x.status==="published")?.taskUid,
     staleReplayRejected:true,reconcileIdempotent:true,expiredRejected:true,
     physicalIndexNewer:true,syntheticPrices:true}));
+  process.exit(0);
 }else throw Error("usage: write|read|worker");
