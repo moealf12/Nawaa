@@ -41,6 +41,41 @@ const initial=Array.from({length:25},(_,i)=>offer(i+1));
 const extra=Array.from({length:5},(_,i)=>offer(i+26));
 const corsHeaders={'access-control-allow-origin':'*'};
 function searchPayload(q,cursor) {
+  if(q==='PS5 Slim'){
+    // v15.18 E1: real Jarir category records from 2026-10-18.
+    // Intercepted browser fixture, NOT real-time stock evidence.
+    const rows=[
+      ['627671','CFI2016B01Y',2529,'Sony PlayStation 5 Slim (DIG) 1 TB, White'],
+      ['627678','CFI2016A01Y',2749,'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, White'],
+      ['670688','CFI2116AFNTVC',2299,'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with Fornite Flowering Chaos, White'],
+      ['677770','CFI2116ACFIZC',3049,'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with DualSense Wireless Controller, White']
+    ];
+    const paths={
+      '627671':'sony-playstation-5-gaming-consoles-and-handheld-627671.html',
+      '627678':'sony-playstation-5-gaming-consoles-and-handheld-627678.html',
+      '670688':'sony-playstation-5-slim-gaming-consoles-and-handheld-670688.html',
+      '677770':'sony-playstation-5-slim-gaming-consoles-and-handheld-677770.html'
+    };
+    const offers=rows.map(([sku,mpn,price,title])=>{
+      const item={
+        merchant:'Jarir',provider:'jarir-direct',providerMarket:'jarir-sa',
+        merchantCountryCode:'SA',merchantCountryNameAr:'السعودية',
+        title,productPrice:price,currency:'SAR',condition:'new',
+        // Constructor 677770 remains stock UNKNOWN; only the other three
+        // have verified InStock evidence from the official public category.
+        availability:sku==='677770'?'unknown':'in_stock',
+        image:null,sourceUrl:'https://www.jarir.com/sa-en/'+paths[sku],
+        sourceMeta:{productId:sku,parsedFrom:sku==='677770'?'jarir-constructor-search':'jarir-category-jsonld'},
+        specs:{brand:'Sony',modelNumber:mpn},
+        observedAt:'2026-10-18T09:28:52.823Z',
+        dataKind:'live',
+      };
+      return {...item,...assessOfferMatch(q,item)};
+    });
+    return {offers,errors:[],providers:[],
+      coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+      nextCursor:null};
+  }
   // v15.17: authentic 2026-10-18 Jarir SKU/MPN/price/title in intercepted
   // browser fixtures; explicitly not a fresh merchant stock observation.
   if(q==='PS5 DualSense Bundle'||q==='بلايستيشن 5 مع يد إضافية'){
@@ -516,6 +551,34 @@ try{
     await bundleTab.screenshot({path:'browser-artifacts/v1517-dualsense-'+label+'-mobile.png',fullPage:true});
     await bundleTab.close();
   }
+  // E1 recovered product identity across retailer package SKUs in the
+  // real client markup, independent of live/storefront availability.
+  const recovered=searchPayload('PS5 Slim',null).offers;
+  const recoveredSkus=new Set(recovered.map(o=>o.sourceMeta?.productId));
+  assertCheck('v1518_recovered_jarir_source_SKUs_distinct',
+    recovered.length===4&&recoveredSkus.size===4&&
+    ['627671','627678','670688','677770'].every(s=>recoveredSkus.has(s))&&
+    !recoveredSkus.has('677771')&&recovered.every(o=>o.exactMatch===true),
+    recovered.map(o=>({sku:o.sourceMeta?.productId,exact:o.exactMatch,price:o.productPrice})));
+  const recoveryTab=await navigate('PS5 Slim');
+  await recoveryTab.locator('#results .match-result-card').first().waitFor({timeout:15000});
+  const recoveredTitles=await recoveryTab.locator('#results .match-card-copy strong').allTextContents();
+  assertCheck('v1518_recovered_jarir_customer_product_cards',
+    recoveredTitles.length>=3&&
+    recoveredTitles.some(s=>/DIG|Digital/i.test(s))&&
+    recoveredTitles.some(s=>/Blu-ray|Disc/i.test(s))&&
+    recoveredTitles.some(s=>/Fornite|Fortnite/i.test(s)),
+    recoveredTitles);
+  await recoveryTab.screenshot({path:'browser-artifacts/v1518-jarir-recovered-desktop.png',fullPage:true});
+  await recoveryTab.setViewportSize({width:390,height:844});
+  const recoveryMobile=await recoveryTab.evaluate(()=>({
+    viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,
+    cards:document.querySelectorAll('#results .match-result-card').length}));
+  assertCheck('v1518_recovered_jarir_390px_mobile',
+    recoveryMobile.cards>=3&&recoveryMobile.scrollWidth<=recoveryMobile.viewport+4,
+    recoveryMobile);
+  await recoveryTab.screenshot({path:'browser-artifacts/v1518-jarir-recovered-mobile.png',fullPage:true});
+  await recoveryTab.close();
   const ps5IdentityTab=await navigate('PS5');
   await ps5IdentityTab.locator('#results .match-result-card').first().waitFor();
   const consoleOnly=await ps5IdentityTab.locator('#results .match-card-copy strong').allTextContents();
