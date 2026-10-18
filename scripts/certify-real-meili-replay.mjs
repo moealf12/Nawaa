@@ -77,12 +77,27 @@ if(stage==="write"){
  await indexOffers([{...controller,observedAt:newObservedAt,productPrice:3099,availability:"out_of_stock"}]);
  await waitFor(rows=>rows.find(x=>x.sourceMeta?.productId==="677770")?.productPrice===3099,
    "newest priced observation");
- await indexOffers([{...controller,observedAt:saved.recent,productPrice:3049,availability:"unknown"}]);
- const after=await waitFor(rows=>rows.find(x=>x.sourceMeta?.productId==="677770")?.productPrice===3049,
-   "delayed older overwrite");
- assert.equal(after.find(x=>x.sourceMeta?.productId==="677770").productPrice,3099,
-   "older observation must never overwrite new indexed price and stock");
+ const rejected=await indexOffers([{...controller,observedAt:saved.recent,productPrice:3049,availability:"unknown"}]);
+ assert.equal(rejected.indexed,0,"older observation must not enqueue an index overwrite");
+ assert.equal(rejected.skippedOlder,1);
+ const after=await docs();
+ const latest=after.find(x=>x.sourceMeta?.productId==="677770");
+ assert.equal(latest.productPrice,3099,"newer price must survive the delayed old packet");
+ assert.equal(latest.availability,"out_of_stock");
+ assert.equal(latest.observedAt,newObservedAt);
+ // In one Node instance, queued concurrent calls must also preserve the
+ // newest observation, not merely the order in which the network responds.
+ const newestTime=new Date(Date.now()+100).toISOString();
+ const results=await Promise.all([
+   indexOffers([{...controller,observedAt:newestTime,productPrice:3199,availability:"out_of_stock"}]),
+   indexOffers([{...controller,observedAt:saved.recent,productPrice:3049,availability:"unknown"}])
+ ]);
+ assert.equal(results[0].indexed,1);
+ assert.equal(results[1].indexed,0);
+ const completed=await docs();
+ assert.equal(completed.find(x=>x.sourceMeta?.productId==="677770").productPrice,3199);
  console.log("REAL_MEILI_STAGE "+JSON.stringify({stage,pid:process.pid,restarted:true,
    durableRows:before.length,oldRejected:true,freshPreserved:true,
-   queryReclassified:true,oldExactReset:true,newerObservationGuard:true}));
+   queryReclassified:true,oldExactReset:true,newerObservationGuard:true,
+   sequentialDelayedWriteRejected:true,oneProcessConcurrentReplayProtected:true}));
 }
