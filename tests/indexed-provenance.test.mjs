@@ -35,7 +35,7 @@ test('v15.19 RED actual Meili client preserves merchant observation and rejects 
       if(url.includes('/search')){
         queryCalls++;
         return Response.json({hits:[{
-          ...original,observedAt:new Date().toISOString(),dataKind:'indexed'
+          ...sent[0],dataKind:'indexed'
         },{...original,sourceUrl:original.sourceUrl.replace('670688','677770'),
           title:'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with DualSense Wireless Controller, White',
           sourceMeta:{productId:'677770'},specs:{brand:'Sony',modelNumber:'CFI2116ACFIZC'},
