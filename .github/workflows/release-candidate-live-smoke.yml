@@ -60,7 +60,7 @@ jobs:
       - name: Check out the immediate pre-matcher-fix parent for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: de2afc0042eb0d704206b774b689af79decec85b
+          ref: f077847c4c8d315452ceddeb90a363f72429d645
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
