@@ -564,10 +564,12 @@ try{
   await recoveryTab.locator('#results .match-result-card').first().waitFor({timeout:15000});
   const recoveredTitles=await recoveryTab.locator('#results .match-card-copy strong').allTextContents();
   assertCheck('v1518_recovered_jarir_customer_product_cards',
-    recoveredTitles.length>=3&&
-    recoveredTitles.some(s=>/DIG|Digital/i.test(s))&&
-    recoveredTitles.some(s=>/Blu-ray|Disc/i.test(s))&&
-    recoveredTitles.some(s=>/Fornite|Fortnite/i.test(s)),
+    recoveredTitles.length===4&&
+    recoveredTitles.some(s=>/نسخة رقمية/i.test(s))&&
+    recoveredTitles.some(s=>/نسخة الأقراص/i.test(s))&&
+    recoveredTitles.some(s=>/Fortnite/i.test(s))&&
+    recoveredTitles.some(s=>/DualSense/i.test(s))&&
+    !recoveredTitles.some(s=>/حزمة مع إضافات/i.test(s)),
     recoveredTitles);
   await recoveryTab.screenshot({path:'browser-artifacts/v1518-jarir-recovered-desktop.png',fullPage:true});
   await recoveryTab.setViewportSize({width:390,height:844});
