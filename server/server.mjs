@@ -918,7 +918,9 @@ const server = http.createServer(async (req, res) => {
     // Streamed searches must expose the same signed depth-1 cursor as /api/search.
     // Without it, the UI cannot request additional sources after an SSE result.
     const nextCursor = encodeSearchCursor(normalized, 1);
-    const cached = cachedSearch.peek(key);
+    // The SSE layer already streams fresh evidence; never publish stale
+    // exact/stock/price claims as its initial customer snapshot.
+    const cached = cachedSearch.peek(key,{allowStale:false});
     const requestStarted = PROFILE_SEARCH_STREAM ? performance.now() : 0;
     let firstValidPublished=false,firstExactPublished=false;
     res.writeHead(200,{
@@ -1021,7 +1023,9 @@ const server = http.createServer(async (req, res) => {
         try { depth = decodeSearchCursor(cursorToken, normalizedComparisonQuery).depth; }
         catch { return jsonResponse(res,400,{error:"invalid_search_cursor"},origin || "*"); }
       }
-      const result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth));
+      // JSON can return only current evidence or a new bounded acquisition;
+      // a failed refresh may not certify an expired in-stock cached price.
+      const result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth),{allowStale:false});
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
       const nextCursor = depth < MAX_SEARCH_DEPTH ? encodeSearchCursor(normalizedComparisonQuery, depth + 1) : null;
       return jsonResponse(res, 200, {
