@@ -899,6 +899,25 @@ function sharedMerchantModelEvidence(offers = []) {
   return ids.every(Boolean) && ids.every(id => id === ids[0]);
 }
 
+// E1 real Chrome: CDN images can become complete before their inline load
+// callback settles after a streamed innerHTML re-render. Derive placeholder
+// visibility from the actual image state immediately after each commit.
+function reconcileProductImageFallbacks(root) {
+  for (const image of root.querySelectorAll(".match-card-image img, .config-image img")) {
+    const fallback = image.nextElementSibling;
+    if (!fallback || !fallback.matches(".match-card-fallback, .config-image-fallback")) continue;
+    const reconcile = () => {
+      if (image.complete && image.naturalWidth > 0)
+        fallback.style.display = "none";
+      else if (image.complete && image.style.display === "none")
+        fallback.style.display = "grid";
+    };
+    reconcile();
+    image.addEventListener("load", reconcile, {once:true});
+    image.addEventListener("error", reconcile, {once:true});
+  }
+}
+
 function renderProduct(product, query) {
   const filteredOffers = product.offers.filter(offer =>
     (state.merchant === "all" || offer.merchant === state.merchant) &&
@@ -1143,6 +1162,8 @@ function renderProduct(product, query) {
       });
     });
   });
+
+  reconcileProductImageFallbacks(els.results);
 
   els.results.querySelectorAll(".config-option").forEach((button) => {
     button.addEventListener("click", () => {
