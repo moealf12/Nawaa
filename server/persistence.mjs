@@ -147,6 +147,9 @@ export async function persistOffers(query,offers=[]){
 
 
 export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}){
+  // Legacy durable documents stay in PostgreSQL for audit; shopper search
+  // must not revive old price/stock as fresh just because a record is indexed.
+  const maxCustomerEvidenceAgeMs=45_000;
   const client=await db();
   if(!client||!String(query||"").trim()) return {configured:Boolean(client),offers:[]};
   await initPersistence();
@@ -155,6 +158,8 @@ export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}
     select payload, observed_at
     from nawaa_offers
     where observed_at >= now() - ($2::text || ' hours')::interval
+      and observed_at >= now() - ($4::bigint * interval '1 millisecond')
+      and observed_at <= now() + interval '1 minute'
       and (
         to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(brand,''))
           @@ plainto_tsquery('simple',$1)
@@ -168,11 +173,14 @@ export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}
       ) desc,
       observed_at desc
     limit $3
-  `,[q,String(Math.max(1,Number(maxAgeHours)||168)),Math.max(1,Math.min(500,Number(limit)||120))]);
+  `,[q,String(Math.max(1,Number(maxAgeHours)||168)),Math.max(1,Math.min(500,Number(limit)||120)),maxCustomerEvidenceAgeMs]);
   return {
     configured:true,
     offers:result.rows.map(row=>({
       ...(row.payload||{}),
+      // Historical matching flags can belong to an earlier query or a retired
+      // classifier. The actual current query must always recompute them.
+      exactMatch:false,matchConfidence:0,
       dataKind:"persisted",
       observedAt:row.observed_at instanceof Date ? row.observed_at.toISOString() : row.observed_at
     }))
