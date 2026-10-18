@@ -101,7 +101,49 @@ export async function recordOffer(offerData={}){
   }
 }
 
-export async function persistOffers(query,offers=[]){const client=await db();if(!client||!offers.length)return {configured:Boolean(client),saved:0};await initPersistence();let saved=0;for(const o of offers){if(!o?.sourceUrl||!o?.title)continue;const key=keyOf(o);if(!key)continue;await client.query(`insert into nawaa_offers(offer_key,query,title,brand,merchant,merchant_country_code,source_url,image_url,currency,product_price,total_sar,sku,condition,availability,match_confidence,exact_match,observed_at,payload) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),$17::jsonb) on conflict(offer_key) do update set query=excluded.query,title=excluded.title,brand=excluded.brand,merchant=excluded.merchant,merchant_country_code=excluded.merchant_country_code,image_url=excluded.image_url,currency=excluded.currency,product_price=excluded.product_price,total_sar=excluded.total_sar,availability=excluded.availability,match_confidence=excluded.match_confidence,exact_match=excluded.exact_match,observed_at=now(),payload=excluded.payload`,[key,query,o.title,o.brand||o.specs?.brand||null,o.merchant||null,o.merchantCountryCode||null,o.sourceUrl,o.imageUrl||null,o.currency||null,o.productPrice??null,o.totalSAR??null,o.sku||null,o.condition||null,o.availability||null,o.matchConfidence??null,o.exactMatch===true,JSON.stringify(o)]);saved++;}return {configured:true,saved};}
+// Legacy batch writer: never stamp ingestion time as source observation.
+// Keep historic rows for audit but prevent delayed older sources from
+// overwriting newer immutable merchant facts written through recordOffer().
+export async function persistOffers(query,offers=[]){
+  const client=await db();
+  if(!client||!offers.length)return {configured:Boolean(client),saved:0};
+  await initPersistence();
+  let saved=0;
+  for(const o of offers){
+    if(!o?.sourceUrl||!o?.title)continue;
+    const observedAt=typeof o.observedAt==="string" ? new Date(o.observedAt) : null;
+    if(!observedAt || Number.isNaN(observedAt.getTime()) ||
+       observedAt.getTime()>Date.now()+60_000)continue;
+    const key=keyOf(o);
+    if(!key)continue;
+    const payload={...o,observedAt:observedAt.toISOString()};
+    await client.query(
+      `insert into nawaa_offers(
+        offer_key,query,title,brand,merchant,merchant_country_code,source_url,
+        image_url,currency,product_price,total_sar,sku,condition,availability,
+        match_confidence,exact_match,observed_at,payload)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
+        on conflict(offer_key) do update set
+          query=excluded.query,title=excluded.title,brand=excluded.brand,
+          merchant_country_code=excluded.merchant_country_code,
+          image_url=excluded.image_url,currency=excluded.currency,
+          product_price=excluded.product_price,total_sar=excluded.total_sar,
+          sku=excluded.sku,availability=excluded.availability,
+          match_confidence=excluded.match_confidence,
+          exact_match=excluded.exact_match,observed_at=excluded.observed_at,
+          payload=excluded.payload
+        where nawaa_offers.observed_at <= excluded.observed_at`,
+      [key,query,o.title,o.brand||o.specs?.brand||null,o.merchant||null,
+       o.merchantCountryCode||null,o.sourceUrl,o.imageUrl||o.image||null,
+       o.currency||null,o.productPrice??null,o.totalSAR??null,
+       o.sku||o.sourceMeta?.productId||null,o.condition||"new",
+       o.availability||null,o.matchConfidence??null,o.exactMatch===true,
+       observedAt,JSON.stringify(payload)]
+    );
+    saved++;
+  }
+  return {configured:true,saved};
+}
 
 
 export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}){
