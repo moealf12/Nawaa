@@ -59,6 +59,11 @@ export function normalizeSearchQuery(value = "") {
 
   text = text.replace(/\b(\d+)(?:st|nd|rd|th)\b/g, "$1")
     .replace(/([ء-ي])(?=\d)/g, "$1 ").replace(/(\d)(?=جيجا|تيرا)/g, "$1 ");
+  // E1 Jarir 677770: Arabic "PS5 with an extra controller" requests a
+  // complete console retail bundle, not a separately sold gamepad. Require
+  // the explicit inclusion phrase; ordinary controller searches are unchanged.
+  text=text.replace(/(^| )مع (?:يد تحكم|يد) اضافيه(?= |$)/g,
+    "$1console bundle controller");
   for (const [pattern, canonical] of COMPILED_ALIASES) {
     text = text.replace(pattern, "$1" + canonical);
   }
@@ -298,6 +303,7 @@ function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normaliz
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
+    if (/\bps5 console bundle controller\b/.test(query)) return "console";
     if (CONSOLE_WITH_INCLUDED_DRIVE.test(query) || explicitlyIncludedConsoleAccessory(query)) return "console";
     if (GAMING_ACCESSORY.test(query) || GAMING_ARABIC_ACCESSORY.test(query) || GAMING_STORAGE_ACCESSORY.test(query) || /\bstorage\b/.test(query)) return "accessory";
     if (GAMING_GAME_PRODUCT.test(query) || GAMING_STANDALONE_GAME.test(query) || /\b(?:game|games)\b/.test(query)) return "game";
