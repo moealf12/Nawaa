@@ -43,6 +43,17 @@ const PORT = Number(process.env.PORT || 10000);
 const OMEGA_INDEX_ONLY = process.env.NODE_ENV==='test' &&
   process.env.NAWAA_CANONICAL_INDEX_TEST==='1' &&
   process.env.NAWAA_OMEGA_INDEX_ONLY==='1';
+const OMEGA_CANONICAL = process.env.NODE_ENV==='test' && process.env.NAWAA_CANONICAL_INDEX_TEST==='1';
+async function canonicalCandidates(offers,acceptLive=false){
+  if(!OMEGA_CANONICAL)return offers;
+  return (await import('./omega-canonical-index.mjs')).canonicalReadBoundary(offers,{acceptLive});
+}
+async function canonicalResponse(result,query){
+  if(!OMEGA_CANONICAL)return result;
+  const offers=selectDiverseOffers(retainRelatedOffers(query,await canonicalCandidates(result.offers||[])),Infinity);
+  return {...result,offers,coverage:{...result.coverage,returnedOffers:offers.length,
+    availableOffers:offers.length,returnedMerchants:new Set(offers.map(offerMerchantKey)).size}};
+}
 // Diagnostic-only phase timing. Never log offer contents, URL paths or queries.
 const PROFILE_SEARCH_STREAM = process.env.NAWAA_PROFILE_STREAM === "1";
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -326,7 +337,7 @@ async function searchExpansion(query, depth) {
     errors.push(...(storefront.errors||[]).map(error=>({provider:"free-storefronts",sourceId:"free-storefronts",pass:"expansion",...error})));
   }
 
-  const offers=retainRelatedOffers(query, [...(amazon.offers||[]),...(storefront.offers||[])]);
+  const offers=retainRelatedOffers(query, await canonicalCandidates([...(amazon.offers||[]),...(storefront.offers||[])],true));
   const allSelectedOffers=selectDiverseOffers(offers,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
@@ -417,9 +428,16 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   else signal?.addEventListener("abort",forwardAbort,{once:true});
   let offers=[],providers=[],errors=[];
   let accepting=true,primaryCompleted=0,amazonSettled=false,localSettled=false;
-  const emit=(progress={})=>accepting
-    ? onSnapshot(progressiveSnapshot(query,offers,providers,errors,progress))
-    : Promise.resolve();
+  let emissions=Promise.resolve();
+  const emit=(progress={})=>{
+    const captured=[...offers];
+    emissions=emissions.then(async()=>{
+      if(!accepting)return;
+      const current=await canonicalCandidates(captured,true);
+      if(accepting)await onSnapshot(progressiveSnapshot(query,current,providers,errors,progress));
+    });
+    return emissions;
+  };
 
   // Launch the catalog, core providers, and Amazon concurrently. Slow sources
   // are never allowed to postpone stream completion indefinitely.
@@ -498,7 +516,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
     error:"search_stream_deadline_exceeded",providersPending,
   });
 
-  const assessed=retainRelatedOffers(query, offers);
+  const assessed=retainRelatedOffers(query, await canonicalCandidates(offers,true));
   const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
@@ -684,6 +702,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     }
   }
 
+  offers=await canonicalCandidates(offers,true);
   const amazonUrls = new Set(amazonValidated.map((offer) => offer.sourceUrl).filter(Boolean));
   const rescoredOffers = dedupeNormalizedOffers(offers)
     .filter((offer) => !amazonUrls.has(offer.sourceUrl))
@@ -695,7 +714,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
   // Amazon search cards are scored once against the shopper query above.
   // Merge those validated offers without scoring them a second time.
-  offers = dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
+  offers = OMEGA_CANONICAL ? retainRelatedOffers(query,offers) : dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
 
   const sources = currentSources();
   const allSelectedOffers = selectDiverseOffers(offers, Infinity);
@@ -995,7 +1014,7 @@ const server = http.createServer(async (req, res) => {
     });
     try {
       if (cached) {
-        send("snapshot",{...cached,nextCursor});
+        send("snapshot",{...await canonicalResponse(cached,normalized),nextCursor});
         if (cached.cache?.mode === "fresh") {
           send("done",{cache:"fresh",offers:cached.offers?.length || 0});
           return res.end();
@@ -1006,10 +1025,13 @@ const server = http.createServer(async (req, res) => {
       let result;
       try {
         result=await streamSearchProgress(normalized,async(snapshot)=>{
+          snapshot=await canonicalResponse(snapshot,normalized);
           if(!closed&&!res.writableEnded) send("snapshot",{...snapshot,nextCursor,cache:{hit:false,mode:"progress",stale:false,refreshing:true,ageMs:0}});
         },{signal:streamController.signal});
       } finally { clearInterval(heartbeat); }
       if (closed || res.writableEnded) return;
+      result=await canonicalResponse(result,normalized);
+      if(closed||res.writableEnded)return;
       send("snapshot",{...result,nextCursor,cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
       send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
       return res.end();
@@ -1044,8 +1066,10 @@ const server = http.createServer(async (req, res) => {
       }
       // JSON can return only current evidence or a new bounded acquisition;
       // a failed refresh may not certify an expired in-stock cached price.
-      const result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth),{allowStale:false});
+      let result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth),{allowStale:false});
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
+      if(OMEGA_CANONICAL&&resolvedOffer)await canonicalCandidates([resolvedOffer],true);
+      result=await canonicalResponse(result,normalizedComparisonQuery);
       const nextCursor = depth < MAX_SEARCH_DEPTH ? encodeSearchCursor(normalizedComparisonQuery, depth + 1) : null;
       return jsonResponse(res, 200, {
         query: productUrl || q,

@@ -221,3 +221,5 @@ jobs:
         run: node scripts/certify-omega-canonical.mjs read
       - name: Real localhost progressive SSE and final JSON trust gate
         run: node scripts/certify-omega-real-http.mjs
+      - name: Mixed chronology and cached canonical boundary (simulated transitions, real services)
+        run: node scripts/certify-omega-mixed.mjs

@@ -176,3 +176,24 @@ export async function isolatedCanonicalIndexOffers(offers=[]){
     canonicalAccepted:accepted.filter(x=>x.state==="accepted").length,
     conflicts:accepted.filter(x=>x.state==="equal_time_conflict").length};
 }
+
+// Linearization point is the batched PostgreSQL SELECT, after live acceptance.
+// Cached/indexed candidates only discover identities; they never mint evidence.
+export async function canonicalReadBoundary(offers=[],{acceptLive=false,now=Date.now()}={}){
+  await initializeCanonicalIndex();
+  const candidates=offers.map(offer=>({offer,payload:canonicalOfferPayload(offer)}))
+    .filter(x=>x.payload);
+  if(acceptLive){
+    for(const {offer,payload} of candidates)
+      if(offer.dataKind==="live")await commitCanonicalObservation(payload.offer);
+  }
+  const keys=[...new Set(candidates.map(x=>x.payload.offerKey))];
+  if(!keys.length)return [];
+  const rows=(await (await database()).query("SELECT offer_key,revision,observed_at,fingerprint,offer FROM "+T+
+    " WHERE offer_key=ANY($1::text[])",[keys])).rows;
+  return rows.filter(row=>{
+    const time=new Date(row.observed_at).getTime();
+    return Number.isFinite(time)&&now-time<=45000&&time<=now+60000;
+  }).map(row=>({...row.offer,dataKind:"indexed",exactMatch:false,matchConfidence:0,
+    canonicalRevision:Number(row.revision),canonicalFingerprint:row.fingerprint}));
+}
