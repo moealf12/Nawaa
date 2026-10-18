@@ -36,6 +36,7 @@ import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
+import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 // Isolated canonical HTTP proof: synthetic canonical prices must not be mixed
@@ -830,6 +831,16 @@ const server = http.createServer(async (req, res) => {
     url = new URL(req.url || "/", "http://nawaa.local");
   } catch {
     return jsonResponse(res, 400, { error:"invalid_request_url" }, origin || "*");
+  }
+
+  // Strictly disposable-only quote implementation. No production DB access,
+  // production schema change, deployment switch or unauthenticated admin path.
+  if (url.pathname === "/api/quotes" ||
+      /^\/api\/(?:quotes|quote-admin)\//.test(url.pathname)) {
+    if (!quoteWorkflowEnabled())return jsonResponse(res,404,{error:"not_found"},origin||"*");
+    if (!enforceRateLimit(req,res,"quote-workflow",
+      {capacity:15,refillPerSecond:0.2},origin||"*"))return;
+    return handleQuoteWorkflow(req,res,url,origin);
   }
 
   if (req.method === "POST" && url.pathname === "/api/ingest/offers") {
