@@ -32,6 +32,17 @@ test('v15.19 RED actual Meili client preserves merchant observation and rejects 
         return Response.json({taskUid:1,indexUid:'offers',status:'enqueued',
           type:'documentAdditionOrUpdate',enqueuedAt:new Date().toISOString()},{status:202});
       }
+      if(method==='GET'&&/\/documents\//.test(url)){
+        const id=decodeURIComponent(url.split('/documents/')[1]||'');
+        const existing=sent?.find(x=>x.id===id);
+        if(existing)return Response.json(existing);
+        return Response.json({message:'Document not found',code:'document_not_found',
+          type:'invalid_request',link:'https://www.meilisearch.com/docs/reference/errors#document_not_found'},{status:404});
+      }
+      if(method==='GET'&&url.includes('/tasks/1')){
+        return Response.json({taskUid:1,indexUid:'offers',status:'succeeded',
+          type:'documentAdditionOrUpdate',enqueuedAt:new Date().toISOString()});
+      }
       if(url.includes('/search')){
         queryCalls++;
         return Response.json({hits:[{
