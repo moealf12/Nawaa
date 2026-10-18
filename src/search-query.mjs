@@ -320,8 +320,18 @@ export function describeProduct(offer = {}) {
   // plus a DualSense controller, even though the listing omits 'console'.
   // Require actual Sony chassis corroboration, console edition+capacity, and
   // an explicit retail-package inclusion marker before ignoring accessory nouns.
+  // Real PDP SEO titles can omit Disc/Digital despite a corroborated Sony
+  // chassis model. Require a console-form subject *before* the bundle marker,
+  // with no peripheral/storage-part noun in that subject, before allowing this
+  // narrower edition-free path. The included controller can follow "bundle".
+  const preBundleSubject = title.split(/\bbundle\b/,1)[0];
+  const corroboratedEditionFreeBundle = /\b(?:slim|pro)\b/.test(preBundleSubject) &&
+    !GAMING_ACCESSORY.test(preBundleSubject) &&
+    !GAMING_ARABIC_ACCESSORY.test(preBundleSubject) &&
+    !GAMING_STORAGE_ACCESSORY.test(preBundleSubject);
   const identifiedConsoleBundle = evidencedConsoleChassis &&
-    /\b(?:digital|dig|disc)\b/.test(title) && /\b\d+(?:gb|tb)\b/.test(title) &&
+    /\b\d+(?:gb|tb)\b/.test(title) &&
+    (/\b(?:digital|dig|disc)\b/.test(title) || corroboratedEditionFreeBundle) &&
     (/\b(?:bundle|including|includes|with)\b/.test(title) || /\s+\+\s+/.test(String(offer.title||"")));
   const isBundle = /\bbundle\b/.test(title) ||
     explicitlyIncludedConsoleAccessory(title, offer.title) || identifiedConsoleBundle;
