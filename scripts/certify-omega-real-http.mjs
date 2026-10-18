@@ -54,13 +54,14 @@ const oldListen=http.Server.prototype.listen;
 http.Server.prototype.listen=function(...args){
   this.once("listening",async()=>{
     try{
-      const port=this.address().port,query=encodeURIComponent("PlayStation");
+      const port=this.address().port,query=encodeURIComponent("PlayStation 5");
       const stream=await get(port,"/api/search/stream?q="+query);
       assert.equal(stream.status,200);
       const received=snapshots(stream.body);
       assert.ok(received.length>0,"actual SSE snapshots required");
       const streamed=received.flatMap(s=>s.offers||[]);
       const canonical=streamed.filter(o=>o.sourceMeta?.productId==="677770");
+      console.log("OMEGA_HTTP_SEARCH_DEBUG "+JSON.stringify({snapshotCount:received.length,offers:streamed.length,firstOffers:streamed.slice(0,4).map(o=>({title:o.title,sku:o.sku,sourceMeta:o.sourceMeta,price:o.productPrice})),lastCoverage:received.at(-1)?.coverage}));
       assert.ok(canonical.length>0,"current Jarir SKU should survive actual SSE");
       assert.ok(canonical.every(o=>o.productPrice===3299&&o.availability==="out_of_stock"));
       assert.ok(!streamed.some(o=>o.sourceMeta?.productId==="677770"&&o.productPrice===3049),
