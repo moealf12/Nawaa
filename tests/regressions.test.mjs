@@ -758,3 +758,48 @@ test('v15.16 E1 Arabic PS5 with extra hand controller retrieves real physical co
   ])assert.equal(assessOfferMatch(q,{title,condition:'new'}).exactMatch,false,
     'Accessory-only product cannot pose as a complete PS5 bundle: '+title);
 });
+
+
+// v15.17 RED-first: independently source-backed, different physical retail
+// packages in public Jarir category JSON-LD (2026-10-18). Genuine DualSense
+// controller SKU 677770 / CFI2116ACFIZC; Fortnite game voucher SKU 670688
+// / CFI2116AFNTVC. The first must exactly match both EN/AR controller-bundle
+// queries; the game bundle and standalone accessories must NEVER exact-match.
+const v1517JarirDiscControllerBundle={
+  title:'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with DualSense Wireless Controller, White',
+  sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-677770.html',
+  merchant:'Jarir',providerMarket:'jarir-sa',
+  currency:'SAR',productPrice:3049,condition:'new',availability:'in_stock',
+  specs:{brand:'Sony',modelNumber:'CFI2116ACFIZC',series:'PlayStation 5 Slim'},
+  sourceMeta:{productId:'677770',parsedFrom:'jarir-category-jsonld'}
+};
+const v1517JarirDiscGameBundle={
+  title:"Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with Fornite Flowering Chaos, White",
+  sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-670688.html',
+  merchant:'Jarir',providerMarket:'jarir-sa',
+  currency:'SAR',productPrice:2299,condition:'new',availability:'in_stock',
+  specs:{brand:'Sony',modelNumber:'CFI2116AFNTVC',series:'PlayStation 5 Slim'},
+  sourceMeta:{productId:'670688',parsedFrom:'jarir-category-jsonld'}
+};
+test('v15.17 E1 EN/AR controller bundle intent requires a complete console with included controller',()=>{
+  assert.equal(queries.describeProduct(v1517JarirDiscControllerBundle).kind,'console');
+  assert.equal(queries.describeProduct(v1517JarirDiscGameBundle).kind,'console');
+  for (const query of ['PS5 DualSense Bundle','بلايستيشن 5 مع يد إضافية']) {
+    assert.equal(queries.parseSearchIntent(query).kind,'console',query);
+    assert.equal(assessOfferMatch(query,v1517JarirDiscControllerBundle).exactMatch,true,
+      'real Jarir 677770 included-controller package must be an exact result: '+query);
+    assert.equal(assessOfferMatch(query,v1517JarirDiscGameBundle).exactMatch,false,
+      'Jarir 670688 Fortnite-only bundle cannot satisfy extra-controller intent: '+query);
+    for (const title of [
+      'Sony PS5 DualSense Wireless Controller',
+      'Sony PS5 DualSense Two Controllers Bundle',
+      'Sony PS5 Controller Charging Station Bundle',
+      'PS5 Console USB Hub Bundle with Controller Holder',
+    ]) assert.equal(assessOfferMatch(query,{title,condition:'new'}).exactMatch,false,
+      'a peripheral must not be promoted into a console package: '+title);
+  }
+  assert.equal(assessOfferMatch('PS5',v1517JarirDiscGameBundle).exactMatch,true,
+    'regular PS5 browsing must retain the genuine game-included console');
+  assert.equal(queries.parseSearchIntent('PS5 DualSense controller').kind,'accessory',
+    'standalone controller shopping remains accessory intent');
+});
