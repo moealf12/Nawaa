@@ -223,3 +223,7 @@ jobs:
         run: node scripts/certify-omega-real-http.mjs
       - name: Mixed chronology and cached canonical boundary (simulated transitions, real services)
         run: node scripts/certify-omega-mixed.mjs
+      - name: Demonstrate 121-key prefix starvation before fairness repair
+        run: |
+          cp server/omega-canonical-index.mjs server/.omega-before.mjs
+          node scripts/certify-omega-scale.mjs --baseline
