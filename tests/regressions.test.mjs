@@ -698,3 +698,36 @@ test("v15.13 E2 Jarir included-controller subject has no accessory-only false pr
   assert.notEqual(queries.describeProduct(cooling).kind,"console","lying CFI must not upgrade heatsink");
   assert.equal(assessOfferMatch("PS5",cooling).exactMatch,false);
 });
+
+
+// v15.15 authentic Jarir PDP resolver E1, 2026-10-18 00:59 UTC.
+// Resolver returned this exact SEO title, SKU, manufacturer model, SAR price,
+// and in-stock observation. Source page is a *console with controller*, not
+// a controller-only accessory. This is different from the Constructor title.
+const jarirDiscBundlePdpResolverE1={
+  title:"Sony PlayStation 5 PlayStation 5 Slim 1 TB Bundle with DualSense Wireless Controller White - Jarir Bookstore KSA",
+  merchant:"Jarir",providerMarket:"jarir-sa",currency:"SAR",productPrice:3049,
+  availability:"in_stock",sourceUrl:"https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-677770.html",
+  sku:"677770",specs:{brand:"Sony",modelNumber:"CFI2116ACFIZC"},condition:"new",
+};
+test("v15.15 E1 real Jarir 677770 PDP SEO title is a physical Disc console bundle",()=>{
+  const bundle=jarirDiscBundlePdpResolverE1;
+  assert.equal(queries.describeProduct(bundle).kind,"console",
+    "Source-resolved physical PS5 bundle must not be demoted to controller accessory");
+  assert.equal(queries.describeProduct(bundle).isBundle,true);
+  assert.equal(assessOfferMatch("PS5",bundle).exactMatch,true);
+  assert.equal(assessOfferMatch("PS5 controller",bundle).exactMatch,false);
+  assert.equal(bundle.specs.modelNumber,"CFI2116ACFIZC");
+  assert.equal(bundle.productPrice,3049);
+});
+test("v15.15 E2 verified console metadata cannot promote unrelated peripheral bundles",()=>{
+  for(const title of [
+    "Sony PS5 Controller Charging Dock 1TB Bundle",
+    "Sony PS5 Slim USB Hub 1TB Bundle with DualSense",
+    "Sony PS5 SSD Heatsink 1TB Bundle with Controller",
+  ]){
+    const suspect={...jarirDiscBundlePdpResolverE1,title};
+    assert.notEqual(queries.describeProduct(suspect).kind,"console",title);
+    assert.equal(assessOfferMatch("PS5",suspect).exactMatch,false,title);
+  }
+});
