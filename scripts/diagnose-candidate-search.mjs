@@ -4,7 +4,7 @@
 import {spawn} from 'node:child_process';
 import net from 'node:net';
 import {once} from 'node:events';
-import {searchViaConstructor} from '../server/providers/jarir.mjs';
+import {searchViaConstructor,searchJarir} from '../server/providers/jarir.mjs';
 import {assessOfferMatch,describeProduct} from '../src/search-query.mjs';
 
 const port=await new Promise((resolve,reject)=>{
@@ -376,6 +376,29 @@ try{
   }catch(error){
     console.log('JARIR_V1516_CONSTRUCTOR_CATEGORY_COMPARISON '+JSON.stringify({
       status:'UNAVAILABLE',error:String(error.message||error).slice(0,140)}));
+  }
+  // v15.16 authentic merchant source acceptance: actual combined adapter
+  // result, distinct from Category HTML-only and Constructor-only probes.
+  await paceJarir();
+  try{
+    const start=performance.now();
+    const result=await searchJarir('PS5',96,'PS5',{signal:AbortSignal.timeout(16000)});
+    const ids=new Set(['668751','677770','677771','627671','627678','670688']);
+    const relevant=result.offers.filter(o=>ids.has(String(o.sourceMeta?.productId||'')))
+      .map(o=>({id:o.sourceMeta.productId,title:o.title,price:o.productPrice,
+        currency:o.currency,availability:o.availability,
+        model:o.specs?.modelNumber||null,
+        origin:o.sourceMeta.parsedFrom,sourceUrl:o.sourceUrl,
+        exact:o.exactMatch,observedAt:o.observedAt}));
+    console.log('JARIR_V1516_REAL_RECOVERY '+JSON.stringify({
+      source:'jarir-sa',query:'PS5',elapsedMs:Math.round(performance.now()-start),
+      returned:result.offers.length,categoryRecovery:result.diagnostics?.acquisition?.categoryRecovery,
+      provenance:relevant,unobserved:[...ids].filter(id=>!relevant.some(x=>x.id===id)),
+      errors:result.errors,note:'real source candidate only; not equivalent to final global UI ranking'
+    }));
+  }catch(error){
+    console.log('JARIR_V1516_REAL_RECOVERY '+JSON.stringify({
+      status:'UNAVAILABLE',error:String(error.message||error).slice(0,170)}));
   }
   for(const target of jarirCatalogTargets){
     await paceJarir();
