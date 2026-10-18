@@ -94,3 +94,43 @@ test('v15.17 category + successful empty Constructor preserves genuine controlle
  }
  assert.ok(categoryCalls<=1,'no duplicated catalog transport for repeated verified queries');
 });
+
+
+// v15.18 source trust: the following stock/price transition is a simulated
+// FUTURE change to a real SKU 670688; it is not a newly observed Jarir event.
+// Verifies public category TTL and bounded single-flight, with no crawling.
+test('v15.18 Jarir category TTL expires previous InStock evidence, refetches once, rejects changed OutOfStock',async t=>{
+ const oldFetch=globalThis.fetch,oldLookup=dns.lookup,oldNow=Date.now;
+ t.after(()=>{globalThis.fetch=oldFetch;dns.lookup=oldLookup;Date.now=oldNow});
+ dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+ let timeShift=180000,categoryReads=0,changed=false;
+ Date.now=()=>oldNow()+timeShift;
+ const reduced=records.map(p=>p.sku==='670688'?{
+   ...p,offers:{...p.offers,price:'2399.00',availability:'https://schema.org/OutOfStock'}
+ }:p);
+ globalThis.fetch=async url=>{
+   const u=new URL(url);
+   if(u.hostname==='ac.cnstrc.com')return Response.json({response:{results:rows.slice(0,2).map(([id,name,,price,path])=>({
+     value:name,data:{id,price,url:path,metadata:{brand:'Sony'}}
+   }))}});
+   if(u.hostname==='www.jarir.com'&&u.pathname==='/sa-en/sony-ps5-consoles-4518-x.html'){
+     categoryReads++;
+     return new Response(changed?htmlFrom(reduced):html,{
+       headers:{'content-type':'text/html'}});
+   }
+   throw Error('unexpected external source in isolated category TTL replay');
+ };
+ const baseline=await Promise.all(Array.from({length:3},()=>searchJarir('PS5',24,'PS5')));
+ assert.equal(categoryReads,1,'concurrent requests must share one category read');
+ for(const result of baseline)assert.ok(result.offers.some(o=>
+   o.sourceMeta.productId==='670688'&&o.availability==='in_stock'&&o.productPrice===2299));
+ changed=true;timeShift+=46000;
+ const subsequent=await Promise.all(Array.from({length:3},()=>searchJarir('PS5',24,'PS5')));
+ assert.equal(categoryReads,2,'expired 45s cache must refetch once');
+ for(const result of subsequent){
+   assert.ok(!result.offers.some(o=>o.sourceMeta.productId==='670688'),
+     'a newly OOS package may not remain a verified in-stock category offer');
+   assert.ok(result.offers.some(o=>o.sourceMeta.productId==='627671'));
+   assert.ok(result.offers.some(o=>o.sourceMeta.productId==='627678'));
+ }
+});
