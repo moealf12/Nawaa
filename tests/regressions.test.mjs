@@ -731,3 +731,30 @@ test("v15.15 E2 verified console metadata cannot promote unrelated peripheral bu
     assert.equal(assessOfferMatch("PS5",suspect).exactMatch,false,title);
   }
 });
+
+
+// E1: 2026-10-18 real Jarir Disc PS5 + DualSense package 677770,
+// stock/price corroborated on merchant PDP; the current ten-intent live SSE
+// reported 31 offers but ZERO exact for Arabic "PS5 with extra controller".
+test('v15.16 E1 Arabic PS5 with extra hand controller retrieves real physical console bundle',()=>{
+  const q='بلايستيشن 5 مع يد إضافية';
+  const genuine={
+    title:'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with DualSense Wireless Controller, White',
+    sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-677770.html',
+    merchant:'Jarir',providerMarket:'jarir-sa',currency:'SAR',productPrice:3049,
+    condition:'new',specs:{brand:'Sony',modelNumber:'CFI2116ACFIZC'},
+    sourceMeta:{productId:'677770'},
+  };
+  assert.equal(queries.parseSearchIntent(q).kind,'console',
+    'Arabic extra-controller bundle asks for the console retail package, not a standalone controller');
+  assert.equal(queries.describeProduct(genuine).kind,'console');
+  assert.equal(assessOfferMatch(q,genuine).exactMatch,true,
+    'Authentic Jarir package should exactly match Arabic console+controller shopping');
+  for(const title of [
+    'Sony PS5 DualSense Wireless Controller',
+    'Sony PS5 Controller Charging Station',
+    'PS5 DualSense Controller Bundle - Two Controllers',
+    'PS5 Cooling Stand with Extra Controller Holder',
+  ])assert.equal(assessOfferMatch(q,{title,condition:'new'}).exactMatch,false,
+    'Accessory-only product cannot pose as a complete PS5 bundle: '+title);
+});
