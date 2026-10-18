@@ -65,3 +65,32 @@ test('E1 real missed category offers enrich bounded PS5 Constructor while preser
  assert.equal(pages,1,'single bounded official category fetch');
  assert.equal(result.offers.find(o=>o.sourceMeta.productId==='670688').exactMatch,true);
 });
+
+
+test('v15.17 category + successful empty Constructor preserves genuine controller package for both bundle intents',async t=>{
+ const beforeFetch=globalThis.fetch,beforeDns=dns.lookup;
+ t.after(()=>{globalThis.fetch=beforeFetch;dns.lookup=beforeDns});
+ dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+ let categoryCalls=0;
+ globalThis.fetch=async input=>{
+   const url=new URL(input);
+   if(url.hostname==='ac.cnstrc.com')return Response.json({response:{results:[]}});
+   if(url.hostname==='www.jarir.com'&&url.pathname==='/sa-en/sony-ps5-consoles-4518-x.html'){
+     categoryCalls++;
+     return new Response(html,{headers:{'content-type':'text/html'}});
+   }
+   throw Error('Unexpected transport '+url.origin+url.pathname);
+ };
+ for(const query of ['PS5 DualSense Bundle','بلايستيشن 5 مع يد إضافية']){
+   const out=await searchJarir(query,24,query);
+   const exact=out.offers.filter(o=>o.exactMatch);
+   assert.deepEqual(exact.map(o=>o.sourceMeta.productId),['677770'],query);
+   assert.equal(exact[0].specs.modelNumber,'CFI2116ACFIZC');
+   assert.equal(exact[0].sourceMeta.parsedFrom,'jarir-category-jsonld');
+   assert.equal(exact[0].productPrice,3049);
+   assert.ok(!exact.some(o=>['670688','677771'].includes(o.sourceMeta.productId)),
+     'game bundle and OOS bundle cannot satisfy extra-controller intent');
+   assert.equal(out.errors.length,0);
+ }
+ assert.ok(categoryCalls<=1,'no duplicated catalog transport for repeated verified queries');
+});
