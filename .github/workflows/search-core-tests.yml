@@ -236,3 +236,36 @@ jobs:
         run: node scripts/certify-omega-live-acceptance.mjs
       - name: Seventeen live customer SSE queries including all ten PS5 intents with canonical guard
         run: node scripts/measure-representative-first-offer.mjs
+
+
+  disposable-quote-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: omega_ci
+          POSTGRES_PASSWORD: omega_test_only
+          POSTGRES_DB: omega_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omega_ci -d omega_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 8
+    env:
+      NODE_ENV: test
+      NAWAA_TEST_DATABASE_URL: postgresql://omega_ci:omega_test_only@127.0.0.1:5432/omega_ci
+      DATABASE_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Real quote HTTP, durable PostgreSQL, concurrency, expiration, authorization
+        run: node scripts/certify-quote-http.mjs
