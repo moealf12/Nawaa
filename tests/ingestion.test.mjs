@@ -9,7 +9,7 @@ test("ingestion rejects unverifiable offers",()=>{
 });
 
 test("ingestion normalizes accepted crawler offers",()=>{
-  const o=normalizeIngestOffer({title:"  HP Laptop  ",sourceUrl:"https://example.com/p",productPrice:"2499",currency:"sar",condition:"NEW"});
+  const o=normalizeIngestOffer({title:"  HP Laptop  ",sourceUrl:"https://example.com/p",productPrice:"2499",currency:"sar",condition:"NEW",observedAt:"2026-10-05T01:02:03.000Z"});
   assert.equal(o.title,"HP Laptop");
   assert.equal(o.productPrice,2499);
   assert.equal(o.currency,"SAR");
@@ -18,7 +18,7 @@ test("ingestion normalizes accepted crawler offers",()=>{
 });
 
 test("ingestion bounds batch size",()=>{
-  const rows=Array.from({length:INGEST_BATCH_LIMIT+20},(_,i)=>({title:"Product "+i,sourceUrl:"https://example.com/"+i,productPrice:i+1}));
+  const rows=Array.from({length:INGEST_BATCH_LIMIT+20},(_,i)=>({title:"Product "+i,sourceUrl:"https://example.com/"+i,productPrice:i+1,observedAt:"2026-10-05T01:02:03.000Z"}));
   assert.equal(normalizeIngestBatch(rows).length,INGEST_BATCH_LIMIT);
 });
 

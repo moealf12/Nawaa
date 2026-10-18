@@ -63,13 +63,19 @@ export async function recordOffer(offerData={}){
   const healthStatus=String(offerData.healthStatus||"healthy").trim().toLowerCase();
   const condition=String(offerData.condition||"new").trim().toLowerCase()||"new";
   if(!sourceUrl||title.length<3||!Number.isFinite(price)||price<=0||!/^[A-Z]{3}$/.test(currency)||!sourceName) throw new Error("invalid_offer_record");
+  // No synthetic freshness: the caller must supply the source observation time.
+  const rawObservation=offerData.observedAt;
+  const observedTime=typeof rawObservation==="string"&&rawObservation.trim()
+    ? Date.parse(rawObservation) : NaN;
+  if(!Number.isFinite(observedTime)||observedTime>Date.now()+60_000)
+    throw new Error("invalid_observed_at");
+  const observedAt=new Date(observedTime);
   const client=await db();
   if(!client) throw new Error("persistence_not_configured");
   await initPersistence();
-  const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition};
+  const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition,
+    observedAt:observedAt.toISOString()};
   const key=keyOf(normalized);
-  const observedAt=offerData.observedAt ? new Date(offerData.observedAt) : new Date();
-  if(Number.isNaN(observedAt.getTime())) throw new Error("invalid_observed_at");
   const query=String(offerData.query||sourceName||"crawler");
   const tx=await client.connect();
   try{
