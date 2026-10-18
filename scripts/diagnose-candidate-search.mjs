@@ -252,6 +252,44 @@ try{
   await paceJarir();
   try{
     const {html,finalUrl}=await fetchHtmlSafe(categoryUrl,0,{signal:AbortSignal.timeout(14000)});
+    // v15.16: read-only forensic DOM inspection of the ONE already fetched,
+    // public category page. No further network access or full HTML dump.
+    const {load:cheerioLoad}=await import('cheerio');
+    const $=cheerioLoad(html);
+    const tiles=$('div.product-tile__item--spacer');
+    const compact=s=>String(s||'').replace(/\s+/g,' ').trim().slice(0,600);
+    const tileEvidence=tiles.toArray().slice(0,12).map((node,i)=>{
+      const el=$(node),parent=el.parent(),grand=parent.parent();
+      const tags=[el,parent,grand].map(x=>({
+        tag:x.get(0)?.tagName||null,
+        classes:compact(x.attr('class')).slice(0,130),
+        dataAttrs:Object.fromEntries(Object.entries(x.attr()||{})
+          .filter(([k])=>k.startsWith('data-') && !/token|key|auth|session|cookie/i.test(k))
+          .slice(0,15).map(([k,v])=>[k,compact(v).slice(0,160)])),
+      }));
+      const near=grand.find('[data-cnstrc-item-id],[data-product-id],[data-sku],[itemprop="price"],a[href*="-gaming-consoles-"],a[href*="sony-playstation-5"]');
+      const attrs=near.toArray().slice(0,8).map(n=>{
+        const e=$(n),a=e.attr()||{};
+        return {tag:n.tagName,attr:Object.fromEntries(Object.entries(a)
+          .filter(([k])=>/^(?:data-(?:cnstrc-item-(?:id|name|price)|product-id|sku)|href|itemprop|content|class)$/i.test(k))
+          .slice(0,7).map(([k,v])=>[k,compact(v).slice(0,180)])),text:compact(e.text()).slice(0,130)}
+      });
+      return {i,tags,near:attrs,grandText:compact(grand.text()).slice(0,300)};
+    });
+    const skuEvidence=Object.fromEntries(['668751','677770','677771'].map(id=>{
+      const m=[...html.matchAll(new RegExp('(?<![0-9])'+id+'(?![0-9])','g'))].slice(0,10);
+      return [id,{occurrences:m.length,locations:m.map(x=>({
+        offset:x.index,context:compact(html.slice(Math.max(0,x.index-200),x.index+200))
+          .replace(/https?:\/\/[^\s"'<>]+/g,'[URL]')
+      }))}];
+    }));
+    console.log('JARIR_V1516_CATEGORY_DOM '+JSON.stringify({
+      totalTiles:tiles.length,
+      productMarkerElements:$('[data-cnstrc-item-id]').length,
+      itemPropPrices:$('[itemprop="price"]').length,
+      jsonLdScripts:$('script[type="application/ld+json"]').length,
+      tileEvidence,skuEvidence
+    }));
     const parsed=parseJarirSearchHtml(html,48);
     const rows=parsed.filter(row=>['668751','677770','677771'].includes(String(row.sourceMeta?.productId||'')))
       .map(row=>({sku:row.sourceMeta.productId,title:row.title,price:row.productPrice,
