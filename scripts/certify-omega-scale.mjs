@@ -41,15 +41,24 @@ for(const count of [1,10,50,120]){
  const values=Array.from({length:count},(_,i)=>fixture(i));
  const t=performance.now();for(const o of values)await m.commitCanonicalObservation(o);
  const writeMs=performance.now()-t;
- let publicationLagMs=null;
- if(!baseline){const start=performance.now();let published=0;
-   while(published<count){const outcomes=await m.publishCanonicalOutbox({limit:100});assert.ok(outcomes.length);published+=outcomes.filter(x=>x.status==='published').length;}
+ let publicationLagMs=null,publicationTaskCount=null;
+ if(!baseline){const start=performance.now();let published=0;const taskUids=new Set();
+   while(published<count){
+     const outcomes=await m.publishCanonicalOutbox({limit:100});
+     assert.ok(outcomes.length);
+     const confirmed=outcomes.filter(x=>x.status==='published');
+     published+=confirmed.length;
+     confirmed.forEach(x=>taskUids.add(x.taskUid));
+   }
    publicationLagMs=performance.now()-start;
+   publicationTaskCount=taskUids.size;
+   assert.ok(publicationTaskCount<=Math.ceil(count/100),
+     'bounded batch publication required: '+publicationTaskCount+' remote tasks for '+count+' canonical offers');
    assert.equal((await index.getStats()).numberOfDocuments,count);
  }
  const reads=[];
  if(!baseline)for(let n=0;n<20;n++){const start=performance.now();const result=await m.canonicalReadBoundary(values);assert.equal(result.length,count);reads.push(performance.now()-start);}
- reads.sort((a,b)=>a-b);batches.push({count,writeMs,publicationLagMs,writeSamples:1,readSamples:reads.length,readMedianMs:reads[10]??null,p95Certified:false});
+ reads.sort((a,b)=>a-b);batches.push({count,writeMs,publicationLagMs,publicationTaskCount,writeSamples:1,readSamples:reads.length,readMedianMs:reads[10]??null,p95Certified:false});
 }
 await m.commitCanonicalObservation(fixture(120));
 if(!baseline)await index.waitForTask((await index.deleteAllDocuments()).taskUid);
