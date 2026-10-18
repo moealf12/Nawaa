@@ -100,3 +100,54 @@ jobs:
           MEILI_HOST: ""
           MEILI_MASTER_KEY: ""
         run: node --test tests/postgres-provenance.test.mjs
+
+  disposable-meilisearch-restart:
+    # Real Meilisearch process in a temporary CI Docker service; no production writes.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      meilisearch:
+        image: getmeili/meilisearch:v1.10.3
+        env:
+          MEILI_MASTER_KEY: test_only_meili_master_key_for_ci_20261018
+          MEILI_ENV: development
+          MEILI_NO_ANALYTICS: 'true'
+        ports:
+          - 7700:7700
+    env:
+      MEILI_HOST: http://127.0.0.1:7700
+      MEILI_MASTER_KEY: test_only_meili_master_key_for_ci_20261018
+      MEILI_INDEX: nawaa_ci_replay
+      DATABASE_URL: ''
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Verify isolated search service is responding
+        run: |
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:7700/health | grep -q 'available'; then exit 0; fi
+            sleep 1
+          done
+          echo 'Isolated Meilisearch service failed to start' >&2
+          exit 1
+      - name: Write historical and fresh Jarir E1 records in first actual Node process
+        run: node scripts/certify-real-meili-replay.mjs write
+      - name: Restart actual Docker service without deleting index
+        run: |
+          container=$(docker ps --filter 'ancestor=getmeili/meilisearch:v1.10.3' --format '{{.ID}}' | head -n 1)
+          test -n "$container"
+          docker restart "$container"
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:7700/health | grep -q 'available'; then exit 0; fi
+            sleep 1
+          done
+          echo 'Isolated Meilisearch did not recover from restart' >&2
+          exit 1
+      - name: Second Node process verifies durable index and delayed stale overwrite RED
+        run: node scripts/certify-real-meili-replay.mjs read
