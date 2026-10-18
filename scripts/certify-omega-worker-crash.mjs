@@ -30,8 +30,12 @@ await new Promise((resolve,reject)=>{
      if(mode==='restart'){
        const id=execFileSync('docker',['ps','--filter','ancestor=getmeili/meilisearch:v1.10.3','--format','{{.ID}}'],{encoding:'utf8'}).trim();
        assert.ok(id&&!id.includes('\n'));
-       // Request restart while the publisher is suspended after real submission.
-       execFileSync('docker',['restart',id],{stdio:'ignore'});
+       // Deterministic restart outage: terminate worker while Meili is stopped,
+       // then start the same container with its existing durable volume.
+       execFileSync('docker',['stop',id],{stdio:'ignore'});
+       assert.equal(child.kill('SIGKILL'),true);
+       execFileSync('docker',['start',id],{stdio:'ignore'});
+       return;
      }
      child.kill('SIGKILL');
    }
@@ -47,6 +51,6 @@ const recovered=await publishCanonicalOutbox();assert.ok(recovered.some(x=>x.sta
 const sdk=new MeiliSearch({host:process.env.MEILI_HOST,apiKey:process.env.MEILI_MASTER_KEY});
 assert.equal((await sdk.index(process.env.MEILI_INDEX).getDocument(saved.id)).productPrice,3599);
 assert.equal((await publishCanonicalOutbox()).length,0);
-console.log('REAL_OMEGA_ACK_RECOVERY '+JSON.stringify({termination:'SIGKILL',mode,afterActualSubmission:mode!=='before',beforeTaskAcknowledgement:true,durableReplay:true,stableDocumentId:true,repeatEvents:0,syntheticTransitions:true}));
+console.log('REAL_OMEGA_ACK_RECOVERY '+JSON.stringify({termination:'SIGKILL',mode,workerKilledWhileServiceStopped:mode==='restart',afterActualSubmission:mode!=='before',beforeTaskAcknowledgement:true,durableReplay:true,stableDocumentId:true,repeatEvents:0,syntheticTransitions:true}));
 }
 process.exit(0);
