@@ -120,3 +120,66 @@ test('PS5 SSD E1 identities survive fresh stale refresh and expiry cache transit
   const oldRecord={...heatsink,exactMatch:true,matchConfidence:1,dataKind:'persisted'};
   assert.equal(assessOfferMatch('PS5 SSD',oldRecord).exactMatch,false);
 });
+
+
+// v15.18 E1 risk replay. The identities and original merchant titles come
+// from verified 2026-10-18 Jarir PDP/category: 677770 controller package,
+// 670688 separate Fortnite game package. A future merchant change below is
+// deliberately simulated; it is NOT a claim that Jarir actually changed stock.
+test('v15.18 RED customer opt-out of stale cache prevents old exact/stock/price certification',async()=>{
+  const {createSearchCache}=await import('../server/search-cache.mjs');
+  const bundle={
+    title:'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with DualSense Wireless Controller, White',
+    sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-677770.html',
+    sourceMeta:{productId:'677770'},specs:{brand:'Sony',modelNumber:'CFI2116ACFIZC'},
+    productPrice:3049,currency:'SAR',availability:'unknown',exactMatch:true,matchConfidence:1
+  };
+  const game={
+    title:'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with Fornite Flowering Chaos, White',
+    sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-670688.html',
+    sourceMeta:{productId:'670688'},specs:{brand:'Sony',modelNumber:'CFI2116AFNTVC'},
+    productPrice:2299,currency:'SAR',availability:'in_stock',exactMatch:true,matchConfidence:1
+  };
+  let now=0,called=0;
+  const provider=async()=>{
+    called++;
+    return {offers:called===1?[bundle,game]:[
+      {...bundle,title:'Sony PS5 DualSense Controller Charging Station',
+        availability:'out_of_stock',exactMatch:false,matchConfidence:0.04},
+      {...game,productPrice:2399,availability:'out_of_stock',exactMatch:false,matchConfidence:0.05}
+    ],errors:[]};
+  };
+  const cache=createSearchCache(provider,{ttl:45,staleTtl:200,now:()=>now});
+  const fresh=await cache('PS5 DualSense Bundle');
+  assert.equal(fresh.offers[0].exactMatch,true);
+  assert.equal(fresh.offers[1].availability,'in_stock');
+  now=46;
+  // A customer SSE must NOT emit a formerly exact old bundle snapshot before
+  // current merchant evidence has been re-evaluated.
+  assert.equal(cache.peek('PS5 DualSense Bundle',{allowStale:false}),null,
+    'customer-facing SSE must not publish stale exact/product-price evidence');
+  const refreshed=await cache('PS5 DualSense Bundle',{allowStale:false});
+  assert.equal(refreshed.offers[0].exactMatch,false);
+  assert.equal(refreshed.offers[1].availability,'out_of_stock');
+  assert.equal(refreshed.offers[1].productPrice,2399);
+  assert.equal(called,2);
+});
+
+test('v15.18 RED failed refresh may not rescue unverifiable expired stock as current shopper evidence',async()=>{
+  const {createSearchCache}=await import('../server/search-cache.mjs');
+  let time=0,calls=0;
+  const cached=createSearchCache(async()=>{
+    calls++;
+    return calls===1?{offers:[{
+      title:'Sony PlayStation 5 Slim Console Blu-ray Edition Bundle with Fornite Flowering Chaos',
+      sourceMeta:{productId:'670688'},productPrice:2299,currency:'SAR',
+      availability:'in_stock',exactMatch:true
+    }],errors:[]}:{offers:[],errors:[{provider:'jarir',error:'HTTP 503'}]};
+  },{ttl:10,staleTtl:20,now:()=>time});
+  await cached('PS5');
+  time=25;
+  const customer=await cached('PS5',{allowStale:false});
+  assert.equal(customer.offers.length,0,
+    'after bounded freshness failure, do not present old in_stock or exactMatch:true');
+  assert.ok(customer.errors.length>0);
+});
