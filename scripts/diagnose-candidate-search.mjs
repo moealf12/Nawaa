@@ -238,6 +238,7 @@ try{
   // Use existing public-page resolver, 1 request/second minimum and bounded URLs.
   const {fetchHtmlSafe,resolveProductUrl}=await import('../server/url-resolver.mjs');
   const {parseJarirSearchHtml}=await import('../server/providers/jarir.mjs');
+  const {load:cheerioLoad}=await import('cheerio');
   const jarirCatalogTargets=[
     {sku:'677770',model:'CFI2116ACFIZC',edition:'disc',url:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-677770.html'},
     {sku:'677771',model:'CFI2116BCFIZC',edition:'digital',url:'https://www.jarir.com/sa-en/sony-playstation-5-slim-dig-gaming-consoles-and-handheld-677771.html'},
@@ -254,7 +255,6 @@ try{
     const {html,finalUrl}=await fetchHtmlSafe(categoryUrl,0,{signal:AbortSignal.timeout(14000)});
     // v15.16: read-only forensic DOM inspection of the ONE already fetched,
     // public category page. No further network access or full HTML dump.
-    const {load:cheerioLoad}=await import('cheerio');
     const $=cheerioLoad(html);
     const tiles=$('div.product-tile__item--spacer');
     const compact=s=>String(s||'').replace(/\s+/g,' ').trim().slice(0,600);
@@ -290,6 +290,40 @@ try{
       jsonLdScripts:$('script[type="application/ld+json"]').length,
       tileEvidence,skuEvidence
     }));
+
+    const schemaProducts=[];
+    for(const node of $('script[type="application/ld+json"]').toArray()){
+      try{
+        const data=JSON.parse($(node).html());
+        for(const root of (Array.isArray(data)?data:[data])){
+          const lists=[root,...(Array.isArray(root?.['@graph'])?root['@graph']:[])];
+          for(const list of lists){
+            for(const entry of list?.itemListElement||[]){
+              const p=entry?.item||entry;
+              const offer=Array.isArray(p?.offers)?p.offers[0]:p?.offers||{};
+              if(String(p?.['@type']||'').toLowerCase()!=='product')continue;
+              schemaProducts.push({
+                sku:String(p?.sku||''),name:String(p?.name||'').slice(0,150),
+                model:p?.model||null,mpn:p?.mpn||null,
+                price:offer?.price??null,currency:offer?.priceCurrency??null,
+                availability:offer?.availability??null,
+                url:p?.url||null,imagePresent:Boolean(p?.image),
+                seller:offer?.seller?.name||null,
+              });
+            }
+          }
+        }
+      }catch(e){console.log('JARIR_V1516_SCHEMA_ERROR '+String(e.message).slice(0,90))}
+    }
+    const visibleTiles=$('a.product-tile__link[data-product-id]').toArray().map(n=>{
+      const a=$(n);return {sku:a.attr('data-product-id'),href:a.attr('href'),
+        text:compact(a.text()).slice(0,140)};
+    });
+    console.log('JARIR_V1516_SCHEMA_CATALOG '+JSON.stringify({
+      schemaCount:schemaProducts.length,schemaProducts,
+      visibleTiles,visibleSkuCount:visibleTiles.length,
+      schemaNotVisible:schemaProducts.filter(p=>!visibleTiles.some(t=>t.sku===p.sku)).map(p=>p.sku)
+    }));
     const parsed=parseJarirSearchHtml(html,48);
     const rows=parsed.filter(row=>['668751','677770','677771'].includes(String(row.sourceMeta?.productId||'')))
       .map(row=>({sku:row.sourceMeta.productId,title:row.title,price:row.productPrice,
@@ -309,6 +343,39 @@ try{
       url:categoryUrl,status:'UNAVAILABLE_OR_UNPARSEABLE',
       error:String(error?.message||error).slice(0,180)
     }));
+  }
+
+  // Compare EXISTING compliant HTML search fallback with official category
+  // structure and 1 bounded Constructor query; fail-closed if blocked.
+  await paceJarir();
+  try{
+    const url='https://www.jarir.com/sa-en/catalogsearch/result/?q=PS5';
+    const {html}=await fetchHtmlSafe(url,0,{signal:AbortSignal.timeout(14000)});
+    const found=parseJarirSearchHtml(html,48);
+    const $s=cheerioLoad(html);
+    console.log('JARIR_V1516_SEARCH_HTML '+JSON.stringify({
+      url,bytes:Buffer.byteLength(html),
+      categoryTiles:$s('div.product-tile__item--spacer').length,
+      productLinks:$s('a.product-tile__link[data-product-id]').length,
+      jsonLd:$s('script[type="application/ld+json"]').length,
+      parsed:found.length,firstSkus:$s('a.product-tile__link[data-product-id]').toArray().slice(0,15)
+        .map(n=>$s(n).attr('data-product-id'))}));
+  }catch(error){
+    console.log('JARIR_V1516_SEARCH_HTML '+JSON.stringify({
+      status:'UNAVAILABLE',error:String(error.message||error).slice(0,140)}));
+  }
+  await paceJarir();
+  try{
+    const found=await searchViaConstructor('PS5',96,AbortSignal.timeout(8500));
+    const ids=new Set(found.map(o=>String(o.sourceMeta?.productId||'')));
+    console.log('JARIR_V1516_CONSTRUCTOR_CATEGORY_COMPARISON '+JSON.stringify({
+      query:'PS5',returned:found.length,
+      targetResults:Object.fromEntries(['668751','677770','677771','627671','627678','670688']
+        .map(id=>[id,ids.has(id)])),
+      observedIds:[...ids].slice(0,96)}));
+  }catch(error){
+    console.log('JARIR_V1516_CONSTRUCTOR_CATEGORY_COMPARISON '+JSON.stringify({
+      status:'UNAVAILABLE',error:String(error.message||error).slice(0,140)}));
   }
   for(const target of jarirCatalogTargets){
     await paceJarir();
