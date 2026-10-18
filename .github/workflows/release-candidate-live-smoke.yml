@@ -57,10 +57,10 @@ jobs:
           NAWAA_PROFILE_EXTRA: '1'
           NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
         run: node scripts/probe-extra-fields.mjs
-      - name: Check out the pre-optimization baseline for same-runner comparison
+      - name: Check out the immediate pre-fix matching baseline for same-runner comparison
         uses: actions/checkout@v4
         with:
-          ref: 5f73bfdb2b4357cfdaa0d5801a8d9996e987c55e
+          ref: 66741528c64e133478d979cd2295089b5aaf20b4
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
