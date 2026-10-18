@@ -56,8 +56,33 @@ test('v15.19 RED actual Meili client preserves merchant observation and rejects 
     const read=await searchIndexedOffers('PS5');
     assert.equal(read.offers.length,0,
       'stale records must not become fresh customer offers after a reread/reindex');
+    const recentTime=new Date(Date.now()-2000).toISOString();
+    const genuine={
+      ...original,sourceUrl:original.sourceUrl.replace('670688','677770'),
+      title:'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, Bundle with DualSense Wireless Controller, White',
+      sourceMeta:{productId:'677770'},
+      specs:{brand:'Sony',modelNumber:'CFI2116ACFIZC'},
+      productPrice:3049,availability:'unknown',observedAt:recentTime
+    };
+    await indexOffers([genuine]);
+    const fresh=await searchIndexedOffers('PS5');
+    assert.equal(fresh.offers.length,1,'only genuinely fresh indexed row survives');
+    assert.equal(fresh.offers[0].sourceMeta.productId,'677770');
+    assert.equal(fresh.offers[0].specs.modelNumber,'CFI2116ACFIZC');
+    assert.equal(fresh.offers[0].observedAt,recentTime);
+    assert.equal(fresh.offers[0].productPrice,3049);
+    assert.equal(fresh.offers[0].availability,'unknown',
+      'Constructor unknown stock must not be promoted to in_stock');
+    assert.equal(fresh.offers[0].exactMatch,false,
+      'persisted query-specific exactMatch:true must be removed on read');
+    assert.equal(fresh.offers[0].matchConfidence,0);
+    const previousSent=sent;
+    const skipped=await indexOffers([{...genuine,observedAt:undefined}]);
+    assert.equal(skipped.indexed,0,'unknown merchant observation must not mint current timestamp');
+    assert.equal(sent,previousSent);
     console.log('RESULT '+JSON.stringify({preservedObservedAt:true,
-      skuPreserved:true,mpnPreserved:true,expiredRejected:true,queryCalls}));
+      skuPreserved:true,mpnPreserved:true,expiredRejected:true,
+      freshRetained:true,unknownStockPreserved:true,oldExactReset:true,queryCalls}));
   `;
   const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',script],{
     cwd:new URL('..',import.meta.url),timeout:12000,maxBuffer:1024*1024,
