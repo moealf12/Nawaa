@@ -2,7 +2,7 @@
 // Test-only executable proof. Never runs against production or migrates it.
 import {canonicalOfferPayload} from "./canonical-offer-identity.mjs";
 let pool,meili,schemaReady;
-const T="nawaa_ci_omega_canonical",O="nawaa_ci_omega_outbox";
+const T="nawaa_ci_omega_canonical",O="nawaa_ci_omega_outbox",R="nawaa_ci_omega_reconcile";
 function onlyTest(){
   if(process.env.NODE_ENV!=="test"||process.env.NAWAA_CANONICAL_INDEX_TEST!=="1"||
      !process.env.NAWAA_TEST_DATABASE_URL||
@@ -32,6 +32,7 @@ export async function initializeCanonicalIndex(){
   schemaReady||=pg.query([
     "CREATE TABLE IF NOT EXISTS "+T+"(offer_key text primary key, revision bigint not null check(revision>0), observed_at timestamptz not null, fingerprint text not null, offer jsonb not null)",
     "CREATE TABLE IF NOT EXISTS "+O+"(id bigserial primary key, offer_key text not null, revision bigint not null, publication_status text not null default 'pending', task_uid bigint, updated_at timestamptz not null default now(), UNIQUE(offer_key,revision))",
+    "CREATE TABLE IF NOT EXISTS "+R+"(name text primary key,last_key text not null,upper_key text not null)",
     "CREATE INDEX IF NOT EXISTS nawaa_ci_omega_outbox_status_idx ON "+O+"(publication_status,id)"
   ].join(";")).catch(e=>{schemaReady=null;throw e;});
   await schemaReady;
@@ -148,24 +149,54 @@ export async function guardedCanonicalSearch(query,{limit=80,now=Date.now()}={})
   }
   return {configured:true,offers,rejected,hydrated};
 }
-export async function reconcileCanonicalIndex({limit=50}={}){
+export async function reconcileCanonicalIndex({limit=50,now=Date.now()}={}){
   await initializeCanonicalIndex();
-  const rows=(await (await database()).query("SELECT offer_key,revision,observed_at,fingerprint,offer FROM "+T+
-    " ORDER BY offer_key LIMIT $1",[Math.max(1,Math.min(100,limit))])).rows;
-  const target=await index();
-  const repaired=[];
-  for(const row of rows){
-    const state={revision:Number(row.revision),fingerprint:row.fingerprint,offer:row.offer};
-    const doc=indexedDocument(row.offer_key,state);
-    let current;
-    try{current=await target.getDocument(doc.id);}
-    catch(e){if(!["document_not_found","index_not_found"].includes(e?.code||e?.cause?.code))throw e;}
-    if(current?.canonicalRevision===state.revision&&
-       current?.canonicalFingerprint===state.fingerprint)continue;
-    const taskUid=await submit(row.offer_key,state);
-    repaired.push({offerKey:row.offer_key,revision:state.revision,taskUid});
-  }
-  return {inspected:rows.length,repaired};
+  if(!Number.isInteger(limit)||limit<1||limit>100)throw Error("invalid_reconcile_limit");
+  const tx=await (await database()).connect();
+  try{
+    await tx.query("BEGIN");
+    // One durable traversal at a time. Process termination rolls back progress;
+    // remote repair is idempotent and is safely repeated by the next worker.
+    const locked=(await tx.query("SELECT pg_try_advisory_xact_lock(1620002) AS locked")).rows[0].locked;
+    if(!locked){await tx.query("ROLLBACK");return {inspected:0,repaired:[],busy:true};}
+    let cursor=(await tx.query("SELECT last_key,upper_key FROM "+R+" WHERE name='canonical'")).rows[0];
+    if(!cursor||!cursor.upper_key){
+      const upper=(await tx.query("SELECT max(offer_key) AS upper_key FROM "+T)).rows[0].upper_key||"";
+      cursor={last_key:"",upper_key:upper};
+    }
+    const rows=(await tx.query("SELECT offer_key,revision,observed_at,fingerprint,offer FROM "+T+
+      " WHERE offer_key>$1 AND offer_key<=$2 ORDER BY offer_key LIMIT $3",
+      [cursor.last_key,cursor.upper_key,limit])).rows;
+    const target=await index(),repaired=[],removed=[],failed=[];
+    for(const row of rows){
+      const state={revision:Number(row.revision),fingerprint:row.fingerprint,offer:row.offer};
+      const doc=indexedDocument(row.offer_key,state);
+      try{
+        let current;
+        try{current=await target.getDocument(doc.id);}
+        catch(e){if(!["document_not_found","index_not_found"].includes(e?.code||e?.cause?.code))throw e;}
+        if(now-new Date(row.observed_at).getTime()>45000){
+          if(current){
+            const task=await target.deleteDocument(doc.id);
+            const settled=await target.waitForTask(task.taskUid,{timeOutMs:15000,intervalMs:100});
+            if(settled.status!=="succeeded")throw Error("index_delete_failed");
+            removed.push(doc.id);
+          }
+          continue;
+        }
+        if(current?.canonicalRevision===state.revision&&current?.canonicalFingerprint===state.fingerprint)continue;
+        const taskUid=await submit(row.offer_key,state);
+        repaired.push({offerKey:row.offer_key,revision:state.revision,taskUid});
+      }catch(error){failed.push({offerKey:row.offer_key,error:String(error?.code||error?.message||error)});}
+    }
+    const last=rows.at(-1)?.offer_key||cursor.last_key;
+    const complete=rows.length<limit||last===cursor.upper_key;
+    await tx.query("INSERT INTO "+R+"(name,last_key,upper_key) VALUES('canonical',$1,$2)"+
+      " ON CONFLICT(name) DO UPDATE SET last_key=excluded.last_key,upper_key=excluded.upper_key",
+      [complete?"":last,complete?"":cursor.upper_key]);
+    await tx.query("COMMIT");
+    return {inspected:rows.length,repaired,removed,failed,complete};
+  }catch(error){try{await tx.query("ROLLBACK")}catch{}throw error;}finally{tx.release();}
 }
 export async function isolatedCanonicalIndexOffers(offers=[]){
   onlyTest();

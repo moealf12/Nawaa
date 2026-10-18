@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import pg from 'pg';
 import {MeiliSearch} from 'meilisearch';
 import {performance} from 'node:perf_hooks';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 assert.equal(process.env.NODE_ENV,'test');assert.equal(process.env.NAWAA_CANONICAL_INDEX_TEST,'1');
 assert.equal(process.env.MEILI_HOST,'http://127.0.0.1:7700');assert.equal(process.env.MEILI_INDEX,'nawaa_ci_omega');
 const pool=new pg.Pool({connectionString:process.env.NAWAA_TEST_DATABASE_URL});
@@ -12,6 +14,11 @@ const index=sdk.index(process.env.MEILI_INDEX);
 const baseline=process.argv.includes('--baseline');
 const m=await import(baseline?'../server/.omega-before.mjs':'../server/omega-canonical-index.mjs');
 await m.initializeCanonicalIndex();
+if(process.argv.includes('--page')){
+ console.log('PAGE '+JSON.stringify(await m.reconcileCanonicalIndex({limit:50})));
+ await pool.end();process.exit(0);
+}
+const page=()=>JSON.parse(execFileSync(process.execPath,[fileURLToPath(import.meta.url),'--page'],{encoding:'utf8',env:process.env}).trim().replace(/^PAGE /,''));
 await pool.query('TRUNCATE nawaa_ci_omega_canonical,nawaa_ci_omega_outbox');
 if(!baseline)await pool.query('TRUNCATE nawaa_ci_omega_reconcile');
 await index.waitForTask((await index.deleteAllDocuments()).taskUid);
@@ -28,16 +35,18 @@ for(const count of [1,10,50,120]){
 }
 await m.commitCanonicalObservation(fixture(120));
 const pages=[];
-for(let n=0;n<3;n++)pages.push(await m.reconcileCanonicalIndex({limit:50}));
+for(let n=0;n<3;n++)pages.push(baseline?await m.reconcileCanonicalIndex({limit:50}):page());
 const stats=await index.getStats();
 if(baseline){assert.equal(stats.numberOfDocuments,50,'baseline counterexample must reproduce prefix starvation');console.log('REAL_OMEGA_FAIRNESS_RED '+JSON.stringify({expected:121,actual:50,passes:3}));}
 else{
  assert.equal(stats.numberOfDocuments,121,'later keys starved');
  assert.deepEqual(pages.map(p=>p.inspected),[50,50,21]);
- const repeat=[];for(let n=0;n<3;n++)repeat.push(await m.reconcileCanonicalIndex({limit:50}));
+ const repeat=[];for(let n=0;n<3;n++)repeat.push(page());
  assert.equal(repeat.flatMap(p=>p.repaired).length,0);
  const recall=await m.guardedCanonicalSearch('PS5',{limit:200});assert.equal(recall.offers.length,121);
  const expired=await m.guardedCanonicalSearch('PS5',{limit:200,now:epoch+45001});assert.equal(expired.offers.length,0);
- console.log('REAL_OMEGA_SCALE '+JSON.stringify({pages:pages.map(p=>p.inspected),documents:stats.numberOfDocuments,recall:recall.offers.length,falseExclusions:0,repeatRepairs:0,batches,syntheticTransitions:true,p95Certified:false}));
+ for(let n=0;n<3;n++)await m.reconcileCanonicalIndex({limit:50,now:epoch+45001});
+ assert.equal((await index.getStats()).numberOfDocuments,0,'expired documents must be pruned');
+ console.log('REAL_OMEGA_SCALE '+JSON.stringify({pages:pages.map(p=>p.inspected),documents:stats.numberOfDocuments,recall:recall.offers.length,falseExclusions:0,repeatRepairs:0,expiredDocumentsRemaining:0,independentPageProcesses:6,batches,syntheticTransitions:true,p95Certified:false}));
 }
 await pool.end();process.exit(0);

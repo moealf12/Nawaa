@@ -223,7 +223,14 @@ jobs:
         run: node scripts/certify-omega-real-http.mjs
       - name: Mixed chronology and cached canonical boundary (simulated transitions, real services)
         run: node scripts/certify-omega-mixed.mjs
+      - name: Kill worker after real submission before task ACK
+        run: node scripts/certify-omega-worker-crash.mjs
+      - name: Independently acquired Jarir observation versus simulated predecessor
+        run: node scripts/certify-omega-live-acceptance.mjs
       - name: Demonstrate 121-key prefix starvation before fairness repair
         run: |
-          cp server/omega-canonical-index.mjs server/.omega-before.mjs
+          git fetch --depth=1 origin 8038edce5219cc30c420e266e0e60ac014904073
+          git show 8038edce5219cc30c420e266e0e60ac014904073:server/omega-canonical-index.mjs > server/.omega-before.mjs
           node scripts/certify-omega-scale.mjs --baseline
+      - name: Fair durable traversal, real batch overhead and recall
+        run: node scripts/certify-omega-scale.mjs
