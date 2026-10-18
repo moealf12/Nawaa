@@ -2,6 +2,7 @@
 // Merchant identity from official Jarir fixture, price transitions SYNTHETIC.
 import assert from "node:assert/strict";
 import http from "node:http";
+import {registerHooks} from "node:module";
 import {readFile} from "node:fs/promises";
 import {MeiliSearch} from "meilisearch";
 
@@ -23,6 +24,18 @@ const task=await index.addDocuments([stale]);
 const settled=await index.waitForTask(task.taskUid);
 assert.equal(settled.status,"succeeded");
 assert.equal((await index.getDocument(saved.id)).productPrice,3049);
+// Only the expansion transport is simulated. Canonical DB, index, HTTP and
+// cursor execution remain real; the stale source record must lose on page 2.
+globalThis.omegaPaginationFixture={...stale,dataKind:"live"};
+const storefrontModule=new URL('../server/providers/free-storefronts.mjs',import.meta.url).href;
+registerHooks({resolve(specifier,context,next){
+  if(specifier==='./providers/free-storefronts.mjs')return {shortCircuit:true,
+    url:'data:text/javascript,'+encodeURIComponent(
+      'export * from '+JSON.stringify(storefrontModule)+';'+
+      'export async function searchFreeStorefrontById(){return {offers:[globalThis.omegaPaginationFixture]}};'+
+      'export async function searchFreeStorefronts(){return {ok:true,offers:[globalThis.omegaPaginationFixture],errors:[],searchedMarkets:[]}};')};
+  return next(specifier,context);
+}});
 process.env.PORT="17777";
 process.env.SEARCH_STREAM_DEADLINE_MS="1400";
 process.env.SEARCH_REQUEST_DEADLINE_MS="1400";
@@ -76,10 +89,18 @@ http.Server.prototype.listen=function(...args){
       assert.ok(matched.length>0,"actual JSON canonical candidate is missing");
       assert.ok(matched.every(o=>o.productPrice===3299&&o.availability==="out_of_stock"));
       assert.ok(!body.offers.some(o=>o.sourceMeta?.productId==="677770"&&o.productPrice===3049));
+      assert.ok(body.nextCursor);
+      const page=await get(port,"/api/search?q="+query+"&cursor="+encodeURIComponent(body.nextCursor));
+      assert.equal(page.status,200);
+      const pageOffers=JSON.parse(page.body).offers;
+      const pageCanonical=pageOffers.filter(o=>o.sourceMeta?.productId==="677770");
+      assert.ok(pageCanonical.length>0,"nonempty expansion page required");
+      assert.ok(pageCanonical.every(o=>o.productPrice===3299&&o.availability==="out_of_stock"));
       console.log("REAL_OMEGA_HTTP "+JSON.stringify({
         sseStatus:stream.status,jsonStatus:json.status,snapshots:received.length,
         sseCanonicalOccurrences:canonical.length,jsonCanonicalOccurrences:matched.length,
         rawIndexedPrice:3049,acceptedCanonicalPrice:3299,
+        nonemptyPaginationCanonicalOffers:pageCanonical.length,simulatedExpansionTransport:true,
         staleSSERejected:true,staleJSONRejected:true,
         blockedExternal,syntheticPrices:true
       }));
