@@ -2,6 +2,7 @@
 // provider calls, no database credentials, no production deploy. Never use
 // these small live samples to certify a production percentile/SLO.
 import {spawn} from 'node:child_process';
+import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import net from 'node:net';
 import {firstOfferMilestones} from '../src/search-first-offer-metrics.mjs';
@@ -129,6 +130,30 @@ try{
     // Sequential with zero retries avoids multiplying merchant traffic.
     results.push(await observe(entry));
   }
+  if(omega){
+    const request=async path=>{const response=await fetch(origin+path,{signal:AbortSignal.timeout(25000)});return {status:response.status,body:await response.json()};};
+    const path='/api/search?q=PS5';
+    const first=await request(path);assert.equal(first.status,200);
+    assert.ok(first.body.offers.length,'mixed live JSON must contain accepted evidence');
+    assert.ok(first.body.offers.every(o=>Number.isInteger(o.canonicalRevision)));
+    const original=first.body.offers[0];
+    // Explicitly simulated AFTER live measurements; never reported as merchant evidence.
+    const {commitCanonicalObservation}=await import('../server/omega-canonical-index.mjs');
+    const changed={...original,productPrice:original.productPrice+1,observedAt:new Date(Math.max(Date.now(),Date.parse(original.observedAt)+1)).toISOString()};
+    assert.equal((await commitCanonicalObservation(changed)).state,'accepted');
+    const cached=await request(path);assert.equal(cached.status,200);
+    const updated=cached.body.offers.find(o=>o.sourceUrl===original.sourceUrl);
+    assert.ok(updated);assert.equal(updated.productPrice,changed.productPrice);
+    const stream=await fetch(origin+'/api/search/stream?q=PS5',{signal:AbortSignal.timeout(10000)});
+    const frames=(await stream.text()).split(/\r?\n\r?\n/).filter(b=>b.startsWith('event: snapshot')).map(b=>JSON.parse(b.match(/^data: (.*)$/m)[1]));
+    assert.ok(frames.length);const streamed=frames.flatMap(f=>f.offers).filter(o=>o.sourceUrl===original.sourceUrl);assert.ok(streamed.length);assert.ok(streamed.every(o=>o.productPrice===changed.productPrice));
+    const cursor=first.body.nextCursor;assert.ok(cursor);
+    assert.equal((await request(path+'&cursor='+encodeURIComponent(cursor+'x'))).status,400);
+    assert.equal((await request('/api/search?q=iphone&cursor='+encodeURIComponent(cursor))).status,400);
+    const page=await request(path+'&cursor='+encodeURIComponent(cursor));assert.equal(page.status,200);
+    assert.ok(page.body.offers.every(o=>Number.isInteger(o.canonicalRevision)));
+    console.log('REAL_OMEGA_CUSTOMER_BOUNDARIES '+JSON.stringify({liveJsonOffers:first.body.offers.length,simulatedPostAcquisitionTransition:true,cachedJsonRehydrated:true,cachedSseRehydrated:true,signedCursorAccepted:true,tamperedCursorRejected:true,queryMismatchRejected:true,paginationOffers:page.body.offers.length}));
+  }
   console.log('REPRESENTATIVE_SUMMARY '+JSON.stringify({n:results.length,
     firstValidFound:results.filter(x=>x.clientFirstValidMs!==null).length,
     firstExactFound:results.filter(x=>x.clientFirstExactMs!==null).length,
@@ -141,3 +166,5 @@ try{
     await Promise.race([once(child,'exit'),new Promise(resolve=>setTimeout(resolve,2000))]);
   }
 }
+
+if(omega)process.exit(process.exitCode||0);
