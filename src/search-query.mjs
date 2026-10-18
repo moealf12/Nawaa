@@ -301,9 +301,14 @@ function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normaliz
 }
 
 
+// Strictly the two source-verified query intents. A generic search for a
+// controller or pack of controllers must remain accessory intent.
+const requestsIncludedPs5ControllerBundle = query =>
+  /^(?:ps5 dualsense bundle|ps5 console bundle controller)$/.test(query);
+
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
-    if (/\bps5 console bundle controller\b/.test(query)) return "console";
+    if (requestsIncludedPs5ControllerBundle(query)) return "console";
     if (CONSOLE_WITH_INCLUDED_DRIVE.test(query) || explicitlyIncludedConsoleAccessory(query)) return "console";
     if (GAMING_ACCESSORY.test(query) || GAMING_ARABIC_ACCESSORY.test(query) || GAMING_STORAGE_ACCESSORY.test(query) || /\bstorage\b/.test(query)) return "accessory";
     if (GAMING_GAME_PRODUCT.test(query) || GAMING_STANDALONE_GAME.test(query) || /\b(?:game|games)\b/.test(query)) return "game";
@@ -423,6 +428,15 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const hits = q.filter((token) => titleTokens.has(token)).length;
   let confidence = q.length ? hits / q.length : 1;
   const description = describeProduct(offer);
+  // The actual merchant retail-package title, never platform compatibility,
+  // capacity, price, URL or a shared generation, must prove the included
+  // DualSense/controller. A Fortnite-game bundle cannot satisfy this query.
+  const retailPackageTitle=normalizeSearchQuery(offer?.title||"");
+  const controllerBundleMismatch=requestsIncludedPs5ControllerBundle(normalizedQuery) &&
+    !(description.kind==="console" && description.isBundle &&
+      /\b(?:dualsense|controllers?)\b/.test(retailPackageTitle) &&
+      /\b(?:bundle|including|includes|with)\b/.test(retailPackageTitle) &&
+      !/\b(?:controller (?:holders?|stands?|chargers?|charging stations?)|dualsense (?:charging|dock))\b/.test(retailPackageTitle));
   const offerCategory = productCategoryWithDescription(offer, description);
   // Product-type words (mouse, laptop, perfume...) are structural intent rather
   // than free-text tokens: reward the matching category without polluting model/
@@ -438,7 +452,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const storageMediaMismatch = storageMediaRequested && (
     !GAMING_STORAGE_ACCESSORY.test(physicalTitle) ||
     (storagePartOnly(physicalTitle) && !storagePartRequested));
-  const kindMismatch = Boolean(storageMediaMismatch ||
+  const kindMismatch = Boolean(storageMediaMismatch || controllerBundleMismatch ||
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
@@ -494,7 +508,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
       hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
