@@ -786,9 +786,25 @@ function canonicalProfileMarkup(profile = {}) {
 function productDisplayTitle(offer) {
   const description = describeProduct(offer);
   const specs = offer.specs || {};
-  if (description.kind === "console") return [description.platform.toUpperCase(), description.form,
-    description.edition === "digital" ? "نسخة رقمية" : description.edition === "disc" ? "نسخة الأقراص" : "",
-    description.storage?.toUpperCase(), description.isBundle ? "حزمة مع إضافات" : ""].filter(Boolean).join(" · ");
+  if (description.kind === "console") {
+    // E1 Jarir physical packages: never render a game-only bundle and an
+    // included-controller bundle under the identical generic product label.
+    // Only disclose contents explicitly present in the merchant title;
+    // "with DualSense" does NOT prove an additional/second controller.
+    const merchantTitle=String(offer.title||"").toLowerCase();
+    const includesController=/\b(?:bundle|including|includes|with)\b.*\b(?:dualsense|controllers?)\b/.test(merchantTitle);
+    const includesFortnite=/\b(?:fortnite|fornite)\b/.test(merchantTitle);
+    const includedParts=[
+      includesFortnite?"Fortnite":null,
+      includesController?"يد تحكم DualSense":null
+    ].filter(Boolean);
+    const bundleLabel=description.isBundle
+      ? includedParts.length?"حزمة تتضمن "+includedParts.join(" + "):"حزمة — راجع محتويات المتجر"
+      : "";
+    return [description.platform.toUpperCase(), description.form,
+      description.edition === "digital" ? "نسخة رقمية" : description.edition === "disc" ? "نسخة الأقراص" : "",
+      description.storage?.toUpperCase(),bundleLabel].filter(Boolean).join(" · ");
+  }
   if (productCategory(offer) !== "phone") return offer.title || specs.series || specs.deviceType || "المنتج";
   return [specs.deviceType || specs.series || offer.title, specs.storage, specs.color].filter(Boolean).join(" · ");
 }
