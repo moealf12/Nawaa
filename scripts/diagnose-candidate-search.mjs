@@ -233,6 +233,80 @@ try{
       if(conflicts.length)process.exitCode=7;
     }
   }finally{globalThis.fetch=originalFetch}
+  // v15.15: bounded diagnostic-only public catalog recovery probe. No provider
+  // mutation, new endpoint, database write, or assertion that the item is on sale.
+  // Use existing public-page resolver, 1 request/second minimum and bounded URLs.
+  const {fetchHtmlSafe,resolveProductUrl}=await import('../server/url-resolver.mjs');
+  const {parseJarirSearchHtml}=await import('../server/providers/jarir.mjs');
+  const jarirCatalogTargets=[
+    {sku:'677770',model:'CFI2116ACFIZC',edition:'disc',url:'https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-677770.html'},
+    {sku:'677771',model:'CFI2116BCFIZC',edition:'digital',url:'https://www.jarir.com/sa-en/sony-playstation-5-slim-dig-gaming-consoles-and-handheld-677771.html'},
+  ];
+  const categoryUrl='https://www.jarir.com/sa-en/sony-ps5-consoles-4518-x.html';
+  let lastJarirRequest=0;
+  async function paceJarir(){
+    const wait=Math.max(0,1100-(Date.now()-lastJarirRequest));
+    if(wait)await new Promise(resolve=>setTimeout(resolve,wait));
+    lastJarirRequest=Date.now();
+  }
+  await paceJarir();
+  try{
+    const {html,finalUrl}=await fetchHtmlSafe(categoryUrl,0,{signal:AbortSignal.timeout(14000)});
+    const parsed=parseJarirSearchHtml(html,48);
+    const rows=parsed.filter(row=>['668751','677770','677771'].includes(String(row.sourceMeta?.productId||'')))
+      .map(row=>({sku:row.sourceMeta.productId,title:row.title,price:row.productPrice,
+        currency:row.currency,sourceUrl:row.sourceUrl,imagePresent:Boolean(row.image),
+        observedAt:row.observedAt}));
+    console.log('JARIR_V1515_PUBLIC_CATEGORY '+JSON.stringify({
+      url:categoryUrl,finalUrl,htmlBytes:Buffer.byteLength(html),
+      tileMarkerCount:(html.match(/product-tile__item--spacer/g)||[]).length,
+      parsed:parsed.length,targets:rows,
+      rawSkuMarkers:Object.fromEntries(['668751','677770','677771'].map(id=>[
+        id,new RegExp('(?<![0-9])'+id+'(?![0-9])','g').test(html)
+      ])),
+      evidence:'read-only public HTML, not proof of Constructor membership'
+    }));
+  }catch(error){
+    console.log('JARIR_V1515_PUBLIC_CATEGORY '+JSON.stringify({
+      url:categoryUrl,status:'UNAVAILABLE_OR_UNPARSEABLE',
+      error:String(error?.message||error).slice(0,180)
+    }));
+  }
+  for(const target of jarirCatalogTargets){
+    await paceJarir();
+    try{
+      // A resolved page is not accepted without verifiable product identity,
+      // source URL, price/currency and physical package description.
+      const page=await resolveProductUrl(target.url,{signal:AbortSignal.timeout(14000)});
+      const pageSku=String(page.sku||'');
+      const returnedUrl=page.resolvedPageUrl||page.sourceUrl||'';
+      const skuInUrl=returnedUrl.includes('-'+target.sku+'.html');
+      const model=String(page.specs?.modelNumber||'');
+      const kind=describeProduct(page);
+      const crediblePrice=Number.isFinite(page.productPrice)&&page.productPrice>0&&
+        page.currency==='SAR'&&page.originalCurrency==='SAR';
+      const identitySupported=(pageSku===target.sku||skuInUrl)&&
+        (!model||model===target.model)&&kind.kind==='console'&&kind.isBundle===true;
+      console.log('JARIR_V1515_PUBLIC_PDP '+JSON.stringify({
+        requestedSku:target.sku,requestedEdition:target.edition,
+        requestedUrl:target.url,pageSku:pageSku||null,
+        manufacturerModel:model||null,returnedUrl,title:page.title,
+        productKind:kind.kind,isBundle:kind.isBundle,
+        price:crediblePrice?page.productPrice:null,
+        currency:crediblePrice?page.currency:null,
+        imagePresent:Boolean(page.image),availability:page.availability,
+        observedAt:page.observedAt,
+        status:identitySupported&&crediblePrice?'PDP_RESOLVER_VERIFIED':'INCOMPLETE_OR_IDENTITY_UNVERIFIED',
+        note:'acquisition observation only; no confirmed stock or future price guarantee'
+      }));
+    }catch(error){
+      console.log('JARIR_V1515_PUBLIC_PDP '+JSON.stringify({
+        requestedSku:target.sku,requestedUrl:target.url,
+        status:'UNAVAILABLE_OR_UNPARSEABLE',
+        error:String(error?.message||error).slice(0,180)
+      }));
+    }
+  }
   if(iphone.status!==200||ps5.status!==200)process.exitCode=2;
   // HTTP 200 + empty products is not a functional search success.
   if([iphone,ps5].some(x=>!x.structurallyValid || x.exact<1 || x.merchants.length<2))
