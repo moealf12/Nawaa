@@ -151,3 +151,7 @@ jobs:
           exit 1
       - name: Second Node process verifies durable index and delayed stale overwrite RED
         run: node scripts/certify-real-meili-replay.mjs read
+      - name: Deterministic independent-process stale overwrite RED (documented unsafe baseline)
+        env:
+          MEILI_INDEX: nawaa_ci_multi_instance
+        run: node scripts/certify-real-meili-multi-instance.mjs red
