@@ -127,7 +127,7 @@ export async function handleQuoteWorkflow(req,res,url,origin){
       }
       const data=await bodyOf(req);
       if(!["accepted","declined"].includes(data.decision)||
-         !Number.isInteger(data.revision)||data.revision<1)
+         !Number.isInteger(data.revision)||data.revision<0)
         return send(res,422,{error:"invalid_decision"},origin);
       const exists=(await db.query("SELECT id FROM "+T+
         " WHERE id=$1 AND token_hash=$2",[customer[1],digest])).rows;
