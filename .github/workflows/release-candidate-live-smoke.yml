@@ -10,6 +10,8 @@ on:
       - 'scripts/simulate-source-first-offer.mjs'
       - 'tests/search-first-offer-source-simulation.test.mjs'
       - 'scripts/benchmark-match-filter.mjs'
+      - 'server/search-index.mjs'
+      - 'server/persistence.mjs'
       - 'src/search-query.mjs'
       - 'server/server.mjs'
       - 'server/providers/extra-unbxd.mjs'
@@ -57,10 +59,10 @@ jobs:
           NAWAA_PROFILE_EXTRA: '1'
           NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
         run: node scripts/probe-extra-fields.mjs
-      - name: Check out the v15.19 immediate pre-index-code-fix RED parent on the same runner
+      - name: Check out the v15.20 pre-index-write-guard production parent on the same runner
         uses: actions/checkout@v4
         with:
-          ref: 1c8b22c6becfce6c2ce3442fb62ce34dee8ac3bd
+          ref: d40a65990bc551e2db20c73890874567e502bd10
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
