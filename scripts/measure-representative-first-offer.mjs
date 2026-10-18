@@ -14,6 +14,17 @@ const cases=[
   {label:'arabic-iphone',query:'ايفون 17'},
   {label:'arabic-ps5',query:'بلايستيشن 5'},
   {label:'accessory-disc-drive',query:'PS5 disc drive'},
+  // v15.16 ten required independent English/Arabic PS5 customer intents.
+  {label:'ps5-console',query:'PS5'},
+  {label:'ps5-digital',query:'PS5 Digital'},
+  {label:'ps5-disc',query:'PS5 Disc'},
+  {label:'ps5-dualsense-bundle',query:'PS5 DualSense Bundle'},
+  {label:'ps5-slim',query:'PS5 Slim'},
+  {label:'ps5-ssd',query:'PS5 SSD'},
+  {label:'ps5-ssd-heatsink',query:'PS5 SSD heatsink'},
+  {label:'arabic-ps5-console',query:'بلايستيشن 5'},
+  {label:'arabic-ps5-digital',query:'بلايستيشن 5 ديجيتال'},
+  {label:'arabic-ps5-extra-controller',query:'بلايستيشن 5 مع يد إضافية'},
   {label:'negative',query:'nawaa-unfindable-943271-20261003'},
 ];
 const port=await new Promise((resolve,reject)=>{
@@ -46,7 +57,7 @@ async function observe(entry){
   let firstValidMerchant=null,firstExactMerchant=null;
   let finished=false,partial=null,available=0,exact=0,merchants=new Set();
   let sourceCount=0,streamError=null,lastCoverage=null,events=0,firstValidCount=0,firstExactCount=0;
-  let responseStatus=null,buffer='',abortReason=null;
+  let responseStatus=null,buffer='',abortReason=null,lastOfferProvenance=[];
   try{
     const response=await fetch(origin+'/api/search/stream?q='+encodeURIComponent(entry.query),{
       headers:{accept:'text/event-stream'},signal:controller.signal});
@@ -67,6 +78,12 @@ async function observe(entry){
         events++;
         const snapshot=JSON.parse(data),ms=Math.round(performance.now()-start);
         const offers=Array.isArray(snapshot.offers)?snapshot.offers:[];
+        lastOfferProvenance=offers.filter(o=>o.providerMarket==='jarir-sa'&&
+          ['627671','627678','670688','668751','677770','677771']
+            .includes(String(o.sourceMeta?.productId||'')))
+          .map(o=>({sku:String(o.sourceMeta.productId),price:o.productPrice,
+            match:o.exactMatch,availability:o.availability,
+            origin:o.sourceMeta?.parsedFrom||null,observedAt:o.observedAt}));
         const marker=firstOfferMilestones(offers);
         if(firstValidMs===null && marker.firstValid){
           firstValidMs=ms;firstValidSource=marker.firstValid.providerMarket||marker.firstValid.provider;
@@ -95,6 +112,7 @@ async function observe(entry){
     finalValidOffers:available,finalExactOffers:exact,distinctMerchants:merchants.size,
     knownProviders:sourceCount,snapshots:events,completeEvent:finished,
     coveragePartial:partial,deadlineExceeded:lastCoverage?.deadlineExceeded??null,
+    jarirCatalogEvidence:lastOfferProvenance,
     aborted:abortReason!==null,abortReason,elapsedMs:Math.round(performance.now()-start)};
   console.log('REPRESENTATIVE_SSE '+JSON.stringify(observed));
   if(responseStatus!==200||(firstExactMs!==null&&(firstValidMs===null||firstExactMs<firstValidMs)))process.exitCode=1;
