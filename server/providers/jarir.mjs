@@ -497,11 +497,11 @@ export async function searchJarir(query, limit = 24, matchingQuery = query, {sig
     const offers=combined.offers.slice(0,capped);
     const categories=combined.categories,exactMatches=offers.filter(o=>o.exactMatch).length;
     const paginationErrors=raw.paginationError?[{market:"jarir-sa",error:raw.paginationError}]:[];
-    return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors:[...paginationErrors,...categoryErrors],
+    return {provider:"jarir-direct",ok:offers.length>0,searchedMarkets:[{id:"jarir-sa",countryCode:"SA",countryNameAr:"السعودية"}],offers,errors:paginationErrors,
       diagnostics:{acquisition:{strategy:missing.length?"search-plus-official-category":"search-results-first",
         discovered:raw.length+missing.length,classified:offers.length,dropped:combined.offers.length-offers.length,
         categoryRecovery:{attempted:ps5ConsoleCategoryQuery(matchingQuery),added:missing.length,
-          errors:categoryErrors.length},pdpFallback:{attempted:0,verified:0,failed:0}},
+          errors:categoryErrors.map(e=>e.error)},pdpFallback:{attempted:0,verified:0,failed:0}},
         classification:{categories,exactMatches},
         pagination:{partial:Boolean(raw.paginationError),error:raw.paginationError||null}}};
   } catch(error){
