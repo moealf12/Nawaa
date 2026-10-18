@@ -57,10 +57,10 @@ jobs:
           NAWAA_PROFILE_EXTRA: '1'
           NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
         run: node scripts/probe-extra-fields.mjs
-      - name: Check out the immediate pre-temporal-cache-fix parent for same-runner comparison
+      - name: Check out the v15.19 immediate pre-index-code-fix RED parent on the same runner
         uses: actions/checkout@v4
         with:
-          ref: e4cbb3a761a361b85c66776f054aa15dbc748b0f
+          ref: 1c8b22c6becfce6c2ce3442fb62ce34dee8ac3bd
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
