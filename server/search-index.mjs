@@ -56,8 +56,8 @@ async function writeOffers(offers=[]){
       let current=null;
       try{current=await target.getDocument(doc.id);}
       catch(error){
-        const missing=error?.code==="document_not_found"||
-          error?.status===404||error?.cause?.status===404;
+        const code=error?.code||error?.cause?.code;
+        const missing=code==="document_not_found"||code==="index_not_found";
         if(!missing)throw error; // Transport errors must never cause blind writes.
       }
       if(current){
