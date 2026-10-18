@@ -406,6 +406,22 @@ try{
   assertCheck('detail_image_failure_shows_fallback',
     (await detailPending.locator('.product-media .media-fallback').textContent()).includes('تعذر تحميل'));
 
+  // E1 image race: same-origin inline product image may already be complete
+  // before the search card load callback finishes on re-render.
+  const loadedCards=await navigate('fixture-detail-loaded');
+  await loadedCards.locator('.match-card-image img').first().waitFor();
+  await loadedCards.waitForFunction(()=>{
+    const image=document.querySelector('.match-card-image img');
+    return image?.complete&&image.naturalWidth>0;
+  },null,{timeout:12000});
+  const cacheLoadedState=await loadedCards.evaluate(()=>{
+    const image=document.querySelector('.match-card-image img');
+    const fallback=image?.nextElementSibling;
+    return {loaded:!!image?.complete&&image.naturalWidth>0,
+      fallbackDisplay:fallback?getComputedStyle(fallback).display:null};
+  });
+  assertCheck('loaded_customer_search_card_never_keeps_placeholder_visible',
+    cacheLoadedState.loaded&&cacheLoadedState.fallbackDisplay==='none',cacheLoadedState);
   const detailLoaded=await navigate('fixture-detail-loaded');
   await detailLoaded.locator('#results .match-result-card').first().click();
   await detailLoaded.locator('.selected-comparison[open] .product-detail-btn').first().click();
