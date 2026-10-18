@@ -219,3 +219,5 @@ jobs:
           exit 1
       - name: Fresh process proves restart recovery and canonical read guard
         run: node scripts/certify-omega-canonical.mjs read
+      - name: Real localhost progressive SSE and final JSON trust gate
+        run: node scripts/certify-omega-real-http.mjs
