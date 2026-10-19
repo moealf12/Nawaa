@@ -1516,6 +1516,31 @@ async function refreshQuoteAccess(access,apiBase) {
     .catch(()=>quoteModalMessage("تعذر التحديث","لا يمكن الوصول إلى حالة التسعيرة حاليًا.")));
 }
 
+// The key is generated and persisted BEFORE network submission. An ambiguous
+// network failure is retried with the original key, not a fresh request.
+function quoteRetryKey(payload) {
+  const name="nawaa_quote_pending_request";
+  try {
+    const old=JSON.parse(localStorage.getItem(name)||"null");
+    if(old&&JSON.stringify(old.payload)===JSON.stringify(payload)&&
+       /^[A-Za-z0-9_-]{32,128}$/.test(old.key))return old.key;
+    const bytes=new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const key=Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");
+    localStorage.setItem(name,JSON.stringify({key,payload,createdAt:Date.now()}));
+    return key;
+  } catch {return null}
+}
+function showQuoteRecoveryButton() {
+  if(window.NAWAA_QUOTE_API_ENABLED!==true)return;
+  let access=null;
+  try{access=JSON.parse(localStorage.getItem("nawaa_quote_access_last")||"null")}catch{}
+  const button=$("#quoteResumeBtn");
+  if(!button)return;
+  if(access?.id&&access?.token)button.style.display="inline-flex";
+  else button.style.display="none";
+}
+
 async function openQuote(product, offer, sourceQuery) {
   if (window.NAWAA_QUOTE_URL && window.NAWAA_QUOTE_API_ENABLED !== true) {
     const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
@@ -1530,23 +1555,36 @@ async function openQuote(product, offer, sourceQuery) {
     const apiBase=String(window.NAWAA_API_BASE||"").replace(/\/$/,"");
     const name=offer?.title||product.nameAr||product.nameEn||sourceQuery;
     if(!apiBase){quoteModalMessage("لم يُرسل الطلب","واجهة التسعير التجريبية غير متصلة بالخادم.");return}
+    const payload={productName:name,model:offer?.specs?.modelNumber||product.model||null,
+      sourceUrl:offer?.sourceUrl||null};
+    const requestKey=quoteRetryKey(payload);
+    if(!requestKey){
+      quoteModalMessage("لم يُرسل الطلب",
+        "تعذر حفظ مفتاح استعادة الطلب بأمان في هذا المتصفح. لم نرسل أي طلب.");
+      return;
+    }
     state.quotePending=true;
     quoteModalMessage("جارٍ إرسال الطلب","لم يتم تأكيد استلام الطلب حتى الآن.");
     try{
       const response=await fetch(apiBase+"/api/quotes",{
         method:"POST",mode:"cors",credentials:"same-origin",cache:"no-store",
-        headers:{"content-type":"application/json"},
-        body:JSON.stringify({productName:name,model:offer?.specs?.modelNumber||product.model||null,
-          sourceUrl:offer?.sourceUrl||null})
+        headers:{"content-type":"application/json","idempotency-key":requestKey},
+        body:JSON.stringify(payload)
       });
       const created=await response.json();
       if(!response.ok||!created.id||!created.token)throw Error("quote_not_saved");
       const access={id:created.id,token:created.token,productName:name};
-      try{localStorage.setItem("nawaa_quote_access_last",JSON.stringify(access))}catch{}
-      await refreshQuoteAccess(access,apiBase);
+      try{
+        localStorage.setItem("nawaa_quote_access_last",JSON.stringify(access));
+        localStorage.removeItem("nawaa_quote_pending_request");
+      }catch{}
+      showQuoteRecoveryButton();
+      try{await refreshQuoteAccess(access,apiBase)}
+      catch{quoteModalMessage("تم تسجيل الطلب",
+        "تم حفظ طلبك. رقم الطلب: "+created.id+". يمكنك متابعة حالته من زر متابعة آخر طلب.")}
     }catch{
       quoteModalMessage("تعذر تأكيد إرسال الطلب",
-        "لم نتلقّ تأكيدًا موثوقًا من الخادم. لا نعرض الطلب كمستلم؛ تحقق من حالة الطلب قبل إعادة الإرسال.");
+        "قد يكون الخادم حفظ الطلب بالفعل. أعد المحاولة لنفس المنتج باستخدام المفتاح المحفوظ؛ لن ننشئ طلبًا مكررًا.");
     }finally{state.quotePending=false}
     return;
   }
@@ -1604,6 +1642,19 @@ addEventListener("keydown", (event) => {
 });
 
 renderRecent();
+showQuoteRecoveryButton();
+$("#quoteResumeBtn")?.addEventListener("click",()=>{
+  if(window.NAWAA_QUOTE_API_ENABLED!==true)return;
+  let access=null;
+  try{access=JSON.parse(localStorage.getItem("nawaa_quote_access_last")||"null")}catch{}
+  const apiBase=String(window.NAWAA_API_BASE||"").replace(/\/$/,"");
+  if(!access?.id||!access?.token||!apiBase){
+    quoteModalMessage("الطلب غير متاح","لم نعثر على بيانات آمنة لمتابعة هذا الطلب.");
+    return;
+  }
+  void refreshQuoteAccess(access,apiBase).catch(()=>quoteModalMessage(
+    "تعذر تحديث الطلب","لم نتمكن من قراءة الحالة الحالية من الخادم."));
+});
 
 const initialQuery = new URLSearchParams(location.search).get("q");
 if (initialQuery && initialQuery.trim().length >= 2) {
