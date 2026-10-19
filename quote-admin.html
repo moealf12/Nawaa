@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>نواة — إدارة طلبات التسعير (بيئة اختبار)</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#142437;background:#f4f6fa}
+*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}
+header{background:#10263d;color:white;padding:22px max(18px,calc((100vw - 1200px)/2))}
+header h1{font-size:1.5rem;margin:0 0 6px}header p{margin:0;color:#bed2e5}
+main{max-width:1200px;margin:22px auto;padding:0 16px}
+.panel{background:white;border:1px solid #d8e1ec;border-radius:16px;padding:20px;box-shadow:0 3px 16px #0e29430a}
+#loginPanel{max-width:560px;margin:0 auto 18px}
+label{display:block;font-size:.92rem;font-weight:650;margin:0 0 6px}
+input,select,textarea{width:100%;border:1px solid #b9c6d6;border-radius:9px;padding:11px;background:white;color:#10263d}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid #2675c4;outline-offset:2px}
+input,textarea{direction:rtl}input[type=password]{direction:ltr}
+button{border:0;border-radius:9px;background:#124d88;color:white;padding:11px 17px;cursor:pointer;font-weight:700}
+button.secondary{background:#e9f1f9;color:#124d88}
+button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:13px}
+.notice{padding:10px 12px;border-radius:9px;background:#edf5fd;color:#144b78;font-size:.92rem;overflow-wrap:anywhere}
+.notice.error{background:#fff0ee;color:#8d281f}.notice.success{background:#ebf8ef;color:#22653b}
+.hidden{display:none!important}
+.layout{display:grid;grid-template-columns:minmax(290px,.95fr) minmax(0,1.15fr);gap:16px;align-items:start}
+.controls{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0}
+.controls label{flex:1;min-width:145px}h2{font-size:1.15rem;margin:0 0 14px}
+#adminRequests{display:grid;gap:9px}
+.request{display:block;text-align:right;width:100%;background:#f7f9fc;border:1px solid #dfe6ee;color:#142437;padding:12px}
+.request:hover,.request[aria-pressed=true]{border-color:#2774be;background:#edf5fd}
+.request strong,.request small{display:block;overflow-wrap:anywhere}
+.request small{color:#4d647c;margin-top:5px;font-weight:400}
+.status{display:inline-block;padding:3px 9px;border-radius:100px;background:#e9eff5;font-size:.78rem}
+dl{display:grid;grid-template-columns:1fr 2fr;gap:9px;margin:0 0 20px;overflow-wrap:anywhere}
+dt{color:#576b80}dd{margin:0;font-weight:600}
+.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.full{grid-column:1/-1}textarea{resize:vertical;min-height:90px}
+.muted{font-size:.85rem;color:#62758a}
+@media(max-width:760px){.layout{grid-template-columns:1fr}.panel{padding:15px}header{padding:20px 16px}.formgrid{grid-template-columns:1fr}dl{grid-template-columns:1fr;gap:3px}dt:not(:first-child){margin-top:8px}}
+</style>
+</head>
+<body>
+<header><h1>نواة | إدارة عروض الأسعار</h1><p>بيئة اختبار معزولة — لا تتصل ببيانات أو مدفوعات الإنتاج</p></header>
+<main>
+<section id="loginPanel" class="panel" aria-label="تسجيل دخول الإدارة">
+<h2>دخول المشرف</h2>
+<p class="muted">رمز اختبار الإدارة يبقى في ذاكرة هذه الصفحة فقط؛ لا يُحفظ في المتصفح.</p>
+<form id="adminLoginForm">
+<label for="adminToken">رمز الإدارة</label>
+<input id="adminToken" name="adminToken" type="password" autocomplete="off" required minlength="32" placeholder="رمز بيئة الاختبار">
+<div class="actions"><button id="adminLogin" type="submit">عرض الطلبات</button><button id="adminLogout" type="button" class="secondary hidden">تسجيل خروج</button></div>
+</form>
+</section>
+<p id="adminMessage" class="notice" role="status" aria-live="polite">يُرجى إدخال رمز الإدارة المصرّح به لعرض الطلبات.</p>
+<div id="adminWorkspace" class="layout hidden">
+<section class="panel" aria-label="صندوق الطلبات">
+<h2>طلبات العملاء</h2>
+<div class="controls">
+<label for="adminStatus">الحالة
+<select id="adminStatus">
+<option value="all">جميع الحالات</option><option value="requested">جديد</option>
+<option value="quoted">تم التسعير</option><option value="expired">منتهي</option>
+<option value="accepted">مقبول</option><option value="declined">مرفوض</option>
+</select></label>
+<button id="adminRefresh" type="button" class="secondary">تحديث</button>
+</div>
+<div id="adminRequests" aria-live="polite"></div>
+<div class="actions"><button id="adminOlder" type="button" class="secondary" disabled>طلبات أقدم</button><span id="adminPageLabel" class="muted"></span></div>
+</section>
+<section class="panel" aria-label="تفاصيل وتسعير الطلب">
+<h2>تفاصيل الطلب</h2>
+<p id="adminEmpty" class="muted">اختر طلبًا من الصندوق لعرض تفاصيله.</p>
+<div id="adminDetails" class="hidden">
+<dl id="adminEvidence"></dl>
+<form id="adminQuoteForm" class="formgrid">
+<div><label for="adminPrice">السعر النهائي (ريال سعودي)</label><input id="adminPrice" name="priceSAR" type="text" inputmode="decimal" pattern="[0-9]{1,7}(\.[0-9]{1,2})?" required placeholder="3399.50"></div>
+<div><label for="adminEta">التوصيل المتوقع (يوم)</label><input id="adminEta" name="etaDays" type="number" min="0" max="90" step="1" required value="5"></div>
+<div class="full"><label for="adminTerms">الشروط التجارية</label><textarea id="adminTerms" name="terms" maxlength="1000" required></textarea></div>
+<div><label for="adminExpiry">صلاحية العرض</label><select id="adminExpiry" name="validForSeconds"><option value="3600">ساعة</option><option value="86400">24 ساعة</option><option value="604800">7 أيام</option></select></div>
+<div class="actions"><button id="adminPublish" type="submit">حفظ وإرسال التسعيرة</button></div>
+</form>
+</div>
+</section>
+</div>
+</main>
+<script type="module" src="/src/quote-admin.mjs"></script>
+</body>
+</html>
