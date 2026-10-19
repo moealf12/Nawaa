@@ -818,7 +818,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       "access-control-allow-origin": origin,
       "access-control-allow-methods": "GET,POST,OPTIONS",
-      "access-control-allow-headers": "accept,content-type,authorization",
+      "access-control-allow-headers": "accept,content-type,authorization,idempotency-key",
       "access-control-max-age": "86400",
     });
     return res.end();
