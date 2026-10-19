@@ -47,6 +47,7 @@ jobs:
         run: |
           node --check src/search-query.mjs
           node --check src/search-page.mjs
+          node --check src/quote-admin.mjs
           node --check src/product-page.mjs
           node --check server/server.mjs
           node --check server/search-cache.mjs
