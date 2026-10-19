@@ -72,7 +72,9 @@ function incomingQuote(x){
   const terms=field(x.terms,1000);
   if(price<1||price>999999999||!Number.isInteger(eta)||eta<0||eta>90||
     !Number.isInteger(seconds)||seconds<60||seconds>2592000||!terms)return null;
-  return {price,eta,seconds,terms};
+  const expectedRevision=x.expectedRevision===undefined?null:x.expectedRevision;
+  if(expectedRevision!==null&&(!Number.isInteger(expectedRevision)||expectedRevision<0))return null;
+  return {price,eta,seconds,terms,expectedRevision};
 }
 function view(row){
   const expired=row.status==="quoted"&&row.valid_until&&new Date(row.valid_until)<=new Date();
@@ -131,20 +133,56 @@ export async function handleQuoteWorkflow(req,res,url,origin){
     }
     if(url.pathname==="/api/quote-admin/requests"&&req.method==="GET"){
       if(!adminAuthorized(req))return send(res,401,{error:"unauthorized"},origin);
+      // Keyset pagination prevents duplicate/missing rows when new requests arrive.
+      const rawLimit=url.searchParams.get("limit");
+      const limit=rawLimit===null?50:Number(rawLimit);
+      const filter=url.searchParams.get("status")||"all";
+      if(!Number.isInteger(limit)||limit<1||limit>50||
+        !["all","requested","quoted","accepted","declined","expired"].includes(filter))
+        return send(res,422,{error:"invalid_admin_query"},origin);
+      const where=[],params=[];
+      if(filter==="expired")where.push("status='quoted' AND valid_until<=now()");
+      else if(filter==="quoted")where.push("status='quoted' AND valid_until>now()");
+      else if(filter!=="all")where.push("status='"+filter+"'");
+      const encoded=url.searchParams.get("cursor");
+      if(encoded!==null){
+        if(!/^[A-Za-z0-9_-]{10,240}$/.test(encoded))
+          return send(res,422,{error:"invalid_admin_cursor"},origin);
+        let pair;
+        try{pair=JSON.parse(Buffer.from(encoded,"base64url").toString("utf8"))}catch{}
+        if(!Array.isArray(pair)||pair.length!==2||
+          typeof pair[0]!=="string"||!/^\d{4}-\d\d-\d\dT/.test(pair[0])||
+          !Number.isFinite(Date.parse(pair[0]))||
+          typeof pair[1]!=="string"||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pair[1]))
+          return send(res,422,{error:"invalid_admin_cursor"},origin);
+        params.push(pair[0],pair[1]);
+        where.push("(created_at,id)<($"+(params.length-1)+"::timestamptz,$"+
+          params.length+"::uuid)");
+      }
+      params.push(limit+1);
       const rows=(await (await database()).query("SELECT "+SELECT+" FROM "+T+
-        " ORDER BY created_at DESC,id DESC LIMIT 50")).rows;
-      return send(res,200,{requests:rows.map(view)},origin);
+        (where.length?" WHERE "+where.join(" AND "):"")+
+        " ORDER BY created_at DESC,id DESC LIMIT $"+params.length,params)).rows;
+      const page=rows.slice(0,limit);
+      const last=page.at(-1);
+      const nextCursor=rows.length>limit&&last?
+        Buffer.from(JSON.stringify([new Date(last.created_at).toISOString(),last.id])).toString("base64url"):null;
+      return send(res,200,{requests:page.map(view),nextCursor},origin);
     }
     const admin=/^\/api\/quote-admin\/([0-9a-f-]{36})\/quote$/.exec(url.pathname);
     if(admin&&req.method==="POST"){
       if(!adminAuthorized(req))return send(res,401,{error:"unauthorized"},origin);
       const x=incomingQuote(await bodyOf(req));
       if(!x)return send(res,422,{error:"invalid_quote"},origin);
+      const params=[admin[1],x.price,x.eta,x.terms,x.seconds];
+      const versionGuard=x.expectedRevision===null?"":" AND quote_revision=$6";
+      if(x.expectedRevision!==null)params.push(x.expectedRevision);
       const rows=(await (await database()).query("UPDATE "+T+
         " SET status='quoted',quote_revision=quote_revision+1,price_halalas=$2,"+
         "eta_days=$3,terms=$4,valid_until=now()+($5 * interval '1 second'),"+
         "updated_at=now(),decided_at=null WHERE id=$1 AND status IN ('requested','quoted')"+
-        " RETURNING "+SELECT,[admin[1],x.price,x.eta,x.terms,x.seconds])).rows;
+        versionGuard+" RETURNING "+SELECT,params)).rows;
       return rows.length?send(res,200,view(rows[0]),origin):
         send(res,409,{error:"quote_not_mutable"},origin);
     }
