@@ -97,8 +97,41 @@ try{
  assert.equal(restored.data.token,duplicates[0].data.token);
  const invalidKey=await createWithKey(customerPayload,'short');
  assert.equal(invalidKey.code,422,'weak idempotency keys are not accepted');
+ // Admin inbox: bounded keyset pages and filtering against actual PostgreSQL.
+ const firstPage=await req('/api/quote-admin/requests?limit=2','GET',undefined,admin);
+ assert.equal(firstPage.code,200);assert.equal(firstPage.data.requests.length,2);
+ assert.ok(firstPage.data.nextCursor,'first admin page must expose continuation');
+ const secondPage=await req('/api/quote-admin/requests?limit=2&cursor='+
+  encodeURIComponent(firstPage.data.nextCursor),'GET',undefined,admin);
+ assert.equal(secondPage.code,200);
+ assert.ok(secondPage.data.requests.every(r=>!firstPage.data.requests.some(p=>p.id===r.id)),
+  'keyset pagination must not duplicate request identities');
+ assert.equal((await req('/api/quote-admin/requests?limit=999','GET',undefined,admin)).code,422);
+ assert.equal((await req('/api/quote-admin/requests?cursor=invalid','GET',undefined,admin)).code,422);
+ assert.equal((await req('/api/quote-admin/requests?status=unknown','GET',undefined,admin)).code,422);
+ const pending=await req('/api/quote-admin/requests?status=requested','GET',undefined,admin);
+ assert.equal(pending.code,200);
+ assert.ok(pending.data.requests.every(r=>r.status==='requested'),'status filter must be server-side');
+ // Two admins viewing the same revision may not overwrite the winner.
+ const raceRequest=await create('Admin revision collision case');
+ assert.equal(raceRequest.code,201);
+ const guardedQuote=()=>req('/api/quote-admin/'+raceRequest.data.id+'/quote','POST',
+  {priceSAR:'1799.99',etaDays:3,terms:'Disposable revision test',validForSeconds:3600,expectedRevision:0},admin);
+ const revisionRace=await Promise.all([guardedQuote(),guardedQuote()]);
+ assert.deepEqual(revisionRace.map(r=>r.code).sort(),[200,409]);
+ const winningRevision=revisionRace.find(r=>r.code===200).data.revision;
+ assert.equal(winningRevision,1);
+ const stale=await guardedQuote();
+ assert.equal(stale.code,409,'stale admin view must not overwrite current quote');
+ const revisedByAdmin=await req('/api/quote-admin/'+raceRequest.data.id+'/quote','POST',
+  {priceSAR:'1899.99',etaDays:4,terms:'Revised disposable offer',validForSeconds:3600,
+   expectedRevision:winningRevision},admin);
+ assert.equal(revisedByAdmin.code,200);
+ assert.equal(revisedByAdmin.data.revision,2);
+ assert.equal(revisedByAdmin.data.priceSAR,1899.99);
  console.log('REAL_QUOTE_IDEMPOTENCY '+JSON.stringify({actualHTTP:true,postgres16:true,
   concurrentRetries:8,uniqueRequests:ids.size,stableCapability:tokens.size===1,
-  conflictRejected:true,weakKeyRejected:true,nodeSigkillRestartRecovered:true}));
+  conflictRejected:true,weakKeyRejected:true,nodeSigkillRestartRecovered:true,
+  adminKeysetPages:true,adminStatusFiltered:true,concurrentAdminRevisionCAS:true}));
  console.log('REAL_QUOTE_LIFECYCLE '+JSON.stringify({actualHTTP:true,postgres16:true,persistedRequests:2,authorization:true,revisionCAS:true,concurrentSingleWinner:true,expiredRejected:true,revisedAccepted:true,disposableOnly:true}));
 }finally{child.kill('SIGKILL');await pool.end()}
