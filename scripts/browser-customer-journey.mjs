@@ -70,7 +70,8 @@ try{
         providerMarket: String(o.providerMarket || "").slice(0,70)
       };
     };
-    window.__nawaaObserved = {first:[],suspicious:[],done:false,snapshots:0};
+    window.__nawaaObserved = {first:[],suspicious:[],done:false,snapshots:0,
+      latestOfferCount:0,latestMerchantNames:[],latestMarkets:[]};
     window.EventSource = class extends Native {
       constructor(...args) {
         super(...args);
@@ -79,6 +80,9 @@ try{
             const offers = JSON.parse(event.data)?.offers || [];
             const record = window.__nawaaObserved;
             record.snapshots++;
+            record.latestOfferCount=offers.length;
+            record.latestMerchantNames=[...new Set(offers.map(o => String(o.merchant||'').slice(0,65)).filter(Boolean))];
+            record.latestMarkets=[...new Set(offers.map(o => String(o.providerMarket||'').slice(0,70)).filter(Boolean))];
             if (!record.first.length && offers.length) record.first = offers.slice(0,10).map(simplify);
             for (const o of offers) {
               if (Number.isFinite(o.productPrice) && o.productPrice < 1000 &&
@@ -129,11 +133,23 @@ try{
       categoryExpand:result?.querySelectorAll('.show-category').length||0};
   });
   report.firstVisibleResultsMs=Math.round(performance.now()-began);
+  // Inspect the same actual SSE search: no extra merchant acquisition or fixture data.
+  // The initial render and the completed stream are separate customer experiences.
+  if(mode==='candidate'||/ps5/i.test(query)){
+    await page.waitForFunction(() => window.__nawaaObserved?.done, null, {timeout:22000}).catch(()=>{});
+  }
+  const observed=await page.evaluate(()=>window.__nawaaObserved||null);
+  report.streamCompletion={
+    done:observed?.done===true,
+    snapshots:observed?.snapshots||0,
+    latestOfferCount:observed?.latestOfferCount||0,
+    uniqueMerchantsInStream:observed?.latestMerchantNames?.length||0,
+    uniqueMarketsInStream:observed?.latestMarkets?.length||0,
+    merchantNames:observed?.latestMerchantNames||[],
+  };
   if (/ps5/i.test(query)) {
     // Capture product identity from the very same SSE event the shopper saw.
-    // Wait only for existing stream completion; never initiate another search.
-    await page.waitForFunction(() => window.__nawaaObserved?.done, null, {timeout:22000}).catch(()=>{});
-    report.ps5SourceEvidence=await page.evaluate(()=>window.__nawaaObserved);
+    report.ps5SourceEvidence=observed;
     if(mode==='candidate'){
       // Real merchant-product regression using the already received SSE events.
       // Accessories may be offered as related products, but cannot be exact PS5 consoles.
@@ -142,6 +158,44 @@ try{
       report.assertions.noKnownAccessoryCertifiedConsole=!captured.some(
         offer=>accessoryPath.test(offer.source||'') && offer.exactMatch === true);
     }
+  }
+  // Browser-observed first TEN actual product cards (not raw offer records).
+  // A card can contain several merchants, and several cards can represent
+  // distinct qualified variants from the same merchant. Never mix the units.
+  if(mode==='candidate'&&report.results.cards>0){
+    report.firstTenGroups=[];
+    const visibleCount=Math.min(10,await page.locator('#results .match-result-card').count());
+    for(let i=0;i<visibleCount;i++){
+      const row=await page.evaluate(index=>{
+        const card=[...document.querySelectorAll('#results .match-result-card')][index];
+        if(!card)return {error:'card_disappeared',index};
+        const title=card.querySelector('.match-card-copy strong')?.textContent?.trim()||'';
+        const advertisedPrice=card.querySelector('.match-card-price b')?.textContent?.trim()||'';
+        const coverage=card.querySelector('.card-coverage')?.textContent?.trim()||'';
+        card.click();
+        const panel=document.querySelector('#results .selected-comparison[open]');
+        const merchants=[...panel?.querySelectorAll('.merchant-row .merchant-main strong')||[]]
+          .map(node=>node.textContent?.trim()||'').filter(Boolean);
+        const merchantRows=panel?.querySelectorAll('.merchant-row').length||0;
+        const detailActions=panel?.querySelectorAll('.product-detail-btn').length||0;
+        return {index,title,advertisedPrice,coverage,merchantNames:[...new Set(merchants)],
+          merchantRows,detailActions};
+      },i);
+      report.firstTenGroups.push(row);
+    }
+    const allMerchants=new Set(report.firstTenGroups.flatMap(group=>group.merchantNames||[]));
+    report.firstTenSummary={
+      actualVisibleProductGroups:report.firstTenGroups.length,
+      distinctMerchantsAcrossGroups:allMerchants.size,
+      groupsWithMultipleMerchants:report.firstTenGroups.filter(group=>group.merchantNames?.length>1).length,
+      totalOfferRowsInComparisons:report.firstTenGroups.reduce((sum,group)=>sum+(group.merchantRows||0),0),
+      duplicateLookingTitles:report.firstTenGroups.length-
+        new Set(report.firstTenGroups.map(group=>group.title)).size,
+      merchantNames:[...allMerchants],
+      recordedAfterStreamCompletion:report.streamCompletion.done,
+    };
+    report.assertions.firstTenComparisonsUsable=report.firstTenGroups.every(group=>
+      Boolean(group.title)&&group.merchantRows>0&&group.detailActions>0);
   }
   await page.screenshot({path:prefix+'-search-desktop.png',fullPage:true,timeout:20000});
   report.assertions.searchPageRendered=Boolean(navigation?.ok());
