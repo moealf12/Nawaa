@@ -1468,12 +1468,86 @@ async function runSearch(rawQuery) {
   renderProduct(match.product, query);
 }
 
-function openQuote(product, offer, sourceQuery) {
+function quoteModalMessage(title,description) {
+  els.quoteBody.innerHTML='<span class="mini-kicker">QUOTATION REQUEST</span>'+
+    '<h2>'+escapeHtml(title)+'</h2><p>'+escapeHtml(description)+'</p>';
+  els.quoteModal.classList.add("open");
+  els.quoteModal.setAttribute("aria-hidden","false");
+}
+
+async function refreshQuoteAccess(access,apiBase) {
+  const response=await fetch(apiBase+"/api/quotes/"+encodeURIComponent(access.id),{
+    mode:"cors",credentials:"same-origin",cache:"no-store",
+    headers:{authorization:"Bearer "+access.token}
+  });
+  const data=await response.json();
+  if(!response.ok)throw Error("quote_status_unavailable");
+  const names={requested:"بانتظار التسعير",quoted:"وصلت التسعيرة",expired:"انتهت صلاحية التسعيرة",
+    accepted:"تم قبول التسعيرة",declined:"تم رفض التسعيرة"};
+  els.quoteBody.innerHTML='<span class="mini-kicker">NAWAA QUOTE / TRACKING</span>'+
+    '<h2>'+escapeHtml(names[data.status]||"حالة الطلب")+'</h2>'+
+    '<p>رقم الطلب: <b dir="ltr">'+escapeHtml(access.id)+'</b></p>'+
+    '<p>المنتج: '+escapeHtml(data.request?.productName||access.productName||"")+'</p>'+
+    (data.priceSAR!=null?'<p>السعر المقترح: '+fmt(data.priceSAR)+'</p>':'')+
+    (data.etaDays!=null?'<p>التسليم المتوقع بعد: '+escapeHtml(String(data.etaDays))+' يوم</p>':'')+
+    (data.terms?'<p>'+escapeHtml(data.terms)+'</p>':'')+
+    (data.validUntil?'<p>صلاحية العرض حتى: '+escapeHtml(data.validUntil)+'</p>':'')+
+    (data.status==="quoted"?'<div class="quote-actions">'+
+      '<button class="primary-action" id="quoteAcceptBtn">قبول التسعيرة</button>'+
+      '<button class="secondary-action" id="quoteDeclineBtn">رفض التسعيرة</button></div>'+
+      '<p>القبول يسجّل قرارك فقط؛ لا ينفذ الدفع أو الطلب من التاجر.</p>':'')+
+    '<button class="secondary-action" id="quoteRefreshBtn">تحديث حالة الطلب</button>';
+  els.quoteModal.classList.add("open");
+  els.quoteModal.setAttribute("aria-hidden","false");
+  const decision=async value=>{
+    try{
+      const result=await fetch(apiBase+"/api/quotes/"+encodeURIComponent(access.id)+"/decision",{
+        method:"POST",mode:"cors",credentials:"same-origin",cache:"no-store",
+        headers:{"content-type":"application/json",authorization:"Bearer "+access.token},
+        body:JSON.stringify({revision:data.revision,decision:value})
+      });
+      if(!result.ok)throw Error("stale_or_invalid_quote");
+      await refreshQuoteAccess(access,apiBase);
+    }catch{quoteModalMessage("لم يتغير قرار الطلب","الطلب تغيّر أو انتهت صلاحيته. حدّث حالة التسعيرة قبل إعادة المحاولة.")}
+  };
+  $("#quoteAcceptBtn")?.addEventListener("click",()=>void decision("accepted"));
+  $("#quoteDeclineBtn")?.addEventListener("click",()=>void decision("declined"));
+  $("#quoteRefreshBtn")?.addEventListener("click",()=>void refreshQuoteAccess(access,apiBase)
+    .catch(()=>quoteModalMessage("تعذر التحديث","لا يمكن الوصول إلى حالة التسعيرة حاليًا.")));
+}
+
+async function openQuote(product, offer, sourceQuery) {
   if (window.NAWAA_QUOTE_URL) {
     const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
     destination.searchParams.set("request", [offer?.title || product.nameAr || sourceQuery,
       offer?.specs?.modelNumber ? "SKU: " + offer.specs.modelNumber : "", offer?.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
     location.href = destination.href;
+    return;
+  }
+  // Only enabled in an isolated candidate; keep private-Site handoff as priority.
+  if (window.NAWAA_QUOTE_API_ENABLED === true) {
+    if(state.quotePending)return;
+    const apiBase=String(window.NAWAA_API_BASE||"").replace(/\/$/,"");
+    const name=offer?.title||product.nameAr||product.nameEn||sourceQuery;
+    if(!apiBase){quoteModalMessage("لم يُرسل الطلب","واجهة التسعير التجريبية غير متصلة بالخادم.");return}
+    state.quotePending=true;
+    quoteModalMessage("جارٍ إرسال الطلب","لم يتم تأكيد استلام الطلب حتى الآن.");
+    try{
+      const response=await fetch(apiBase+"/api/quotes",{
+        method:"POST",mode:"cors",credentials:"same-origin",cache:"no-store",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({productName:name,model:offer?.specs?.modelNumber||product.model||null,
+          sourceUrl:offer?.sourceUrl||null})
+      });
+      const created=await response.json();
+      if(!response.ok||!created.id||!created.token)throw Error("quote_not_saved");
+      const access={id:created.id,token:created.token,productName:name};
+      try{localStorage.setItem("nawaa_quote_access_last",JSON.stringify(access))}catch{}
+      await refreshQuoteAccess(access,apiBase);
+    }catch{
+      quoteModalMessage("تعذر تأكيد إرسال الطلب",
+        "لم نتلقّ تأكيدًا موثوقًا من الخادم. لا نعرض الطلب كمستلم؛ تحقق من حالة الطلب قبل إعادة الإرسال.");
+    }finally{state.quotePending=false}
     return;
   }
   const draft = {
