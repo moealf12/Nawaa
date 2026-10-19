@@ -31,3 +31,19 @@ test('v17.5: unavailable products do not jump above confirmed available groups',
  const a=offer('15-eg005',1900,.99,'out_of_stock'),b=offer('15-eg006',2100,.90,'in_stock');
  assert.equal(groupComparableOffers([a,b])[0].bestOffer.specs.modelNumber,'15-eg006');
 });
+
+test('v17.5: first-screen ranking is deterministic across source arrival permutations',()=>{
+ const strong=offer('15-eg201',3000,.99);
+ const middle=offer('15-eg202',2000,.95);
+ const cheaper=offer('15-eg203',1000,.90);
+ const permutations=[
+  [strong,middle,cheaper],[cheaper,middle,strong],
+  [strong,cheaper,middle],[middle,strong,cheaper],
+  [middle,cheaper,strong],[cheaper,strong,middle],
+ ];
+ for(const input of permutations){
+  const ranked=groupComparableOffers(input).map(group=>group.bestOffer.specs.modelNumber);
+  assert.deepEqual(ranked,['15-eg202','15-eg201','15-eg203'],
+    'stable confidence cohort must be independent of merchant response arrival order');
+ }
+});
