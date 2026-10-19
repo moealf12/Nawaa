@@ -50,6 +50,14 @@ jobs:
           MEILI_MASTER_KEY: ''
           NAWAA_BROWSER_QUERY: PS5
         run: node scripts/browser-customer-journey.mjs candidate
+      - name: Exercise HP laptop first-ten search and comparison in real Chromium
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_BROWSER_QUERY: HP laptop
+        run: node scripts/browser-customer-journey.mjs candidate
       - name: Replay fixture buyer journeys with zero external merchant requests
         env:
           NODE_ENV: test
