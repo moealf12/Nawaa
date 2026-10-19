@@ -1,6 +1,6 @@
 // Disposable-only quotation workflow; no production schema or route activation.
 import pg from "pg";
-import {randomUUID,randomBytes,createHash,timingSafeEqual} from "node:crypto";
+import {randomUUID,randomBytes,createHash,createHmac,timingSafeEqual} from "node:crypto";
 import {jsonResponse} from "./provider-utils.mjs";
 const T="nawaa_ci_quote_requests",SELECT="id,request_payload,status,quote_revision,price_halalas,eta_days,terms,valid_until,created_at,decided_at";
 let pool,boot;
@@ -18,6 +18,7 @@ async function database(){
   pool||=new pg.Pool({connectionString:process.env.NAWAA_TEST_DATABASE_URL,ssl:false,max:4});
   boot||=pool.query("CREATE TABLE IF NOT EXISTS "+T+"("+
     "id uuid PRIMARY KEY,token_hash text NOT NULL,request_payload jsonb NOT NULL,"+
+    "idempotency_hash text UNIQUE,request_fingerprint text,"+
     "status text NOT NULL DEFAULT 'requested' CHECK(status IN ('requested','quoted','accepted','declined')),"+
     "quote_revision integer NOT NULL DEFAULT 0 CHECK(quote_revision>=0),"+
     "price_halalas integer CHECK(price_halalas>0),"+
@@ -88,6 +89,40 @@ export async function handleQuoteWorkflow(req,res,url,origin){
     if(url.pathname==="/api/quotes"&&req.method==="POST"){
       const data=incomingRequest(await bodyOf(req));
       if(!data)return send(res,422,{error:"invalid_quote_request"},origin);
+      // A high-entropy client-generated key survives a lost HTTP response and
+      // provides a stable recovery capability without storing plaintext tokens.
+      // Both hashes are scoped to a *separate*, disposable-only secret.
+      const supplied=req.headers["idempotency-key"];
+      if(supplied!==undefined){
+        if(typeof supplied!=="string"||!/^[A-Za-z0-9_-]{32,128}$/.test(supplied))
+          return send(res,422,{error:"invalid_idempotency_key"},origin);
+        const secret=process.env.NAWAA_QUOTE_TEST_IDEMPOTENCY_SECRET;
+        if(typeof secret!=="string"||secret.length<32)
+          return send(res,503,{error:"quote_idempotency_unavailable"},origin);
+        const mac=(purpose)=>createHmac("sha256",secret)
+          .update(purpose).update(":").update(supplied).digest();
+        const keyHash=mac("quote-idempotency-key").toString("hex");
+        const token=mac("quote-customer-capability").toString("base64url");
+        const fingerprint=hash(JSON.stringify(data));
+        const id=randomUUID(),client=await database();
+        const inserted=await client.query("INSERT INTO "+T+
+          "(id,token_hash,request_payload,idempotency_hash,request_fingerprint)"+
+          " VALUES($1,$2,$3::jsonb,$4,$5) ON CONFLICT(idempotency_hash)"+
+          " DO NOTHING RETURNING id,status",
+          [id,hash(token),JSON.stringify(data),keyHash,fingerprint]);
+        if(inserted.rows.length)
+          return send(res,201,{id:inserted.rows[0].id,token,status:"requested"},origin);
+        // Unique index serializes concurrent inserts (even across processes).
+        const found=(await client.query("SELECT id,status,token_hash,request_fingerprint"+
+          " FROM "+T+" WHERE idempotency_hash=$1",[keyHash])).rows[0];
+        if(!found)throw Error("quote_idempotency_state_missing");
+        if(found.request_fingerprint!==fingerprint)
+          return send(res,409,{error:"idempotency_payload_conflict"},origin);
+        if(found.token_hash!==hash(token))
+          return send(res,503,{error:"quote_idempotency_key_rotated"},origin);
+        return send(res,200,{id:found.id,token,status:found.status,replayed:true},origin);
+      }
+      // Legacy disposable API remains compatible with v17.1 clients.
       const id=randomUUID(),token=randomBytes(32).toString("base64url");
       await (await database()).query("INSERT INTO "+T+
         "(id,token_hash,request_payload) VALUES($1,$2,$3::jsonb)",
