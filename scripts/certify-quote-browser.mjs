@@ -12,7 +12,7 @@ const admin='omega_quote_disposable_admin_test_token_only_2026';
 const origin='http://127.0.0.1:'+port;
 const child=spawn(process.execPath,['server/server.mjs'],{env:{
   ...process.env,PORT:String(port),DATABASE_URL:'',MEILI_HOST:'',
-  NAWAA_QUOTE_TEST_ENABLED:'1',NAWAA_QUOTE_TEST_ADMIN_TOKEN:admin},stdio:['ignore','pipe','pipe']});
+  NAWAA_QUOTE_TEST_ENABLED:'1',NAWAA_QUOTE_TEST_ADMIN_TOKEN:admin,NAWAA_QUOTE_TEST_IDEMPOTENCY_SECRET:'omega-disposable-quote-hmac-'+String(2026).repeat(8)},stdio:['ignore','pipe','pipe']});
 let log='';child.stdout.on('data',x=>log+=x);child.stderr.on('data',x=>log+=x);
 let browser=null;
 const fixture={offers:[{title:'Sony PlayStation 5 Slim Console Blu-ray Edition, 1 TB, White',
@@ -54,6 +54,11 @@ try{
  await page.getByText('تم قبول التسعيرة').waitFor({timeout:15000});
  const final=await fetch(origin+'/api/quotes/'+access.id,{headers:{authorization:'Bearer '+access.token}});
  assert.equal(final.status,200);const accepted=await final.json();assert.equal(accepted.status,'accepted');assert.equal(accepted.priceSAR,3399.5);
+ // Reopen actual candidate browser and recover quote access from its session.
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.locator('#quoteResumeBtn').waitFor({state:'visible',timeout:15000});
+ await page.locator('#quoteResumeBtn').click();
+ await page.getByText('تم قبول التسعيرة').waitFor({timeout:15000});
  const mobile=await page.evaluate(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
  assert.ok(mobile.scrollWidth<=mobile.width,'390px quote UI horizontal overflow');
  assert.deepEqual(errors,[],'browser JS errors');
@@ -61,6 +66,6 @@ try{
  await page.screenshot({path:'browser-artifacts/quote-customer-390px.png'});
  console.log('REAL_QUOTE_CHROMIUM '+JSON.stringify({actualBrowser:true,viewport:390,
   actualHTTP:true,actualPostgres:true,sourceFixture:true,quoteTransportMocked:false,
-  customerRequested:true,adminPriced:true,customerAccepted:true,
+  customerRequested:true,adminPriced:true,customerAccepted:true,customerReloadRecovery:true,
   mobileNoOverflow:true,errors:errors.length,productionTouched:false}));
 }finally{if(browser)await browser.close();child.kill('SIGKILL')}
