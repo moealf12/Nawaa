@@ -47,5 +47,36 @@ try{
  const revised=await price(second.data.id,'3299.50');assert.equal(revised.code,200);assert.equal(revised.data.revision,2);
  assert.equal((await decide(second.data.id,second.data.token,1,'accepted')).code,409);
  assert.equal((await decide(second.data.id,second.data.token,2,'accepted')).code,200);
+ // New P0: a timed-out client retry must not create duplicate durable requests.
+ const sameKey='omega-idempotency-customer-test-key-2026-001';
+ const customerPayload={productName:'Sony PlayStation 5 Slim',model:'CFI2116A',
+  sourceUrl:'https://www.jarir.com/sa-en/sony-playstation-5.html'};
+ const createWithKey=async (payload=customerPayload,key=sameKey)=>{
+  const r=await fetch('http://127.0.0.1:'+port+'/api/quotes',{method:'POST',
+   headers:{'content-type':'application/json','idempotency-key':key},
+   body:JSON.stringify(payload)});
+  return {code:r.status,data:await r.json()};
+ };
+ const duplicates=await Promise.all(Array.from({length:8},()=>createWithKey()));
+ assert.ok(duplicates.every(r=>[200,201].includes(r.code)),
+  '8 parallel client retries must all receive a valid persisted request');
+ const ids=new Set(duplicates.map(r=>r.data.id));
+ const tokens=new Set(duplicates.map(r=>r.data.token));
+ assert.equal(ids.size,1,'exactly one persisted request identity under racing retries');
+ assert.equal(tokens.size,1,'retried request must recover the same authorized customer capability');
+ const keyRow=(await pool.query('SELECT count(*)::int AS n FROM nawaa_ci_quote_requests WHERE id=$1',
+  [duplicates[0].data.id])).rows[0];
+ assert.equal(keyRow.n,1,'real PostgreSQL enforces exactly one durable row');
+ const replay=await createWithKey();
+ assert.equal(replay.code,200,'replayed request must not be called a new creation');
+ assert.equal(replay.data.id,duplicates[0].data.id);
+ assert.equal(replay.data.token,duplicates[0].data.token);
+ const keyConflict=await createWithKey({...customerPayload,productName:'Different model'});
+ assert.equal(keyConflict.code,409,'same key with altered customer payload must conflict');
+ const invalidKey=await createWithKey(customerPayload,'short');
+ assert.equal(invalidKey.code,422,'weak idempotency keys are not accepted');
+ console.log('REAL_QUOTE_IDEMPOTENCY '+JSON.stringify({actualHTTP:true,postgres16:true,
+  concurrentRetries:8,uniqueRequests:ids.size,stableCapability:tokens.size===1,
+  conflictRejected:true,weakKeyRejected:true}));
  console.log('REAL_QUOTE_LIFECYCLE '+JSON.stringify({actualHTTP:true,postgres16:true,persistedRequests:2,authorization:true,revisionCAS:true,concurrentSingleWinner:true,expiredRejected:true,revisedAccepted:true,disposableOnly:true}));
 }finally{child.kill('SIGKILL');await pool.end()}
