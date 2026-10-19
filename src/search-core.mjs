@@ -268,7 +268,7 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
   }
 
   const usedKeys = new Map();
-  return groups.map(entries => {
+  const grouped = groups.map(entries => {
     const baseKey = entries[0].key;
     const count = usedKeys.get(baseKey) || 0;
     usedKeys.set(baseKey, count + 1);
@@ -304,7 +304,29 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
         ? secondValue - bestValue
         : null,
     };
-  }).sort((a, b) => {
+  });
+  // Anchor confidence cohorts to the strongest accepted group in the same
+  // exact/availability class. Per-pair cutoff comparators are non-transitive:
+  // A may beat C on confidence while B beats A and C beats B on price.
+  // Assign a stable cohort before applying price ordering to avoid arrival-
+  // order-dependent first screens across independently completing merchants.
+  const ceiling = new Map();
+  const availabilityClass = group => group.bestOffer?.availability === "out_of_stock" ||
+    group.bestOffer?.canShipToSaudi === false ? "unavailable" : "available";
+  for (const group of grouped) {
+    if (group.bestOffer?.exactMatch !== true) continue;
+    const key = availabilityClass(group);
+    const confidence = Number.isFinite(group.bestOffer?.matchConfidence)
+      ? group.bestOffer.matchConfidence : 0;
+    ceiling.set(key,Math.max(ceiling.get(key) ?? 0,confidence));
+  }
+  const relevanceBand = group => {
+    const top=ceiling.get(availabilityClass(group)) ?? 0;
+    const confidence=Number.isFinite(group.bestOffer?.matchConfidence)
+      ? group.bestOffer.matchConfidence : 0;
+    return Math.floor((Math.max(0,top-confidence)+1e-10)/0.07);
+  };
+  return grouped.sort((a, b) => {
     const aExact = a.bestOffer?.exactMatch === true ? 0 : 1;
     const bExact = b.bestOffer?.exactMatch === true ? 0 : 1;
     if (aExact !== bExact) return aExact - bExact;
@@ -312,17 +334,11 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
     const bUnavailable = b.bestOffer?.availability === "out_of_stock" || b.bestOffer?.canShipToSaudi === false ? 1 : 0;
     if (aUnavailable !== bUnavailable) return aUnavailable - bUnavailable;
 
-    // Shopper-first ordering: a materially stronger exact identity should not
-    // be buried solely because an ambiguously matched listing is cheaper.
-    // Similar-confidence variants still sort by their actual advertised prices.
-    // The threshold is a routing heuristic, NOT a probability of correctness.
+    // Cohorts are fixed once for every group, so sorting remains transitive.
+    // Each cohort contains comparable evidence; lower price wins within it.
     if (aExact === 0 && bExact === 0) {
-      const aConfidence = a.bestOffer?.matchConfidence;
-      const bConfidence = b.bestOffer?.matchConfidence;
-      if (Number.isFinite(aConfidence) && Number.isFinite(bConfidence) &&
-          Math.abs(aConfidence - bConfidence) >= 0.07) {
-        return bConfidence - aConfidence;
-      }
+      const bandDifference = relevanceBand(a) - relevanceBand(b);
+      if (bandDifference) return bandDifference;
     }
 
     const aValue = Number.isFinite(a.bestValue) ? a.bestValue : Infinity;
