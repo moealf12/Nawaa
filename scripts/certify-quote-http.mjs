@@ -6,8 +6,14 @@ assert.equal(process.env.NODE_ENV,'test');
 assert.equal(new URL(db).hostname,'127.0.0.1');
 assert.equal(new URL(db).pathname,'/omega_ci');
 const admin='omega_quote_disposable_admin_test_token_only_2026',port=17893;
-const child=spawn(process.execPath,['server/server.mjs'],{env:{...process.env,PORT:String(port),NAWAA_QUOTE_TEST_ENABLED:'1',NAWAA_QUOTE_TEST_ADMIN_TOKEN:admin,NAWAA_QUOTE_TEST_IDEMPOTENCY_SECRET:'omega-disposable-quote-hmac-'+String(2026).repeat(8),DATABASE_URL:''},stdio:['ignore','pipe','pipe']});
-let log='';child.stdout.on('data',b=>log+=String(b));child.stderr.on('data',b=>log+=String(b));
+let log='';
+function spawnServer(){
+ const processChild=spawn(process.execPath,['server/server.mjs'],{env:{...process.env,PORT:String(port),NAWAA_QUOTE_TEST_ENABLED:'1',NAWAA_QUOTE_TEST_ADMIN_TOKEN:admin,NAWAA_QUOTE_TEST_IDEMPOTENCY_SECRET:'omega-disposable-quote-hmac-'+String(2026).repeat(8),DATABASE_URL:''},stdio:['ignore','pipe','pipe']});
+ processChild.stdout.on('data',b=>log+=String(b));
+ processChild.stderr.on('data',b=>log+=String(b));
+ return processChild;
+}
+let child=spawnServer();
 async function req(path,method='GET',body,token){
  const headers={};if(token)headers.authorization='Bearer '+token;
  if(body!==undefined)headers['content-type']='application/json';
@@ -73,10 +79,26 @@ try{
  assert.equal(replay.data.token,duplicates[0].data.token);
  const keyConflict=await createWithKey({...customerPayload,productName:'Different model'});
  assert.equal(keyConflict.code,409,'same key with altered customer payload must conflict');
+ // The database must retain the unique identity and recovery capability
+ // through actual independent Node process termination and a fresh boot.
+ const stopped=new Promise(resolve=>child.once('exit',resolve));
+ child.kill('SIGKILL');
+ await stopped;
+ child=spawnServer();
+ let recovered=false;
+ for(let i=0;i<80;i++){
+  try{if((await req('/health')).code===200){recovered=true;break}}catch{}
+  await new Promise(resolve=>setTimeout(resolve,100));
+ }
+ assert.ok(recovered,'fresh server failed to start after SIGKILL');
+ const restored=await createWithKey();
+ assert.equal(restored.code,200,'idempotent recovery must survive fresh Node process');
+ assert.equal(restored.data.id,duplicates[0].data.id);
+ assert.equal(restored.data.token,duplicates[0].data.token);
  const invalidKey=await createWithKey(customerPayload,'short');
  assert.equal(invalidKey.code,422,'weak idempotency keys are not accepted');
  console.log('REAL_QUOTE_IDEMPOTENCY '+JSON.stringify({actualHTTP:true,postgres16:true,
   concurrentRetries:8,uniqueRequests:ids.size,stableCapability:tokens.size===1,
-  conflictRejected:true,weakKeyRejected:true}));
+  conflictRejected:true,weakKeyRejected:true,nodeSigkillRestartRecovered:true}));
  console.log('REAL_QUOTE_LIFECYCLE '+JSON.stringify({actualHTTP:true,postgres16:true,persistedRequests:2,authorization:true,revisionCAS:true,concurrentSingleWinner:true,expiredRejected:true,revisedAccepted:true,disposableOnly:true}));
 }finally{child.kill('SIGKILL');await pool.end()}
