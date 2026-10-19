@@ -49,11 +49,11 @@ try{
  assert.equal(quote.status,200);
  await page.locator('#quoteRefreshBtn').click();
  await page.locator('#quoteAcceptBtn').waitFor({timeout:15000});
- assert.match(await page.locator('#quoteBody').innerText(),/3399/);
+ assert.match(await page.locator('#quoteBody').innerText(),/السعر المقترح/);
  await page.locator('#quoteAcceptBtn').click();
  await page.getByText('تم قبول التسعيرة').waitFor({timeout:15000});
  const final=await fetch(origin+'/api/quotes/'+access.id,{headers:{authorization:'Bearer '+access.token}});
- assert.equal(final.status,200);assert.equal((await final.json()).status,'accepted');
+ assert.equal(final.status,200);const accepted=await final.json();assert.equal(accepted.status,'accepted');assert.equal(accepted.priceSAR,3399.5);
  const mobile=await page.evaluate(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
  assert.ok(mobile.scrollWidth<=mobile.width,'390px quote UI horizontal overflow');
  assert.deepEqual(errors,[],'browser JS errors');
