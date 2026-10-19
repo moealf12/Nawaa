@@ -63,6 +63,8 @@ const STATIC_FILES = new Map([
   ["/index.html", "index.html"],
   ["/search.html", "search.html"],
   ["/product.html", "product.html"],
+  ["/quote-admin.html", "quote-admin.html"],
+  ["/src/quote-admin.mjs", "src/quote-admin.mjs"],
   ["/config.js", "config.js"],
   ["/src/search-page.mjs", "src/search-page.mjs"],
   ["/src/search-core.mjs", "src/search-core.mjs"],
@@ -85,6 +87,9 @@ function contentTypeFor(filePath) {
 
 async function serveStaticFile(req, res, pathname) {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
+  // Hide the candidate administration UI outside disposable quote-test mode.
+  if ((pathname === "/quote-admin.html" || pathname === "/src/quote-admin.mjs") &&
+      !quoteWorkflowEnabled()) return false;
   let relative = STATIC_FILES.get(pathname);
   if (!relative && pathname.startsWith(STATIC_ASSET_PREFIX)) {
     const assetName = pathname.slice(STATIC_ASSET_PREFIX.length);
