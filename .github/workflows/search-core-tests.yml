@@ -269,3 +269,13 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Real quote HTTP, durable PostgreSQL, concurrency, expiration, authorization
         run: node scripts/certify-quote-http.mjs
+      - name: Install ephemeral local Chromium automation
+        run: npm install --no-save --ignore-scripts --package-lock=false playwright@1.56.1
+      - name: Actual 390px customer quotation, admin price and accept journey
+        run: node scripts/certify-quote-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nawaa-quote-customer-${{ github.event.pull_request.head.sha || github.sha }}
+          path: browser-artifacts/
+          retention-days: 7
