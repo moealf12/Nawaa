@@ -43,10 +43,40 @@ try{
  const access=await page.evaluate(()=>JSON.parse(localStorage.getItem('nawaa_quote_access_last')||'null'));
  assert.ok(access?.id&&access?.token,'browser did not save customer tracking capability');
  assert.match(await page.locator('#quoteBody').innerText(),/بانتظار التسعير/);
- const quote=await fetch(origin+'/api/quote-admin/'+access.id+'/quote',{method:'POST',
-  headers:{authorization:'Bearer '+admin,'content-type':'application/json'},
-  body:JSON.stringify({priceSAR:'3399.50',etaDays:5,terms:'عرض تجريبي موثق بلا دفع',validForSeconds:3600})});
- assert.equal(quote.status,200);
+ // Actual isolated administration screen, NOT an API-only synthetic admin action.
+ const adminPage=await context.newPage();
+ const adminErrors=[];adminPage.on('pageerror',e=>adminErrors.push(e.message));
+ await adminPage.goto(origin+'/quote-admin.html',{waitUntil:'domcontentloaded'});
+ assert.equal(await adminPage.locator('#adminWorkspace').isVisible(),false,
+  'admin inbox must stay locked before server authorization');
+ await adminPage.locator('#adminToken').fill('invalid_disposable_quote_admin_token_for_negative_case');
+ await adminPage.locator('#adminLogin').click();
+ await adminPage.getByText('انتهت صلاحية جلسة الإدارة أو رمز الدخول غير صحيح.').waitFor({timeout:15000});
+ assert.equal(await adminPage.locator('#adminWorkspace').isVisible(),false,
+  'wrong admin token must never unlock customer requests');
+ await adminPage.locator('#adminToken').fill(admin);
+ await adminPage.locator('#adminLogin').click();
+ const requestCard=adminPage.locator('.request[data-request-id="'+access.id+'"]');
+ await requestCard.waitFor({state:'visible',timeout:15000});
+ await requestCard.click();
+ assert.match(await adminPage.locator('#adminEvidence').innerText(),/Sony PlayStation 5 Slim/);
+ await adminPage.locator('#adminPrice').fill('3399.50');
+ await adminPage.locator('#adminEta').fill('5');
+ await adminPage.locator('#adminTerms').fill('عرض تجريبي موثق بلا دفع');
+ await adminPage.locator('#adminPublish').click();
+ await adminPage.getByText('تم اعتماد تسعيرة الطلب وإتاحتها للعميل.').waitFor({timeout:15000});
+ const pricing=await fetch(origin+'/api/quotes/'+access.id,{headers:{authorization:'Bearer '+access.token}});
+ assert.equal(pricing.status,200);
+ assert.equal((await pricing.json()).priceSAR,3399.5,'admin UI quote must persist in PostgreSQL');
+ mkdirSync('browser-artifacts',{recursive:true});
+ const adminLayouts=[];
+ for(const width of [390,768,1440]){
+  await adminPage.setViewportSize({width,height:844});
+  const layout=await adminPage.evaluate(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
+  assert.ok(layout.scrollWidth<=layout.width,'admin viewport overflow '+width);
+  adminLayouts.push(width);
+  await adminPage.screenshot({path:'browser-artifacts/quote-admin-'+width+'px.png'});
+ }
  await page.locator('#quoteRefreshBtn').click();
  await page.locator('#quoteAcceptBtn').waitFor({timeout:15000});
  assert.match(await page.locator('#quoteBody').innerText(),/السعر المقترح/);
@@ -59,13 +89,20 @@ try{
  await page.locator('#quoteResumeBtn').waitFor({state:'visible',timeout:15000});
  await page.locator('#quoteResumeBtn').click();
  await page.getByText('تم قبول التسعيرة').waitFor({timeout:15000});
+ await adminPage.reload({waitUntil:'domcontentloaded'});
+ assert.equal(await adminPage.locator('#adminWorkspace').isVisible(),false,
+  'admin authorization must not persist after page reload');
+ assert.equal(await adminPage.evaluate(()=>Object.keys(localStorage).some(k=>/admin.*token/i.test(k))),false,
+  'admin token must not be stored in localStorage');
  const mobile=await page.evaluate(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
  assert.ok(mobile.scrollWidth<=mobile.width,'390px quote UI horizontal overflow');
- assert.deepEqual(errors,[],'browser JS errors');
+ assert.deepEqual(errors,[],'customer browser JS errors');
+ assert.deepEqual(adminErrors,[],'admin browser JS errors');
  mkdirSync('browser-artifacts',{recursive:true});
  await page.screenshot({path:'browser-artifacts/quote-customer-390px.png'});
  console.log('REAL_QUOTE_CHROMIUM '+JSON.stringify({actualBrowser:true,viewport:390,
   actualHTTP:true,actualPostgres:true,sourceFixture:true,quoteTransportMocked:false,
-  customerRequested:true,adminPriced:true,customerAccepted:true,customerReloadRecovery:true,
+  customerRequested:true,adminPriced:true,adminUIActual:true,adminUnauthorizedDenied:true,
+  adminViewports:adminLayouts,adminSessionMemoryOnly:true,customerAccepted:true,customerReloadRecovery:true,
   mobileNoOverflow:true,errors:errors.length,productionTouched:false}));
 }finally{if(browser)await browser.close();child.kill('SIGKILL')}
