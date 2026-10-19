@@ -69,6 +69,7 @@ function renderRows(){
   for(const row of state.rows){
     const button=el("button",undefined,"request");
     button.type="button";
+    button.dataset.requestId=row.id;
     button.setAttribute("aria-pressed",String(state.selected?.id===row.id));
     button.append(el("strong",label(row.request?.productName)));
     button.append(el("small",label(row.request?.model)+" • "+label(row.createdAt)));
@@ -144,8 +145,9 @@ $("adminQuoteForm").addEventListener("submit",async(event)=>{
         expectedRevision:row.revision})});
     $("adminStatus").value="all";state.cursor=null;state.page=1;
     state.selected=result;
-    message("تم اعتماد تسعيرة الطلب وإتاحتها للعميل.","success");
+    state.busy=false;
     await loadRequests();
+    message("تم اعتماد تسعيرة الطلب وإتاحتها للعميل.","success");
   }catch(error){
     if(error.message!=="unauthorized")
       message(error.message==="quote_not_mutable"?"الطلب تغيّر أو انتهى. حدّث القائمة قبل التسعير.":"فشل الحفظ: "+error.message,"error");
