@@ -312,6 +312,19 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
     const bUnavailable = b.bestOffer?.availability === "out_of_stock" || b.bestOffer?.canShipToSaudi === false ? 1 : 0;
     if (aUnavailable !== bUnavailable) return aUnavailable - bUnavailable;
 
+    // Shopper-first ordering: a materially stronger exact identity should not
+    // be buried solely because an ambiguously matched listing is cheaper.
+    // Similar-confidence variants still sort by their actual advertised prices.
+    // The threshold is a routing heuristic, NOT a probability of correctness.
+    if (aExact === 0 && bExact === 0) {
+      const aConfidence = a.bestOffer?.matchConfidence;
+      const bConfidence = b.bestOffer?.matchConfidence;
+      if (Number.isFinite(aConfidence) && Number.isFinite(bConfidence) &&
+          Math.abs(aConfidence - bConfidence) >= 0.07) {
+        return bConfidence - aConfidence;
+      }
+    }
+
     const aValue = Number.isFinite(a.bestValue) ? a.bestValue : Infinity;
     const bValue = Number.isFinite(b.bestValue) ? b.bestValue : Infinity;
     if (aValue !== bValue) return aValue - bValue;
