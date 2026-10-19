@@ -1517,7 +1517,7 @@ async function refreshQuoteAccess(access,apiBase) {
 }
 
 async function openQuote(product, offer, sourceQuery) {
-  if (window.NAWAA_QUOTE_URL) {
+  if (window.NAWAA_QUOTE_URL && window.NAWAA_QUOTE_API_ENABLED !== true) {
     const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
     destination.searchParams.set("request", [offer?.title || product.nameAr || sourceQuery,
       offer?.specs?.modelNumber ? "SKU: " + offer.specs.modelNumber : "", offer?.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
