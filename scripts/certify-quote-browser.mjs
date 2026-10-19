@@ -33,7 +33,7 @@ try{
  await context.addInitScript(()=>{window.NAWAA_QUOTE_API_ENABLED=true;window.EventSource=undefined});
  const page=await context.newPage();
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.route('**/api/search?**',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(fixture)}));
+ await page.route(/\/api\/search\?/,r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(fixture)}));
  await page.goto(origin+'/search.html?q=PS5',{waitUntil:'domcontentloaded'});
  await page.locator('.match-result-card').first().waitFor({timeout:25000});
  await page.locator('.match-result-card').first().click();
