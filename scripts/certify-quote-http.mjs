@@ -6,7 +6,7 @@ assert.equal(process.env.NODE_ENV,'test');
 assert.equal(new URL(db).hostname,'127.0.0.1');
 assert.equal(new URL(db).pathname,'/omega_ci');
 const admin='omega_quote_disposable_admin_test_token_only_2026',port=17893;
-const child=spawn(process.execPath,['server/server.mjs'],{env:{...process.env,PORT:String(port),NAWAA_QUOTE_TEST_ENABLED:'1',NAWAA_QUOTE_TEST_ADMIN_TOKEN:admin,DATABASE_URL:''},stdio:['ignore','pipe','pipe']});
+const child=spawn(process.execPath,['server/server.mjs'],{env:{...process.env,PORT:String(port),NAWAA_QUOTE_TEST_ENABLED:'1',NAWAA_QUOTE_TEST_ADMIN_TOKEN:admin,NAWAA_QUOTE_TEST_IDEMPOTENCY_SECRET:'omega-disposable-quote-hmac-'+String(2026).repeat(8),DATABASE_URL:''},stdio:['ignore','pipe','pipe']});
 let log='';child.stdout.on('data',b=>log+=String(b));child.stderr.on('data',b=>log+=String(b));
 async function req(path,method='GET',body,token){
  const headers={};if(token)headers.authorization='Bearer '+token;
