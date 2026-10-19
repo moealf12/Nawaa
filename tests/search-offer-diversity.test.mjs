@@ -35,3 +35,14 @@ test('v17.4: no duplicates are invented by ranking and zero cap stays empty',()=
   assert.deepEqual(selectDiverseOffers([a],0),[]);
   assert.deepEqual(selectDiverseOffers([a],1),[a]);
 });
+
+test('v17.4: malformed merchant confidence cannot stall selection or fabricate stronger ranking',()=>{
+ const malformed=offer('untrusted-source','Malformed',1,Infinity,true);
+ const genuine=offer('jarir-direct','Jarir',1,.95,true);
+ const nan=offer('another-source','NaN',1,NaN,false);
+ const result=selectDiverseOffers([malformed,nan,genuine],10);
+ assert.equal(result.length,3);
+ assert.equal(result[0].merchant,'Jarir');
+ assert.equal(result[1].merchant,'Malformed');
+ assert.equal(result[2].merchant,'NaN');
+});
