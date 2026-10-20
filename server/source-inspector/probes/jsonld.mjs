@@ -39,7 +39,7 @@ function brandOf(product) {
   return typeof product?.brand === "object" ? product.brand?.name : product?.brand;
 }
 
-export function extractJsonLdProducts(html = "") {
+export function extractJsonLdProducts(html = "", pageUrl = null) {
   const blocks = [];
   const pattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
@@ -49,7 +49,7 @@ export function extractJsonLdProducts(html = "") {
     } catch {}
   }
 
-  const linked = resolveStructuredProductNodes(blocks);
+  const linked = resolveStructuredProductNodes(blocks, pageUrl);
   const groups = linked.filter(node => node.schemaProductGroupEvidence === true);
   // A merchant's recommended cross-sell Product is not proof that the
   // inspected ProductGroup has a purchasable SKU-level price.
@@ -81,8 +81,8 @@ export function extractJsonLdProducts(html = "") {
     });
 }
 
-export function probeJsonLd(html = "") {
-  const products = extractJsonLdProducts(html);
+export function probeJsonLd(html = "", pageUrl = null) {
+  const products = extractJsonLdProducts(html, pageUrl);
   const priced = products.filter((product) => product.price > 0);
   return {
     strategy: "jsonld",
