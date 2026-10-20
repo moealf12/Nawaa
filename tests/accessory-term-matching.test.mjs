@@ -234,3 +234,21 @@ test('Arabic iPhone covers are not listed as complete iPhone 17 phones',()=>{
     assert.equal(assessOfferMatch(query,cover).exactMatch,false);
   }
 });
+
+test('v20 P0 RED: actual Amazon Saudi PS5 vertical stand is a standalone accessory, not an exact console',()=>{
+ const stand={...base,
+   title:'PS5 Stand Replacement Vertical Stand with Screw for Playstation 5 Console Digital Edition and Disc Version (Vertical Stand)',
+   productPrice:80,
+   merchant:'Amazon Saudi',
+   sourceUrl:'https://www.amazon.sa/-/en/Replacement-Vertical-Playstation-Console-Digital/dp/B09NXT3NMW',
+   specs:{modelNumber:'B09NXT3NMW'}};
+ const result=assessOfferMatch('PS5',stand);
+ assert.equal(result.productKind,'accessory','a sold stand does not become a console through compatibility text');
+ assert.equal(result.exactMatch,false,'stand cannot certify PS5 exact console');
+ assert.equal(filterQueryOffers('PS5',[consoleOffer,stand]).offers.some(x=>x.sourceUrl===stand.sourceUrl),false);
+ assert.equal(assessOfferMatch('PS5 vertical stand',stand).productKind,'accessory');
+ assert.equal(filterQueryOffers('PS5 vertical stand',[stand]).offers.length,1,'explicit stand shopper intent must remain discoverable');
+ const actualConsole={...base,title:'Sony PS5 Slim Console 1TB with Vertical Stand included'};
+ assert.equal(assessOfferMatch('PS5',actualConsole).productKind,'console','genuine console including a stand must remain a console');
+ assert.equal(assessOfferMatch('PS5',actualConsole).exactMatch,true);
+});
