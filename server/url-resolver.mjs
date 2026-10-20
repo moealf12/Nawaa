@@ -514,6 +514,28 @@ export function merchantName(url) {
 }
 
 
+
+function declaredSchemaProductType(product) {
+  // Some merchants publish the core-versus-accessory product type only in
+  // Schema.org additionalProperty. Preserve explicitly declared PDP evidence
+  // without guessing from category labels, descriptions or sibling products.
+  const properties = Array.isArray(product?.additionalProperty)
+    ? product.additionalProperty.slice(0, 50)
+    : product?.additionalProperty ? [product.additionalProperty] : [];
+  const types = new Map();
+  for (const property of properties) {
+    if (!property || typeof property !== "object" || Array.isArray(property)) continue;
+    const key = String(property.name ?? property.propertyID ?? "").trim().toLowerCase();
+    if (key !== "type" && key !== "product type") continue;
+    if (typeof property.value !== "string") continue;
+    const value = property.value.trim();
+    if (!value || value.length > 80 || /[\u0000-\u001f\u007f]/.test(value)) continue;
+    types.set(value.toLowerCase(), value);
+  }
+  // Conflicting merchant claims remain unknown, never pick an arbitrary Type.
+  return types.size === 1 ? types.values().next().value : null;
+}
+
 export async function extractProductDocument(url, options = {}) {
   const fetched = await fetchHtmlSafe(url, 0, options);
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
@@ -597,7 +619,7 @@ export async function resolveProductUrl(url, options = {}) {
     sku: product?.sku || null,
     variantId: product?.variantId || null,
     vendor:product?.vendor || null,
-    productType:product?.productType || null,
+    productType:product?.productType || declaredSchemaProductType(product),
     specs: {
       brand: typeof product?.brand === "string" ? product.brand : product?.brand?.name || null,
       deviceType: typeof product?.model === "string" ? product.model : product?.model?.name || null,
