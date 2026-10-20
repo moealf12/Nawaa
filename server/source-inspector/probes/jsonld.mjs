@@ -1,3 +1,4 @@
+import { resolveStructuredProductNodes } from "../../schemaorg-product-graph.mjs";
 function flatten(value, out = []) {
   if (!value) return out;
   if (Array.isArray(value)) {
@@ -48,7 +49,7 @@ export function extractJsonLdProducts(html = "") {
     } catch {}
   }
 
-  return blocks
+  return resolveStructuredProductNodes(blocks)
     .filter((node) => {
       const type = node?.["@type"];
       return Array.isArray(type)
