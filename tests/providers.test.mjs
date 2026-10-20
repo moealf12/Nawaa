@@ -539,7 +539,7 @@ assert.equal(aliSpecificPdpOffers.length, 1);
 assert.equal(aliSpecificPdpOffers[0].price, 0.33);
 assert.equal(aliSpecificPdpOffers[0].currency, "USD");
 assert.match(aliSpecificPdpOffers[0].title, /iPhone 17/);
-assert.match(aliSpecificPdpOffers[0].sourceUrl, /\\/item\\/3256810253104496\\.html/);
+assert.match(aliSpecificPdpOffers[0].sourceUrl, /\/item\/3256810253104496\.html/);
 
 
 const bestBuySearchFixture = String.raw`
