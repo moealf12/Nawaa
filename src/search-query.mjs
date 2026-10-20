@@ -205,7 +205,7 @@ function productCategoryWithDescription(offer, gaming) {
   // ... para iPhone 17" sells a peripheral, not an iPhone. Match only the
   // title-leading noun, so a genuine "iPhone 17 con cargador incluido" remains
   // a phone. Real Chromium AliExpress first-ten regression v21.4.
-  if (/^\s*(?:adaptadores?|cargadores?|convertidores?)\b/i.test(String(offer?.title || '')))
+  if (/^\s*(?:adaptador(?:es)?|cargador(?:es)?|convertidor(?:es)?)\b/i.test(String(offer?.title || '')))
     return 'accessory';
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   if (isEvidencedCompleteLaptop(offer)) return 'laptop';
