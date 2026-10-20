@@ -119,6 +119,13 @@ try{
         result.assertions.resolvedProductSearch=data.visibleCount>0||
           (data.noMatch&&data.stream?.done===true);
       }
+      if(query==='iPhone 17 Pro'){
+        // Verify the displayed first ten, not merely the successful loading
+        // of an unrelated accessory. Recorded Amazon title sold a Portuguese
+        // "Capa" (phone cover), not an iPhone 17 Pro handset.
+        result.assertions.noPortugueseCoverAsHandset=!data.cards.some(card=>
+          /^\s*capas?\b/i.test(card.title)&&/\biphone\s+17\s+pro\b/i.test(card.title));
+      }
       if(query==='PS5 disc drive'){
         result.assertions.explicitAccessoryNotCertifiedConsole=!data.stream?.exactSamples?.some(s=>
           /\bconsole\b/i.test(s.title)&&!/\b(?:drive|cover|accessory)\b/i.test(s.title));
