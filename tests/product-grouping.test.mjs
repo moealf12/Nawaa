@@ -55,3 +55,40 @@ test('generic laptop names without a model or configuration are not proof of ide
  const offers=[{...base,title:'HP Pavilion Laptop',specs:{brand:'HP'}},{...base,title:'HP Pavilion Laptop',merchant:'B',specs:{brand:'HP'}}];
  assert.equal(groupComparableOffers(offers).length,2);
 });
+
+test('real Jarir/eXtra iPhone 17 256GB Black same-MPN offers group despite inch-notation differences',()=>{
+ // Recorded 2026-10-20 merchant Constructor/Unbxd source metadata + independently checked PDP MPNs.
+ // Recorded real feed replay; not current live-price certification.
+ const jarir=phone('Jarir','Apple iPhone 17, 256 GB, Black, 5G, Apple A19',{
+  deviceType:'iPhone 17',series:'Apple iPhone 17',storage:'256 GB',color:'Black',
+  screenSize:'6.3"',sim:'Dual eSIM (eSIM/eSIM)',modelNumber:'MG674AHA'
+ });
+ const extra=phone('eXtra','Apple iPhone 17, 5G, 6.3 inch 256GB, Black',{
+  deviceType:'IPHONE 17',series:'IPHONE 17',storage:'256 GB',color:'Black',
+  screenSize:'6.3 INCH',ram:'8GB',modelNumber:'MG674AH/A'
+ });
+ const groups=groupComparableOffers([jarir,extra]);
+ assert.equal(groups.length,1);
+ assert.equal(groups[0].offers.length,2);
+ assert.deepEqual(new Set(groups[0].offers.map(o=>o.merchant)),new Set(['Jarir','eXtra']));
+ for(const altered of [
+  {...extra,specs:{...extra.specs,storage:'512 GB'}},
+  {...extra,specs:{...extra.specs,color:'Lavender'}},
+  {...extra,specs:{...extra.specs,modelNumber:'MG674LL/A'}},
+  {...extra,specs:{...extra.specs,screenSize:'6.9 INCH'}},
+  {...extra,specs:{...extra.specs,screenSize:'6.3 cm'}},
+  {...extra,specs:{...extra.specs,regionVersion:'USA'}}
+ ]) assert.equal(groupComparableOffers([jarir,altered]).length,2);
+});
+
+test('real Jarir/eXtra iPhone 17 256GB Lavender same-MPN merchant pair groups',()=>{
+ const jarir=phone('Jarir','Apple iPhone 17, 256 GB, Lavender, 5G, Apple A19',{
+  deviceType:'iPhone 17',storage:'256 GB',color:'Lavender',
+  screenSize:'6.3"',modelNumber:'MG6A4AHA'
+ });
+ const extra=phone('eXtra','Apple iPhone 17, 5G, 6.3 inch 256GB, Lavender',{
+  deviceType:'IPHONE 17',storage:'256 GB',color:'Lavender',
+  screenSize:'6.3 INCH',modelNumber:'MG6A4AH/A'
+ });
+ assert.equal(groupComparableOffers([jarir,extra]).length,1);
+});
