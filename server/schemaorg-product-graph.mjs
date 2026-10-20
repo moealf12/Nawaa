@@ -15,13 +15,39 @@ function isObject(value) {
 }
 function list(value) { return Array.isArray(value) ? value : value ? [value] : []; }
 
-export function resolveStructuredProductNodes(nodes = []) {
+export function resolveStructuredProductNodes(nodes = [], pageUrl = null) {
   const capped = Array.isArray(nodes) ? nodes.slice(0, MAX_NODES) : [];
+  // Only normalize references to THIS document. Never resolve or fetch
+  // off-page URLs, and never collapse identity-bearing query parameters.
+  const page = (() => {
+    if (!pageUrl) return null;
+    try {
+      const parsed = new URL(pageUrl);
+      if (!["https:","http:"].includes(parsed.protocol)) return null;
+      parsed.hash = "";
+      // A selected variant is identified by its Offer URL, not by the
+      // shared page-level graph IDs. The latter use the product path.
+      parsed.searchParams.delete("variant");
+      return parsed;
+    } catch { return null; }
+  })();
+  const idKey = value => {
+    if (typeof value !== "string" || !value || value.length > 1024) return null;
+    if (!page) return value; // legacy exact IDs when document URL is absent
+    try {
+      const id = new URL(value, page);
+      if (id.origin !== page.origin ||
+          id.pathname !== page.pathname ||
+          id.search !== page.search ||
+          !["https:","http:"].includes(id.protocol)) return null;
+      return id.href;
+    } catch { return null; }
+  };
   const byId = new Map(), duplicateIds = new Set();
   for (const node of capped) {
-    if (!isObject(node) || typeof node["@id"] !== "string") continue;
-    const id = node["@id"];
-    if (!id || id.length > 1024) continue;
+    if (!isObject(node)) continue;
+    const id = idKey(node["@id"]);
+    if (!id) continue;
     if (byId.has(id)) duplicateIds.add(id);
     else byId.set(id, node);
   }
@@ -29,8 +55,9 @@ export function resolveStructuredProductNodes(nodes = []) {
     if (!isObject(value)) return null;
     const id = value["@id"];
     if (typeof id !== "string" || !id) return value;
-    if (duplicateIds.has(id)) return null;
-    const indexed = byId.get(id);
+    const key = idKey(id);
+    if (!key || duplicateIds.has(key)) return null;
+    const indexed = byId.get(key);
     // A pure @id link is meaningful only when its target exists here.
     if (Object.keys(value).length === 1) return indexed || null;
     // Reject conflicting inline and graph evidence for a shared identifier.
@@ -63,11 +90,15 @@ export function resolveStructuredProductNodes(nodes = []) {
     // malformed or ambiguous. Otherwise a surviving sibling can leak its price
     // into an incomplete group's generic product page.
     for (const declaredVariant of declared) {
-      if (typeof declaredVariant?.["@id"] === "string") groupedIds.add(declaredVariant["@id"]);
+      if (typeof declaredVariant?.["@id"] === "string") {
+        const key = idKey(declaredVariant["@id"]);
+        if (key) groupedIds.add(key);
+      }
     }
     for (const variant of variants) {
       if (variant && hasType(variant, "Product") && typeof variant["@id"] === "string") {
-        groupedIds.add(variant["@id"]);
+        const key = idKey(variant["@id"]);
+        if (key) groupedIds.add(key);
       }
     }
     // No partial acceptance: one unresolved/mismatched referenced variant
@@ -79,7 +110,10 @@ export function resolveStructuredProductNodes(nodes = []) {
       continue;
     }
     const offers = variants.flatMap(variant => {
-      if (typeof variant["@id"] === "string") groupedIds.add(variant["@id"]);
+      if (typeof variant["@id"] === "string") {
+        const key = idKey(variant["@id"]);
+        if (key) groupedIds.add(key);
+      }
       const associated = resolvedOffers(variant);
       if (!associated?.length) return [{ "@type":"UnverifiedOffer" }];
       return associated.map(offer => ({
@@ -106,7 +140,7 @@ export function resolveStructuredProductNodes(nodes = []) {
   }
 
   const individual = capped
-    .filter(node => hasType(node, "Product") && !groupedIds.has(node?.["@id"]))
+    .filter(node => hasType(node, "Product") && !groupedIds.has(idKey(node?.["@id"])))
     .map(node => {
       const offers=resolvedOffers(node);
       return offers ? { ...node, offers: offers.length===1 ? offers[0] : offers } : node;
