@@ -207,6 +207,15 @@ function productCategoryWithDescription(offer, gaming) {
   // a phone. Real Chromium AliExpress first-ten regression v21.4.
   if (/^\s*(?:adaptador(?:es)?|cargador(?:es)?|convertidor(?:es)?)\b/i.test(String(offer?.title || '')))
     return 'accessory';
+  // An accessory labelled "For iPhone 17" is an item COMPATIBLE with
+  // that handset, not evidence that the merchant sells the handset itself.
+  // The subject must be a phone, not a protection kit or wallet mentioning
+  // it in compatibility text. Captured Amazon first-ten X-LEADER example.
+  // Preserve titles which actually START with the Apple iPhone device.
+  const primaryRetailTitle=String(offer?.title || '');
+  if (/\b(?:for|compatible with|fits)\s+(?:apple\s+)?iphone\s+\d+\b/i.test(primaryRetailTitle) &&
+      !/^\s*(?:(?:genuine|original|refurbished|renewed|used|new)\s+)?(?:apple\s+)?iphone\s+\d+\b/i.test(primaryRetailTitle))
+    return 'accessory';
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   if (isEvidencedCompleteLaptop(offer)) return 'laptop';
   let urlSemantic = "";
