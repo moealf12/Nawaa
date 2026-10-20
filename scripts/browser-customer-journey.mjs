@@ -196,6 +196,25 @@ try{
     };
     report.assertions.firstTenComparisonsUsable=report.firstTenGroups.every(group=>
       Boolean(group.title)&&group.merchantRows>0&&group.detailActions>0);
+    // Real customer smoke: HP computer searches must not surface sleeve, bag or
+    // sling accessories as laptop product cards. Explicit accessory searches
+    // remain a separate, permitted intent. This is a targeted guard, NOT an
+    // independently labeled universal product-precision metric.
+    if(query==='HP laptop'||query==='لابتوب اتش بي'){
+      const carrying=report.firstTenGroups.filter(group=>
+        /\b(?:sleeves?|slings?|laptop bags?|laptop cases?|laptop pouches?)\b/i.test(group.title));
+      const computers=report.firstTenGroups.filter(group=>
+        /\b(?:pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen|laptops?|notebooks?|chromebooks?)\b/i.test(group.title) &&
+        !carrying.includes(group));
+      report.hpLaptopDeviceIntegrity={
+        query,groupsInspected:report.firstTenGroups.length,
+        carryingAccessories:carrying.map(group=>group.title),
+        apparentComputers:computers.length,
+        assessment:'targeted_name_based_browser_guard_not_independent_ground_truth',
+      };
+      report.assertions.hpLaptopNoCarryAccessories=carrying.length===0;
+      report.assertions.hpLaptopHasComputerResult=computers.length>0;
+    }
   }
   await page.screenshot({path:prefix+'-search-desktop.png',fullPage:true,timeout:20000});
   report.assertions.searchPageRendered=Boolean(navigation?.ok());
