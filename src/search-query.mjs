@@ -299,7 +299,7 @@ const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)
 const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
 // Console accessories may mention a complete PS5 console in compatibility text.
 // Reject peripheral product nouns before trusting 'Console / Digital Edition'.
-const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?)\b/;
+const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
 // Storage-media nouns identify a sold component, not the PS5 it fits.
 // A title-leading real console subject remains a console when its SSD is included.
 const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
@@ -312,7 +312,7 @@ const GAMING_CONSOLE_PRIMARY = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|ed
 const GAMING_GAME_PRODUCT = /\b(?:code in box|digital game code|download code|game card|video game|game disc)\b/;
 // Match already-normalized Arabic tokens using spaces, not JS \b (which does
 // not recognize Arabic letters as word characters). Keep console bundles safe.
-const GAMING_ARABIC_ACCESSORY = /(?:^| )(?:غطاء|اغطيه|مروحه تبريد|حامل جداري|حامل حائط|قارئ disc|قارئ disk|قارئ اقراص|هارد خارجي|قرص صلب خارجي|هب|موزع منافذ)(?= |$)/;
+const GAMING_ARABIC_ACCESSORY = /(?:^| )(?:غطاء|اغطيه|مروحه تبريد|حامل|حامل جداري|حامل حائط|قارئ disc|قارئ disk|قارئ اقراص|هارد خارجي|قرص صلب خارجي|هب|موزع منافذ)(?= |$)/;
 const GAMING_STANDALONE_GAME = /^(?:game|games)(?: |$)|(?:^| )شريط(?: |$)/;
 const CONSOLE_WITH_INCLUDED_DRIVE = /\bconsole\b.*\b(?:with|including|includes)\b.*\b(?:disc|disk|optical|blu ray) drive\b/;
 // An accessory sold as a 'PS5 Console Hub Bundle' is not a console bundle.
@@ -323,7 +323,7 @@ const GENUINE_CONSOLE_BUNDLE = title => /\bbundle\b/.test(title) && /\bconsole\b
 // with USB hub" and "hub for PS5 console with charger" false positives.
 // The raw title is needed because normalization removes '+' separators.
 const CONSOLE_DEVICE_SUBJECT = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|edition|standard|gaming|\d+(?:gb|tb))){0,7} console\b/;
-const CONSOLE_INCLUSION_LINK = /^(?: with| including| includes| plus)\b/;
+const CONSOLE_INCLUSION_LINK = /^(?: \d+(?:gb|tb))?(?: with| including| includes| plus)\b/;
 function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normalizedTitle) {
   const subject = normalizedTitle.match(CONSOLE_DEVICE_SUBJECT);
   if (!subject) return false;
@@ -414,7 +414,7 @@ export function describeProduct(offer = {}) {
 
 const ACCESSORY_TERMS = [
   "case","cover","screen protector","protector","charger","cable","adapter",
-  "disc drive","disk drive","optical drive","blu ray drive",
+  "disc drive","disk drive","optical drive","blu ray drive","vertical stand","replacement stand","stand","حامل",
   "usb hub","expansion hub","multiport hub","hub","docking station","port expander","هب","موزع منافذ",
   "atomizer","perfume bottle","empty bottle","laptop sleeve","laptop sling","laptop bag","laptop briefcase","briefcase","rucksack","notebook sleeve","notebook sling","cooling fan","cpu fan","protective shell","privacy screen","active pen","lcd replacement","screen replacement","only compatible with","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
   "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه",
