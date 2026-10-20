@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {parseSearchIntent,productCategory,assessOfferMatch,filterQueryOffers} from '../src/search-query.mjs';
+
+// Synthetic representations of titles actually observed in candidate Chromium
+// run #39346305243. Synthetic URLs; NOT additional merchant verification.
+const offer=(title,sku='')=>({
+ title,merchant:'Fixture merchant',
+ sourceUrl:'https://example.invalid/product/'+encodeURIComponent(title),
+ specs:{brand:'HP',deviceType:title,modelNumber:sku},
+ productPrice:1999,condition:'new',availability:'in_stock'
+});
+const sleeves=[
+ 'HP Reversible Laptop Sleeve, for 13.5"/14.1"/13.9" Screen Size, Black/Blue',
+ 'HP Creator 13.3-inch Laptop Sling, Black',
+ 'HP Reversible Protective Laptop Sleeve, for 15.6" Screen Size, Black/Silver',
+ 'HP Modular Laptop Sleeve, for 15.6" Screen Size, Military Green',
+ 'HP Spectre Folio Laptop Sleeve, for 10.1"/10.2" Screen Size, Brown',
+ 'HP Laptop Bag for 15.6 inch, Black'
+];
+const computers=[
+ 'HP Pavilion 15 Laptop 512GB Intel Core i5 15-eg2345',
+ 'HP EliteBook 840 G10 Notebook Intel Core i7 16GB RAM',
+ 'HP Spectre x360 14 Laptop Intel Core Ultra 7'
+];
+test('v18.2 RED: HP laptop returns eligible computers but no carrying-case accessories as exact',()=>{
+ const candidates=[...sleeves,...computers].map(t=>offer(t));
+ assert.equal(parseSearchIntent('HP laptop').category,'laptop');
+ for(const candidate of candidates.slice(0,sleeves.length)){
+  assert.equal(productCategory(candidate),'accessory',candidate.title);
+  assert.equal(assessOfferMatch('HP laptop',candidate).exactMatch,false,candidate.title);
+ }
+ const {offers}=filterQueryOffers('HP laptop',candidates);
+ assert.equal(offers.filter(o=>/sleeve|sling|laptop bag/i.test(o.title)).length,0,
+   'the customer must not see sleeves and slings in primary laptop results');
+ assert.ok(offers.some(o=>/Pavilion/.test(o.title)));
+ assert.ok(offers.some(o=>/EliteBook/.test(o.title)));
+});
+test('v18.2: Arabic and mixed HP laptop intent must not accept sleeves',()=>{
+ for(const q of ['لابتوب اتش بي','HP لابتوب','اتش بي laptop']){
+   const a=offer(sleeves[0]),b=offer(computers[0]);
+   assert.equal(assessOfferMatch(q,a).exactMatch,false,q);
+   assert.equal(filterQueryOffers(q,[a,b]).offers.some(o=>o.title===a.title),false,q);
+   assert.equal(filterQueryOffers(q,[a,b]).offers.some(o=>o.title===b.title),true,q);
+ }
+});
+test('v18.2: explicitly requested sleeve remains discoverable',()=>{
+ const q='HP laptop sleeve',x=offer(sleeves[0]);
+ assert.equal(parseSearchIntent(q).category,'accessory');
+ assert.equal(productCategory(x),'accessory');
+ assert.equal(assessOfferMatch(q,x).exactMatch,true);
+ assert.equal(filterQueryOffers(q,[x]).offers.length,1);
+});
+test('v18.2: genuine laptop bundled with included sleeve keeps primary computer identity',()=>{
+ const x=offer('HP Pavilion 15 Laptop 512GB with Laptop Sleeve Included','15-eg2345');
+ assert.equal(productCategory(x),'laptop');
+ assert.equal(assessOfferMatch('HP laptop',x).exactMatch,true);
+});
