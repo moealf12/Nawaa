@@ -439,22 +439,29 @@ export function extractionCandidates(html, url = null) {
 }
 
 function chooseOffer(product) {
-  const raw = product && product.offers;
-  let offers = [];
-  if (Array.isArray(raw)) offers = raw;
-  else if (raw && Array.isArray(raw.offers)) offers = raw.offers;
-  else if (raw) offers = [raw];
-
-  const normalized = offers.map((offer) => ({
-    raw: offer,
-    price: parseMoney(offer && (offer.price ?? offer.lowPrice ?? offer.highPrice)),
-    currency: offer && offer.priceCurrency || null,
-    availability: String(offer && offer.availability || "").toLowerCase(),
-    url: offer && offer.url || null,
-  })).filter((offer) => offer.price !== null);
-
-  normalized.sort((x,y) => x.price - y.price);
-  return normalized[0] || null;
+  const raw = product?.offers;
+  // AggregateOffer advertises a PRICE RANGE, not an item-level merchant
+  // price. Do not promote lowPrice or highPrice into a purchasable offer.
+  const type = value => Array.isArray(value?.["@type"])
+    ? value["@type"].some(t=>String(t).toLowerCase()==="aggregateoffer")
+    : String(value?.["@type"]||"").toLowerCase()==="aggregateoffer";
+  if (type(raw)) return null;
+  const offers = Array.isArray(raw) ? raw
+    : raw && Array.isArray(raw.offers) ? raw.offers
+    : raw ? [raw] : [];
+  // An unqualified Product page with sibling variants cannot establish
+  // which variant the requested URL selects. Explicit ?variant=... requests
+  // are narrowed to a single exact Offer by selectVariantCandidates().
+  if (offers.length !== 1 || type(offers[0])) return null;
+  const offer = offers[0];
+  const price = parseMoney(offer?.price);
+  if (price === null || price <= 0) return null;
+  return {
+    raw:offer,price,
+    currency:offer.priceCurrency || null,
+    availability:String(offer.availability||"").toLowerCase(),
+    url:offer.url || null,
+  };
 }
 
 function inferCountry(url, currency) {
