@@ -84,3 +84,12 @@ test('v18.2 RED: sparse unverified generic laptop listing must not claim an exac
  const verified=offer('HP EliteBook 840 G10 Notebook Intel Core i7 16GB RAM','840G10');
  assert.equal(assessOfferMatch('لابتوب اتش بي',verified).exactMatch,true);
 });
+
+test('v18.2: internal laptop SSD and standalone replacement SSD cannot be conflated',()=>{
+ const machine=offer('HP Pavilion 15 Laptop Intel Core i5 16GB RAM 512GB SSD','15-eg999');
+ const spare=offer('HP 512GB SSD for Pavilion Laptop Intel Core i7');
+ assert.equal(productCategory(machine),'laptop');
+ assert.equal(assessOfferMatch('HP laptop',machine).exactMatch,true);
+ assert.equal(productCategory(spare),'accessory');
+ assert.equal(assessOfferMatch('HP laptop',spare).exactMatch,false);
+});
