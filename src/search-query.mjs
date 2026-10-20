@@ -116,7 +116,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|laptop bags?|stylus|stylus pen|photo paper|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|stylus|stylus pen|photo paper|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -156,10 +156,26 @@ export function productCategory(offer = {}) {
   return productCategoryWithDescription(offer, describeProduct(offer));
 }
 
+// Do not classify a verified full HP notebook retail package as a standalone
+// carry accessory merely because its title explicitly includes a sleeve.
+function isVerifiedLaptopCarryBundle(offer = {}) {
+  const retailTitle = normalizeSearchQuery(offer.title || "");
+  const separator = retailTitle.search(/\b(?:with|including|includes)\b/);
+  if (separator < 0) return false;
+  const primary = retailTitle.slice(0,separator).trim();
+  const included = retailTitle.slice(separator);
+  return /\b(?:laptop|notebook)\b/.test(primary) &&
+    /\b(?:pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen)\b/.test(primary) &&
+    !/\b(?:sleeve|sling|bag|case|pouch|cover)\b/.test(primary) &&
+    /\b(?:laptop |notebook )?(?:sleeve|sling|bag|case|pouch)\b/.test(included) &&
+    /\d/.test(String(offer.specs?.modelNumber || ""));
+}
+
 // The matching path already computed describeProduct(offer); reuse that immutable
 // value rather than normalizing its title and metadata a second time.
 function productCategoryWithDescription(offer, gaming) {
   if (gaming.kind !== 'product') return gaming.kind;
+  if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   let urlSemantic = "";
   try {
     const parsedUrl = new URL(String(offer?.sourceUrl || ""));
@@ -373,7 +389,7 @@ const ACCESSORY_TERMS = [
   "case","cover","screen protector","protector","charger","cable","adapter",
   "disc drive","disk drive","optical drive","blu ray drive",
   "usb hub","expansion hub","multiport hub","hub","docking station","port expander","هب","موزع منافذ",
-  "atomizer","perfume bottle","empty bottle","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
+  "atomizer","perfume bottle","empty bottle","laptop sleeve","laptop sling","laptop bag","notebook sleeve","notebook sling","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
   "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه",
   "غطاء","اغطيه","مروحه تبريد","حامل جداري","حامل حائط",
   "قارئ اقراص","هارد خارجي","قرص صلب خارجي"
@@ -467,7 +483,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
-  const titleHasAccessory = !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
+  const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
