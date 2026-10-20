@@ -216,6 +216,14 @@ function productCategoryWithDescription(offer, gaming) {
   if (/\b(?:for|compatible with|fits)\s+(?:apple\s+)?iphone\s+\d+\b/i.test(primaryRetailTitle) &&
       !/^\s*(?:(?:genuine|original|refurbished|renewed|used|new)\s+)?(?:apple\s+)?iphone\s+\d+\b/i.test(primaryRetailTitle))
     return 'accessory';
+  // Compatibility-only retail subjects are not complete computers. The
+  // seller's item precedes "Compatible with HP"; later OmniBook/laptop words
+  // describe supported devices, even if "keyboard cover" was title-clipped.
+  const normalizedRetailTitle=normalizeSearchQuery(primaryRetailTitle);
+  const hpClaim=normalizedRetailTitle.match(/\bcompatible with (?:hp|hewlett packard)\b/);
+  const computerSubjectBeforeClaim=hpClaim && /\b(?:laptops?|notebooks?|chromebooks?|macbooks?|computers?|desktops?|pcs?|pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen)\b/.test(
+    normalizedRetailTitle.slice(0,hpClaim.index));
+  if(hpClaim && !computerSubjectBeforeClaim) return 'accessory';
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   if (isEvidencedCompleteLaptop(offer)) return 'laptop';
   let urlSemantic = "";

@@ -287,6 +287,11 @@ try{
       // compatible protective shells, stylus pens, sleeves and laptop luggage.
       const accessoryTitles=report.firstTenGroups.filter(group=>{
         const title=group.title.toLowerCase();
+        // Source-grounded real Chromium safeguard: a leading "Compatible
+        // with HP" third-party keyboard cover was title-clipped before the
+        // word "Cover" and erroneously passed the former keyboard-only guard.
+        const hpClaim=title.match(/\bcompatible with (?:hp|hewlett packard)\b/);
+        if(hpClaim && !/\b(?:laptops?|notebooks?|chromebooks?|macbooks?|computers?|desktops?|pcs?|pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen)\b/.test(title.slice(0,hpClaim.index)))return true;
         // Real first-ten candidate evidence: laptop batteries and external
         // power supplies were missed by the older sleeve/fan-only guard.
         if(/\b(?:laptop|notebook) batter(?:y|ies)\b|\bbatter(?:y|ies) (?:replacement|compatible|for)\b|\bpower suppl(?:y|ies)\b/.test(title)) return true;
