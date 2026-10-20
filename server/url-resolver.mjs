@@ -211,7 +211,7 @@ function flattenJsonLd(node, out = []) {
   return out;
 }
 
-function extractJsonLd(html) {
+function extractJsonLd(html, pageUrl = null) {
   const out = [];
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
@@ -222,7 +222,7 @@ function extractJsonLd(html) {
       flattenJsonLd(JSON.parse(raw), out);
     } catch {}
   }
-  return resolveStructuredProductNodes(out);
+  return resolveStructuredProductNodes(out, pageUrl);
 }
 
 function typeIncludesProduct(type) {
@@ -425,7 +425,7 @@ export function extractMetaProductState(html) {
 }
 
 export function extractionCandidates(html, url = null) {
-  const nodes = extractJsonLd(html);
+  const nodes = extractJsonLd(html, url);
   const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
   // An explicit family ProductGroup is evidence for this product page.
   // A separate priced Product in the same graph may be a recommendation or
