@@ -204,8 +204,15 @@ try{
       // Broader independently identified item types from the real Arabic
       // Chromium output: fans, LCD replacements, screen privacy filters,
       // compatible protective shells, stylus pens, sleeves and laptop luggage.
-      const accessoryTitles=report.firstTenGroups.filter(group=>
-        /\b(?:sleeves?|slings?|briefcases?|rucksacks?|backpacks?|laptop bags?|laptop cases?|laptop pouches?|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with)\b/i.test(group.title));
+      const accessoryTitles=report.firstTenGroups.filter(group=>{
+        const title=group.title.toLowerCase();
+        if(/\b(?:sleeves?|slings?|briefcases?|rucksacks?|backpacks?|laptop bags?|laptop cases?|laptop pouches?|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with)\b/i.test(title))return true;
+        const peripheral=title.search(/\b(?:keyboards?|mice|mouse)\b/);
+        if(peripheral<0)return false;
+        const machine=title.search(/\b(?:laptop|notebook|chromebook|macbook)\b/);
+        return machine<0||peripheral<machine||
+          !/\b(?:with|includes|including|bundle)\b/.test(title.slice(machine,peripheral));
+      });
       const sparseUnknown=report.firstTenGroups.filter(group=>
         /^hp (?:everyday |business |standard )?(?:laptop|notebook)$/i.test(group.title.trim()));
       const computers=report.firstTenGroups.filter(group=>
