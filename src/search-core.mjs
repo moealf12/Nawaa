@@ -241,6 +241,9 @@ function comparablePair(a, b) {
     // Console SKUs can identify the same chassis when one title omits Slim.
     if (sameSku && key === "form") continue;
     const x = a.attributes[key] || "", y = b.attributes[key] || "";
+    // An explicitly regional phone is not interchangeably certified against
+    // an unknown-region phone, even when their reported MPNs agree.
+    if (a.category === "phone" && key === "region" && x !== y) return false;
     const coreVariant = ["storage","color","edition","form","bundle"].includes(key);
     if (x !== y && ((coreVariant && !sameSku) || (x && y))) return false;
   }
