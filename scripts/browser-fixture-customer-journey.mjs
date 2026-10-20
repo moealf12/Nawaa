@@ -631,17 +631,21 @@ try{
   assertCheck('v181_unconverted_AED_never_appears_as_SAR_card_price',
     !cardText.some(text=>text.includes(sarMislabel)),
     {foreignCurrency:'AED',sourcePrice:2599,incorrectSARLabel:sarMislabel});
-  const uaeIndex=consoleOnly.findIndex(title=>title.includes('نسخة رقمية')&&title.includes('حزمة'));
-  if(uaeIndex>=0){
-    await ps5IdentityTab.locator('#results .match-result-card').nth(uaeIndex).click();
-    const warning=await ps5IdentityTab.locator('#results .merchant-warnings').allTextContents();
-    assertCheck('v181_unconverted_AED_comparison_exposes_conversion_uncertainty',
-      warning.some(text=>text.includes('سعر المصدر بعملة أجنبية')),
-      {warnings:warning});
-  }else{
-    assertCheck('v181_unconverted_AED_comparison_exposes_conversion_uncertainty',false,
-      'foreign console bundle card not found in controlled fixture');
+  // Select by observed merchant identity, NOT by a similar-looking bundle
+  // title: several real fixtures can contain "Digital" + "bundle" wording.
+  let uaeWarnings=[],uaeMerchantFound=false;
+  for(let cardIndex=0;cardIndex<consoleOnly.length;cardIndex++){
+    await ps5IdentityTab.locator('#results .match-result-card').nth(cardIndex).click();
+    const merchants=await ps5IdentityTab.locator('#results .merchant-row .merchant-main strong').allTextContents();
+    if(merchants.some(name=>name.includes('Gamez Geek LLC FZ'))){
+      uaeMerchantFound=true;
+      uaeWarnings=await ps5IdentityTab.locator('#results .merchant-warnings').allTextContents();
+      break;
+    }
   }
+  assertCheck('v181_unconverted_AED_comparison_exposes_conversion_uncertainty',
+    uaeMerchantFound&&uaeWarnings.some(text=>text.includes('سعر المصدر بعملة أجنبية')),
+    {merchantFound:uaeMerchantFound,warnings:uaeWarnings});
   await ps5IdentityTab.setViewportSize({width:390,height:844});
   const sharafMobile=await ps5IdentityTab.evaluate(()=>({
     viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
