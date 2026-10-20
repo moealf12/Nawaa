@@ -184,3 +184,40 @@ test("v20.5 RED: recommendation group with local @id but explicit off-page url i
    assert.equal(actual.title,"HP EliteBook 840 G10");
  });
 });
+
+
+test("v21.0 RED: priced cross-sell Product before actual priced PDP cannot win JSON-LD selection",async()=>{
+ const html=graph([
+  {"@type":"Product","@id":"https://fixture.example/recommendations/cover#product",
+   url:"https://fixture.example/recommendations/cover",name:"iPhone 17 Protective Cover",
+   offers:{"@type":"Offer",price:49,priceCurrency:"SAR",url:"https://fixture.example/recommendations/cover"}},
+  {"@type":"Product","@id":"#main-product",url:page,name:"iPhone 17 256GB",
+   sku:"IPH17-256",offers:{"@type":"Offer",price:3199,priceCurrency:"SAR",url:page}}
+ ]);
+ const inspected=probeJsonLd(html,page);
+ assert.equal(inspected.pricedProducts,1,"an off-page recommendation must not be certified as the PDP offer");
+ assert.equal(inspected.sample[0].title,"iPhone 17 256GB");
+ await withHtml(html,async()=>{
+  const resolved=await resolveProductUrl(page);
+  assert.equal(resolved.title,"iPhone 17 256GB");
+  assert.equal(resolved.originalProductPrice,3199);
+  assert.equal(resolved.sku,"IPH17-256");
+ });
+});
+
+test("v21.0 RED: priced cross-sell cannot fill the missing price of the current PDP",async()=>{
+ const html=graph([
+  {"@type":"Product","@id":"#main-product",url:page,name:"HP EliteBook 840 G10",
+   sku:"HP840G10"},
+  {"@type":"Product","@id":"https://fixture.example/recommendations/charger#product",
+   url:"https://fixture.example/recommendations/charger",name:"Laptop Charger",
+   offers:{"@type":"Offer",price:59,priceCurrency:"SAR",url:"https://fixture.example/recommendations/charger"}}
+ ]);
+ const inspected=probeJsonLd(html,page);
+ assert.equal(inspected.pricedProducts,0,"recommended charger must not count as current PDP priced coverage");
+ await withHtml(html,async()=>{
+  const resolved=await resolveProductUrl(page);
+  assert.equal(resolved.title,"HP EliteBook 840 G10");
+  assert.equal(resolved.originalProductPrice,null);
+ });
+});
