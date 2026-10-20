@@ -112,3 +112,36 @@ test('v18.2 RED: compatible HP keyboards must never become exact laptop devices'
  assert.equal(productCategory(laptop),'laptop');
  assert.equal(assessOfferMatch('HP laptop',laptop).exactMatch,true);
 });
+
+
+test('v21.2 RED: actual first-ten HP battery and power-supply cards must not masquerade as complete laptops',()=>{
+  // Exact titles observed in the independent real Chromium PR #108 candidate
+  // at HEAD f03ac1a4, 2026-10-20, browser workflow #39451442245.
+  // Customer-visible card samples, not invented merchant fixtures.
+  const leaked=[
+    'ARyee Laptop Battery Replacement for HP 807956-001 807957-001 HS04 HS03 807612-421 807611-221 240 G4 HSTNN-LB6U',
+    'Fegishilly Compatible with HP OmniBook Ultra Flip 2-in-1 14" (14-fh) 2024 Laptop High Transparency Silicone TPU Laptop Keyboard Cover',
+    'ARyee Laptop Battery for HP EliteBook 8460p 8460w 8470p 8470w 8560p 8570p HP ProBook 6360b',
+    'BIUBOTY TF03XL HT03XL Battery Compatible with HP Pavilion X360 Series',
+    'HP 65W USB-C GaN Laptop Power Supply Compatible with HP PCs with USB-C Port - Black'
+  ];
+  for(const q of ['HP laptop','لابتوب اتش بي']){
+    const retained=filterQueryOffers(q,leaked.map(t=>offer(t))).offers;
+    assert.deepEqual(retained.map(x=>x.title),[],q+' must not show replacement batteries, keyboard covers or external power supplies');
+    for(const title of leaked){
+      const o=offer(title);
+      assert.equal(productCategory(o),'accessory','category: '+title);
+      assert.equal(assessOfferMatch(q,o).exactMatch,false,'false exact: '+title);
+    }
+  }
+  const genuine=offer('HP Pavilion 15 Laptop Intel Core i5 16GB RAM 512GB SSD with 9-hour Battery Life','15eg123');
+  assert.equal(productCategory(genuine),'laptop','device battery life must not change primary product type');
+  assert.equal(filterQueryOffers('HP laptop',[genuine]).offers.length,1);
+});
+
+test('v21.2: explicit HP laptop battery shopping intent retains compatible accessories',()=>{
+  const battery=offer('ARyee Laptop Battery Replacement for HP 807956-001 HS04 HS03 240 G4');
+  assert.equal(productCategory(battery),'accessory');
+  assert.equal(filterQueryOffers('HP laptop battery',[battery]).offers.length,1,
+    'explicit accessory intent must not be suppressed by a broad laptop-only guard');
+});
