@@ -56,3 +56,31 @@ test('v18.2: genuine laptop bundled with included sleeve keeps primary computer 
  assert.equal(productCategory(x),'laptop');
  assert.equal(assessOfferMatch('HP laptop',x).exactMatch,true);
 });
+
+test('v18.2 RED: observed Arabic HP first ten must not exact-match fan, shell, privacy screen, pen, briefcase or LCD parts',()=>{
+ const observed=[
+  'Jectse L77560-001 Laptop CPU Cooling Fan Fit for HP Pavilion Gaming 16-A',
+  'CPU Cooling Fan for HP Pavilion X360 14m-dh Series',
+  'Fegishilly Compatible with HP Envy X360-14 Laptop Protective Shell',
+  'IPROKKO Laptop Privacy Screen 14 Inch for HP',
+  'mCover Only Compatible with HP EliteBook 840 G7 G8 Laptop Series',
+  'CaoXiong Active Pen G3 Compatible with HP EliteBook x360',
+  'HP Renew Business Laptop Briefcase 14.1 inch Black',
+  'HP Laptop-Rucksack für 15,6',
+  'A Plus Screen Generic Laptop LED LCD Replacement for HP Pavilion 15',
+ ];
+ for(const title of observed){
+  const item=offer(title);
+  assert.equal(productCategory(item),'accessory','accessory category: '+title);
+  assert.equal(assessOfferMatch('لابتوب اتش بي',item).exactMatch,false,'Arabic principal result: '+title);
+ }
+ const trueLaptop=offer('HP Pavilion 15 Laptop Intel Core i5 16GB 512GB SSD','15-eg999');
+ const retained=filterQueryOffers('لابتوب اتش بي',[...observed.map(t=>offer(t)),trueLaptop]).offers;
+ assert.deepEqual(retained.map(o=>o.title),[trueLaptop.title]);
+});
+test('v18.2 RED: sparse unverified generic laptop listing must not claim an exact computer',()=>{
+ const uncertain=offer('HP Everyday Laptop');
+ assert.equal(assessOfferMatch('لابتوب اتش بي',uncertain).exactMatch,false);
+ const verified=offer('HP EliteBook 840 G10 Notebook Intel Core i7 16GB RAM','840G10');
+ assert.equal(assessOfferMatch('لابتوب اتش بي',verified).exactMatch,true);
+});
