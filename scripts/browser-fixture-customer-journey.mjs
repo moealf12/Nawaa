@@ -623,6 +623,25 @@ try{
     consoleOnly.some(t=>t.includes('نسخة رقمية')&&t.includes('حزمة'))&&
     sharaf?.sourceUrl?.includes('sharafdg.com/product/'),
     {kind:sharaf?.productKind,exact:sharaf?.exactMatch,title:sharaf?.title,displayed:consoleOnly});
+  // Historical Sharaf DG UAE fixture uses AED 2599. It must remain a console
+  // result but must NOT be rendered as SAR 2599 without an evidenced FX conversion.
+  const rawForeignAmount=new Intl.NumberFormat('ar-SA',{maximumFractionDigits:2}).format(2599);
+  const sarMislabel=rawForeignAmount+' ر.س';
+  const cardText=await ps5IdentityTab.locator('#results .match-result-card').allTextContents();
+  assertCheck('v181_unconverted_AED_never_appears_as_SAR_card_price',
+    !cardText.some(text=>text.includes(sarMislabel)),
+    {foreignCurrency:'AED',sourcePrice:2599,incorrectSARLabel:sarMislabel});
+  const uaeIndex=consoleOnly.findIndex(title=>title.includes('نسخة رقمية')&&title.includes('حزمة'));
+  if(uaeIndex>=0){
+    await ps5IdentityTab.locator('#results .match-result-card').nth(uaeIndex).click();
+    const warning=await ps5IdentityTab.locator('#results .merchant-warnings').allTextContents();
+    assertCheck('v181_unconverted_AED_comparison_exposes_conversion_uncertainty',
+      warning.some(text=>text.includes('سعر المصدر بعملة أجنبية')),
+      {warnings:warning});
+  }else{
+    assertCheck('v181_unconverted_AED_comparison_exposes_conversion_uncertainty',false,
+      'foreign console bundle card not found in controlled fixture');
+  }
   await ps5IdentityTab.setViewportSize({width:390,height:844});
   const sharafMobile=await ps5IdentityTab.evaluate(()=>({
     viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
