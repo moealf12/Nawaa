@@ -153,10 +153,16 @@ try{
     if(mode==='candidate'){
       // Real merchant-product regression using the already received SSE events.
       // Accessories may be offered as related products, but cannot be exact PS5 consoles.
-      const accessoryPath=/(?:other-gaming-accessories-644723|other-gaming-accessories-629492|B09DRTJ194|B08VW55CSZ|B0CQD48RJS|\/playstation-games\/)/i;
+      const accessoryPath=/(?:other-gaming-accessories-644723|other-gaming-accessories-629492|B09DRTJ194|B08VW55CSZ|B0CQD48RJS|B09NXT3NMW|\/playstation-games\/)/i;
+      // Name-based product-type signal protects against a new ASIN for a
+      // standalone stand; a genuine PS5 console INCLUDING a stand is safe.
+      const standaloneStand=/^(?:sony )?(?:ps[45]|playstation [45]) (?:vertical |replacement )?stands?\b|\b(?:vertical|replacement) stands? for (?:sony )?(?:ps[45]|playstation [45])\b/i;
+      const includedConsole=/^(?:sony )?(?:ps[45]|playstation [45])\b.*\bconsole\b.*\b(?:with|includes|including)\b.*\bstands?\b/i;
       const captured=[...(report.ps5SourceEvidence?.first||[]),...(report.ps5SourceEvidence?.suspicious||[])];
       report.assertions.noKnownAccessoryCertifiedConsole=!captured.some(
-        offer=>accessoryPath.test(offer.source||'') && offer.exactMatch === true);
+        offer=>offer.exactMatch === true &&
+          (accessoryPath.test(offer.source||'') ||
+          (standaloneStand.test(offer.title||'') && !includedConsole.test(offer.title||''))));
     }
   }
   // Browser-observed first TEN actual product cards (not raw offer records).
