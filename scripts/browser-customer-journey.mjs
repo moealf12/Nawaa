@@ -212,6 +212,21 @@ try{
     };
     report.assertions.firstTenComparisonsUsable=report.firstTenGroups.every(group=>
       Boolean(group.title)&&group.merchantRows>0&&group.detailActions>0);
+
+    // Real Best Buy PDPs #6443168/#6443134 were observed occupying the
+    // generic Saudi-first iPhone17 first-ten. The merchant explicitly denotes
+    // AT&T/Verizon activation-plan variants, not verified unlocked/Saudi-ready
+    // devices. They remain relevant only to explicit carrier searches.
+    if(query==='iPhone 17'){
+      const carrierPlanCards=report.firstTenGroups.filter(group=>
+        /\(\s*(?:at\s*&\s*t|verizon|t[- ]mobile)\s*\)/i.test(group.title||''));
+      report.iphoneCarrierComparability={
+        query,groupsInspected:report.firstTenGroups.length,
+        unrequestedCarrierPlanTitles:carrierPlanCards.map(group=>group.title),
+        assertionScope:'explicit_carrier_plan_titles_only_not_shipping_or_SIM_lock_certification'
+      };
+      report.assertions.noUnrequestedCarrierPlanAtFirstTen=carrierPlanCards.length===0;
+    }
     // Real customer smoke: HP computer searches must not surface sleeve, bag or
     // sling accessories as laptop product cards. Explicit accessory searches
     // remain a separate, permitted intent. This is a targeted guard, NOT an
