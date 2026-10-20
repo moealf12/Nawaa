@@ -1354,8 +1354,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
       }
     }
+    const aliexpressProductLinkTrust = {rejectedProductLinks:0,rejectionSamples:[]};
     const htmlFirstOffers =
-      store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query) :
+      store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query, aliexpressProductLinkTrust) :
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "samsung-sa" ? extractSamsungSearchOffers(html, query) :
@@ -1545,6 +1546,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       diagnostics:{
         queryFilter,
         queryFilterSamples,
+        // Keep bounded rejection reasons without replaying user-specific URL
+        // query strings, credentials or merchant cookies into CI artifacts.
+        productLinkTrust:store.id === "aliexpress-cn" ? aliexpressProductLinkTrust : null,
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         candidateSamples:(directSearchOffers.length
