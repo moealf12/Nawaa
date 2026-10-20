@@ -1,0 +1,92 @@
+name: NAWAA Release Candidate Live Smoke
+on:
+  pull_request:
+    paths:
+      - 'scripts/diagnose-candidate-search.mjs'
+      - 'scripts/*latency*.mjs'
+      - 'src/search-first-offer-metrics.mjs'
+      - 'src/search-coverage-status.mjs'
+      - 'scripts/measure-representative-first-offer.mjs'
+      - 'scripts/simulate-source-first-offer.mjs'
+      - 'tests/search-first-offer-source-simulation.test.mjs'
+      - 'scripts/benchmark-match-filter.mjs'
+      - 'server/search-index.mjs'
+      - 'server/persistence.mjs'
+      - 'src/search-query.mjs'
+      - 'server/server.mjs'
+      - 'server/providers/extra-unbxd.mjs'
+      - 'scripts/probe-extra-fields.mjs'
+      - 'tests/extra-unbxd-json-parity.test.mjs'
+      - 'tests/search-stream-pagination.test.mjs'
+      - '.github/workflows/release-candidate-live-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-release-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  real-source-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies (no lifecycle scripts)
+        run: npm ci --ignore-scripts
+      - name: Test disposable candidate HTTP API and live storefronts (no production writes)
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NODE_ENV: test
+        run: node scripts/diagnose-candidate-search.mjs
+      - name: Bounded cross-intent first-offer SSE (one request per query, no retries)
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/measure-representative-first-offer.mjs
+      - name: Probe Unbxd projection safely (no change to customer-facing request)
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          NAWAA_PROFILE_EXTRA: '1'
+          NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
+        run: node scripts/probe-extra-fields.mjs
+      - name: Check out the v15.20 pre-index-write-guard production parent on the same runner
+        uses: actions/checkout@v4
+        with:
+          ref: d40a65990bc551e2db20c73890874567e502bd10
+          path: .latency-baseline
+          persist-credentials: false
+      - name: Reuse identical locked dependencies for the baseline
+        run: |
+          cmp package-lock.json .latency-baseline/package-lock.json
+          ln -s "$GITHUB_WORKSPACE/node_modules" .latency-baseline/node_modules
+      - name: Controlled normalization CPU A/B and cross-version semantic equivalence
+        run: node scripts/benchmark-query-normalization.mjs .latency-baseline .
+      - name: Check matching semantics and benchmark filtering on one CPU
+        run: node scripts/benchmark-match-filter.mjs .latency-baseline .
+      - name: Alternate baseline and candidate cold/warm measurements (not P95 certification)
+        env:
+          LATENCY_SAMPLES: '3'
+          NAWAA_PROFILE_EXTRA: '1'
+          NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
+          NAWAA_PROFILE_STREAM: '1'
+          LATENCY_OUTPUT: latency-results.json
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/measure-search-latency.mjs .latency-baseline .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: candidate-latency-${{ github.event.pull_request.head.sha || github.sha }}
+          path: latency-results.json
+          retention-days: 7

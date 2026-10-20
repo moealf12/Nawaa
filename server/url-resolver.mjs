@@ -9,6 +9,7 @@ import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
 import { selectVariantCandidates } from "./product-variant.mjs";
 import { extractShopifyVariantState } from "./shopify-page-variant.mjs";
+import { resolveStructuredProductNodes } from "./schemaorg-product-graph.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
@@ -210,7 +211,7 @@ function flattenJsonLd(node, out = []) {
   return out;
 }
 
-function extractJsonLd(html) {
+function extractJsonLd(html, pageUrl = null) {
   const out = [];
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
@@ -221,7 +222,7 @@ function extractJsonLd(html) {
       flattenJsonLd(JSON.parse(raw), out);
     } catch {}
   }
-  return out;
+  return resolveStructuredProductNodes(out, pageUrl);
 }
 
 function typeIncludesProduct(type) {
@@ -287,6 +288,10 @@ export function extractEmbeddedProductState(html) {
   let match;
   while ((match = re.exec(String(html || "")))) {
     const attrs = match[1] || "";
+    // Schema.org JSON-LD is handled by the identity-aware JSON-LD path.
+    // Treating the same script as arbitrary embedded state independently
+    // promotes each nested variant Offer into an unrelated priced Product.
+    if (/\btype\s*=\s*["']application\/ld\+json["']/i.test(attrs)) continue;
     const raw = match[2].trim();
     if (!raw || raw.length > 1500000) continue;
     const looksJson = /type=["']application\/json["']/i.test(attrs) ||
@@ -420,9 +425,15 @@ export function extractMetaProductState(html) {
 }
 
 export function extractionCandidates(html, url = null) {
-  const nodes = extractJsonLd(html);
+  const nodes = extractJsonLd(html, url);
   const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
-  const jsonld = products.find((p) => chooseOffer(p)) || products[0] || null;
+  // An explicit family ProductGroup is evidence for this product page.
+  // A separate priced Product in the same graph may be a recommendation or
+  // cross-sell, not the requested item. Never let its cheaper price displace
+  // an ambiguous generic family. Explicit variants are resolved downstream.
+  const groups = products.filter(p => p.schemaProductGroupEvidence === true);
+  const jsonld = groups.length ? (groups.length === 1 ? groups[0] : null)
+    : products.find((p) => chooseOffer(p)) || products[0] || null;
   const embedded = extractEmbeddedProductState(html);
   const hydrated = extractHydratedProductState(html);
   const storefront = (url && extractShopifyVariantState(html,url)) || extractStorefrontProductState(html);
@@ -439,22 +450,29 @@ export function extractionCandidates(html, url = null) {
 }
 
 function chooseOffer(product) {
-  const raw = product && product.offers;
-  let offers = [];
-  if (Array.isArray(raw)) offers = raw;
-  else if (raw && Array.isArray(raw.offers)) offers = raw.offers;
-  else if (raw) offers = [raw];
-
-  const normalized = offers.map((offer) => ({
-    raw: offer,
-    price: parseMoney(offer && (offer.price ?? offer.lowPrice ?? offer.highPrice)),
-    currency: offer && offer.priceCurrency || null,
-    availability: String(offer && offer.availability || "").toLowerCase(),
-    url: offer && offer.url || null,
-  })).filter((offer) => offer.price !== null);
-
-  normalized.sort((x,y) => x.price - y.price);
-  return normalized[0] || null;
+  const raw = product?.offers;
+  // AggregateOffer advertises a PRICE RANGE, not an item-level merchant
+  // price. Do not promote lowPrice or highPrice into a purchasable offer.
+  const type = value => Array.isArray(value?.["@type"])
+    ? value["@type"].some(t=>String(t).toLowerCase()==="aggregateoffer")
+    : String(value?.["@type"]||"").toLowerCase()==="aggregateoffer";
+  if (type(raw)) return null;
+  const offers = Array.isArray(raw) ? raw
+    : raw && Array.isArray(raw.offers) ? raw.offers
+    : raw ? [raw] : [];
+  // An unqualified Product page with sibling variants cannot establish
+  // which variant the requested URL selects. Explicit ?variant=... requests
+  // are narrowed to a single exact Offer by selectVariantCandidates().
+  if (offers.length !== 1 || type(offers[0])) return null;
+  const offer = offers[0];
+  const price = parseMoney(offer?.price);
+  if (price === null || price <= 0) return null;
+  return {
+    raw:offer,price,
+    currency:offer.priceCurrency || null,
+    availability:String(offer.availability||"").toLowerCase(),
+    url:offer.url || null,
+  };
 }
 
 function inferCountry(url, currency) {
@@ -485,12 +503,38 @@ function inferCountry(url, currency) {
     : { countryCode: "UN", countryNameAr: "دولي" };
 }
 
-function merchantName(url) {
-  const host = new URL(url).hostname.replace(/^www\./i, "");
-  const first = host.split(".")[0] || host;
-  return first.charAt(0).toUpperCase() + first.slice(1);
+export function merchantName(url) {
+  const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  const labels = host.split(".").filter(Boolean);
+  // Infrastructure subdomains are not retailer brands.
+  const infrastructure = new Set(["app","shop","store","mobile","m","web"]);
+  const first = labels.length >= 3 && infrastructure.has(labels[0]) ? labels[1] : labels[0];
+  const known = {virginmegastore:"Virgin Megastore",extra:"eXtra",jarir:"Jarir"};
+  return known[first] || (first ? first.charAt(0).toUpperCase() + first.slice(1) : host);
 }
 
+
+
+function declaredSchemaProductType(product) {
+  // Some merchants publish the core-versus-accessory product type only in
+  // Schema.org additionalProperty. Preserve explicitly declared PDP evidence
+  // without guessing from category labels, descriptions or sibling products.
+  const properties = Array.isArray(product?.additionalProperty)
+    ? product.additionalProperty.slice(0, 50)
+    : product?.additionalProperty ? [product.additionalProperty] : [];
+  const types = new Map();
+  for (const property of properties) {
+    if (!property || typeof property !== "object" || Array.isArray(property)) continue;
+    const key = String(property.name ?? property.propertyID ?? "").trim().toLowerCase();
+    if (key !== "type" && key !== "product type") continue;
+    if (typeof property.value !== "string") continue;
+    const value = property.value.trim();
+    if (!value || value.length > 80 || /[\u0000-\u001f\u007f]/.test(value)) continue;
+    types.set(value.toLowerCase(), value);
+  }
+  // Conflicting merchant claims remain unknown, never pick an arbitrary Type.
+  return types.size === 1 ? types.values().next().value : null;
+}
 
 export async function extractProductDocument(url, options = {}) {
   const fetched = await fetchHtmlSafe(url, 0, options);
@@ -575,7 +619,7 @@ export async function resolveProductUrl(url, options = {}) {
     sku: product?.sku || null,
     variantId: product?.variantId || null,
     vendor:product?.vendor || null,
-    productType:product?.productType || null,
+    productType:product?.productType || declaredSchemaProductType(product),
     specs: {
       brand: typeof product?.brand === "string" ? product.brand : product?.brand?.name || null,
       deviceType: typeof product?.model === "string" ? product.model : product?.model?.name || null,

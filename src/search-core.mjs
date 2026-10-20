@@ -62,6 +62,10 @@ export function productMatchScore(query, product) {
 }
 
 export function calculateComparableTotal(offer) {
+  // Currency trust boundary: original foreign amounts are not SAR totals.
+  // Source adapters must convert into SAR with provenance before comparison.
+  const code = String(offer?.currency || "").trim().toUpperCase();
+  if (code && code !== "SAR") return null;
   const components = [
     offer.productPrice,
     offer.shipping,
@@ -108,10 +112,24 @@ export function classifyOffer(offer) {
 }
 
 export function enrichOffer(offer) {
-  return {
+  // Never treat raw AED/USD/EUR numbers as Saudi riyals, even if a
+  // merchant adapter accidentally bypasses FX normalization.
+  // Retain the original numeric source amount for troubleshooting.
+  const code = String(offer?.currency || "").trim().toUpperCase();
+  const needsConversion = Boolean(code && code !== "SAR");
+  const safeOffer = needsConversion ? {
     ...offer,
-    totalSAR: calculateComparableTotal(offer),
-    bucket: classifyOffer(offer),
+    originalProductPrice: Number.isFinite(offer.originalProductPrice)
+      ? offer.originalProductPrice : offer.productPrice,
+    productPrice: null,
+    currency: code,
+    priceConfidence: "unverified_conversion",
+    priceConversionStatus: "unverified_currency",
+  } : offer;
+  return {
+    ...safeOffer,
+    totalSAR: calculateComparableTotal(safeOffer),
+    bucket: classifyOffer(safeOffer),
   };
 }
 
@@ -149,6 +167,14 @@ function normalizeVariantPart(value = "") {
   return normalizeText(value)
     .replace(/\b(\d+)\s+(gb|tb|mb)\b/g, "$1$2")
     .trim();
+}
+
+// Exact-size inch marks and spelled-out inch units represent the same diagonal.
+// This is intentionally scoped to screenSize; unknown/mismatched units stay distinct.
+function normalizedScreenSize(value = "") {
+  const raw = String(value).normalize("NFKC").trim().toLowerCase();
+  const inch = raw.match(/^(\d+(?:[.,]\d+)?)\s*(?:["″]|inch(?:es)?|in\.?)$/i);
+  return inch ? Number(inch[1].replace(",", ".")) + "inch" : normalizeVariantPart(value);
 }
 
 function normalizedBrand(value = "") {
@@ -199,7 +225,10 @@ function comparableIdentity(offer = {}) {
   };
   for (const [key,value] of Object.entries(specs)) {
     if (category === "phone" && key.toLowerCase() === "processor") continue;
-    if (/^(size|weight|capacity|pack|pack size|quantity|material|style|flavor|grind|processor|gpu|screenSize|network)$/i.test(key) && value != null) attributes[normalizeText(key)] = normalizeVariantPart(value);
+    if (/^(size|weight|capacity|pack|pack size|quantity|material|style|flavor|grind|processor|gpu|screenSize|network)$/i.test(key) && value != null) {
+      const name = normalizeText(key);
+      attributes[name] = name === "screensize" ? normalizedScreenSize(value) : normalizeVariantPart(value);
+    }
   }
   return {brand, category, model:normalizedModel(offer), sku:normalizedModelIdentifier(specs.modelNumber || ""), condition:normalizeVariantPart(offer.condition || "unknown"), attributes};
 }
@@ -212,6 +241,9 @@ function comparablePair(a, b) {
     // Console SKUs can identify the same chassis when one title omits Slim.
     if (sameSku && key === "form") continue;
     const x = a.attributes[key] || "", y = b.attributes[key] || "";
+    // An explicitly regional phone is not interchangeably certified against
+    // an unknown-region phone, even when their reported MPNs agree.
+    if (a.category === "phone" && key === "region" && x !== y) return false;
     const coreVariant = ["storage","color","edition","form","bundle"].includes(key);
     if (x !== y && ((coreVariant && !sameSku) || (x && y))) return false;
   }
@@ -268,7 +300,7 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
   }
 
   const usedKeys = new Map();
-  return groups.map(entries => {
+  const grouped = groups.map(entries => {
     const baseKey = entries[0].key;
     const count = usedKeys.get(baseKey) || 0;
     usedKeys.set(baseKey, count + 1);
@@ -304,13 +336,42 @@ export function groupComparableOffers(offers = [], mode = "lowest") {
         ? secondValue - bestValue
         : null,
     };
-  }).sort((a, b) => {
+  });
+  // Anchor confidence cohorts to the strongest accepted group in the same
+  // exact/availability class. Per-pair cutoff comparators are non-transitive:
+  // A may beat C on confidence while B beats A and C beats B on price.
+  // Assign a stable cohort before applying price ordering to avoid arrival-
+  // order-dependent first screens across independently completing merchants.
+  const ceiling = new Map();
+  const availabilityClass = group => group.bestOffer?.availability === "out_of_stock" ||
+    group.bestOffer?.canShipToSaudi === false ? "unavailable" : "available";
+  for (const group of grouped) {
+    if (group.bestOffer?.exactMatch !== true) continue;
+    const key = availabilityClass(group);
+    const confidence = Number.isFinite(group.bestOffer?.matchConfidence)
+      ? group.bestOffer.matchConfidence : 0;
+    ceiling.set(key,Math.max(ceiling.get(key) ?? 0,confidence));
+  }
+  const relevanceBand = group => {
+    const top=ceiling.get(availabilityClass(group)) ?? 0;
+    const confidence=Number.isFinite(group.bestOffer?.matchConfidence)
+      ? group.bestOffer.matchConfidence : 0;
+    return Math.floor((Math.max(0,top-confidence)+1e-10)/0.07);
+  };
+  return grouped.sort((a, b) => {
     const aExact = a.bestOffer?.exactMatch === true ? 0 : 1;
     const bExact = b.bestOffer?.exactMatch === true ? 0 : 1;
     if (aExact !== bExact) return aExact - bExact;
     const aUnavailable = a.bestOffer?.availability === "out_of_stock" || a.bestOffer?.canShipToSaudi === false ? 1 : 0;
     const bUnavailable = b.bestOffer?.availability === "out_of_stock" || b.bestOffer?.canShipToSaudi === false ? 1 : 0;
     if (aUnavailable !== bUnavailable) return aUnavailable - bUnavailable;
+
+    // Cohorts are fixed once for every group, so sorting remains transitive.
+    // Each cohort contains comparable evidence; lower price wins within it.
+    if (aExact === 0 && bExact === 0) {
+      const bandDifference = relevanceBand(a) - relevanceBand(b);
+      if (bandDifference) return bandDifference;
+    }
 
     const aValue = Number.isFinite(a.bestValue) ? a.bestValue : Infinity;
     const bValue = Number.isFinite(b.bestValue) ? b.bestValue : Infinity;
@@ -387,6 +448,7 @@ export function buildOfferIntelligence(group = {}) {
     if (offer.sourceMeta?.jeddahInStock === false) warnings.push("غير متوفر حاليًا في جدة");
     if (offer.availability === "out_of_stock") warnings.push("غير متوفر لدى المتجر");
     if (offer.availability === "unknown" && offer.sourceMeta?.jeddahInStock !== true) warnings.push("التوفر التفصيلي غير مؤكد");
+    if (offer.priceConversionStatus === "unverified_currency") warnings.push("سعر المصدر بعملة أجنبية؛ لم يُتحقق من تحويله إلى الريال");
     if (offer.canShipToSaudi === false) warnings.push("لا يشحن إلى السعودية");
     if (offer.canShipToSaudi == null) warnings.push("الشحن إلى السعودية غير مؤكد");
     if (missingCosts.length) warnings.push("تكلفة غير مكتملة: " + missingCosts.join("، "));

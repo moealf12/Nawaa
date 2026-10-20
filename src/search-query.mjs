@@ -2,7 +2,7 @@
 const ALIASES = [
   ["قهوه", "coffee"], ["بن", "coffee"], ["قميص", "shirt"], ["ملابس", "clothing"],
   ["اي فون", "iphone"], ["ايفون", "iphone"], ["اير بودز", "airpods"], ["ايربودز", "airpods"],
-  ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"],
+  ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"], ["للبلايستيشن", "playstation"],
   ["سامسونج", "samsung"], ["جالاكسي", "galaxy"], ["جالكسي", "galaxy"],
   ["ابل", "apple"], ["دايسون", "dyson"], ["سوني", "sony"],
   ["سواروفسكي", "swarovski"], ["سوارفسكي", "swarovski"],
@@ -44,6 +44,11 @@ const ALIASES = [
   ["سماعات", "headphones"], ["سماعه", "headphones"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
 
+// Compile immutable alias patterns once: offer matching calls normalization
+// repeatedly per result/snapshot. String.replace resets global RegExp.lastIndex.
+const COMPILED_ALIASES = ALIASES.map(([alias, canonical]) =>
+  [new RegExp("(^| )" + alias + "(?= |$)", "g"), canonical]);
+
 export function normalizeSearchQuery(value = "") {
   let text = String(value).normalize("NFKC").toLowerCase()
     .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
@@ -54,8 +59,13 @@ export function normalizeSearchQuery(value = "") {
 
   text = text.replace(/\b(\d+)(?:st|nd|rd|th)\b/g, "$1")
     .replace(/([ء-ي])(?=\d)/g, "$1 ").replace(/(\d)(?=جيجا|تيرا)/g, "$1 ");
-  for (const [alias, canonical] of ALIASES) {
-    text = text.replace(new RegExp("(^| )" + alias + "(?= |$)", "g"), "$1" + canonical);
+  // E1 Jarir 677770: Arabic "PS5 with an extra controller" requests a
+  // complete console retail bundle, not a separately sold gamepad. Require
+  // the explicit inclusion phrase; ordinary controller searches are unchanged.
+  text=text.replace(/(^| )مع (?:يد تحكم|يد) اضافيه(?= |$)/g,
+    "$1console bundle controller");
+  for (const [pattern, canonical] of COMPILED_ALIASES) {
+    text = text.replace(pattern, "$1" + canonical);
   }
   if (/\b(?:iphone|galaxy)\b/.test(text)) text = text.replace(/\b(64|128|256|512|1024)(?= |$)(?!\s+(?:gb|tb)\b)/g, "$1gb");
   return text.replace(/(^| )(?:ابغي|ابي|اريد|ابحث|عن|لي|بافضل|افضل|ارخص|سعر|اشتري|please|find)(?= |$)/g, " ")
@@ -106,7 +116,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|laptop bags?|stylus|stylus pen|photo paper|printhead|print head)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|briefcases?|rucksacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with|(?:laptop|notebook) batter(?:y|ies)|(?:replacement|compatible|spare) batter(?:y|ies)|batter(?:y|ies) (?:replacement|compatible|for)|power suppl(?:y|ies)|stylus|stylus pen|photo paper|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -143,8 +153,85 @@ export const PRODUCT_CATEGORIES = [
   ['tool','أدوات', /\b(?:drill|saw|screwdriver|power tool)\b/],
 ];
 export function productCategory(offer = {}) {
-  const gaming = describeProduct(offer);
+  return productCategoryWithDescription(offer, describeProduct(offer));
+}
+
+// Do not classify a verified full HP notebook retail package as a standalone
+// carry accessory merely because its title explicitly includes a sleeve.
+function isVerifiedLaptopCarryBundle(offer = {}) {
+  const retailTitle = normalizeSearchQuery(offer.title || "");
+  const separator = retailTitle.search(/\b(?:with|including|includes)\b/);
+  if (separator < 0) return false;
+  const primary = retailTitle.slice(0,separator).trim();
+  const included = retailTitle.slice(separator);
+  return /\b(?:laptop|notebook)\b/.test(primary) &&
+    /\b(?:pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen)\b/.test(primary) &&
+    !/\b(?:sleeve|sling|bag|case|pouch|cover)\b/.test(primary) &&
+    /\b(?:laptop |notebook )?(?:sleeve|sling|bag|case|pouch)\b/.test(included) &&
+    /\d/.test(String(offer.specs?.modelNumber || ""));
+}
+
+// Full laptop chassis evidence outranks internal-storage keywords. SSD/RAM
+// installed INSIDE a laptop is not the standalone SSD product being sold.
+// Accessories compatible WITH a laptop remain accessories, even when model
+// and CPU details occur in the compatibility description.
+function isEvidencedCompleteLaptop(offer = {}) {
+  const retail = normalizeSearchQuery(offer.title || "");
+  if (!/\b(?:laptop|notebook|chromebook|macbook|omnibook|elitebook|pavilion|probook|spectre|envy|victus|omen)\b/.test(retail)) return false;
+  if (!/\b(?:intel|amd|ryzen|core(?: i[3579])?|celeron|pentium|snapdragon|processor|\d+gb ram|ram \d+gb|windows)\b/.test(retail)) return false;
+  // Retail subject beats compatibility metadata. A keyboard offered *for*
+  // laptops may mention CPU/Windows, but it is still a keyboard. If a laptop
+  // bundle genuinely includes a keyboard, the computer subject precedes
+  // the explicitly included peripheral.
+  const soldPeripheral=retail.search(/\b(?:keyboards?|mice|mouse)\b/);
+  if(soldPeripheral>=0){
+    const computerSubject=retail.search(/\b(?:laptop|notebook|chromebook|macbook)\b/);
+    if(computerSubject<0||soldPeripheral<computerSubject||
+       !/\b(?:with|includes|including|bundle)\b/.test(retail.slice(computerSubject,soldPeripheral))) return false;
+  }
+  // A merchant selling an SSD *for* an HP laptop is not selling the laptop.
+  // Inspect the actual retail item subject before allowing hardware cues
+  // appearing in compatibility text (e.g. "Intel Core i7") to upgrade it.
+  if (/\b(?:ssds?|nvme)(?: \S+){0,3} for (?:hp|pavilion|laptop|notebook|elitebook|probook|spectre|omnibook)\b/.test(retail)) return false;
+  if (/\b(?:sleeve|sling|briefcase|rucksack|backpack|protective shell|privacy screen|active pen|cooling fan|cpu fan|lcd replacement|screen replacement|ssd replacement|replacement ssd|only compatible with|compatible with|fit for)\b/.test(retail)) return false;
+  return true;
+}
+
+// The matching path already computed describeProduct(offer); reuse that immutable
+// value rather than normalizing its title and metadata a second time.
+function productCategoryWithDescription(offer, gaming) {
   if (gaming.kind !== 'product') return gaming.kind;
+  // Merchant retail SUBJECT leads: Spanish "Adaptador/Cargador/Convertidor
+  // ... para iPhone 17" sells a peripheral, not an iPhone. Match only the
+  // title-leading noun, so a genuine "iPhone 17 con cargador incluido" remains
+  // a phone. Real Chromium AliExpress first-ten regression v21.4.
+  if (/^\s*(?:adaptador(?:es)?|cargador(?:es)?|convertidor(?:es)?)\b/i.test(String(offer?.title || '')))
+    return 'accessory';
+  // An accessory labelled "For iPhone 17" is an item COMPATIBLE with
+  // that handset, not evidence that the merchant sells the handset itself.
+  // The subject must be a phone, not a protection kit or wallet mentioning
+  // it in compatibility text. Captured Amazon first-ten X-LEADER example.
+  // Preserve titles which actually START with the Apple iPhone device.
+  const primaryRetailTitle=String(offer?.title || '');
+
+  // A title beginning "Capa ... iPhone" sells a Portuguese phone cover.
+  // The compatible iPhone model does not establish a complete handset.
+  if (/^\s*capas?\b/i.test(primaryRetailTitle) &&
+      /\biphone\s+\d+\b/i.test(primaryRetailTitle)) return 'accessory';
+
+  if (/\b(?:for|compatible with|fits)\s+(?:apple\s+)?iphone\s+\d+\b/i.test(primaryRetailTitle) &&
+      !/^\s*(?:(?:genuine|original|refurbished|renewed|used|new)\s+)?(?:apple\s+)?iphone\s+\d+\b/i.test(primaryRetailTitle))
+    return 'accessory';
+  // Compatibility-only retail subjects are not complete computers. The
+  // seller's item precedes "Compatible with HP"; later OmniBook/laptop words
+  // describe supported devices, even if "keyboard cover" was title-clipped.
+  const normalizedRetailTitle=normalizeSearchQuery(primaryRetailTitle);
+  const hpClaim=normalizedRetailTitle.match(/\bcompatible with (?:hp|hewlett packard)\b/);
+  const computerSubjectBeforeClaim=hpClaim && /\b(?:laptops?|notebooks?|chromebooks?|macbooks?|computers?|desktops?|pcs?|pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen)\b/.test(
+    normalizedRetailTitle.slice(0,hpClaim.index));
+  if(hpClaim && !computerSubjectBeforeClaim) return 'accessory';
+  if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
+  if (isEvidencedCompleteLaptop(offer)) return 'laptop';
   let urlSemantic = "";
   try {
     const parsedUrl = new URL(String(offer?.sourceUrl || ""));
@@ -236,12 +323,67 @@ export function buildProviderFallbackQueries(value = "") {
 }
 
 const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)?)\b/;
-const GAMING_ACCESSORY = /\b(?:controller|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|cover|case|accessory|accessories|gift card|recharge card)\b/;
+// A separate optical/disc drive is a peripheral even when a merchant title
+// mentions "PlayStation 5 Digital Edition". Disc-edition *consoles* remain consoles.
+const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
+// Console accessories may mention a complete PS5 console in compatibility text.
+// Reject peripheral product nouns before trusting 'Console / Digital Edition'.
+const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
+// Storage-media nouns identify a sold component, not the PS5 it fits.
+// A title-leading real console subject remains a console when its SSD is included.
+const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
+// Item for sale versus the SSD it cools/houses: a part naming "NVMe SSD"
+// is not itself solid-state storage. A drive sold WITH its heatsink is.
+const STORAGE_PART_NOUN = /\b(?:heatsinks?|heat sinks?|cooling plates?|enclosures?|ssd cases?|thermal pads?|installation kits?)\b/;
+const COMPLETE_SSD_WITH_COOLING = /\b(?:ssds?|solid state drives?) (?:with|including|includes|plus)(?: [a-z]+){0,3} (?:heatsinks?|heat sinks?)\b/;
+const storagePartOnly = title => STORAGE_PART_NOUN.test(title) && !COMPLETE_SSD_WITH_COOLING.test(title);
+const GAMING_CONSOLE_PRIMARY = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|edition|standard|gaming|white|black|blu ray|\d+(?:gb|tb))){0,9}(?: console| (?:digital|disc) edition| (?:dig|digital|disc) \d+(?:gb|tb))\b/;
+const GAMING_GAME_PRODUCT = /\b(?:code in box|digital game code|download code|game card|video game|game disc)\b/;
+// Match already-normalized Arabic tokens using spaces, not JS \b (which does
+// not recognize Arabic letters as word characters). Keep console bundles safe.
+const GAMING_ARABIC_ACCESSORY = /(?:^| )(?:غطاء|اغطيه|مروحه تبريد|حامل|حامل جداري|حامل حائط|قارئ disc|قارئ disk|قارئ اقراص|هارد خارجي|قرص صلب خارجي|هب|موزع منافذ)(?= |$)/;
+const GAMING_STANDALONE_GAME = /^(?:game|games)(?: |$)|(?:^| )شريط(?: |$)/;
+const CONSOLE_WITH_INCLUDED_DRIVE = /\bconsole\b.*\b(?:with|including|includes)\b.*\b(?:disc|disk|optical|blu ray) drive\b/;
+// An accessory sold as a 'PS5 Console Hub Bundle' is not a console bundle.
+const CONSOLE_HUB_PRODUCT = /\bconsole\s+(?:(?:usb|multiport|expansion)\s+)?hubs?\b/;
+const GENUINE_CONSOLE_BUNDLE = title => /\bbundle\b/.test(title) && /\bconsole\b/.test(title) && !CONSOLE_HUB_PRODUCT.test(title);
+// Explicit console subject + inclusion is different from a "console hub"
+// accessory. Anchoring the console at the start prevents "stand for console
+// with USB hub" and "hub for PS5 console with charger" false positives.
+// The raw title is needed because normalization removes '+' separators.
+const CONSOLE_DEVICE_SUBJECT = /^(?:sony )?ps[45](?: (?:slim|pro|digital|disc|edition|standard|gaming|\d+(?:gb|tb))){0,7} console\b/;
+const CONSOLE_INCLUSION_LINK = /^(?: \d+(?:gb|tb))?(?: with| including| includes| plus)\b/;
+function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normalizedTitle) {
+  const subject = normalizedTitle.match(CONSOLE_DEVICE_SUBJECT);
+  if (!subject) return false;
+  // Retailers can place colour/region/edition between "Console" and a '+'
+  // that introduces a bundled peripheral. Inspect the ORIGINAL separator;
+  // normalized text drops '+'. Do not upgrade an accessory product titled
+  // "PS5 Console Cover + Controller" or "PS5 Console Hub + Charger".
+  const original = String(rawTitle);
+  const beforePlus = original.split(/\s+\+\s+/u)[0];
+  const basePrefix = normalizeSearchQuery(beforePlus).slice(subject[0].length).trim();
+  const explicitlyPlus = beforePlus !== original &&
+    !GAMING_ACCESSORY.test(basePrefix) && !GAMING_ARABIC_ACCESSORY.test(basePrefix);
+  if (CONSOLE_HUB_PRODUCT.test(normalizedTitle) && !explicitlyPlus) return false;
+  const remainder = normalizedTitle.slice(subject[0].length);
+  const explicitlyWith = CONSOLE_INCLUSION_LINK.test(remainder);
+  return (explicitlyWith || explicitlyPlus) &&
+    (GAMING_ACCESSORY.test(normalizedTitle) || GAMING_ARABIC_ACCESSORY.test(normalizedTitle) || GAMING_STORAGE_ACCESSORY.test(normalizedTitle));
+}
+
+
+// Strictly the two source-verified query intents. A generic search for a
+// controller or pack of controllers must remain accessory intent.
+const requestsIncludedPs5ControllerBundle = query =>
+  /^(?:ps5 dualsense bundle|ps5 console bundle controller)$/.test(query);
 
 function queryProductKind(query) {
   if (GAMING_PLATFORM.test(query)) {
-    if (GAMING_ACCESSORY.test(query)) return "accessory";
-    if (/\b(?:game|games)\b/.test(query)) return "game";
+    if (requestsIncludedPs5ControllerBundle(query)) return "console";
+    if (CONSOLE_WITH_INCLUDED_DRIVE.test(query) || explicitlyIncludedConsoleAccessory(query)) return "console";
+    if (GAMING_ACCESSORY.test(query) || GAMING_ARABIC_ACCESSORY.test(query) || GAMING_STORAGE_ACCESSORY.test(query) || /\bstorage\b/.test(query)) return "accessory";
+    if (GAMING_GAME_PRODUCT.test(query) || GAMING_STANDALONE_GAME.test(query) || /\b(?:game|games)\b/.test(query)) return "game";
     const remainder = query.replace(GAMING_PLATFORM, "").replace(/\b(?:sony|microsoft|nintendo|console|slim|pro|digital|disc|edition|bundle|new|used|refurbished|black|white|\d+(?:gb|tb))\b/g, "").trim();
     return remainder ? "game" : "console";
   }
@@ -253,11 +395,42 @@ export function describeProduct(offer = {}) {
   const metadata = normalizeSearchQuery([offer.specs?.deviceType, offer.specs?.series].filter(Boolean).join(" "));
   const platform = title.match(GAMING_PLATFORM)?.[0] || metadata.match(GAMING_PLATFORM)?.[0] || null;
   const sku = String(offer.specs?.modelNumber || "").replace(/[^a-z0-9]/gi, "");
-  const isBundle = /\bbundle\b/.test(title);
+  // Trust chassis-model corroboration only for a Sony PS5 subject, never a
+  // standalone storage part that merely claims console compatibility.
+  const evidencedConsoleChassis = /^CFI[127]\d/i.test(sku) && /^sony ps[45]\b/.test(title) &&
+    !storagePartOnly(title);
+  // E1 Jarir product 677771: the item is a complete PS5 Slim (DIG) 825GB SSD
+  // plus a DualSense controller, even though the listing omits 'console'.
+  // Require actual Sony chassis corroboration, console edition+capacity, and
+  // an explicit retail-package inclusion marker before ignoring accessory nouns.
+  // Real PDP SEO titles can omit Disc/Digital despite a corroborated Sony
+  // chassis model. Require a console-form subject *before* the bundle marker,
+  // with no peripheral/storage-part noun in that subject, before allowing this
+  // narrower edition-free path. The included controller can follow "bundle".
+  const preBundleSubject = title.split(/\bbundle\b/,1)[0];
+  const corroboratedEditionFreeBundle = /\b(?:slim|pro)\b/.test(preBundleSubject) &&
+    !GAMING_ACCESSORY.test(preBundleSubject) &&
+    !GAMING_ARABIC_ACCESSORY.test(preBundleSubject) &&
+    !GAMING_STORAGE_ACCESSORY.test(preBundleSubject);
+  const identifiedConsoleBundle = evidencedConsoleChassis &&
+    /\b\d+(?:gb|tb)\b/.test(title) &&
+    (/\b(?:digital|dig|disc)\b/.test(title) || corroboratedEditionFreeBundle) &&
+    (/\b(?:bundle|including|includes|with)\b/.test(title) || /\s+\+\s+/.test(String(offer.title||"")));
+  const isBundle = /\bbundle\b/.test(title) ||
+    explicitlyIncludedConsoleAccessory(title, offer.title) || identifiedConsoleBundle;
   let kind = "product";
   if (platform) {
-    if (/\b(?:cover|case|accessory|accessories|gift card|recharge card)\b/.test(title + " " + metadata)) kind = "accessory";
-    else if (GAMING_ACCESSORY.test(title) && !(isBundle && /\bconsole\b/.test(title))) kind = "accessory";
+    if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
+    else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
+      GENUINE_CONSOLE_BUNDLE(title) ||
+      identifiedConsoleBundle ||
+      explicitlyIncludedConsoleAccessory(title, offer.title) ||
+      (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
+    )) kind = "accessory";
+    else if ((GAMING_GAME_PRODUCT.test(title) ||
+      GAMING_STANDALONE_GAME.test(title) ||
+      /\/playstation-games(?:\/|$)/i.test(String(offer.sourceUrl || ""))) &&
+      !(isBundle && /\bconsole\b/.test(title))) kind = "game";
     else if (/\bconsole\b/.test(title) || /^CFI[127]\d/i.test(sku) || /\b(?:digital|disc) edition\b/.test(title) || /\b(?:825gb|1tb|2tb)\b/.test(title)) kind = "console";
     else if (/^(?:sony )?ps[45](?: slim| pro)?$/.test(title)) kind = "console";
     else kind = "game";
@@ -270,17 +443,29 @@ export function describeProduct(offer = {}) {
 
 const ACCESSORY_TERMS = [
   "case","cover","screen protector","protector","charger","cable","adapter",
-  "atomizer","perfume bottle","empty bottle","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
-  "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه"
+  "disc drive","disk drive","optical drive","blu ray drive","vertical stand","replacement stand","stand","حامل",
+  "usb hub","expansion hub","multiport hub","hub","docking station","port expander","هب","موزع منافذ",
+  "atomizer","perfume bottle","empty bottle","laptop sleeve","laptop sling","laptop bag","laptop briefcase","briefcase","rucksack","notebook sleeve","notebook sling","cooling fan","cpu fan","protective shell","privacy screen","active pen","lcd replacement","screen replacement","only compatible with","laptop battery","notebook battery","battery replacement","battery compatible","battery for","replacement battery","power supply","power supplies","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
+  "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه",
+  "غطاء","اغطيه","مروحه تبريد","حامل جداري","حامل حائط",
+  "قارئ اقراص","هارد خارجي","قرص صلب خارجي"
 ];
+
+// Immutable phrase list: alias normalization is independent of the offer and query.
+// Reuse the exact normalized strings instead of processing every accessory term
+// once or twice for every product during match scoring.
+const NORMALIZED_ACCESSORY_TERMS = ACCESSORY_TERMS.map(term => normalizeSearchQuery(term));
 
 const UNREQUESTED_VARIANT_TERMS = [
   "pro","max","plus","ultra","air","fold","flip","fe",
   "برو","ماكس","بلس","الترا","اير"
 ];
 
-export function assessOfferMatch(query, offer) {
-  const intent = parseSearchIntent(query);
+// Match context is derived only from shopper intent, not offer contents.
+// Filter batches prepare it once; direct callers still obtain identical fresh values.
+const ACCESSORY_LED_BRANDS = new Set(["logitech"]);
+const hasNormalizedPhrase = (text, term) => (" " + text + " ").includes(" " + term + " ");
+function prepareMatchContext(intent) {
   const normalizedQuery = intent.providerQuery;
   const matchedCategory = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const effectiveCategory = intent.category || matchedCategory?.[0] || null;
@@ -288,6 +473,21 @@ export function assessOfferMatch(query, offer) {
   const categoryTokenRequested = Boolean(matchedCategory);
   const semanticQuery = normalizedQuery.replace(categoryPattern, " ").replace(/\s+/g, " ").trim();
   const q = semanticQuery.split(" ").filter(token => token && !["console", "game", "games"].includes(token));
+  const explicitAccessoryQuery = PRODUCT_CATEGORIES.find(([key]) => key === "accessory")?.[2]?.test(normalizedQuery) || false;
+  const queryHasAccessoryIntent = effectiveCategory === "accessory" ||
+    explicitAccessoryQuery ||
+    NORMALIZED_ACCESSORY_TERMS.some(term => hasNormalizedPhrase(normalizedQuery,term)) ||
+    (intent.discoveryMode === "brand" && ACCESSORY_LED_BRANDS.has(intent.brand));
+  return {normalizedQuery,effectiveCategory,categoryTokenRequested,q,
+    queryTokens:new Set(q),queryHasAccessoryIntent,
+    storageMediaRequested:GAMING_STORAGE_ACCESSORY.test(normalizedQuery),
+    storagePartRequested:STORAGE_PART_NOUN.test(normalizedQuery)};
+}
+
+export function assessOfferMatch(query, offer, preparedIntent = null, preparedContext = null) {
+  const intent = preparedIntent || parseSearchIntent(query);
+  const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent,storageMediaRequested,storagePartRequested} =
+    preparedContext || prepareMatchContext(intent);
   let urlSemantic = "";
   try {
     const parsedUrl = new URL(String(offer?.sourceUrl || ""));
@@ -300,7 +500,21 @@ export function assessOfferMatch(query, offer) {
   const hits = q.filter((token) => titleTokens.has(token)).length;
   let confidence = q.length ? hits / q.length : 1;
   const description = describeProduct(offer);
-  const offerCategory = productCategory(offer);
+  // The actual merchant retail-package title, never platform compatibility,
+  // capacity, price, URL or a shared generation, must prove the included
+  // DualSense/controller. A Fortnite-game bundle cannot satisfy this query.
+  // Only parse the retail package title when the shopper explicitly asked
+  // for an included controller. Normal iPhone/HP/general queries keep their
+  // exact pre-v15.17 CPU path and matching semantics.
+  let controllerBundleMismatch=false;
+  if(requestsIncludedPs5ControllerBundle(normalizedQuery)){
+    const retailPackageTitle=normalizeSearchQuery(offer?.title||"");
+    controllerBundleMismatch=!(description.kind==="console" && description.isBundle &&
+      /\b(?:dualsense|controllers?)\b/.test(retailPackageTitle) &&
+      /\b(?:bundle|including|includes|with)\b/.test(retailPackageTitle) &&
+      !/\b(?:controller (?:holders?|stands?|chargers?|charging stations?)|dualsense (?:charging|dock))\b/.test(retailPackageTitle));
+  }
+  const offerCategory = productCategoryWithDescription(offer, description);
   // Product-type words (mouse, laptop, perfume...) are structural intent rather
   // than free-text tokens: reward the matching category without polluting model/
   // variant token matching.
@@ -309,26 +523,28 @@ export function assessOfferMatch(query, offer) {
     // structural category is equivalent to that requested term matching.
     confidence = q.length ? Math.min(1, (hits + 1) / (q.length + 1)) : 1;
   }
-  const kindMismatch = Boolean((intent.kind && intent.kind !== description.kind) || (effectiveCategory && effectiveCategory !== offerCategory));
+  // A storage query cannot exact-match a generic USB hub merely because both
+  // products belong to the broad gaming-accessory category.
+  const physicalTitle = storageMediaRequested ? normalizeSearchQuery(offer?.title || "") : "";
+  const storageMediaMismatch = storageMediaRequested && (
+    !GAMING_STORAGE_ACCESSORY.test(physicalTitle) ||
+    (storagePartOnly(physicalTitle) && !storagePartRequested));
+  const kindMismatch = Boolean(storageMediaMismatch || controllerBundleMismatch ||
+    (intent.kind && intent.kind !== description.kind) ||
+    (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
 
-  const hasPhrase = (text, term) => (" " + text + " ").includes(" " + normalizeSearchQuery(term) + " ");
-  // Brand-only discovery must not be hijacked by accessories merely carrying the brand
-  // name (e.g. "Nike" returning Apple Watch Nike bands). Accessories are allowed only
-  // when the shopper actually asks for an accessory or the brand itself is accessory-led.
-  const accessoryLedBrands = new Set(["logitech"]);
-  const explicitAccessoryQuery = PRODUCT_CATEGORIES.find(([key]) => key === "accessory")?.[2]?.test(normalizedQuery) || false;
-  const queryHasAccessoryIntent = effectiveCategory === "accessory" ||
-    explicitAccessoryQuery ||
-    ACCESSORY_TERMS.some((term) => hasPhrase(normalizedQuery, term)) ||
-    (intent.discoveryMode === "brand" && accessoryLedBrands.has(intent.brand));
-  const titleHasAccessory = ACCESSORY_TERMS.some((term) => hasPhrase(title, term));
+  // Brand-only searches still reject accessories that merely carry the name.
+  // Query-only accessory intent was prepared outside the per-offer loop.
+  // A console sold *with* its drive is not an accessory. The same phrase
+  // on a separate "Disc Drive for PS5" listing must still be rejected.
+  const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
+  const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
   // strongly demote unrelated co-branded products.
   if (intent.discoveryMode === "brand" && intent.brand) {
-    const offerCategory = productCategory(offer);
     const priorities = BRAND_CATEGORY_PRIORITIES[intent.brand] || [];
     const priorityIndex = priorities.indexOf(offerCategory);
     // Editorial brand priorities apply only to true brand-only discovery.
@@ -340,13 +556,23 @@ export function assessOfferMatch(query, offer) {
     }
   }
 
-  const queryTokens = new Set(q);
   const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
     intent.model && intent.category === 'accessory'
       ? explicitModels([offer?.title,offer?.specs?.deviceType,offer?.specs?.series].filter(Boolean).join(' ')).some(model=>model!==intent.model)
       : UNREQUESTED_VARIANT_TERMS.some((term) => titleTokens.has(term) && !queryTokens.has(term))
   );
   if (hasUnrequestedVariant) confidence *= 0.82;
+
+  // A real merchant carrier-specific plan variant (e.g. Best Buy (AT&T) or
+  // (Verizon)) is not evidenced as an interchangeable unlocked phone for a
+  // generic Saudi-first search. This is NOT a claim the handset is SIM-locked:
+  // merely that activation, buyer eligibility and Saudi use are unverified.
+  // Preserve explicit shopper carrier intent and explicitly Unlocked listings.
+  const retailCarrierVariant = offerCategory === 'phone' &&
+    /\(\s*(?:at\s*&\s*t|verizon|t[- ]mobile)\s*\)/i.test(String(offer?.title || ''));
+  const carrierRequested = /(?:\bat\s*&\s*t\b|\bverizon\b|\bt[- ]mobile\b)/i.test(String(query || ''));
+  const unrequestedCarrierVariant = retailCarrierVariant && !carrierRequested;
+  if (unrequestedCarrierVariant) confidence *= 0.2;
 
   const titleSignalsUsed = /\b(?:used|pre owned|pre-owned|b grade|c grade|grade [bc])\b/.test(title);
   const titleSignalsRefurbished = /\b(?:refurbished|renewed|remanufactured)\b/.test(title);
@@ -358,22 +584,33 @@ export function assessOfferMatch(query, offer) {
     ? Boolean(effectiveCondition && effectiveCondition !== "unknown" && effectiveCondition !== intent.condition)
     : Boolean(effectiveCondition && effectiveCondition !== "unknown" && effectiveCondition !== "new");
   if (conditionMismatch) confidence -= 0.15;
+  // Sparse merchant titles such as "HP Everyday Laptop" cannot independently
+  // establish a complete notebook or manufacturer variant. Preserve them as
+  // related discovery, but never certify as exact principal-computer results.
+  // Price alone is NEVER used to decide product type.
+  const retailTitle = effectiveCategory === "laptop" && offerCategory === "laptop"
+    ? normalizeSearchQuery(offer?.title || "") : "";
+  const sparseLaptopEvidence = Boolean(retailTitle &&
+    retailTitle.split(" ").length <= 4 &&
+    !/\b(?:pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen|latitude|thinkpad|ideapad|zenbook|vivobook|macbook|chromebook)\b/.test(retailTitle) &&
+    !/\b(?:intel|amd|ryzen|core|celeron|pentium|ram|memory|ssd|windows|processor|\d+(?:gb|tb))\b/.test(retailTitle));
+  if (sparseLaptopEvidence) confidence = Math.min(confidence, 0.69);
   confidence = Math.max(0, Math.min(1, confidence));
 
   const missingTerms = q.filter((token) => !titleTokens.has(token));
   const structuralTermsMatch = !categoryTokenRequested || (effectiveCategory && offerCategory === effectiveCategory);
   const exactMatch = confidence >= 0.92 && hits === q.length && structuralTermsMatch &&
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
-      !hasUnrequestedVariant && !conditionMismatch && !kindMismatch;
+      !hasUnrequestedVariant && !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
-      hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
+      hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : sparseLaptopEvidence ? "بيانات العرض لا تثبت وجود جهاز لابتوب كامل" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
   };
 }
 
@@ -389,17 +626,21 @@ export function buildComparisonQuery(offer = {}) {
 
 // Shared by provider output and the stricter source audit. Metadata may not
 // hide a contradictory model or storage capacity explicitly present in a title.
-export function queryMatchReasons(query, offer) {
+export function queryMatchReasons(query, offer, preparedIntent = null, preparedContext = null) {
   const reasons = [];
-  const match = assessOfferMatch(query, offer);
-  const { model, storage } = parseSearchIntent(query);
-  const models = [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
-    .filter(Boolean).flatMap(explicitModels);
-  const titleModels = [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels);
+  const intent = preparedIntent || parseSearchIntent(query);
+  const match = assessOfferMatch(query, offer, intent, preparedContext);
+  const { model, storage } = intent;
+  // Capacity and explicit-model extraction are only relevant when requested.
+  // Broad queries should not repeatedly normalize storage fields or parse model
+  // patterns from every offer when no corresponding constraint is present.
+  const models = model ? [offer?.title, offer?.specs?.deviceType, offer?.specs?.series, offer?.specs?.modelNumber]
+    .filter(Boolean).flatMap(explicitModels) : [];
+  const titleModels = model ? [offer?.title,offer?.specs?.deviceType].filter(Boolean).flatMap(explicitModels) : [];
   if (model && models.some(value => value !== model)) reasons.push('model_conflict');
-  const storageText = normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
-    .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ');
-  const capacities = storageText.match(/\b\d+(?:gb|tb)\b/g) || [];
+  const capacities = storage ? (normalizeSearchQuery([offer?.title, offer?.specs?.storage].filter(Boolean).join(' '))
+    .replace(/\b\d+(?:gb|tb)\s+(?:ram|رام)\b|\b(?:ram|رام)\s+\d+(?:gb|tb)\b/g, ' ')
+    .match(/\b\d+(?:gb|tb)\b/g) || []) : [];
   if (storage && capacities.some(value => value !== storage)) reasons.push('capacity_conflict');
   // Generic brand/category searches should retain strongly relevant products;
   // exact-match is reserved for model/variant-sensitive queries.
@@ -409,7 +650,11 @@ export function queryMatchReasons(query, offer) {
 }
 
 export function filterQueryOffers(query, offers) {
-  const retained = offers.filter(offer => queryMatchReasons(query, offer).length === 0);
+  // Share the immutable shopper intent across this provider batch.
+  // Preserve the prior lazy behavior for empty batches.
+  const intent = offers.length ? parseSearchIntent(query) : null;
+  const context = intent ? prepareMatchContext(intent) : null;
+  const retained = offers.filter(offer => queryMatchReasons(query, offer, intent, context).length === 0);
   return { offers: retained, queryFilter: { input: offers.length, retained: retained.length, removed: offers.length - retained.length } };
 }
 

@@ -1,3 +1,4 @@
+import { resolveStructuredProductNodes } from "../../schemaorg-product-graph.mjs";
 function flatten(value, out = []) {
   if (!value) return out;
   if (Array.isArray(value)) {
@@ -12,8 +13,21 @@ function flatten(value, out = []) {
   return out;
 }
 
-function firstOffer(product) {
-  return Array.isArray(product?.offers) ? product.offers[0] : product?.offers || {};
+function verifiedSingleOffer(product) {
+  // Never certify a ProductGroup/AggregateOffer price range as a purchasable
+  // variant. Without a selected, identity-bound variant, multiple offers
+  // cannot be collapsed to the first (or cheapest) seller/size.
+  const raw = product?.offers;
+  if (!raw) return null;
+  const offers = Array.isArray(raw) ? raw : [raw];
+  if (offers.length !== 1) return null;
+  const offer = offers[0];
+  if (!offer || typeof offer !== "object" || Array.isArray(offer)) return null;
+  const types = Array.isArray(offer["@type"]) ? offer["@type"] : [offer["@type"]];
+  if (types.some(type => String(type || "").toLowerCase().split("/").pop() === "aggregateoffer")) return null;
+  const price = Number(offer.price);
+  if (!Number.isFinite(price) || price <= 0 || !offer.priceCurrency) return null;
+  return offer;
 }
 
 function imageOf(product) {
@@ -25,7 +39,7 @@ function brandOf(product) {
   return typeof product?.brand === "object" ? product.brand?.name : product?.brand;
 }
 
-export function extractJsonLdProducts(html = "") {
+export function extractJsonLdProducts(html = "", pageUrl = null) {
   const blocks = [];
   const pattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
@@ -35,7 +49,11 @@ export function extractJsonLdProducts(html = "") {
     } catch {}
   }
 
-  return blocks
+  const linked = resolveStructuredProductNodes(blocks, pageUrl);
+  const groups = linked.filter(node => node.schemaProductGroupEvidence === true);
+  // A merchant's recommended cross-sell Product is not proof that the
+  // inspected ProductGroup has a purchasable SKU-level price.
+  return (groups.length ? groups : linked)
     .filter((node) => {
       const type = node?.["@type"];
       return Array.isArray(type)
@@ -43,7 +61,7 @@ export function extractJsonLdProducts(html = "") {
         : /product/i.test(String(type || ""));
     })
     .map((product) => {
-      const offer = firstOffer(product);
+      const offer = verifiedSingleOffer(product);
       return {
         sourceProductId: product.productID ?? product.sku ?? product.mpn ?? null,
         title: product.name ?? null,
@@ -52,7 +70,7 @@ export function extractJsonLdProducts(html = "") {
         sku: product.sku ?? null,
         gtin: product.gtin13 ?? product.gtin12 ?? product.gtin ?? null,
         mpn: product.mpn ?? null,
-        price: Number(offer?.price ?? offer?.lowPrice ?? offer?.highPrice) || null,
+        price: offer ? Number(offer.price) : null,
         originalPrice: null,
         currency: offer?.priceCurrency ?? null,
         availability: offer?.availability ?? null,
@@ -63,8 +81,8 @@ export function extractJsonLdProducts(html = "") {
     });
 }
 
-export function probeJsonLd(html = "") {
-  const products = extractJsonLdProducts(html);
+export function probeJsonLd(html = "", pageUrl = null) {
+  const products = extractJsonLdProducts(html, pageUrl);
   const priced = products.filter((product) => product.price > 0);
   return {
     strategy: "jsonld",

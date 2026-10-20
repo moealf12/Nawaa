@@ -25,6 +25,8 @@ import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarov
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonCreators } from "./providers/amazon-creators.mjs";
 import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontById } from "./providers/free-storefronts.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
+import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
+import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
 import { createSearchCache } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
@@ -34,19 +36,41 @@ import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
+import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
+// Isolated canonical HTTP proof: synthetic canonical prices must not be mixed
+// with independently acquired live merchant evidence in one assertion.
+const OMEGA_INDEX_ONLY = process.env.NODE_ENV==='test' &&
+  process.env.NAWAA_CANONICAL_INDEX_TEST==='1' &&
+  process.env.NAWAA_OMEGA_INDEX_ONLY==='1';
+const OMEGA_CANONICAL = process.env.NODE_ENV==='test' && process.env.NAWAA_CANONICAL_INDEX_TEST==='1';
+async function canonicalCandidates(offers,acceptLive=false){
+  if(!OMEGA_CANONICAL)return offers;
+  return (await import('./omega-canonical-index.mjs')).canonicalReadBoundary(offers,{acceptLive});
+}
+async function canonicalResponse(result,query){
+  if(!OMEGA_CANONICAL)return result;
+  const offers=selectDiverseOffers(retainRelatedOffers(query,await canonicalCandidates(result.offers||[])),Infinity);
+  return {...result,offers,coverage:{...result.coverage,returnedOffers:offers.length,
+    availableOffers:offers.length,returnedMerchants:new Set(offers.map(offerMerchantKey)).size}};
+}
+// Diagnostic-only phase timing. Never log offer contents, URL paths or queries.
+const PROFILE_SEARCH_STREAM = process.env.NAWAA_PROFILE_STREAM === "1";
 const STATIC_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STATIC_FILES = new Map([
   ["/", "index.html"],
   ["/index.html", "index.html"],
   ["/search.html", "search.html"],
   ["/product.html", "product.html"],
+  ["/quote-admin.html", "quote-admin.html"],
+  ["/src/quote-admin.mjs", "src/quote-admin.mjs"],
   ["/config.js", "config.js"],
   ["/src/search-page.mjs", "src/search-page.mjs"],
   ["/src/search-core.mjs", "src/search-core.mjs"],
   ["/src/search-query.mjs", "src/search-query.mjs"],
   ["/src/search-stream.mjs", "src/search-stream.mjs"],
+  ["/src/search-coverage-status.mjs", "src/search-coverage-status.mjs"],
   ["/src/product-page.mjs", "src/product-page.mjs"],
   ["/src/source-registry.mjs", "src/source-registry.mjs"],
 ]);
@@ -63,6 +87,9 @@ function contentTypeFor(filePath) {
 
 async function serveStaticFile(req, res, pathname) {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
+  // Hide the candidate administration UI outside disposable quote-test mode.
+  if ((pathname === "/quote-admin.html" || pathname === "/src/quote-admin.mjs") &&
+      !quoteWorkflowEnabled()) return false;
   let relative = STATIC_FILES.get(pathname);
   if (!relative && pathname.startsWith(STATIC_ASSET_PREFIX)) {
     const assetName = pathname.slice(STATIC_ASSET_PREFIX.length);
@@ -92,7 +119,7 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
-function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, plan = acquisitionPlan(0, configuredFreeStorefronts().length) } = {}) {
+function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, plan = acquisitionPlan(0, configuredFreeStorefronts().length), onOffers } = {}) {
   const tasks = [];
   const add = (id, run, { explicit = false, deadlineMs = null } = {}) => {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run, deadlineMs });
@@ -101,22 +128,24 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // Core search providers must always get a chance per user request. Reliability
   // still affects diagnostics/routing inside providers, but a temporary cooldown
   // must not collapse the whole public API into an instant empty response.
-  add("extra-unbxd", () => searchExtraUnbxd(providerQuery, 100, matchingQuery), { explicit:true, deadlineMs:8000 });
-  add("jarir-direct", () => searchJarir(providerQuery, plan.jarirLimit, matchingQuery), { explicit:true, deadlineMs:8000 });
+  add("extra-unbxd", (signal) => searchExtraUnbxd(providerQuery, 100, matchingQuery, {signal}), { explicit:true, deadlineMs:8000 });
+  add("jarir-direct", (signal) => searchJarir(providerQuery, plan.jarirLimit, matchingQuery, {signal, onOffers}), { explicit:true, deadlineMs:8000 });
   // Virgin UAE is a certified core comparison source. Run it explicitly in the
   // first wave so Jarir cannot be the only merchant visible to the shopper.
-  add("virgin-ae", () => searchFreeStorefrontById("virgin-ae", providerQuery, {
+  add("virgin-ae", (signal) => searchFreeStorefrontById("virgin-ae", providerQuery, {
+    signal,
     matchingQuery,
     perStore:Infinity,
     catalogLimit:Infinity,
     productPageLimit:8,
     storeDeadlineMs:7000,
   }), { explicit:true, deadlineMs:8000 });
-  add("sharafdg-algolia", () => searchSharafDG(providerQuery), { explicit:true, deadlineMs:8000 });
+  add("sharafdg-algolia", (signal) => searchSharafDG(providerQuery, 32, {signal}), { explicit:true, deadlineMs:8000 });
   if (swarovskiSaudiEligible(providerQuery)) add("swarovski-direct", () => searchSwarovskiSaudi(providerQuery), { explicit:true });
   if (amazonCreatorsConfigured()) add("amazon-creators", () => searchAmazonCreators(providerQuery));
   if (!skipFreeStorefronts) {
-    add("free-storefronts", () => searchFreeStorefronts(providerQuery, {
+    add("free-storefronts", (signal) => searchFreeStorefronts(providerQuery, {
+      signal,
       matchingQuery,
       excludeStoreIds:["amazon-sa"],
       storeOffset:plan.storefrontOffset,
@@ -134,57 +163,66 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   return tasks;
 }
 
-async function executeProviderTask(task, pass, providerQuery) {
+async function executeProviderTask(task, pass, providerQuery, {signal} = {}) {
   const providerDeadlineMs = Number(process.env.SEARCH_PROVIDER_DEADLINE_MS || 4200);
   const deadlineMs = task.deadlineMs || providerDeadlineMs;
   const started = Date.now();
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(signal.reason || new Error("search_request_aborted"));
+  if (signal?.aborted) forwardAbort();
+  else signal?.addEventListener("abort", forwardAbort, {once:true});
+  let onAbort;
+  const aborted = new Promise((_, reject) => {
+    onAbort = () => reject(controller.signal.reason instanceof Error
+      ? controller.signal.reason : new Error("provider_aborted:"+task.id));
+    if(controller.signal.aborted) onAbort();
+    else controller.signal.addEventListener("abort", onAbort, {once:true});
+  });
+  const timer = setTimeout(() => controller.abort(new Error("provider_deadline_exceeded:"+task.id)),deadlineMs);
   try {
     const value = await Promise.race([
-      Promise.resolve().then(() => task.run()),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("provider_deadline_exceeded:" + task.id)), deadlineMs)),
+      Promise.resolve().then(() => {
+        controller.signal.throwIfAborted();
+        return task.run(controller.signal);
+      }),
+      aborted,
     ]);
+    if(controller.signal.aborted) throw controller.signal.reason;
     sourceReliability.record(task.id, {
-      transportOk:true,
-      offers:value.offers?.length || 0,
-      latencyMs:Date.now() - started,
-      relevant:true,
+      transportOk:true,offers:value.offers?.length || 0,
+      latencyMs:Date.now()-started,relevant:true,
     });
     return {
       provider:{
-        provider:value.provider,
-        sourceId:task.id,
-        ok:value.ok,
-        pass,
-        query:providerQuery,
-        reliability:sourceReliability.view(task.id),
+        provider:value.provider,sourceId:task.id,ok:value.ok,pass,
+        query:providerQuery,reliability:sourceReliability.view(task.id),
         diagnostics:value.diagnostics || null,
         returnedOffers:value.offers?.length || 0,
         searchedMarkets:value.searchedMarkets || value.searchedStores || [],
       },
       offers:value.offers || [],
-      errors:(value.errors || []).map((error)=>({provider:value.provider,sourceId:task.id,pass,...error})),
+      errors:(value.errors || []).map(error=>({provider:value.provider,sourceId:task.id,pass,...error})),
     };
-  } catch (error) {
-    sourceReliability.record(task.id, {
-      transportOk:false,
-      offers:0,
-      latencyMs:Date.now() - started,
-      relevant:true,
+  } catch(error) {
+    // A closed shopper request is not evidence that this merchant is broken.
+    if(signal?.aborted) return {provider:null,offers:[],errors:[]};
+    sourceReliability.record(task.id,{
+      transportOk:false,offers:0,latencyMs:Date.now()-started,relevant:true,
     });
     return {
-      provider:null,
-      offers:[],
+      provider:null,offers:[],
       errors:[{
-        provider:task.id,
-        sourceId:task.id,
-        pass,
-        error:error instanceof Error ? error.message : String(error),
+        provider:task.id,sourceId:task.id,pass,
+        error:error instanceof Error?error.message:String(error),
         reliability:sourceReliability.view(task.id),
       }],
     };
+  } finally {
+    clearTimeout(timer);
+    controller.signal.removeEventListener("abort",onAbort);
+    signal?.removeEventListener("abort",forwardAbort);
   }
 }
-
 
 function retainRelatedOffers(query, offers = []) {
   return dedupeNormalizedOffers(offers)
@@ -206,6 +244,7 @@ function mergeProviderChunks(chunks) {
 
 async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery, options = {}) {
   const onChunk = typeof options.onChunk === "function" ? options.onChunk : null;
+  const trace = typeof options.onTrace === "function" ? options.onTrace : null;
   const tasks = providerTasks(providerQuery, matchingQuery, options);
   if (!tasks.length) return {providers:[],errors:[],offers:[]};
 
@@ -222,7 +261,8 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   const remaining=[...ordered];
   const inFlight=new Map();
   const launch=(task)=>{
-    const p=executeProviderTask(task,pass,providerQuery).then(chunk=>({task,chunk}));
+    const p=executeProviderTask(task,pass,providerQuery,{signal:options.signal})
+      .then(chunk=>({task,chunk,readyAt:trace ? performance.now() : 0}));
     inFlight.set(task.id,p);
   };
   // Providers already enforce their own deadlines. Start every eligible
@@ -234,11 +274,15 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   while(inFlight.size){
     const settled=await Promise.race(inFlight.values());
     inFlight.delete(settled.task.id);
+    const dispatchAt = trace ? performance.now() : 0;
+    if(trace) trace({stage:"providerCompleted",sourceId:settled.task.id,
+      offers:settled.chunk.offers?.length||0,queueMs:Math.max(0,dispatchAt-settled.readyAt)});
     chunks.push(settled.chunk);
     if (onChunk) {
       try { await onChunk(settled.chunk, { completed:chunks.length, total:ordered.length, pending:remaining.length + inFlight.size }); } catch {}
     }
-
+    if(trace) trace({stage:"providerCallbackReturned",sourceId:settled.task.id,
+      offers:settled.chunk.offers?.length||0,callbackMs:Math.max(0,performance.now()-dispatchAt)});
     relevant = retainRelatedOffers(matchingQuery, chunks.flatMap(chunk=>chunk.offers || []));
     const merchants=new Set(relevant.map(offerMerchantKey)).size;
     const enough=relevant.length>=usefulThreshold && merchants>=merchantThreshold;
@@ -299,7 +343,7 @@ async function searchExpansion(query, depth) {
     errors.push(...(storefront.errors||[]).map(error=>({provider:"free-storefronts",sourceId:"free-storefronts",pass:"expansion",...error})));
   }
 
-  const offers=retainRelatedOffers(query, [...(amazon.offers||[]),...(storefront.offers||[])]);
+  const offers=retainRelatedOffers(query, await canonicalCandidates([...(amazon.offers||[]),...(storefront.offers||[])],true));
   const allSelectedOffers=selectDiverseOffers(offers,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
@@ -327,6 +371,7 @@ async function searchExpansion(query, depth) {
         responseOffers:plan.returnLimit,
       },
       fallbackUsed:false,
+      sourceFailures:summarizeSourceFailures(errors),
     },
     providers,
     normalizedQuery:query,
@@ -337,9 +382,12 @@ async function searchExpansion(query, depth) {
 }
 
 function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
+  const started=PROFILE_SEARCH_STREAM ? performance.now() : 0;
   const assessed=retainRelatedOffers(query, offers);
+  const afterMatching=PROFILE_SEARCH_STREAM ? performance.now() : 0;
   const selected=selectDiverseOffers(assessed,Infinity).slice(0,acquisitionPlan(0,configuredFreeStorefronts().length).returnLimit);
-  return {
+  const afterSelection=PROFILE_SEARCH_STREAM ? performance.now() : 0;
+  const snapshot = {
     providersConfigured:configuredProviders(),
     normalizedQuery:query,
     offers:selected,
@@ -354,56 +402,127 @@ function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
       complete:false,
       providersCompleted:progress.completed||0,
       providersPending:progress.pending||0,
+      sourceFailures:summarizeSourceFailures(errors),
     },
   };
+  if (PROFILE_SEARCH_STREAM) console.log("SEARCH_STREAM_PHASE "+JSON.stringify({
+    stage:"progressiveSnapshot",inputOffers:offers.length,assessedOffers:assessed.length,
+    selectedOffers:selected.length,providerCount:providers.length,
+    matchingMs:afterMatching-started,selectionMs:afterSelection-afterMatching,
+    coverageMs:performance.now()-afterSelection,
+  }));
+  return snapshot;
 }
 
-async function streamSearchProgress(query, onSnapshot) {
+async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
+  const traceStarted = PROFILE_SEARCH_STREAM ? performance.now() : 0;
+  const trace = data => {
+    if (PROFILE_SEARCH_STREAM) console.log("SEARCH_SOURCE_TRACE "+JSON.stringify({
+      elapsedMs:performance.now()-traceStarted,...data,
+    }));
+  };
   query=normalizeSearchQuery(query);
   const plan=acquisitionPlan(0,configuredFreeStorefronts().length);
   const providerQuery=parseSearchIntent(query).providerQuery;
+  const configuredDeadline=Number(process.env.SEARCH_STREAM_DEADLINE_MS);
+  const streamDeadlineMs=Number.isFinite(configuredDeadline) && configuredDeadline>0
+    ? Math.max(150,Math.min(25000,Math.floor(configuredDeadline))) : 11000;
+  const primaryCount=OMEGA_INDEX_ONLY?0:providerTasks(providerQuery,query,{plan}).length;
+  const controller=new AbortController();
+  const forwardAbort=()=>controller.abort(signal.reason || new Error("search_client_disconnected"));
+  if(signal?.aborted) forwardAbort();
+  else signal?.addEventListener("abort",forwardAbort,{once:true});
   let offers=[],providers=[],errors=[];
-  const emit=(progress={})=>onSnapshot(progressiveSnapshot(query,offers,providers,errors,progress));
+  let accepting=true,primaryCompleted=0,amazonSettled=false,localSettled=false;
+  let emissions=Promise.resolve();
+  const emit=(progress={})=>{
+    const captured=[...offers];
+    emissions=emissions.then(async()=>{
+      if(!accepting)return;
+      const current=await canonicalCandidates(captured,true);
+      if(accepting)await onSnapshot(progressiveSnapshot(query,current,providers,errors,progress));
+    });
+    return emissions;
+  };
 
-  // Start durable catalog lookup and every live source immediately. Neither path
-  // is allowed to block the other from producing the first useful result.
-  const localPromise=Promise.all([
-    searchIndexedOffers(query).catch(()=>({offers:[]})),
-  ]).then(async local=>{
-    offers.push(...(local[0]?.offers||[]));
-    if(offers.length) await emit({completed:providers.length,pending:providerTasks(providerQuery,query,{plan}).length+1});
-    return local;
+  // Launch the catalog, core providers, and Amazon concurrently. Slow sources
+  // are never allowed to postpone stream completion indefinitely.
+  const localPromise=searchIndexedOffers(query).catch(()=>({offers:[]})).then(async local=>{
+    localSettled=true;
+    if(!accepting)return;
+    offers.push(...(local?.offers||[]));
+    if(local?.offers?.length)await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
   });
 
-  const amazonPromise=searchFreeStorefrontById("amazon-sa",providerQuery,{
+  const amazonPromise=OMEGA_INDEX_ONLY ? Promise.resolve().then(()=>{ amazonSettled=true; }) : searchFreeStorefrontById("amazon-sa",providerQuery,{
     perStore:Infinity,catalogLimit:Infinity,amazonPageStart:plan.amazonPageStart,
-    amazonPageCount:plan.amazonPageCount,matchingQuery:query,
-  }).then(value=>({value})).catch(error=>({error}));
-
-  const primaryPromise=runProviderPass(providerQuery,"primary",query,{plan,onChunk:async(chunk,progress)=>{
-    if(chunk.provider) providers.push(chunk.provider);
-    errors.push(...(chunk.errors||[]));
-    offers.push(...(chunk.offers||[]));
-    await emit({...progress,pending:progress.pending+1});
-  }});
-
-  const amazonResult=await amazonPromise;
-  if(amazonResult.value){
-    const value=amazonResult.value;
+    amazonPageCount:plan.amazonPageCount,matchingQuery:query,signal:controller.signal,
+  }).then(async value=>{
+    amazonSettled=true;
+    if(!accepting)return;
     const sourceId="free-storefronts:amazon-sa";
     providers.push({provider:"free-storefronts",sourceId,ok:Boolean(value.offers?.length),pass:"primary",query:providerQuery,returnedOffers:value.offers?.length||0,diagnostics:value.diagnostics||null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
     offers.push(...(value.offers||[]));
-    await emit({completed:providers.length,pending:1});
-  } else {
-    errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:amazonResult.error instanceof Error?amazonResult.error.message:String(amazonResult.error)});
-  }
-  await Promise.all([primaryPromise,localPromise]);
+    // Retain diagnostic failures returned as data, not just rejected fetches.
+    for(const issue of Array.isArray(value.errors)?value.errors:[]){
+      errors.push({
+        provider:"free-storefronts",sourceId,pass:"primary",
+        error:typeof issue==="string"?issue:String(issue?.error||issue?.message||"amazon_search_failed"),
+      });
+    }
+    if(value.offers?.length)await emit({completed:primaryCompleted+1,pending:Math.max(0,primaryCount-primaryCompleted)});
+  }).catch(error=>{
+    amazonSettled=true;
+    if(accepting)errors.push({provider:"free-storefronts",sourceId:"free-storefronts:amazon-sa",pass:"primary",error:error instanceof Error?error.message:String(error)});
+  });
 
-  // Reuse the work already completed by the progressive pass. Do not replay the
-  // same providers a second time. Canonical search remains available to the JSON
-  // endpoint and deeper cursor passes; the stream returns the accumulated recall
-  // immediately and the UI can request deeper pages without losing any source.
-  const assessed=retainRelatedOffers(query, offers);
+  const primaryPromise=OMEGA_INDEX_ONLY ? Promise.resolve() : runProviderPass(providerQuery,"primary",query,{plan,signal:controller.signal,onOffers:async readyOffers=>{
+    if(!accepting || controller.signal.aborted)return;
+    offers.push(...readyOffers);
+    trace({stage:"jarirPageReady",sourceId:"jarir-direct",offers:readyOffers.length});
+    // A ready page is not a completed provider. Retain pending/partial coverage
+    // until its final result (including pagination errors) has settled.
+    await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
+    trace({stage:"jarirPagePublished",sourceId:"jarir-direct",offers:readyOffers.length});
+  },onTrace:PROFILE_SEARCH_STREAM ? trace : null,onChunk:async(chunk,progress)=>{
+    if(!accepting)return;
+    primaryCompleted++;
+    if(chunk.provider)providers.push(chunk.provider);
+    errors.push(...(chunk.errors||[]));
+    offers.push(...(chunk.offers||[]));
+    await emit({...progress,pending:progress.pending+Number(!amazonSettled)});
+  }}).catch(error=>{
+    if(accepting)errors.push({provider:"search",sourceId:"search",pass:"primary",error:error instanceof Error?error.message:String(error)});
+  });
+
+  let timer;
+  const finished=Promise.allSettled([localPromise,amazonPromise,primaryPromise]).then(()=>"complete");
+  const deadline=new Promise(resolve=>{timer=setTimeout(()=>resolve("deadline"),streamDeadlineMs);});
+  let onRequestAbort;
+  const disconnected=new Promise(resolve=>{
+    onRequestAbort=()=>resolve("disconnected");
+    if(signal?.aborted) onRequestAbort();
+    else signal?.addEventListener("abort",onRequestAbort,{once:true});
+  });
+  const outcome=await Promise.race([finished,deadline,disconnected]);
+  clearTimeout(timer);
+  // Freeze the result before aborting the remaining transport. Late fulfillment
+  // cannot send more SSE data or corrupt the finalized offer list.
+  accepting=false;
+  const deadlineExceeded=outcome==="deadline";
+  if(outcome!=="complete") controller.abort(new Error(
+    deadlineExceeded?"search_stream_deadline_exceeded":"search_client_disconnected"));
+  signal?.removeEventListener("abort",forwardAbort);
+  signal?.removeEventListener("abort",onRequestAbort);
+  const providersPending=deadlineExceeded
+    ? Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)+Number(!localSettled)
+    : 0;
+  if(deadlineExceeded)errors.push({
+    provider:"search",sourceId:"search",pass:"primary",
+    error:"search_stream_deadline_exceeded",providersPending,
+  });
+
+  const assessed=retainRelatedOffers(query, await canonicalCandidates(offers,true));
   const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
@@ -416,6 +535,12 @@ async function streamSearchProgress(query, onSnapshot) {
       returnedMerchants:new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated:selectedOffers.length<allSelectedOffers.length,
       exhaustive:false,
+      partial:deadlineExceeded || errors.length>0,
+      complete:!deadlineExceeded && errors.length===0,
+      deadlineExceeded,
+      streamDeadlineMs,
+      providersPending,
+      sourceFailures:summarizeSourceFailures(errors),
       acquisitionDepth:plan.depth,
       moreAvailable:plan.depth<MAX_SEARCH_DEPTH,
     },
@@ -430,6 +555,20 @@ async function streamSearchProgress(query, onSnapshot) {
 async function searchAll(query, { depth = 0 } = {}) {
   if (Number(depth) > 0) return searchExpansion(query, Number(depth));
   query = normalizeSearchQuery(query);
+  if(OMEGA_INDEX_ONLY){
+    const indexed=await searchIndexedOffers(query);
+    const related=retainRelatedOffers(query,indexed.offers||[]);
+    const selected=selectDiverseOffers(related,Infinity);
+    return {
+      normalizedQuery:query,offers:selected,providers:[],errors:[],
+      providersConfigured:configuredProviders(),
+      coverage:{...sourceCoverageSummary(currentSources()),
+        returnedOffers:selected.length,availableOffers:selected.length,
+        returnedMerchants:new Set(selected.map(offerMerchantKey)).size,
+        partial:true,complete:false,exhaustive:false,
+        sourceFailures:summarizeSourceFailures([])}
+    };
+  }
   const plan = acquisitionPlan(0, configuredFreeStorefronts().length);
   const providerQuery = parseSearchIntent(query).providerQuery;
   const configuredRequestDeadline = Number(process.env.SEARCH_REQUEST_DEADLINE_MS);
@@ -437,11 +576,16 @@ async function searchAll(query, { depth = 0 } = {}) {
     ? Math.max(100, Math.min(25000, Math.floor(configuredRequestDeadline)))
     : 12000;
   const requestDeadlineAt = Date.now() + requestDeadlineMs;
+  // The JSON cache coalesces identical searches. Abort one shared refresh only
+  // at its own deadline, never when a single subscribing client disconnects.
+  const requestController=new AbortController();
   let deadlineExceeded = false;
   const beforeRequestDeadline = async (operation, fallback) => {
     const remaining = requestDeadlineAt - Date.now();
     if (remaining <= 0) {
       deadlineExceeded = true;
+      if(!requestController.signal.aborted)
+        requestController.abort(new Error("search_deadline_exceeded"));
       return fallback();
     }
     const timeout = Symbol("search-request-deadline");
@@ -453,6 +597,8 @@ async function searchAll(query, { depth = 0 } = {}) {
       ]);
       if (result !== timeout) return result;
       deadlineExceeded = true;
+      if(!requestController.signal.aborted)
+        requestController.abort(new Error("search_deadline_exceeded"));
       return fallback();
     } finally {
       clearTimeout(timeoutId);
@@ -468,14 +614,32 @@ async function searchAll(query, { depth = 0 } = {}) {
       amazonPageStart: plan.amazonPageStart,
       amazonPageCount: plan.amazonPageCount,
       matchingQuery: query,
+      signal:requestController.signal,
     }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) })),
     () => ({ offers:[], error:"search_deadline_exceeded" }),
   );
+  // Preserve every already-completed provider result when the request deadline
+  // expires. A slow merchant must never erase valid prices returned by a fast one.
+  // This is the same incremental evidence path used by SSE, without sacrificing
+  // the existing bounded deadline on the synchronous JSON endpoint.
+  const completedPrimaryChunks = [];
   const [amazon,primary,indexed,persisted] = await Promise.all([
     amazonPromise,
     beforeRequestDeadline(
-      () => runProviderPass(providerQuery, "primary", query, { plan }),
-      () => ({ providers:[], errors:[{provider:"search",sourceId:"search",pass:"primary",error:"search_deadline_exceeded"}], offers:[] }),
+      () => runProviderPass(providerQuery, "primary", query, {
+        plan, signal:requestController.signal,
+        onChunk: (chunk) => { completedPrimaryChunks.push(chunk); },
+      }),
+      () => {
+        const completed = mergeProviderChunks(completedPrimaryChunks);
+        return {
+          ...completed,
+          errors:[...completed.errors,{
+            provider:"search",sourceId:"search",pass:"primary",
+            error:"search_deadline_exceeded",
+          }],
+        };
+      },
     ),
     beforeRequestDeadline(
       () => searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
@@ -533,7 +697,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
       const expansions = await Promise.all(expansionQueries.map((candidate) => beforeRequestDeadline(
-        () => runProviderPass(candidate, "fallback", query, { plan }),
+        () => runProviderPass(candidate, "fallback", query, { plan,signal:requestController.signal }),
         () => ({ providers:[], errors:[], offers:[] }),
       )));
       for (const fallback of expansions) {
@@ -544,6 +708,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     }
   }
 
+  offers=await canonicalCandidates(offers,true);
   const amazonUrls = new Set(amazonValidated.map((offer) => offer.sourceUrl).filter(Boolean));
   const rescoredOffers = dedupeNormalizedOffers(offers)
     .filter((offer) => !amazonUrls.has(offer.sourceUrl))
@@ -555,7 +720,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
   // Amazon search cards are scored once against the shopper query above.
   // Merge those validated offers without scoring them a second time.
-  offers = dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
+  offers = OMEGA_CANONICAL ? retainRelatedOffers(query,offers) : dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
 
   const sources = currentSources();
   const allSelectedOffers = selectDiverseOffers(offers, Infinity);
@@ -588,8 +753,11 @@ async function searchAll(query, { depth = 0 } = {}) {
         responseOffers:plan.returnLimit,
       },
       fallbackUsed: Boolean(fallbackQuery),
+      partial:deadlineExceeded || errors.length>0,
+      complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
       requestDeadlineMs,
+      sourceFailures:summarizeSourceFailures(errors),
     },
     providers,
     normalizedQuery: query,
@@ -655,7 +823,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       "access-control-allow-origin": origin,
       "access-control-allow-methods": "GET,POST,OPTIONS",
-      "access-control-allow-headers": "accept,content-type,authorization",
+      "access-control-allow-headers": "accept,content-type,authorization,idempotency-key",
       "access-control-max-age": "86400",
     });
     return res.end();
@@ -668,6 +836,16 @@ const server = http.createServer(async (req, res) => {
     url = new URL(req.url || "/", "http://nawaa.local");
   } catch {
     return jsonResponse(res, 400, { error:"invalid_request_url" }, origin || "*");
+  }
+
+  // Strictly disposable-only quote implementation. No production DB access,
+  // production schema change, deployment switch or unauthenticated admin path.
+  if (url.pathname === "/api/quotes" ||
+      /^\/api\/(?:quotes|quote-admin)\//.test(url.pathname)) {
+    if (!quoteWorkflowEnabled())return jsonResponse(res,404,{error:"not_found"},origin||"*");
+    if (!enforceRateLimit(req,res,"quote-workflow",
+      {capacity:40,refillPerSecond:0.2},origin||"*"))return;
+    return handleQuoteWorkflow(req,res,url,origin);
   }
 
   if (req.method === "POST" && url.pathname === "/api/ingest/offers") {
@@ -791,7 +969,14 @@ const server = http.createServer(async (req, res) => {
 
     const normalized = normalizeSearchQuery(q);
     const key = searchCacheKey(normalized,0);
-    const cached = cachedSearch.peek(key);
+    // Streamed searches must expose the same signed depth-1 cursor as /api/search.
+    // Without it, the UI cannot request additional sources after an SSE result.
+    const nextCursor = encodeSearchCursor(normalized, 1);
+    // The SSE layer already streams fresh evidence; never publish stale
+    // exact/stock/price claims as its initial customer snapshot.
+    const cached = cachedSearch.peek(key,{allowStale:false});
+    const requestStarted = PROFILE_SEARCH_STREAM ? performance.now() : 0;
+    let firstValidPublished=false,firstExactPublished=false;
     res.writeHead(200,{
       "content-type":"text/event-stream; charset=utf-8",
       "cache-control":"no-cache, no-transform",
@@ -802,16 +987,50 @@ const server = http.createServer(async (req, res) => {
     });
     const send=(event,data)=>{
       if(res.writableEnded)return;
+      const measuring=PROFILE_SEARCH_STREAM && event==="snapshot";
       res.write("event: "+event+"\n");
-      res.write("data: "+JSON.stringify(data)+"\n\n");
+      const serializeStarted=measuring ? performance.now() : 0;
+      const serialized=JSON.stringify(data);
+      const serializedAt=measuring ? performance.now() : 0;
+      res.write("data: "+serialized+"\n\n");
+      if (measuring) {
+        const milestone=firstOfferMilestones(data?.offers);
+        // One per milestone per request, bounded diagnostic labels only.
+        const safeSource=o=>String(o?.providerMarket||o?.provider||"unknown").slice(0,48)
+          .replace(/[^a-zA-Z0-9_:-]/g,"");
+        if(!firstValidPublished && milestone.firstValid){
+          firstValidPublished=true;
+          console.log("SEARCH_FIRST_OFFER_TIMING "+JSON.stringify({kind:"valid",
+            serverPublishMs:performance.now()-requestStarted,
+            sourceId:safeSource(milestone.firstValid)}));
+        }
+        if(!firstExactPublished && milestone.firstExact){
+          firstExactPublished=true;
+          console.log("SEARCH_FIRST_OFFER_TIMING "+JSON.stringify({kind:"exact",
+            serverPublishMs:performance.now()-requestStarted,
+            sourceId:safeSource(milestone.firstExact)}));
+        }
+      }
+      if (measuring) console.log("SEARCH_STREAM_PHASE "+JSON.stringify({
+        stage:"snapshotWrite",bytes:Buffer.byteLength(serialized),
+        serializeMs:serializedAt-serializeStarted,socketEnqueueMs:performance.now()-serializedAt,
+      }));
     };
     send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString()});
 
     let closed=false;
-    req.on("close",()=>{closed=true;});
+    const streamController=new AbortController();
+    // IncomingMessage 'close' also fires on fully received GET requests; use
+    // ServerResponse 'close' to detect genuine client disconnects instead.
+    res.once("close",()=>{
+      if(!res.writableEnded) {
+        closed=true;
+        streamController.abort(new Error("search_client_disconnected"));
+      }
+    });
     try {
       if (cached) {
-        send("snapshot",cached);
+        send("snapshot",{...await canonicalResponse(cached,normalized),nextCursor});
         if (cached.cache?.mode === "fresh") {
           send("done",{cache:"fresh",offers:cached.offers?.length || 0});
           return res.end();
@@ -822,11 +1041,14 @@ const server = http.createServer(async (req, res) => {
       let result;
       try {
         result=await streamSearchProgress(normalized,async(snapshot)=>{
-          if(!closed&&!res.writableEnded) send("snapshot",{...snapshot,cache:{hit:false,mode:"progress",stale:false,refreshing:true,ageMs:0}});
-        });
+          snapshot=await canonicalResponse(snapshot,normalized);
+          if(!closed&&!res.writableEnded) send("snapshot",{...snapshot,nextCursor,cache:{hit:false,mode:"progress",stale:false,refreshing:true,ageMs:0}});
+        },{signal:streamController.signal});
       } finally { clearInterval(heartbeat); }
       if (closed || res.writableEnded) return;
-      send("snapshot",{...result,coverage:{...(result.coverage||{}),partial:false,complete:true,providersPending:0},cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
+      result=await canonicalResponse(result,normalized);
+      if(closed||res.writableEnded)return;
+      send("snapshot",{...result,nextCursor,cache:{hit:false,mode:"refresh",stale:false,refreshing:false,ageMs:0}});
       send("done",{cache:cached ? "revalidated" : "miss",offers:result.offers?.length || 0});
       return res.end();
     } catch(error) {
@@ -858,8 +1080,12 @@ const server = http.createServer(async (req, res) => {
         try { depth = decodeSearchCursor(cursorToken, normalizedComparisonQuery).depth; }
         catch { return jsonResponse(res,400,{error:"invalid_search_cursor"},origin || "*"); }
       }
-      const result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth));
+      // JSON can return only current evidence or a new bounded acquisition;
+      // a failed refresh may not certify an expired in-stock cached price.
+      let result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth),{allowStale:false});
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
+      if(OMEGA_CANONICAL&&resolvedOffer)await canonicalCandidates([resolvedOffer],true);
+      result=await canonicalResponse(result,normalizedComparisonQuery);
       const nextCursor = depth < MAX_SEARCH_DEPTH ? encodeSearchCursor(normalizedComparisonQuery, depth + 1) : null;
       return jsonResponse(res, 200, {
         query: productUrl || q,

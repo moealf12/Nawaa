@@ -522,12 +522,24 @@ assert.match(temuSearchOffers[0].image, /temu-case\.jpg/);
 const aliSearchFixture = `
 {"redirectedId":"3256810253104496","itemType":"productV3","productType":"natural","productId":"3256810253104496","image":{"imgUrl":"//ae-pic-a1.aliexpress-media.com/kf/test.jpg"},"title":{"displayTitle":"Magnetic Clear Case for iPhone 17 Pro Max"},"prices":{"skuId":"12000059808812209","salePrice":{"currencyCode":"USD","minPrice":0.33,"formattedPrice":"US $0.33"}},"productDetailUrl":"https://www.aliexpress.com/ssr/300000512/BundleDeals2?productIds=1005010439419248\\u0026sourceName=SEARCHProduct"}
 `;
-const aliSearchOffers = extractAliExpressSearchOffers(aliSearchFixture, "iphone 17 case");
-assert.equal(aliSearchOffers.length, 1);
-assert.equal(aliSearchOffers[0].price, 0.33);
-assert.equal(aliSearchOffers[0].currency, "USD");
-assert.match(aliSearchOffers[0].title, /iPhone 17/);
-assert.match(aliSearchOffers[0].sourceUrl, /BundleDeals2/);
+// v21.5: old expectation certified an AliExpress promotional BundleDeals2 URL
+// as a direct product offer. This is unsafe: the embedded item ID differs
+// from productIds in the landing URL, and no item PDP is identified.
+const aliRejected = {rejectedProductLinks:0,rejectionSamples:[]};
+const aliSearchOffers = extractAliExpressSearchOffers(aliSearchFixture, "iphone 17 case", aliRejected);
+assert.equal(aliSearchOffers.length, 0);
+assert.equal(aliRejected.rejectedProductLinks, 1);
+assert.equal(aliRejected.rejectionSamples[0]?.reason, "non_item_pdp_path");
+const aliSpecificPdpFixture = aliSearchFixture.replace(
+  "https://www.aliexpress.com/ssr/300000512/BundleDeals2?productIds=1005010439419248\\u0026sourceName=SEARCHProduct",
+  "https://www.aliexpress.com/item/3256810253104496.html?skuId=12000059808812209"
+);
+const aliSpecificPdpOffers = extractAliExpressSearchOffers(aliSpecificPdpFixture, "iphone 17 case");
+assert.equal(aliSpecificPdpOffers.length, 1);
+assert.equal(aliSpecificPdpOffers[0].price, 0.33);
+assert.equal(aliSpecificPdpOffers[0].currency, "USD");
+assert.match(aliSpecificPdpOffers[0].title, /iPhone 17/);
+assert.match(aliSpecificPdpOffers[0].sourceUrl, /\/item\/3256810253104496\.html/);
 
 
 const bestBuySearchFixture = String.raw`

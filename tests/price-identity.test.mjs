@@ -280,3 +280,34 @@ test('missing product identifier stays neutral when brand and title agree',()=>{
  assert.ok(result.matches.includes('brand'));
  assert.ok(result.matches.includes('title'));
 });
+
+test('v20 RED: AggregateOffer lowPrice must not become an exact purchasable price',async()=>{
+ const group={"@type":"Product","name":"HP OmniBook range","sku":"HP-OMNI",
+   "offers":{"@type":"AggregateOffer","lowPrice":"999","highPrice":"4999",
+     "offerCount":8,"priceCurrency":"SAR"}};
+ await withHtml('<script type="application/ld+json">'+JSON.stringify(group)+'</script>',async()=>{
+  const result=await resolveProductUrl(url);
+  assert.equal(result.originalProductPrice,null,"range minimum is not an item price");
+  assert.equal(result.productPrice,null,"range minimum cannot enter customer SAR prices");
+ });
+});
+
+test('v20 RED: generic product page must not silently select cheapest sibling variant',async()=>{
+ const item={"@type":"Product","name":"iPhone 17","offers":[
+  {"@type":"Offer","name":"256GB","sku":"IPH17-256","price":"3199","priceCurrency":"SAR",
+    "url":"/products/shirt?variant=256"},
+  {"@type":"Offer","name":"512GB","sku":"IPH17-512","price":"4199","priceCurrency":"SAR",
+    "url":"/products/shirt?variant=512"}
+ ]};
+ const structuredHtml='<script type="application/ld+json">'+JSON.stringify(item)+'</script>';
+ assert.equal(extractionCandidates(structuredHtml,url).some(entry=>entry.strategy==='embedded_json'),false,
+  "JSON-LD must never be parsed a second time as independent embedded variant state");
+ await withHtml(structuredHtml,async()=>{
+   const generic=await resolveProductUrl(url);
+   assert.equal(generic.originalProductPrice,null,"ambiguous generic variant has no exact price");
+   const exact=await resolveProductUrl(url+'?variant=512');
+   assert.equal(exact.originalProductPrice,4199);
+   assert.equal(exact.sku,'IPH17-512');
+   assert.equal(exact.variantId,'512');
+ });
+});

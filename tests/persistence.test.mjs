@@ -82,7 +82,7 @@ test('concurrent persistence initialization executes schema DDL once',async()=>{
 });
 
 test('recordOffer rolls back and releases the connection when canonical upsert fails',async()=>{
-  const result=await runPersistence({title:'HP Laptop',sourceUrl:'https://example.com/p',productPrice:2499,currency:'SAR'},{failUpsert:true});
+  const result=await runPersistence({title:'HP Laptop',sourceUrl:'https://example.com/p',productPrice:2499,currency:'SAR',observedAt:'2026-10-05T01:02:03.000Z'},{failUpsert:true});
   assert.equal(result.ok,false);
   assert.equal(result.error,'upsert_failed');
   const commands=result.calls.filter(call=>call[0]==='tx').map(call=>call[1]);
@@ -102,6 +102,17 @@ test('recordOffer rejects malformed URLs and currencies before opening the datab
     const result=await runPersistence(body);
     assert.equal(result.ok,false);
     assert.equal(result.error,'invalid_offer_record');
+    assert.deepEqual(result.calls,[]);
+  }
+});
+
+
+test("recordOffer rejects missing and future source timestamps before opening database",async()=>{
+  const input={title:"HP Laptop",sourceUrl:"https://example.com/p",productPrice:2499,currency:"SAR"};
+  for(const body of [input,{...input,observedAt:new Date(Date.now()+120_000).toISOString()}]){
+    const result=await runPersistence(body);
+    assert.equal(result.ok,false,"unobserved evidence must not become a canonical offer");
+    assert.equal(result.error,"invalid_observed_at");
     assert.deepEqual(result.calls,[]);
   }
 });

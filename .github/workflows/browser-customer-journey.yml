@@ -1,0 +1,94 @@
+name: NAWAA Real Browser Customer Journey
+on:
+  pull_request:
+    paths:
+      - 'src/search-page.mjs'
+      - 'src/product-page.mjs'
+      - 'search.html'
+      - 'product.html'
+      - 'config.js'
+      - 'scripts/browser-customer-journey.mjs'
+      - 'scripts/browser-fixture-customer-journey.mjs'
+      - 'scripts/browser-v218-matrix.mjs'
+      - 'tests/ui-flow.test.mjs'
+      - '.github/workflows/browser-customer-journey.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-browser-customer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser-customer-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked app dependencies
+        run: npm ci --ignore-scripts
+      - name: Install ephemeral test-only browser automation
+        run: npm install --no-save --ignore-scripts --package-lock=false playwright@1.56.1
+      - name: Check system Chrome (no paid browser service)
+        run: command -v google-chrome || command -v google-chrome-stable || command -v chromium
+      - name: Exercise actual PR candidate UI in Chromium (desktop and mobile)
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/browser-customer-journey.mjs candidate
+      - name: Repeat real PS5 journey on candidate for like-for-like website comparison
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_BROWSER_QUERY: PS5
+        run: node scripts/browser-customer-journey.mjs candidate
+      - name: Exercise HP laptop first-ten search and comparison in real Chromium
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_BROWSER_QUERY: HP laptop
+        run: node scripts/browser-customer-journey.mjs candidate
+      - name: Exercise Arabic HP laptop results and accessories in real Chromium
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_BROWSER_QUERY: لابتوب اتش بي
+        run: node scripts/browser-customer-journey.mjs candidate
+      - name: Run six missing customer queries in real isolated Chromium
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/browser-v218-matrix.mjs
+      - name: Replay fixture buyer journeys with zero external merchant requests
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/browser-fixture-customer-journey.mjs
+      - name: Observe the currently published GitHub Pages and Render UI
+        continue-on-error: true
+        env:
+          NODE_ENV: test
+        run: node scripts/browser-customer-journey.mjs published
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nawaa-customer-browser-${{ github.event.pull_request.head.sha || github.sha }}
+          path: browser-artifacts/
+          retention-days: 7

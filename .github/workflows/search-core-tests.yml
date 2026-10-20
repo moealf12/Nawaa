@@ -47,6 +47,7 @@ jobs:
         run: |
           node --check src/search-query.mjs
           node --check src/search-page.mjs
+          node --check src/quote-admin.mjs
           node --check src/product-page.mjs
           node --check server/server.mjs
           node --check server/search-cache.mjs
@@ -67,3 +68,215 @@ jobs:
           node --check server/internal-audit.mjs
           node --check scripts/audit-worker.mjs
           node --check scripts/audit-matrix.mjs
+
+  disposable-postgres-provenance:
+    # Dedicated isolated PostgreSQL 16 service; never accesses production.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa_ci
+          POSTGRES_PASSWORD: test_only_not_a_secret
+          POSTGRES_DB: nawaa_temporal_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nawaa_ci -d nawaa_temporal_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Real two-process PostgreSQL replay with test-only data
+        env:
+          NAWAA_TEST_DATABASE_URL: postgresql://nawaa_ci:test_only_not_a_secret@127.0.0.1:5432/nawaa_temporal_ci
+          DATABASE_SSL: "false"
+          MEILI_HOST: ""
+          MEILI_MASTER_KEY: ""
+        run: node --test tests/postgres-provenance.test.mjs
+
+  disposable-meilisearch-restart:
+    # Real Meilisearch process in a temporary CI Docker service; no production writes.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      meilisearch:
+        image: getmeili/meilisearch:v1.10.3
+        env:
+          MEILI_MASTER_KEY: test_only_meili_master_key_for_ci_20261018
+          MEILI_ENV: development
+          MEILI_NO_ANALYTICS: 'true'
+        ports:
+          - 7700:7700
+    env:
+      MEILI_HOST: http://127.0.0.1:7700
+      MEILI_MASTER_KEY: test_only_meili_master_key_for_ci_20261018
+      MEILI_INDEX: nawaa_ci_replay
+      DATABASE_URL: ''
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Verify isolated search service is responding
+        run: |
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:7700/health | grep -q 'available'; then exit 0; fi
+            sleep 1
+          done
+          echo 'Isolated Meilisearch service failed to start' >&2
+          exit 1
+      - name: Write historical and fresh Jarir E1 records in first actual Node process
+        run: node scripts/certify-real-meili-replay.mjs write
+      - name: Restart actual Docker service without deleting index
+        run: |
+          container=$(docker ps --filter 'ancestor=getmeili/meilisearch:v1.10.3' --format '{{.ID}}' | head -n 1)
+          test -n "$container"
+          docker restart "$container"
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:7700/health | grep -q 'available'; then exit 0; fi
+            sleep 1
+          done
+          echo 'Isolated Meilisearch did not recover from restart' >&2
+          exit 1
+      - name: Second Node process verifies durable index and delayed stale overwrite RED
+        run: node scripts/certify-real-meili-replay.mjs read
+      - name: Deterministic independent-process stale overwrite RED (documented unsafe baseline)
+        env:
+          MEILI_INDEX: nawaa_ci_multi_instance
+        run: node scripts/certify-real-meili-multi-instance.mjs red
+
+  disposable-omega-consistency:
+    # Dedicated disposable PostgreSQL + Meilisearch, test-only.
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: omega_ci
+          POSTGRES_PASSWORD: omega_test_only
+          POSTGRES_DB: omega_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omega_ci -d omega_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 8
+      meilisearch:
+        image: getmeili/meilisearch:v1.10.3
+        env:
+          MEILI_MASTER_KEY: omega_meili_test_only_key
+          MEILI_ENV: development
+          MEILI_NO_ANALYTICS: 'true'
+        ports:
+          - 7700:7700
+    env:
+      NODE_ENV: test
+      NAWAA_CANONICAL_INDEX_TEST: '1'
+      NAWAA_TEST_DATABASE_URL: postgresql://omega_ci:omega_test_only@127.0.0.1:5432/omega_ci
+      MEILI_HOST: http://127.0.0.1:7700
+      MEILI_MASTER_KEY: omega_meili_test_only_key
+      MEILI_INDEX: nawaa_ci_omega
+      DATABASE_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Confirm disposable services
+        run: |
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:7700/health | grep -q 'available'; then break; fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:7700/health
+      - name: Multi-process canonical writes and stale remote task
+        run: node scripts/certify-omega-canonical.mjs write
+      - name: Restart actual disposable Meilisearch container
+        run: |
+          container=$(docker ps --filter 'ancestor=getmeili/meilisearch:v1.10.3' --format '{{.ID}}' | head -n 1)
+          test -n "$container"
+          docker restart "$container"
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:7700/health | grep -q 'available'; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Fresh process proves restart recovery and canonical read guard
+        run: node scripts/certify-omega-canonical.mjs read
+      - name: Real localhost progressive SSE and final JSON trust gate
+        run: node scripts/certify-omega-real-http.mjs
+      - name: Mixed chronology and cached canonical boundary (simulated transitions, real services)
+        run: node scripts/certify-omega-mixed.mjs
+      - name: Kill worker after real submission before task ACK
+        run: node scripts/certify-omega-worker-crash.mjs
+      - name: Demonstrate 121-key prefix starvation before fairness repair
+        run: |
+          git fetch --depth=1 origin 8038edce5219cc30c420e266e0e60ac014904073
+          git show 8038edce5219cc30c420e266e0e60ac014904073:server/omega-canonical-index.mjs > server/.omega-before.mjs
+          node scripts/certify-omega-scale.mjs --baseline
+      - name: Fair durable traversal, real batch overhead and recall
+        run: node scripts/certify-omega-scale.mjs
+      - name: Independently acquired Jarir observation versus simulated predecessor
+        run: node scripts/certify-omega-live-acceptance.mjs
+      - name: Seventeen live customer SSE queries including all ten PS5 intents with canonical guard
+        run: node scripts/measure-representative-first-offer.mjs
+
+
+  disposable-quote-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: omega_ci
+          POSTGRES_PASSWORD: omega_test_only
+          POSTGRES_DB: omega_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U omega_ci -d omega_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 8
+    env:
+      NODE_ENV: test
+      NAWAA_TEST_DATABASE_URL: postgresql://omega_ci:omega_test_only@127.0.0.1:5432/omega_ci
+      DATABASE_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Real quote HTTP, durable PostgreSQL, concurrency, expiration, authorization
+        run: node scripts/certify-quote-http.mjs
+      - name: Install ephemeral local Chromium automation
+        run: npm install --no-save --ignore-scripts --package-lock=false playwright@1.56.1
+      - name: Actual 390px customer quotation, admin price and accept journey
+        run: node scripts/certify-quote-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nawaa-quote-customer-${{ github.event.pull_request.head.sha || github.sha }}
+          path: browser-artifacts/
+          retention-days: 7

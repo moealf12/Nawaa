@@ -87,8 +87,22 @@ export function buildExtractionDiagnostics(product) {
   };
 }
 
+// The contract's priceSAR field is an actual SAR amount, not a generic
+// merchant price. An explicit foreign currency must never be relabeled as
+// SAR merely because it has a numeric productPrice. A successfully converted
+// offer declares currency:"SAR" and retains originalCurrency as provenance.
+// Legacy SAR offers with neither currency field remain unchanged for now.
+function comparablePriceSAR(offer = {}) {
+  const current = String(offer.currency || "").trim().toUpperCase();
+  const original = String(offer.originalCurrency || "").trim().toUpperCase();
+  if ((current && current !== "SAR") || (!current && original && original !== "SAR")) return null;
+  return Number.isFinite(offer.productPrice) && offer.productPrice > 0
+    ? offer.productPrice : null;
+}
+
 export function toNawaaProduct(offer, inputUrl) {
-  const missing = missingFields(offer);
+  const priceSAR = comparablePriceSAR(offer);
+  const missing = missingFields({...offer,productPrice:priceSAR});
   const confidence = confidenceFor(offer, missing);
   const strategy = strategyFromOffer(offer);
   return {
@@ -104,7 +118,7 @@ export function toNawaaProduct(offer, inputUrl) {
     },
     media: { primaryImage: offer.image || null },
     commerce: {
-      priceSAR: Number.isFinite(offer.productPrice) ? offer.productPrice : null,
+      priceSAR,
       originalPrice: Number.isFinite(offer.originalProductPrice) ? offer.originalProductPrice : null,
       originalCurrency: offer.originalCurrency || null,
       shippingSAR: Number.isFinite(offer.shipping) ? offer.shipping : null,

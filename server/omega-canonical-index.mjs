@@ -1,0 +1,285 @@
+// ASTRA OMEGA v16.1: isolated PostgreSQL canonical revision/outbox/read guard.
+// Test-only executable proof. Never runs against production or migrates it.
+import {canonicalOfferPayload} from "./canonical-offer-identity.mjs";
+let pool,meili,schemaReady;
+const T="nawaa_ci_omega_canonical",O="nawaa_ci_omega_outbox",R="nawaa_ci_omega_reconcile";
+function onlyTest(){
+  if(process.env.NODE_ENV!=="test"||process.env.NAWAA_CANONICAL_INDEX_TEST!=="1"||
+     !process.env.NAWAA_TEST_DATABASE_URL||
+     process.env.MEILI_HOST!=="http://127.0.0.1:7700"||
+     process.env.MEILI_INDEX!=="nawaa_ci_omega"||
+     !process.env.MEILI_MASTER_KEY)
+    throw Error("canonical_index_disposable_test_only");
+}
+async function database(){
+  onlyTest();
+  if(!pool){
+    const pg=(await import("pg")).default;
+    pool=new pg.Pool({connectionString:process.env.NAWAA_TEST_DATABASE_URL,ssl:false,max:4});
+  }
+  return pool;
+}
+async function index(){
+  onlyTest();
+  if(!meili){
+    const {MeiliSearch}=await import("meilisearch");
+    meili=new MeiliSearch({host:process.env.MEILI_HOST,apiKey:process.env.MEILI_MASTER_KEY});
+  }
+  return meili.index(process.env.MEILI_INDEX);
+}
+export async function initializeCanonicalIndex(){
+  const pg=await database();
+  schemaReady||=pg.query([
+    "CREATE TABLE IF NOT EXISTS "+T+"(offer_key text primary key, revision bigint not null check(revision>0), observed_at timestamptz not null, fingerprint text not null, offer jsonb not null)",
+    "CREATE TABLE IF NOT EXISTS "+O+"(id bigserial primary key, offer_key text not null, revision bigint not null, publication_status text not null default 'pending', task_uid bigint, updated_at timestamptz not null default now(), UNIQUE(offer_key,revision))",
+    "CREATE TABLE IF NOT EXISTS "+R+"(name text primary key,last_key text not null,upper_key text not null)",
+    "CREATE INDEX IF NOT EXISTS nawaa_ci_omega_outbox_status_idx ON "+O+"(publication_status,id)"
+  ].join(";")).catch(e=>{schemaReady=null;throw e;});
+  await schemaReady;
+}
+export async function commitCanonicalObservation(input){
+  const normalized=canonicalOfferPayload(input);
+  if(!normalized)throw Error("invalid_canonical_observation");
+  await initializeCanonicalIndex();
+  const tx=await (await database()).connect();
+  try{
+    await tx.query("BEGIN");
+    const sql="INSERT INTO "+T+"(offer_key,revision,observed_at,fingerprint,offer)"+
+      " VALUES($1,1,$2,$3,$4::jsonb) ON CONFLICT(offer_key) DO UPDATE SET"+
+      " revision="+T+".revision+1,observed_at=excluded.observed_at,"+
+      " fingerprint=excluded.fingerprint,offer=excluded.offer"+
+      " WHERE "+T+".observed_at<excluded.observed_at"+
+      " RETURNING revision,observed_at,fingerprint";
+    const result=await tx.query(sql,[normalized.offerKey,normalized.offer.observedAt,
+      normalized.fingerprint,JSON.stringify(normalized.offer)]);
+    let state,revision;
+    if(result.rows.length){
+      revision=Number(result.rows[0].revision);
+      await tx.query("INSERT INTO "+O+"(offer_key,revision) VALUES($1,$2) ON CONFLICT DO NOTHING",[normalized.offerKey,revision]);
+      state="accepted";
+    }else{
+      const current=(await tx.query("SELECT revision,observed_at,fingerprint FROM "+T+
+        " WHERE offer_key=$1",[normalized.offerKey])).rows[0];
+      if(!current)throw Error("canonical_state_missing");
+      revision=Number(current.revision);
+      const equalTime=new Date(current.observed_at).getTime()===Date.parse(normalized.offer.observedAt);
+      state=equalTime?(current.fingerprint===normalized.fingerprint?"duplicate":"equal_time_conflict"):"rejected_older";
+    }
+    await tx.query("COMMIT");
+    return {state,revision,offerKey:normalized.offerKey,documentId:normalized.documentId};
+  }catch(e){try{await tx.query("ROLLBACK")}catch{}throw e;}finally{tx.release();}
+}
+export async function currentCanonical(key){
+  await initializeCanonicalIndex();
+  const row=(await (await database()).query("SELECT revision,observed_at,fingerprint,offer FROM "+T+
+    " WHERE offer_key=$1",[key])).rows[0];
+  return row?{revision:Number(row.revision),observedAt:new Date(row.observed_at).toISOString(),
+    fingerprint:row.fingerprint,offer:row.offer}:null;
+}
+function indexedDocument(key,state){
+  const identity=canonicalOfferPayload(state.offer);
+  if(!identity||identity.offerKey!==key)throw Error("canonical_identity_drift");
+  return {...state.offer,id:identity.documentId,offerKey:key,
+    canonicalRevision:state.revision,canonicalFingerprint:state.fingerprint};
+}
+// One bounded remote task per selected identity batch, not per document.
+// No global Meilisearch CAS is assumed: every customer read still hydrates
+// PostgreSQL canonical revisions and repair is idempotent after task races.
+async function submitDocuments(documents){
+  const target=await index();
+  const task=await target.addDocuments(documents);
+  if(!Number.isInteger(task?.taskUid))throw Error("index_task_uid_missing");
+  const settled=await target.waitForTask(task.taskUid,{timeOutMs:15000,intervalMs:100});
+  if(settled.status!=="succeeded"){
+    const error=new Error("index_task_failed");
+    error.code="index_task_failed";
+    error.taskErrorCode=settled.error?.code||null;
+    throw error;
+  }
+  return task.taskUid;
+}
+async function submit(key,state){
+  return submitDocuments([indexedDocument(key,state)]);
+}
+const documentRejection=error=>error?.code==="index_task_failed"&&
+  ["invalid_document_id","invalid_document_fields","invalid_document_field",
+   "invalid_document_content","missing_document_id"].includes(error.taskErrorCode);
+export async function publishCanonicalOutbox({limit=40}={}){
+  await initializeCanonicalIndex();
+  const pg=await database();
+  const rows=(await pg.query("SELECT id,offer_key,revision FROM "+O+
+    " WHERE publication_status='pending' ORDER BY id LIMIT $1",
+    [Math.max(1,Math.min(100,limit))])).rows;
+  if(!rows.length)return [];
+  const keys=[...new Set(rows.map(r=>r.offer_key))];
+  const states=(await pg.query("SELECT offer_key,revision,fingerprint,offer FROM "+T+
+    " WHERE offer_key=ANY($1::text[])",[keys])).rows;
+  const current=new Map(states.map(row=>[row.offer_key,{
+    revision:Number(row.revision),fingerprint:row.fingerprint,offer:row.offer
+  }]));
+  const ready=[],outcomes=[];
+  for(const event of rows){
+    const state=current.get(event.offer_key);
+    if(!state)throw Error("outbox_canonical_missing");
+    if(state.revision!==Number(event.revision)){
+      await pg.query("UPDATE "+O+
+        " SET publication_status='superseded',updated_at=now()"+
+        " WHERE id=$1 AND publication_status='pending'",[event.id]);
+      outcomes.push({revision:Number(event.revision),status:"superseded"});
+      continue;
+    }
+    try{
+      ready.push({event,doc:indexedDocument(event.offer_key,state)});
+    }catch(error){
+      if(error?.message!=="canonical_identity_drift")throw error;
+      // Corrupt durable identity cannot block unrelated canonical offers.
+      await pg.query("UPDATE "+O+" SET publication_status='failed',updated_at=now()"+
+        " WHERE id=$1 AND publication_status='pending'",[event.id]);
+      outcomes.push({revision:state.revision,status:"failed",reason:"canonical_identity_drift"});
+    }
+  }
+  if(!ready.length)return outcomes;
+  const mark=async(entry,status,uid=null)=>
+    pg.query("UPDATE "+O+
+      " SET publication_status=$2,task_uid=$3,updated_at=now()"+
+      " WHERE id=$1 AND publication_status='pending'",[entry.event.id,status,uid]);
+  try{
+    const uid=await submitDocuments(ready.map(x=>x.doc));
+    // A crash after remote task completion and before this ACK leaves pending
+    // events. Their retry uses the same stable document IDs and revisions.
+    await pg.query("UPDATE "+O+" SET publication_status='published',task_uid=$2,"+
+      " updated_at=now() WHERE id=ANY($1::bigint[]) AND publication_status='pending'",
+      [ready.map(x=>x.event.id),uid]);
+    outcomes.push(...ready.map(x=>({revision:Number(x.event.revision),status:"published",taskUid:uid})));
+  }catch(error){
+    // Only an explicit remote document-validation failure is isolated.
+    // Transport/timeouts/service errors MUST remain pending for durable retry.
+    if(!documentRejection(error))throw error;
+    for(const entry of ready){
+      try{
+        const uid=await submitDocuments([entry.doc]);
+        await mark(entry,"published",uid);
+        outcomes.push({revision:Number(entry.event.revision),status:"published",taskUid:uid});
+      }catch(singleError){
+        if(!documentRejection(singleError))throw singleError;
+        await mark(entry,"failed");
+        outcomes.push({revision:Number(entry.event.revision),status:"failed",reason:"invalid_index_document"});
+      }
+    }
+  }
+  return outcomes;
+}
+export async function guardedCanonicalSearch(query,{limit=80,now=Date.now()}={}){
+  await initializeCanonicalIndex();
+  // The customer normalizer maps "PlayStation 5" to "ps5", while source
+  // titles may contain only the expanded spelling. Expand for candidate
+  // discovery, then let the existing current-query classifier judge relevance.
+  const discoveryQuery=String(query).replace(/\bps5\b/gi,"playstation 5");
+  const search=await (await index()).search(discoveryQuery,{
+    limit:Math.max(1,Math.min(500,limit)),
+    attributesToRetrieve:["offerKey","canonicalRevision","canonicalFingerprint",
+      "sourceUrl","observedAt","title","productPrice","availability"]});
+  const hits=search.hits||[];
+  const keys=[...new Set(hits.map(h=>h.offerKey).filter(x=>typeof x==="string"))];
+  if(!keys.length)return {configured:true,offers:[],rejected:hits.length,hydrated:0};
+  const rows=(await (await database()).query("SELECT offer_key,revision,observed_at,fingerprint,offer FROM "+T+
+    " WHERE offer_key=ANY($1::text[])",[keys])).rows;
+  const state=new Map(rows.map(x=>[x.offer_key,x]));
+  let rejected=0,hydrated=0;
+  const offers=[];
+  for(const hit of hits){
+    const row=state.get(hit.offerKey);
+    if(!row){rejected++;continue;}
+    const observation=new Date(row.observed_at).getTime();
+    if(!Number.isFinite(observation)||now-observation>45000||observation>now+60000){
+      rejected++;continue;
+    }
+    const lagged=Number(hit.canonicalRevision)!==Number(row.revision)||
+      hit.canonicalFingerprint!==row.fingerprint;
+    if(lagged)hydrated++;
+    // Hydrate authoritative state: raw stale indexed price is never returned.
+    offers.push({...row.offer,dataKind:"indexed",exactMatch:false,
+      matchConfidence:0,canonicalRevision:Number(row.revision),
+      canonicalFingerprint:row.fingerprint,indexLagged:lagged});
+  }
+  return {configured:true,offers,rejected,hydrated};
+}
+export async function reconcileCanonicalIndex({limit=50,now=Date.now()}={}){
+  await initializeCanonicalIndex();
+  if(!Number.isInteger(limit)||limit<1||limit>100)throw Error("invalid_reconcile_limit");
+  const tx=await (await database()).connect();
+  try{
+    await tx.query("BEGIN");
+    // One durable traversal at a time. Process termination rolls back progress;
+    // remote repair is idempotent and is safely repeated by the next worker.
+    const locked=(await tx.query("SELECT pg_try_advisory_xact_lock(1620002) AS locked")).rows[0].locked;
+    if(!locked){await tx.query("ROLLBACK");return {inspected:0,repaired:[],busy:true};}
+    let cursor=(await tx.query("SELECT last_key,upper_key FROM "+R+" WHERE name='canonical'")).rows[0];
+    if(!cursor||!cursor.upper_key){
+      const upper=(await tx.query("SELECT max(offer_key) AS upper_key FROM "+T)).rows[0].upper_key||"";
+      cursor={last_key:"",upper_key:upper};
+    }
+    const rows=(await tx.query("SELECT offer_key,revision,observed_at,fingerprint,offer FROM "+T+
+      " WHERE offer_key>$1 AND offer_key<=$2 ORDER BY offer_key LIMIT $3",
+      [cursor.last_key,cursor.upper_key,limit])).rows;
+    const target=await index(),repaired=[],removed=[],failed=[];
+    for(const row of rows){
+      const state={revision:Number(row.revision),fingerprint:row.fingerprint,offer:row.offer};
+      const doc=indexedDocument(row.offer_key,state);
+      try{
+        let current;
+        try{current=await target.getDocument(doc.id);}
+        catch(e){if(!["document_not_found","index_not_found"].includes(e?.code||e?.cause?.code))throw e;}
+        if(now-new Date(row.observed_at).getTime()>45000){
+          if(current){
+            const task=await target.deleteDocument(doc.id);
+            const settled=await target.waitForTask(task.taskUid,{timeOutMs:15000,intervalMs:100});
+            if(settled.status!=="succeeded")throw Error("index_delete_failed");
+            removed.push(doc.id);
+          }
+          continue;
+        }
+        if(current?.canonicalRevision===state.revision&&current?.canonicalFingerprint===state.fingerprint)continue;
+        const taskUid=await submit(row.offer_key,state);
+        repaired.push({offerKey:row.offer_key,revision:state.revision,taskUid});
+      }catch(error){failed.push({offerKey:row.offer_key,error:String(error?.code||error?.message||error)});}
+    }
+    const last=rows.at(-1)?.offer_key||cursor.last_key;
+    const complete=rows.length<limit||last===cursor.upper_key;
+    await tx.query("INSERT INTO "+R+"(name,last_key,upper_key) VALUES('canonical',$1,$2)"+
+      " ON CONFLICT(name) DO UPDATE SET last_key=excluded.last_key,upper_key=excluded.upper_key",
+      [complete?"":last,complete?"":cursor.upper_key]);
+    await tx.query("COMMIT");
+    return {inspected:rows.length,repaired,removed,failed,complete};
+  }catch(error){try{await tx.query("ROLLBACK")}catch{}throw error;}finally{tx.release();}
+}
+export async function isolatedCanonicalIndexOffers(offers=[]){
+  onlyTest();
+  const accepted=[];
+  for(const offer of offers)accepted.push(await commitCanonicalObservation(offer));
+  const published=await publishCanonicalOutbox();
+  return {configured:true,indexed:published.filter(x=>x.status==="published").length,
+    canonicalAccepted:accepted.filter(x=>x.state==="accepted").length,
+    conflicts:accepted.filter(x=>x.state==="equal_time_conflict").length};
+}
+
+// Linearization point is the batched PostgreSQL SELECT, after live acceptance.
+// Cached/indexed candidates only discover identities; they never mint evidence.
+export async function canonicalReadBoundary(offers=[],{acceptLive=false,now=Date.now()}={}){
+  await initializeCanonicalIndex();
+  const candidates=offers.map(offer=>({offer,payload:canonicalOfferPayload(offer)}))
+    .filter(x=>x.payload);
+  if(acceptLive){
+    for(const {offer,payload} of candidates)
+      if(offer.dataKind==="live")await commitCanonicalObservation(payload.offer);
+  }
+  const keys=[...new Set(candidates.map(x=>x.payload.offerKey))];
+  if(!keys.length)return [];
+  const rows=(await (await database()).query("SELECT offer_key,revision,observed_at,fingerprint,offer FROM "+T+
+    " WHERE offer_key=ANY($1::text[])",[keys])).rows;
+  return rows.filter(row=>{
+    const time=new Date(row.observed_at).getTime();
+    return Number.isFinite(time)&&now-time<=45000&&time<=now+60000;
+  }).map(row=>({...row.offer,dataKind:"indexed",exactMatch:false,matchConfidence:0,
+    canonicalRevision:Number(row.revision),canonicalFingerprint:row.fingerprint}));
+}

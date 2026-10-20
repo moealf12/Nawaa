@@ -14,6 +14,7 @@ import {
   offerVariantDimensions,
 } from "./search-core.mjs";
 import {selectSearchStreamResult} from "./search-stream.mjs";
+import {coverageStatusText} from "./search-coverage-status.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -287,17 +288,6 @@ async function fetchJsonWithRetry(url, options = {}, attempts = 3) {
   throw lastError || new Error("request_failed");
 }
 
-async function wakeSearchApi(apiBase) {
-  try {
-    await fetchJsonWithRetry(apiBase + "/health", {
-      headers: { accept: "application/json" },
-    }, 2);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function renderLiveSearchError(query, error) {
   state.product = null;
   const message = error?.name === "AbortError"
@@ -373,7 +363,7 @@ async function renderUrlState(query, requestId) {
   els.status.textContent = "نستخرج المنتج ونقارن عروضه…";
   els.results.innerHTML = '<div class="empty-state live-loading">جاري قراءة رابط المنتج والبحث عن عروضه في المتاجر…</div>';
   try {
-    await wakeSearchApi(apiBase);
+    // Resolve URL-based comparisons directly too; /health is not a prerequisite.
     const data = await fetchJsonWithRetry(apiBase + "/api/search?url=" + encodeURIComponent(query));
     if (!data.resolvedOffer || !Array.isArray(data.offers) || !data.offers.length) {
       throw new Error("product_identity_missing");
@@ -796,9 +786,25 @@ function canonicalProfileMarkup(profile = {}) {
 function productDisplayTitle(offer) {
   const description = describeProduct(offer);
   const specs = offer.specs || {};
-  if (description.kind === "console") return [description.platform.toUpperCase(), description.form,
-    description.edition === "digital" ? "نسخة رقمية" : description.edition === "disc" ? "نسخة الأقراص" : "",
-    description.storage?.toUpperCase(), description.isBundle ? "حزمة مع إضافات" : ""].filter(Boolean).join(" · ");
+  if (description.kind === "console") {
+    // E1 Jarir physical packages: never render a game-only bundle and an
+    // included-controller bundle under the identical generic product label.
+    // Only disclose contents explicitly present in the merchant title;
+    // "with DualSense" does NOT prove an additional/second controller.
+    const merchantTitle=String(offer.title||"").toLowerCase();
+    const includesController=/\b(?:bundle|including|includes|with)\b.*\b(?:dualsense|controllers?)\b/.test(merchantTitle);
+    const includesFortnite=/\b(?:fortnite|fornite)\b/.test(merchantTitle);
+    const includedParts=[
+      includesFortnite?"Fortnite":null,
+      includesController?"يد تحكم DualSense":null
+    ].filter(Boolean);
+    const bundleLabel=description.isBundle
+      ? includedParts.length?"حزمة تتضمن "+includedParts.join(" + "):"حزمة — راجع محتويات المتجر"
+      : "";
+    return [description.platform.toUpperCase(), description.form,
+      description.edition === "digital" ? "نسخة رقمية" : description.edition === "disc" ? "نسخة الأقراص" : "",
+      description.storage?.toUpperCase(),bundleLabel].filter(Boolean).join(" · ");
+  }
   if (productCategory(offer) !== "phone") return offer.title || specs.series || specs.deviceType || "المنتج";
   return [specs.deviceType || specs.series || offer.title, specs.storage, specs.color].filter(Boolean).join(" · ");
 }
@@ -820,17 +826,29 @@ function additionalResultsSection(label, groups) {
 
 function productImageMarkup(offer, group, title, fallbackClass) {
   const images = [...new Set([offer, ...(group?.offers || [])].map(item => item?.image).filter(url => /^https?:\/\//i.test(url || "")))];
-  const fallback = '<span class="' + fallbackClass + '" style="display:' + (images.length ? 'none' : 'grid') + '">صورة غير متاحة</span>';
+  // Product tiles must remain informative while a lazy third-party image is pending.
+  // Other layouts retain their sizing until separately verified in Chrome.
+  const pendingFallback = fallbackClass === "match-card-fallback" || fallbackClass === "config-image-fallback";
+  const fallback = '<span class="' + fallbackClass + '" style="display:' + (images.length && !pendingFallback ? 'none' : 'grid') + '">صورة غير متاحة</span>';
   if (!images.length) return fallback;
-  return '<img src="' + escapeHtml(images[0]) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" data-image-options="' + escapeHtml(JSON.stringify(images)) + '" data-image-index="0" onerror="const urls=JSON.parse(this.dataset.imageOptions);const next=Number(this.dataset.imageIndex)+1;this.dataset.imageIndex=next;if(next &lt; urls.length){this.src=urls[next]}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';}">' + fallback;
+  return '<img src="' + escapeHtml(images[0]) + '" alt="' + escapeHtml(title) + '" loading="lazy" referrerpolicy="no-referrer" data-image-options="' + escapeHtml(JSON.stringify(images)) + '" data-image-index="0" onload="this.nextElementSibling.style.display=String()" onerror="const urls=JSON.parse(this.dataset.imageOptions);const next=Number(this.dataset.imageIndex)+1;this.dataset.imageIndex=next;if(next &lt; urls.length){this.src=urls[next]}else{this.style.display=\'none\';this.nextElementSibling.style.display=\'grid\';}">' + fallback;
 }
 
-function exactMatchCard(group, selectedGroup, comparisonMarkup = "") {
+function normalizedCardDisplayName(offer) {
+  return productDisplayTitle(offer).normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDisplayNames = new Set()) {
   const available = (group.offers || []).filter(item => item.availability !== "out_of_stock" && item.canShipToSaudi !== false);
   const priced = available.filter(item => Number.isFinite(item.productPrice)).sort((a,b)=>a.productPrice-b.productPrice);
   const offer = priced[0] || group.bestOffer || group.offers?.[0];
   if (!offer) return "";
   const title = productDisplayTitle(offer);
+  // Do not merge distinct manufacturer model numbers merely to avoid a
+  // duplicate-looking card. Explain why visually identical cards stay separate.
+  const variantClarifier = repeatedDisplayNames.has(normalizedCardDisplayName(offer))
+    ? `<small class="card-model-identifier">رقم الموديل: ${escapeHtml(String(offer.specs?.modelNumber || "غير مذكور"))} · ${escapeHtml(offer.merchant || "المتجر غير محدد")} (بحسب المتجر)</small>`
+    : "";
   const uniqueMerchants = new Set((group.offers || []).map(item => item.merchant).filter(Boolean)).size;
   const countries = [...new Map((group.offers || []).filter(item => item.merchantCountryCode).map(item => [item.merchantCountryCode,item.merchantCountryNameAr || item.merchantCountryCode])).entries()];
   const selected = selectedGroup?.key === group.key;
@@ -846,6 +864,7 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "") {
       <div class="match-card-copy">
         <span class="mini-kicker">${escapeHtml(categoryLabel(productCategory(offer)))}</span>
         <strong>${escapeHtml(title)}</strong>
+        ${variantClarifier}
         <div class="card-specs">${specs.map(([label,value])=>`<span>${escapeHtml(label)}: ${escapeHtml(value)}</span>`).join("")}<span>${conditionDisplay(offer.condition || "unknown")}</span></div>
         <div class="card-coverage"><small>${group.offers.length} عروض · ${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
           <span class="card-countries">${countries.slice(0,3).map(([code,name])=>`<span aria-label="${escapeHtml(name)}" title="${escapeHtml(name)}">${countryFlag(code)}</span>`).join("")}${countries.length > 3 ? `<small>+${countries.length-3}</small>` : ""}</span>
@@ -885,6 +904,36 @@ function openProductDetails(product, offer, query) {
   location.href = "./product.html?" + params.toString();
 }
 
+// Grouping comparable offers does not independently prove an identical SKU.
+// Confirm merchant model agreement only when every included offer reports it.
+function sharedMerchantModelEvidence(offers = []) {
+  if (!Array.isArray(offers) || offers.length < 2) return false;
+  const merchants = new Set(offers.map(offer => offer?.merchant).filter(Boolean));
+  if (merchants.size < 2) return false;
+  const ids = offers.map(offer => String(offer?.specs?.modelNumber || "")
+    .normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g, ""));
+  return ids.every(Boolean) && ids.every(id => id === ids[0]);
+}
+
+// E1 real Chrome: CDN images can become complete before their inline load
+// callback settles after a streamed innerHTML re-render. Derive placeholder
+// visibility from the actual image state immediately after each commit.
+function reconcileProductImageFallbacks(root) {
+  for (const image of root.querySelectorAll(".match-card-image img, .config-image img")) {
+    const fallback = image.nextElementSibling;
+    if (!fallback || !fallback.matches(".match-card-fallback, .config-image-fallback")) continue;
+    const reconcile = () => {
+      if (image.complete && image.naturalWidth > 0)
+        fallback.style.display = "none";
+      else if (image.complete && image.style.display === "none")
+        fallback.style.display = "grid";
+    };
+    reconcile();
+    image.addEventListener("load", reconcile, {once:true});
+    image.addEventListener("error", reconcile, {once:true});
+  }
+}
+
 function renderProduct(product, query) {
   const filteredOffers = product.offers.filter(offer =>
     (state.merchant === "all" || offer.merchant === state.merchant) &&
@@ -904,6 +953,21 @@ function renderProduct(product, query) {
   const selectorGroups = state.selectedGroupKey ? exactGroups.filter(group => group.key === state.selectedGroupKey) : discoverySections.flatMap(section=>section.groups);
   const selectorGroupKeys = new Set(exactGroups.map((group) => group.key));
   const relatedGroups = groups.filter((group) => !selectorGroupKeys.has(group.key));
+  // Duplicate-looking names can refer to distinct regional manufacturer
+  // models or unverified merchant SKUs. Annotate rather than merge them.
+  const cardNameCounts = new Map();
+  for (const group of exactGroups) {
+    const available = (group.offers || []).filter(item =>
+      item.availability !== "out_of_stock" && item.canShipToSaudi !== false);
+    const priced = available.filter(item => Number.isFinite(item.productPrice))
+      .sort((a,b)=>a.productPrice-b.productPrice);
+    const representative = priced[0] || group.bestOffer || group.offers?.[0];
+    if(!representative) continue;
+    const name=normalizedCardDisplayName(representative);
+    cardNameCounts.set(name,(cardNameCounts.get(name)||0)+1);
+  }
+  const repeatedDisplayNames = new Set([...cardNameCounts.entries()]
+    .filter(([,count])=>count>1).map(([name])=>name));
 
   const selector = buildVariantSelectorState(selectorGroups, state.selectorSelection);
   state.selectorSelection = { ...selector.selection };
@@ -914,6 +978,7 @@ function renderProduct(product, query) {
   const featuredValue = selectedIntelligence?.baselineValue ?? selectedGroup?.bestValue ?? null;
   const featuredConfirmed = selectedIntelligence?.priceBasis === "comparable_total" && featuredOffer?.bucket === "confirmed";
   const canonicalProfile = buildCanonicalProductProfile(selectedGroup?.offers || []);
+  const sameModelEvidence = sharedMerchantModelEvidence(selectedGroup?.offers || []);
 
   const modelCount = selector.options.models.length;
   const storageCount = selector.options.storages.length;
@@ -946,7 +1011,8 @@ function renderProduct(product, query) {
                   <span>${conditionDisplay(featuredOffer.condition || "unknown")}</span>
                   ${selectedSpecs.regionVersion ? '<span>' + escapeHtml(selectedSpecs.regionVersion) + '</span>' : ""}
                   ${selectedSpecs.sim ? '<span>' + escapeHtml(selectedSpecs.sim) + '</span>' : ""}
-                  <span>تطابق ${Math.round((featuredOffer.matchConfidence || 0) * 100)}%</span>
+                  <span>صلة بالبحث: ${Math.round((featuredOffer.matchConfidence || 0) * 100)}% (تقديرية)</span>
+                  <small class="match-confidence-note">هذه النسبة ليست إثباتًا لتطابق رقم الموديل أو SKU.</small>
                 </div>
               </div>
               <div class="config-price">
@@ -970,7 +1036,10 @@ function renderProduct(product, query) {
             <div class="comparison-head">
               <div>
                 <span class="mini-kicker">مقارنة المتاجر</span>
-                <h4>نفس النسخة، بين المتاجر</h4>
+                <h4>مقارنة عروض النسخة المختارة</h4>
+                <small class="model-identity-note">${sameModelEvidence
+                  ? "رقم الموديل متطابق بحسب بيانات المتاجر، وليس إثباتًا مستقلًا لتطابق SKU."
+                  : "لا تتوفر أدلة كافية لتأكيد تطابق رقم الموديل بين جميع العروض؛ راجع مواصفات كل متجر قبل الشراء."}</small>
               </div>
               ${Number.isFinite(selectedGroup.savingsToNext)
                 ? '<span class="saving-pill">فرق ' + fmt(selectedGroup.savingsToNext) + ' عن العرض التالي</span>'
@@ -1052,7 +1121,7 @@ function renderProduct(product, query) {
       const limit = state.visibleCounts[section.key] || 10;
       return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
         <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
-        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup)).join('')}</div>
+        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup,repeatedDisplayNames)).join('')}</div>
         ${section.groups.length > limit ? `<button type="button" class="show-category" data-show-category="${escapeHtml(section.key)}">عرض المزيد من ${escapeHtml(section.label)} (${section.groups.length-limit})</button>` : ''}
       </section>`;
     }).join('')}
@@ -1109,6 +1178,8 @@ function renderProduct(product, query) {
       });
     });
   });
+
+  reconcileProductImageFallbacks(els.results);
 
   els.results.querySelectorAll(".config-option").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1258,7 +1329,9 @@ async function runSearch(rawQuery) {
     els.results.innerHTML = '<div class="empty-state live-loading">جاري إيقاظ محرك البحث وجمع العروض الحية من المتاجر… قد تستغرق المحاولة الأولى عدة ثوانٍ.</div>';
 
     try {
-      await wakeSearchApi(apiBase);
+      // The search request itself wakes a sleeping API instance. A sequential
+      // /health preflight can delay real shopping results by tens of seconds.
+      // Go directly to SSE (or JSON fallback) rather than blocking on health.
       if (requestId !== state.requestId) return;
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
@@ -1316,7 +1389,7 @@ async function runSearch(rawQuery) {
       }
 
       if (requestId !== state.requestId) return;
-      for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor; step+=1) {
+      for (let step=0; step<2 && !data?.offers?.length && data?.nextCursor && !data?.coverage?.partial && !data?.coverage?.deadlineExceeded && !data?.errors?.length && !(Number(data?.coverage?.providersPending) > 0); step+=1) {
         els.status.textContent = "لم تظهر نتائج في النطاق الأول؛ نوسّع البحث تلقائيًا…";
         data = await fetchJsonWithRetry(
           apiBase + "/api/search?q=" + encodeURIComponent(query) + "&cursor=" + encodeURIComponent(data.nextCursor),
@@ -1345,19 +1418,31 @@ async function runSearch(rawQuery) {
         const countries = new Set(data.offers.map((o) => o.merchantCountryCode).filter(Boolean)).size;
         const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);
         els.status.textContent = `بحث حي: ${data.offers.length} عرضًا · ${countries} دول · ${data.providersConfigured?.length || 0} موصلات · ${attempted} أسواق/متاجر تم فحصها`;
-        if (data.errors?.length) els.status.textContent += " · نتائج جزئية: تعذر فحص بعض المصادر";
+        const coverageNotice=coverageStatusText(data.coverage,data.errors);
+        if (coverageNotice) els.status.textContent += " · " + coverageNotice;
         else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";
         return;
       }
 
       const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);
+      const incomplete = Boolean(data.coverage?.partial || data.coverage?.deadlineExceeded ||
+        Number(data.coverage?.providersPending) > 0 || data.errors?.length);
       state.product = null;
-      els.status.textContent = `لم نجد عروضًا حية · تم فحص ${attempted} أسواق/متاجر`;
+      const coverageNotice=coverageStatusText(data.coverage,data.errors);
+      els.status.textContent = incomplete
+        ? `بحث جزئي · ${coverageNotice || "تغطية البحث جزئية"} · فُحص ${attempted} أسواق/متاجر`
+        : `لم نجد عروضًا حية · تم فحص ${attempted} أسواق/متاجر`;
       els.results.innerHTML = `
         <div class="no-match">
-          <span class="mini-kicker">NO LIVE OFFERS</span>
-          <h2>ما ظهر لنا عرض حي لهذا البحث.</h2>
-          <p>تم تنفيذ البحث على المصادر المتاحة بدون الرجوع إلى بيانات Demo.</p>
+          <span class="mini-kicker">${incomplete ? "PARTIAL SEARCH" : "NO LIVE OFFERS"}</span>
+          <h2>${incomplete
+            ? (data.coverage?.deadlineExceeded || Number(data.coverage?.providersPending)>0
+              ? "انتهى الوقت قبل اكتمال فحص جميع المصادر."
+              : "لم تظهر عروض، وتعذر التحقق من بعض المصادر.")
+            : "ما ظهر لنا عرض حي لهذا البحث."}</h2>
+          <p>${incomplete
+            ? "اكتمل فحص المصادر المستجيبة، لكن بعض المصادر لم تقدم نتائج يمكن التحقق منها؛ عدم ظهور عروض هنا لا يعني أن المنتج غير متوفر."
+            : "تم تنفيذ البحث على المصادر المتاحة بدون الرجوع إلى بيانات Demo."}</p>
           <button class="primary-action" id="retryLiveSearch">أعد البحث</button>
         </div>
       `;
@@ -1383,12 +1468,124 @@ async function runSearch(rawQuery) {
   renderProduct(match.product, query);
 }
 
-function openQuote(product, offer, sourceQuery) {
-  if (window.NAWAA_QUOTE_URL) {
+function quoteModalMessage(title,description) {
+  els.quoteBody.innerHTML='<span class="mini-kicker">QUOTATION REQUEST</span>'+
+    '<h2>'+escapeHtml(title)+'</h2><p>'+escapeHtml(description)+'</p>';
+  els.quoteModal.classList.add("open");
+  els.quoteModal.setAttribute("aria-hidden","false");
+}
+
+async function refreshQuoteAccess(access,apiBase) {
+  const response=await fetch(apiBase+"/api/quotes/"+encodeURIComponent(access.id),{
+    mode:"cors",credentials:"same-origin",cache:"no-store",
+    headers:{authorization:"Bearer "+access.token}
+  });
+  const data=await response.json();
+  if(!response.ok)throw Error("quote_status_unavailable");
+  const names={requested:"بانتظار التسعير",quoted:"وصلت التسعيرة",expired:"انتهت صلاحية التسعيرة",
+    accepted:"تم قبول التسعيرة",declined:"تم رفض التسعيرة"};
+  els.quoteBody.innerHTML='<span class="mini-kicker">NAWAA QUOTE / TRACKING</span>'+
+    '<h2>'+escapeHtml(names[data.status]||"حالة الطلب")+'</h2>'+
+    '<p>رقم الطلب: <b dir="ltr">'+escapeHtml(access.id)+'</b></p>'+
+    '<p>المنتج: '+escapeHtml(data.request?.productName||access.productName||"")+'</p>'+
+    (data.priceSAR!=null?'<p>السعر المقترح: '+fmt(data.priceSAR)+'</p>':'')+
+    (data.etaDays!=null?'<p>التسليم المتوقع بعد: '+escapeHtml(String(data.etaDays))+' يوم</p>':'')+
+    (data.terms?'<p>'+escapeHtml(data.terms)+'</p>':'')+
+    (data.validUntil?'<p>صلاحية العرض حتى: '+escapeHtml(data.validUntil)+'</p>':'')+
+    (data.status==="quoted"?'<div class="quote-actions">'+
+      '<button class="primary-action" id="quoteAcceptBtn">قبول التسعيرة</button>'+
+      '<button class="secondary-action" id="quoteDeclineBtn">رفض التسعيرة</button></div>'+
+      '<p>القبول يسجّل قرارك فقط؛ لا ينفذ الدفع أو الطلب من التاجر.</p>':'')+
+    '<button class="secondary-action" id="quoteRefreshBtn">تحديث حالة الطلب</button>';
+  els.quoteModal.classList.add("open");
+  els.quoteModal.setAttribute("aria-hidden","false");
+  const decision=async value=>{
+    try{
+      const result=await fetch(apiBase+"/api/quotes/"+encodeURIComponent(access.id)+"/decision",{
+        method:"POST",mode:"cors",credentials:"same-origin",cache:"no-store",
+        headers:{"content-type":"application/json",authorization:"Bearer "+access.token},
+        body:JSON.stringify({revision:data.revision,decision:value})
+      });
+      if(!result.ok)throw Error("stale_or_invalid_quote");
+      await refreshQuoteAccess(access,apiBase);
+    }catch{quoteModalMessage("لم يتغير قرار الطلب","الطلب تغيّر أو انتهت صلاحيته. حدّث حالة التسعيرة قبل إعادة المحاولة.")}
+  };
+  $("#quoteAcceptBtn")?.addEventListener("click",()=>void decision("accepted"));
+  $("#quoteDeclineBtn")?.addEventListener("click",()=>void decision("declined"));
+  $("#quoteRefreshBtn")?.addEventListener("click",()=>void refreshQuoteAccess(access,apiBase)
+    .catch(()=>quoteModalMessage("تعذر التحديث","لا يمكن الوصول إلى حالة التسعيرة حاليًا.")));
+}
+
+// The key is generated and persisted BEFORE network submission. An ambiguous
+// network failure is retried with the original key, not a fresh request.
+function quoteRetryKey(payload) {
+  const name="nawaa_quote_pending_request";
+  try {
+    const old=JSON.parse(localStorage.getItem(name)||"null");
+    if(old&&JSON.stringify(old.payload)===JSON.stringify(payload)&&
+       /^[A-Za-z0-9_-]{32,128}$/.test(old.key))return old.key;
+    const bytes=new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const key=Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");
+    localStorage.setItem(name,JSON.stringify({key,payload,createdAt:Date.now()}));
+    return key;
+  } catch {return null}
+}
+function showQuoteRecoveryButton() {
+  if(window.NAWAA_QUOTE_API_ENABLED!==true)return;
+  let access=null;
+  try{access=JSON.parse(localStorage.getItem("nawaa_quote_access_last")||"null")}catch{}
+  const button=$("#quoteResumeBtn");
+  if(!button)return;
+  if(access?.id&&access?.token)button.style.display="inline-flex";
+  else button.style.display="none";
+}
+
+async function openQuote(product, offer, sourceQuery) {
+  if (window.NAWAA_QUOTE_URL && window.NAWAA_QUOTE_API_ENABLED !== true) {
     const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
     destination.searchParams.set("request", [offer?.title || product.nameAr || sourceQuery,
       offer?.specs?.modelNumber ? "SKU: " + offer.specs.modelNumber : "", offer?.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
     location.href = destination.href;
+    return;
+  }
+  // Only enabled in an isolated candidate; keep private-Site handoff as priority.
+  if (window.NAWAA_QUOTE_API_ENABLED === true) {
+    if(state.quotePending)return;
+    const apiBase=String(window.NAWAA_API_BASE||"").replace(/\/$/,"");
+    const name=offer?.title||product.nameAr||product.nameEn||sourceQuery;
+    if(!apiBase){quoteModalMessage("لم يُرسل الطلب","واجهة التسعير التجريبية غير متصلة بالخادم.");return}
+    const payload={productName:name,model:offer?.specs?.modelNumber||product.model||null,
+      sourceUrl:offer?.sourceUrl||null};
+    const requestKey=quoteRetryKey(payload);
+    if(!requestKey){
+      quoteModalMessage("لم يُرسل الطلب",
+        "تعذر حفظ مفتاح استعادة الطلب بأمان في هذا المتصفح. لم نرسل أي طلب.");
+      return;
+    }
+    state.quotePending=true;
+    quoteModalMessage("جارٍ إرسال الطلب","لم يتم تأكيد استلام الطلب حتى الآن.");
+    try{
+      const response=await fetch(apiBase+"/api/quotes",{
+        method:"POST",mode:"cors",credentials:"same-origin",cache:"no-store",
+        headers:{"content-type":"application/json","idempotency-key":requestKey},
+        body:JSON.stringify(payload)
+      });
+      const created=await response.json();
+      if(!response.ok||!created.id||!created.token)throw Error("quote_not_saved");
+      const access={id:created.id,token:created.token,productName:name};
+      try{
+        localStorage.setItem("nawaa_quote_access_last",JSON.stringify(access));
+        localStorage.removeItem("nawaa_quote_pending_request");
+      }catch{}
+      showQuoteRecoveryButton();
+      try{await refreshQuoteAccess(access,apiBase)}
+      catch{quoteModalMessage("تم تسجيل الطلب",
+        "تم حفظ طلبك. رقم الطلب: "+created.id+". يمكنك متابعة حالته من زر متابعة آخر طلب.")}
+    }catch{
+      quoteModalMessage("تعذر تأكيد إرسال الطلب",
+        "قد يكون الخادم حفظ الطلب بالفعل. أعد المحاولة لنفس المنتج باستخدام المفتاح المحفوظ؛ لن ننشئ طلبًا مكررًا.");
+    }finally{state.quotePending=false}
     return;
   }
   const draft = {
@@ -1445,6 +1642,19 @@ addEventListener("keydown", (event) => {
 });
 
 renderRecent();
+showQuoteRecoveryButton();
+$("#quoteResumeBtn")?.addEventListener("click",()=>{
+  if(window.NAWAA_QUOTE_API_ENABLED!==true)return;
+  let access=null;
+  try{access=JSON.parse(localStorage.getItem("nawaa_quote_access_last")||"null")}catch{}
+  const apiBase=String(window.NAWAA_API_BASE||"").replace(/\/$/,"");
+  if(!access?.id||!access?.token||!apiBase){
+    quoteModalMessage("الطلب غير متاح","لم نعثر على بيانات آمنة لمتابعة هذا الطلب.");
+    return;
+  }
+  void refreshQuoteAccess(access,apiBase).catch(()=>quoteModalMessage(
+    "تعذر تحديث الطلب","لم نتمكن من قراءة الحالة الحالية من الخادم."));
+});
 
 const initialQuery = new URLSearchParams(location.search).get("q");
 if (initialQuery && initialQuery.trim().length >= 2) {

@@ -63,13 +63,19 @@ export async function recordOffer(offerData={}){
   const healthStatus=String(offerData.healthStatus||"healthy").trim().toLowerCase();
   const condition=String(offerData.condition||"new").trim().toLowerCase()||"new";
   if(!sourceUrl||title.length<3||!Number.isFinite(price)||price<=0||!/^[A-Z]{3}$/.test(currency)||!sourceName) throw new Error("invalid_offer_record");
+  // No synthetic freshness: the caller must supply the source observation time.
+  const rawObservation=offerData.observedAt;
+  const observedTime=typeof rawObservation==="string"&&rawObservation.trim()
+    ? Date.parse(rawObservation) : NaN;
+  if(!Number.isFinite(observedTime)||observedTime>Date.now()+60_000)
+    throw new Error("invalid_observed_at");
+  const observedAt=new Date(observedTime);
   const client=await db();
   if(!client) throw new Error("persistence_not_configured");
   await initPersistence();
-  const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition};
+  const normalized={...offerData,sourceUrl,title,productPrice:price,currency,condition,
+    observedAt:observedAt.toISOString()};
   const key=keyOf(normalized);
-  const observedAt=offerData.observedAt ? new Date(offerData.observedAt) : new Date();
-  if(Number.isNaN(observedAt.getTime())) throw new Error("invalid_observed_at");
   const query=String(offerData.query||sourceName||"crawler");
   const tx=await client.connect();
   try{
@@ -101,10 +107,55 @@ export async function recordOffer(offerData={}){
   }
 }
 
-export async function persistOffers(query,offers=[]){const client=await db();if(!client||!offers.length)return {configured:Boolean(client),saved:0};await initPersistence();let saved=0;for(const o of offers){if(!o?.sourceUrl||!o?.title)continue;const key=keyOf(o);if(!key)continue;await client.query(`insert into nawaa_offers(offer_key,query,title,brand,merchant,merchant_country_code,source_url,image_url,currency,product_price,total_sar,sku,condition,availability,match_confidence,exact_match,observed_at,payload) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now(),$17::jsonb) on conflict(offer_key) do update set query=excluded.query,title=excluded.title,brand=excluded.brand,merchant=excluded.merchant,merchant_country_code=excluded.merchant_country_code,image_url=excluded.image_url,currency=excluded.currency,product_price=excluded.product_price,total_sar=excluded.total_sar,availability=excluded.availability,match_confidence=excluded.match_confidence,exact_match=excluded.exact_match,observed_at=now(),payload=excluded.payload`,[key,query,o.title,o.brand||o.specs?.brand||null,o.merchant||null,o.merchantCountryCode||null,o.sourceUrl,o.imageUrl||null,o.currency||null,o.productPrice??null,o.totalSAR??null,o.sku||null,o.condition||null,o.availability||null,o.matchConfidence??null,o.exactMatch===true,JSON.stringify(o)]);saved++;}return {configured:true,saved};}
+// Legacy batch writer: never stamp ingestion time as source observation.
+// Keep historic rows for audit but prevent delayed older sources from
+// overwriting newer immutable merchant facts written through recordOffer().
+export async function persistOffers(query,offers=[]){
+  const client=await db();
+  if(!client||!offers.length)return {configured:Boolean(client),saved:0};
+  await initPersistence();
+  let saved=0;
+  for(const o of offers){
+    if(!o?.sourceUrl||!o?.title)continue;
+    const observedAt=typeof o.observedAt==="string" ? new Date(o.observedAt) : null;
+    if(!observedAt || Number.isNaN(observedAt.getTime()) ||
+       observedAt.getTime()>Date.now()+60_000)continue;
+    const key=keyOf(o);
+    if(!key)continue;
+    const payload={...o,observedAt:observedAt.toISOString()};
+    await client.query(
+      `insert into nawaa_offers(
+        offer_key,query,title,brand,merchant,merchant_country_code,source_url,
+        image_url,currency,product_price,total_sar,sku,condition,availability,
+        match_confidence,exact_match,observed_at,payload)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb)
+        on conflict(offer_key) do update set
+          query=excluded.query,title=excluded.title,brand=excluded.brand,
+          merchant_country_code=excluded.merchant_country_code,
+          image_url=excluded.image_url,currency=excluded.currency,
+          product_price=excluded.product_price,total_sar=excluded.total_sar,
+          sku=excluded.sku,availability=excluded.availability,
+          match_confidence=excluded.match_confidence,
+          exact_match=excluded.exact_match,observed_at=excluded.observed_at,
+          payload=excluded.payload
+        where nawaa_offers.observed_at <= excluded.observed_at`,
+      [key,query,o.title,o.brand||o.specs?.brand||null,o.merchant||null,
+       o.merchantCountryCode||null,o.sourceUrl,o.imageUrl||o.image||null,
+       o.currency||null,o.productPrice??null,o.totalSAR??null,
+       o.sku||o.sourceMeta?.productId||null,o.condition||"new",
+       o.availability||null,o.matchConfidence??null,o.exactMatch===true,
+       observedAt,JSON.stringify(payload)]
+    );
+    saved++;
+  }
+  return {configured:true,saved};
+}
 
 
 export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}){
+  // Legacy durable documents stay in PostgreSQL for audit; shopper search
+  // must not revive old price/stock as fresh just because a record is indexed.
+  const maxCustomerEvidenceAgeMs=45_000;
   const client=await db();
   if(!client||!String(query||"").trim()) return {configured:Boolean(client),offers:[]};
   await initPersistence();
@@ -113,6 +164,8 @@ export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}
     select payload, observed_at
     from nawaa_offers
     where observed_at >= now() - ($2::text || ' hours')::interval
+      and observed_at >= now() - ($4::bigint * interval '1 millisecond')
+      and observed_at <= now() + interval '1 minute'
       and (
         to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(brand,''))
           @@ plainto_tsquery('simple',$1)
@@ -126,11 +179,14 @@ export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}
       ) desc,
       observed_at desc
     limit $3
-  `,[q,String(Math.max(1,Number(maxAgeHours)||168)),Math.max(1,Math.min(500,Number(limit)||120))]);
+  `,[q,String(Math.max(1,Number(maxAgeHours)||168)),Math.max(1,Math.min(500,Number(limit)||120)),maxCustomerEvidenceAgeMs]);
   return {
     configured:true,
     offers:result.rows.map(row=>({
       ...(row.payload||{}),
+      // Historical matching flags can belong to an earlier query or a retired
+      // classifier. The actual current query must always recompute them.
+      exactMatch:false,matchConfidence:0,
       dataKind:"persisted",
       observedAt:row.observed_at instanceof Date ? row.observed_at.toISOString() : row.observed_at
     }))

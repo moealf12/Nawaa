@@ -67,7 +67,7 @@ export function createSearchCache(search, {
     }
     const previous = entry ? clone(entry.result) : null;
     const result = await startRefresh(key);
-    if ((!result.offers?.length) && previous?.offers?.length) {
+    if (allowStale && (!result.offers?.length) && previous?.offers?.length) {
       touch(key, entry);
       return {
         ...previous,
@@ -77,11 +77,14 @@ export function createSearchCache(search, {
     return { ...clone(result), cache:cacheMeta("miss", 0) };
   };
 
-  cachedSearch.peek = (key) => {
+  cachedSearch.peek = (key, { allowStale = true } = {}) => {
     const entry = entries.get(key);
     if (!entry) return null;
     const age = Math.max(0, now() - entry.at);
     if (age >= staleTtl) { entries.delete(key); return null; }
+    // Customer SSE must not emit an out-of-date exactMatch, price, or
+    // availability snapshot while merchants are being refreshed.
+    if (!allowStale && age >= ttl) return null;
     return { ...clone(entry.result), cache:cacheMeta(age < ttl ? "fresh" : "stale", age) };
   };
   cachedSearch.refresh = (key) => startRefresh(key);

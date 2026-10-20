@@ -37,13 +37,17 @@ function pick(entries, getter, field = "identity") {
 
 function chooseOffer(product) {
   const raw = product?.offers;
+  const isAggregate = value => Array.isArray(value?.["@type"])
+    ? value["@type"].some(t=>String(t).toLowerCase()==="aggregateoffer")
+    : String(value?.["@type"]||"").toLowerCase()==="aggregateoffer";
+  if (isAggregate(raw)) return null;
   const offers = Array.isArray(raw) ? raw : raw?.offers && Array.isArray(raw.offers) ? raw.offers : raw ? [raw] : [];
-  for (const offer of offers) {
-    const price = Number(offer?.price ?? offer?.lowPrice ?? offer?.highPrice);
-    const currency = offer?.priceCurrency || null;
-    if (Number.isFinite(price) && currency) return offer;
-  }
-  return null;
+  // No variant-specific price selection without a single associated Offer.
+  // Explicit variant URLs have already been narrowed in product-variant.mjs.
+  if (offers.length !== 1 || isAggregate(offers[0])) return null;
+  const offer=offers[0];
+  const price=Number(offer?.price);
+  return Number.isFinite(price) && price > 0 && offer.priceCurrency ? offer : null;
 }
 
 export function reconcileProductCandidates(candidates = [], selectedEntry = null) {

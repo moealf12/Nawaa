@@ -5,7 +5,11 @@ export function normalizeIngestOffer(input={}){
   const title=String(input.title||"").trim();
   const sourceUrl=String(input.sourceUrl||"").trim();
   const price=Number(input.productPrice);
-  if(title.length<3||!HTTPS_URL.test(sourceUrl)||!Number.isFinite(price)||price<=0)return null;
+  const observedTime=typeof input.observedAt==="string"&&input.observedAt.trim()
+    ? Date.parse(input.observedAt) : NaN;
+  // The time an ingestion request arrives is NOT the time a merchant was observed.
+  if(title.length<3||!HTTPS_URL.test(sourceUrl)||!Number.isFinite(price)||price<=0||
+     !Number.isFinite(observedTime)||observedTime>Date.now()+60_000)return null;
   return {
     ...input,
     title,
@@ -17,7 +21,7 @@ export function normalizeIngestOffer(input={}){
     condition:input.condition?String(input.condition).trim().toLowerCase():null,
     availability:input.availability?String(input.availability).trim().toLowerCase():null,
     dataKind:"ingested",
-    observedAt:input.observedAt||new Date().toISOString(),
+    observedAt:new Date(observedTime).toISOString(),
   };
 }
 

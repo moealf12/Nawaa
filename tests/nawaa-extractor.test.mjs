@@ -173,3 +173,40 @@ test("NAWAA diagnostics expose reconciliation sources", () => {
   assert.equal(diagnostics.fieldSources.image.strategy,"jsonld");
   assert.equal(diagnostics.fieldSources.offers.adapterId,"shein");
 });
+
+test("v19 RED — unconverted UAE value cannot be certified as SAR commerce price", () => {
+  const offer = {
+    title:"Sony PlayStation 5 Disc Edition",
+    image:"https://merchant.example/ps5.webp",
+    productPrice:800,
+    originalProductPrice:800,
+    currency:"AED",
+    originalCurrency:"AED",
+    sourceUrl:"https://merchant.example/ps5",
+    merchant:"Fixture UAE Merchant",
+    availability:"unknown",
+    specs:{brand:"Sony",modelNumber:"CFI-2000"},
+    extraction:{jsonLdProductFound:true,structuredPriceFound:true,structuredCurrencyFound:true},
+  };
+  const product=toNawaaProduct(offer,offer.sourceUrl);
+  assert.equal(product.commerce.priceSAR,null,
+    "unconverted AED must not enter a SAR-labeled price field");
+  assert.equal(product.commerce.originalPrice,800);
+  assert.equal(product.commerce.originalCurrency,"AED");
+  assert.ok(product.quality.missingFields.includes("productPrice"));
+});
+
+test("v19 — verified AED conversion and native SAR stay eligible as SAR", () => {
+  const base={title:"Verified international item",sourceUrl:"https://merchant.example/verified",
+    image:"https://merchant.example/a.webp",availability:"in_stock",
+    specs:{brand:"Merchant"},shipping:null};
+  const verified=toNawaaProduct({...base,productPrice:835,currency:"SAR",
+    originalCurrency:"AED",originalProductPrice:800,
+    fx:{rate:1.04375,source:"documented",observedAt:"2026-10-20T00:00:00Z"},
+    extraction:{structuredPriceFound:true,structuredCurrencyFound:true}},base.sourceUrl);
+  assert.equal(verified.commerce.priceSAR,835);
+  assert.equal(verified.commerce.originalPrice,800);
+  const sa=toNawaaProduct({...base,productPrice:1199,currency:"SAR",
+    originalCurrency:"SAR",originalProductPrice:1199},base.sourceUrl);
+  assert.equal(sa.commerce.priceSAR,1199);
+});
