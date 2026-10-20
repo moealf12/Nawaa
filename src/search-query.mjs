@@ -116,7 +116,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|stylus|stylus pen|photo paper|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|briefcases?|rucksacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with|stylus|stylus pen|photo paper|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -389,7 +389,7 @@ const ACCESSORY_TERMS = [
   "case","cover","screen protector","protector","charger","cable","adapter",
   "disc drive","disk drive","optical drive","blu ray drive",
   "usb hub","expansion hub","multiport hub","hub","docking station","port expander","هب","موزع منافذ",
-  "atomizer","perfume bottle","empty bottle","laptop sleeve","laptop sling","laptop bag","notebook sleeve","notebook sling","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
+  "atomizer","perfume bottle","empty bottle","laptop sleeve","laptop sling","laptop bag","laptop briefcase","briefcase","rucksack","notebook sleeve","notebook sling","cooling fan","cpu fan","protective shell","privacy screen","active pen","lcd replacement","screen replacement","only compatible with","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
   "حافظه","كفر","شاحن","كيبل","سلك","حمايه","لزقه",
   "غطاء","اغطيه","مروحه تبريد","حامل جداري","حامل حائط",
   "قارئ اقراص","هارد خارجي","قرص صلب خارجي"
@@ -517,6 +517,17 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     ? Boolean(effectiveCondition && effectiveCondition !== "unknown" && effectiveCondition !== intent.condition)
     : Boolean(effectiveCondition && effectiveCondition !== "unknown" && effectiveCondition !== "new");
   if (conditionMismatch) confidence -= 0.15;
+  // Sparse merchant titles such as "HP Everyday Laptop" cannot independently
+  // establish a complete notebook or manufacturer variant. Preserve them as
+  // related discovery, but never certify as exact principal-computer results.
+  // Price alone is NEVER used to decide product type.
+  const retailTitle = effectiveCategory === "laptop" && offerCategory === "laptop"
+    ? normalizeSearchQuery(offer?.title || "") : "";
+  const sparseLaptopEvidence = Boolean(retailTitle &&
+    retailTitle.split(" ").length <= 4 &&
+    !/\b(?:pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen|latitude|thinkpad|ideapad|zenbook|vivobook|macbook|chromebook)\b/.test(retailTitle) &&
+    !/\b(?:intel|amd|ryzen|core|celeron|pentium|ram|memory|ssd|windows|processor|\d+(?:gb|tb))\b/.test(retailTitle));
+  if (sparseLaptopEvidence) confidence = Math.min(confidence, 0.69);
   confidence = Math.max(0, Math.min(1, confidence));
 
   const missingTerms = q.filter((token) => !titleTokens.has(token));
@@ -532,7 +543,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     matchReason: exactMatch ? "يطابق مواصفات بحثك" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
-      hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
+      hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : sparseLaptopEvidence ? "بيانات العرض لا تثبت وجود جهاز لابتوب كامل" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
   };
 }
 
