@@ -210,6 +210,31 @@ try{
       merchantNames:[...allMerchants],
       recordedAfterStreamCompletion:report.streamCompletion.done,
     };
+    // v21.6: actual cross-merchant first-ten browser acceptance against the
+    // two independently inspected same-MPN Saudi merchant product pairs.
+    // A pair can be absent due to upstream volatility; report that explicitly
+    // rather than treating absence as a verified grouping success.
+    if (query === 'iPhone 17') {
+      const observedPairs = [
+        {color:'Black',jarir:'/sa-en/apple-iphone-17-smartphones-666784.html',extra:'/en-sa/p/100460151'},
+        {color:'Lavender',jarir:'/sa-en/apple-iphone-17-smartphones-666789.html',extra:'/en-sa/p/100460146'}
+      ].map(pair=>{
+        const findGroup = path => report.firstTenGroups.findIndex(group=>
+          (group.offerSourcePaths||[]).some(url=>url.endsWith(path)));
+        const jarirGroup=findGroup(pair.jarir), extraGroup=findGroup(pair.extra);
+        const bothVisible=jarirGroup>=0 && extraGroup>=0;
+        return {color:pair.color,jarirGroup,extraGroup,bothVisible,
+          grouped:bothVisible && jarirGroup===extraGroup,
+          evidenceClass:'candidate_browser_observation'};
+      });
+      report.iphoneCrossMerchantGrouping={
+        observedPairs,verifiedTogether:observedPairs.filter(pair=>pair.grouped).length,
+        pairsBothVisible:observedPairs.filter(pair=>pair.bothVisible).length,
+        limitation:'first_ten_only_missing_pair_is_not_verified_not_price_or_region_certification'
+      };
+      report.assertions.noSeparatedVerifiedMerchantPairs=
+        observedPairs.every(pair=>!pair.bothVisible || pair.grouped);
+    }
     report.assertions.firstTenComparisonsUsable=report.firstTenGroups.every(group=>
       Boolean(group.title)&&group.merchantRows>0&&group.detailActions>0);
 
