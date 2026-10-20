@@ -24,7 +24,7 @@ export async function inspectSource(storeUrl, options = {}) {
     url: htmlProbe.finalUrl,
     headers: htmlProbe.headers,
   });
-  const jsonLd = probeJsonLd(htmlProbe.html);
+  const jsonLd = probeJsonLd(htmlProbe.html, htmlProbe.finalUrl || source.url);
   const embeddedState = probeEmbeddedState(htmlProbe.html);
   const jsonXhr = probeJsonCandidates(htmlProbe.html, htmlProbe.finalUrl || source.url);
   const feed = probeFeedHints(htmlProbe.finalUrl || source.url, htmlProbe.html);
