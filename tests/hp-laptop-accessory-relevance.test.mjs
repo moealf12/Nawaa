@@ -145,3 +145,27 @@ test('v21.2: explicit HP laptop battery shopping intent retains compatible acces
   assert.equal(filterQueryOffers('HP laptop battery',[battery]).offers.length,1,
     'explicit accessory intent must not be suppressed by a broad laptop-only guard');
 });
+
+
+test('v21.7 RED: real first-ten truncated Fegishilly HP keyboard cover is not an HP laptop',()=>{
+ // 2026-10-20 exact candidate Chromium run #39500689674 (HP EN/AR).
+ // Source item Amazon Saudi ASIN B0F8N2Y14P, observed first group SAR96.
+ // The customer-visible title is clipped before "Keyboard Cover"; neither
+ // a title substring nor a retailer compatibility claim proves a laptop.
+ const sourceTitle='Fegishilly Compatible with HP OmniBook Ultra Flip 2-in-1 14" (14-fh) 2024 Laptop High Transparency Silicone TPU Laptop Key...';
+ const clipped={
+  ...offer(sourceTitle),
+  merchant:'Amazon Saudi',
+  sourceUrl:'https://www.amazon.sa/-/en/Fegishilly-Compatible-OmniBook-Transparency-Resistant/dp/B0F8N2Y14P/ref=sr_1_223',
+  productPrice:96,
+  currency:'SAR'
+ };
+ assert.equal(productCategory(clipped),'accessory','seller accessory subject must outrank laptop family compatibility');
+ for(const query of ['HP laptop','لابتوب اتش بي']){
+  assert.equal(assessOfferMatch(query,clipped).exactMatch,false,query);
+  assert.equal(filterQueryOffers(query,[clipped]).offers.length,0,query);
+ }
+ const complete=offer('HP OmniBook Ultra Flip Laptop Intel Core Ultra 7 16GB RAM 1TB SSD');
+ assert.equal(productCategory(complete),'laptop');
+ assert.equal(filterQueryOffers('HP laptop',[complete]).offers.length,1);
+});
