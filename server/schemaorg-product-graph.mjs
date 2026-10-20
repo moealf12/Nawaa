@@ -154,11 +154,30 @@ export function resolveStructuredProductNodes(nodes = [], pageUrl = null) {
     });
   }
 
-  const individual = capped
+  // A single PDP can contain priced Product recommendations unrelated to its
+  // subject. Do not let those cross-sells become the resolved product/price or
+  // inflate the inspector's priced-coverage count.
+  const subjectScope = node => {
+    if (!page) return "unknown"; // preserve no-document-url inspection contract
+    const declaredUrl = typeof node?.url === "string" ? node.url.trim() : "";
+    if (declaredUrl) return pointsToDifferentPage(declaredUrl) ? "foreign" : "local";
+    const id = typeof node?.["@id"] === "string" ? node["@id"].trim() : "";
+    // Fragment and opaque identifiers do not establish PDP ownership.
+    // An absolute or root-relative URL can establish an off-page cross-sell.
+    if (/^(?:https?:\/\/|\/)(?!\/\/)/i.test(id) || /^https?:\/\//i.test(id)) {
+      return pointsToDifferentPage(id) ? "foreign" : "local";
+    }
+    return "unknown";
+  };
+  const eligible = capped
     .filter(node => hasType(node, "Product") && !groupedIds.has(idKey(node?.["@id"])))
-    .map(node => {
-      const offers=resolvedOffers(node);
-      return offers ? { ...node, offers: offers.length===1 ? offers[0] : offers } : node;
-    });
+    .filter(node => subjectScope(node) !== "foreign");
+  // Once a product explicitly identifies the requested PDP, do not select an
+  // unrelated unbound sibling simply because it has a cheaper valid Offer.
+  const local = eligible.filter(node => subjectScope(node) === "local");
+  const individual = (local.length ? local : eligible).map(node => {
+    const offers = resolvedOffers(node);
+    return offers ? { ...node, offers: offers.length === 1 ? offers[0] : offers } : node;
+  });
   return [...groups, ...individual];
 }
