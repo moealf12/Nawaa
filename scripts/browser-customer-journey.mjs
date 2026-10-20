@@ -201,18 +201,25 @@ try{
     // remain a separate, permitted intent. This is a targeted guard, NOT an
     // independently labeled universal product-precision metric.
     if(query==='HP laptop'||query==='لابتوب اتش بي'){
-      const carrying=report.firstTenGroups.filter(group=>
-        /\b(?:sleeves?|slings?|laptop bags?|laptop cases?|laptop pouches?)\b/i.test(group.title));
+      // Broader independently identified item types from the real Arabic
+      // Chromium output: fans, LCD replacements, screen privacy filters,
+      // compatible protective shells, stylus pens, sleeves and laptop luggage.
+      const accessoryTitles=report.firstTenGroups.filter(group=>
+        /\b(?:sleeves?|slings?|briefcases?|rucksacks?|backpacks?|laptop bags?|laptop cases?|laptop pouches?|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with)\b/i.test(group.title));
+      const sparseUnknown=report.firstTenGroups.filter(group=>
+        /^hp (?:everyday |business |standard )?(?:laptop|notebook)$/i.test(group.title.trim()));
       const computers=report.firstTenGroups.filter(group=>
         /\b(?:pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen|laptops?|notebooks?|chromebooks?)\b/i.test(group.title) &&
-        !carrying.includes(group));
+        !accessoryTitles.includes(group)&&!sparseUnknown.includes(group));
       report.hpLaptopDeviceIntegrity={
         query,groupsInspected:report.firstTenGroups.length,
-        carryingAccessories:carrying.map(group=>group.title),
+        knownAccessories:accessoryTitles.map(group=>group.title),
+        sparseUnverifiedTitles:sparseUnknown.map(group=>group.title),
         apparentComputers:computers.length,
-        assessment:'targeted_name_based_browser_guard_not_independent_ground_truth',
+        assessment:'targeted_self_reviewed_name_guard_not_independently_certified_product_precision',
       };
-      report.assertions.hpLaptopNoCarryAccessories=carrying.length===0;
+      report.assertions.hpLaptopNoCarryAccessories=accessoryTitles.length===0;
+      report.assertions.hpLaptopNoSparseUnverifiedCards=sparseUnknown.length===0;
       report.assertions.hpLaptopHasComputerResult=computers.length>0;
     }
   }
