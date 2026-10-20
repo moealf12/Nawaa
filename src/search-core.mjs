@@ -169,6 +169,14 @@ function normalizeVariantPart(value = "") {
     .trim();
 }
 
+// Exact-size inch marks and spelled-out inch units represent the same diagonal.
+// This is intentionally scoped to screenSize; unknown/mismatched units stay distinct.
+function normalizedScreenSize(value = "") {
+  const raw = String(value).normalize("NFKC").trim().toLowerCase();
+  const inch = raw.match(/^(\d+(?:[.,]\d+)?)\s*(?:["″]|inch(?:es)?|in\.?)$/i);
+  return inch ? Number(inch[1].replace(",", ".")) + "inch" : normalizeVariantPart(value);
+}
+
 function normalizedBrand(value = "") {
   return normalizeVariantPart(value).replace(/\s+/g, " ");
 }
@@ -217,7 +225,10 @@ function comparableIdentity(offer = {}) {
   };
   for (const [key,value] of Object.entries(specs)) {
     if (category === "phone" && key.toLowerCase() === "processor") continue;
-    if (/^(size|weight|capacity|pack|pack size|quantity|material|style|flavor|grind|processor|gpu|screenSize|network)$/i.test(key) && value != null) attributes[normalizeText(key)] = normalizeVariantPart(value);
+    if (/^(size|weight|capacity|pack|pack size|quantity|material|style|flavor|grind|processor|gpu|screenSize|network)$/i.test(key) && value != null) {
+      const name = normalizeText(key);
+      attributes[name] = name === "screensize" ? normalizedScreenSize(value) : normalizeVariantPart(value);
+    }
   }
   return {brand, category, model:normalizedModel(offer), sku:normalizedModelIdentifier(specs.modelNumber || ""), condition:normalizeVariantPart(offer.condition || "unknown"), attributes};
 }
