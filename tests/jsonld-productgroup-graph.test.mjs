@@ -81,3 +81,21 @@ test("v20.2 RED: incomplete ProductGroup must not price generic URL via its rema
  assert.equal(inspected.pricedProducts,0,
    "source coverage must not certify a partial ProductGroup sibling as the selected offer");
 });
+
+test("v20.3 RED: related/recommended JSON-LD Product price cannot replace generic ProductGroup price",async()=>{
+ const recommendations=[
+  ...group,
+  {"@type":"Product","@id":"#recommendation","name":"iPhone 17 Protective Case",
+   sku:"CASE-IPH17",offers:{"@type":"Offer",price:49,priceCurrency:"SAR",
+     url:page+"/recommendations/case"}}
+ ];
+ await withHtml(graph(recommendations),async()=>{
+  const generic=await resolveProductUrl(page);
+  assert.equal(generic.originalProductPrice,null,
+    "do not assign an unrelated cross-sell Product's SAR49 price to iPhone 17 family");
+  assert.notEqual(generic.title,"iPhone 17 Protective Case");
+  const explicit=await resolveProductUrl(page+"?variant=512");
+  assert.equal(explicit.originalProductPrice,4199);
+  assert.equal(explicit.sku,"IPH17-512");
+ });
+});
