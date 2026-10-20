@@ -540,8 +540,8 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // merely that activation, buyer eligibility and Saudi use are unverified.
   // Preserve explicit shopper carrier intent and explicitly Unlocked listings.
   const retailCarrierVariant = offerCategory === 'phone' &&
-    /\\(\\s*(?:at\\s*&\\s*t|verizon|t[- ]mobile)\\s*\\)/i.test(String(offer?.title || ''));
-  const carrierRequested = /(?:\\bat\\s*&\\s*t\\b|\\bverizon\\b|\\bt[- ]mobile\\b)/i.test(String(query || ''));
+    /\(\s*(?:at\s*&\s*t|verizon|t[- ]mobile)\s*\)/i.test(String(offer?.title || ''));
+  const carrierRequested = /(?:\bat\s*&\s*t\b|\bverizon\b|\bt[- ]mobile\b)/i.test(String(query || ''));
   const unrequestedCarrierVariant = retailCarrierVariant && !carrierRequested;
   if (unrequestedCarrierVariant) confidence *= 0.2;
 
