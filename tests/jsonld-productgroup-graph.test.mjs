@@ -68,3 +68,16 @@ test("v20.2: unrelated Offer does not fill missing product price",async()=>{
  assert.equal(probeJsonLd(html).pricedProducts,0);
  await withHtml(html,async()=>assert.equal((await resolveProductUrl(page)).originalProductPrice,null));
 });
+
+test("v20.2 RED: incomplete ProductGroup must not price generic URL via its remaining indexed sibling",async()=>{
+ const partial=group.filter(node=>node["@id"]!=="#p512"&&node["@id"]!=="#offer512");
+ const html=graph(partial);
+ await withHtml(html,async()=>{
+  const r=await resolveProductUrl(page);
+  assert.equal(r.originalProductPrice,null,
+    "incomplete group is not proof the remaining sibling is selected on a generic page");
+ });
+ const inspected=probeJsonLd(html);
+ assert.equal(inspected.pricedProducts,0,
+   "source coverage must not certify a partial ProductGroup sibling as the selected offer");
+});
