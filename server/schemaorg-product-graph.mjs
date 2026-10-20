@@ -74,7 +74,7 @@ export function resolveStructuredProductNodes(nodes = []) {
     // means the group cannot be assigned an individual purchasable price.
     const complete = variants.every(value => value && hasType(value, "Product"));
     if (!complete) {
-      groups.push({ "@type":"Product",name:group.name || null,brand:group.brand || null,
+      groups.push({ "@type":"Product",schemaProductGroupEvidence:true,name:group.name || null,brand:group.brand || null,
         offers:declared.map(() => ({ "@type":"UnverifiedOffer" })) });
       continue;
     }
@@ -95,6 +95,7 @@ export function resolveStructuredProductNodes(nodes = []) {
     });
     groups.push({
       "@type":"Product",
+      schemaProductGroupEvidence:true,
       name:group.name || null,
       brand:group.brand || null,
       model:group.model || null,
