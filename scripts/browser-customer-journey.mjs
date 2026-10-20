@@ -226,6 +226,21 @@ try{
         assertionScope:'explicit_carrier_plan_titles_only_not_shipping_or_SIM_lock_certification'
       };
       report.assertions.noUnrequestedCarrierPlanAtFirstTen=carrierPlanCards.length===0;
+      // Independent real first-ten evidence at HEAD ec785ee5: AliExpress
+      // Spanish phone-compatible chargers/adapters previously ranked as
+      // complete iPhones. Detect this P0 regardless of earlier CI greens.
+      const spanishAccessoryCards=report.firstTenGroups.filter(group=>
+        /^\s*(?:adaptadores?|cargadores?|convertidores?)\b/i.test(group.title||''));
+      const untraceableAliExpress=report.firstTenGroups.filter(group=>
+        (group.offerSourcePaths||[]).some(url=>
+          /^https:\/\/(?:www\.)?aliexpress\.com\/ssr\//i.test(url)));
+      report.iphoneSpanishAccessoryTrust={
+        query,spanishAccessoryTitles:spanishAccessoryCards.map(g=>g.title),
+        genericLandingPageTitles:untraceableAliExpress.map(g=>g.title),
+        assessment:'captured_merchant_title_and_source_path_first_ten_no_price_verification'
+      };
+      report.assertions.noSpanishAccessoryAsIphone=spanishAccessoryCards.length===0;
+      report.assertions.noAliExpressGenericLandingAsExactIphone=untraceableAliExpress.length===0;
     }
     // Real customer smoke: HP computer searches must not surface sleeve, bag or
     // sling accessories as laptop product cards. Explicit accessory searches
