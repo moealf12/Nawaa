@@ -230,7 +230,7 @@ try{
       // Spanish phone-compatible chargers/adapters previously ranked as
       // complete iPhones. Detect this P0 regardless of earlier CI greens.
       const spanishAccessoryCards=report.firstTenGroups.filter(group=>
-        /^\s*(?:adaptadores?|cargadores?|convertidores?)\b/i.test(group.title||''));
+        /^\s*(?:adaptador(?:es)?|cargador(?:es)?|convertidor(?:es)?)\b/i.test(group.title||''));
       const untraceableAliExpress=report.firstTenGroups.filter(group=>
         (group.offerSourcePaths||[]).some(url=>
           /^https:\/\/(?:www\.)?aliexpress\.com\/ssr\//i.test(url)));
