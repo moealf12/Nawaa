@@ -49,7 +49,11 @@ export function extractJsonLdProducts(html = "") {
     } catch {}
   }
 
-  return resolveStructuredProductNodes(blocks)
+  const linked = resolveStructuredProductNodes(blocks);
+  const groups = linked.filter(node => node.schemaProductGroupEvidence === true);
+  // A merchant's recommended cross-sell Product is not proof that the
+  // inspected ProductGroup has a purchasable SKU-level price.
+  return (groups.length ? groups : linked)
     .filter((node) => {
       const type = node?.["@type"];
       return Array.isArray(type)
