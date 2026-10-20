@@ -171,11 +171,24 @@ function isVerifiedLaptopCarryBundle(offer = {}) {
     /\d/.test(String(offer.specs?.modelNumber || ""));
 }
 
+// Full laptop chassis evidence outranks internal-storage keywords. SSD/RAM
+// installed INSIDE a laptop is not the standalone SSD product being sold.
+// Accessories compatible WITH a laptop remain accessories, even when model
+// and CPU details occur in the compatibility description.
+function isEvidencedCompleteLaptop(offer = {}) {
+  const retail = normalizeSearchQuery(offer.title || "");
+  if (!/\b(?:laptop|notebook|chromebook|macbook|omnibook|elitebook|pavilion|probook|spectre|envy|victus|omen)\b/.test(retail)) return false;
+  if (!/\b(?:intel|amd|ryzen|core(?: i[3579])?|celeron|pentium|snapdragon|processor|\d+gb ram|ram \d+gb|windows)\b/.test(retail)) return false;
+  if (/\b(?:sleeve|sling|briefcase|rucksack|backpack|protective shell|privacy screen|active pen|cooling fan|cpu fan|lcd replacement|screen replacement|ssd replacement|replacement ssd|only compatible with|compatible with|fit for)\b/.test(retail)) return false;
+  return true;
+}
+
 // The matching path already computed describeProduct(offer); reuse that immutable
 // value rather than normalizing its title and metadata a second time.
 function productCategoryWithDescription(offer, gaming) {
   if (gaming.kind !== 'product') return gaming.kind;
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
+  if (isEvidencedCompleteLaptop(offer)) return 'laptop';
   let urlSemantic = "";
   try {
     const parsedUrl = new URL(String(offer?.sourceUrl || ""));
