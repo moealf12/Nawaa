@@ -58,6 +58,14 @@ jobs:
           MEILI_MASTER_KEY: ''
           NAWAA_BROWSER_QUERY: HP laptop
         run: node scripts/browser-customer-journey.mjs candidate
+      - name: Exercise Arabic HP laptop results and accessories in real Chromium
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_BROWSER_QUERY: لابتوب اتش بي
+        run: node scripts/browser-customer-journey.mjs candidate
       - name: Replay fixture buyer journeys with zero external merchant requests
         env:
           NODE_ENV: test
