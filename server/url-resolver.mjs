@@ -287,6 +287,10 @@ export function extractEmbeddedProductState(html) {
   let match;
   while ((match = re.exec(String(html || "")))) {
     const attrs = match[1] || "";
+    // Schema.org JSON-LD is handled by the identity-aware JSON-LD path.
+    // Treating the same script as arbitrary embedded state independently
+    // promotes each nested variant Offer into an unrelated priced Product.
+    if (/\btype\s*=\s*["']application\/ld\+json["']/i.test(attrs)) continue;
     const raw = match[2].trim();
     if (!raw || raw.length > 1500000) continue;
     const looksJson = /type=["']application\/json["']/i.test(attrs) ||
