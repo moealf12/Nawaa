@@ -179,6 +179,10 @@ function isEvidencedCompleteLaptop(offer = {}) {
   const retail = normalizeSearchQuery(offer.title || "");
   if (!/\b(?:laptop|notebook|chromebook|macbook|omnibook|elitebook|pavilion|probook|spectre|envy|victus|omen)\b/.test(retail)) return false;
   if (!/\b(?:intel|amd|ryzen|core(?: i[3579])?|celeron|pentium|snapdragon|processor|\d+gb ram|ram \d+gb|windows)\b/.test(retail)) return false;
+  // A merchant selling an SSD *for* an HP laptop is not selling the laptop.
+  // Inspect the actual retail item subject before allowing hardware cues
+  // appearing in compatibility text (e.g. "Intel Core i7") to upgrade it.
+  if (/\b(?:ssds?|nvme)(?: \S+){0,3} for (?:hp|pavilion|laptop|notebook|elitebook|probook|spectre|omnibook)\b/.test(retail)) return false;
   if (/\b(?:sleeve|sling|briefcase|rucksack|backpack|protective shell|privacy screen|active pen|cooling fan|cpu fan|lcd replacement|screen replacement|ssd replacement|replacement ssd|only compatible with|compatible with|fit for)\b/.test(retail)) return false;
   return true;
 }
