@@ -92,3 +92,50 @@ test('real Jarir/eXtra iPhone 17 256GB Lavender same-MPN merchant pair groups',(
  });
  assert.equal(groupComparableOffers([jarir,extra]).length,1);
 });
+
+
+test('v21.7 deterministic Jarir/eXtra offer multiset survives grouping, including repeated accepted identities',()=>{
+ // Recorded real merchant model identifiers and product-specific PDP paths
+ // from v21.6; these are replay inputs, NOT current stock or checkout proof.
+ const observed=[
+  {...phone('Jarir','Apple iPhone 17 256GB Black',{
+   deviceType:'iPhone 17',storage:'256 GB',color:'Black',screenSize:'6.3"',modelNumber:'MG674AHA'
+  }),sourceUrl:'https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666784.html',
+    currency:'SAR',productPrice:4299,sourceRowId:'jarir-black'},
+  {...phone('eXtra','Apple iPhone 17 256GB Black',{
+   deviceType:'iPhone 17',storage:'256 GB',color:'Black',screenSize:'6.3 INCH',modelNumber:'MG674AH/A'
+  }),sourceUrl:'https://www.extra.com/en-sa/p/100460151',
+    currency:'SAR',productPrice:4299,sourceRowId:'extra-black'},
+  {...phone('Jarir','Apple iPhone 17 256GB Lavender',{
+   deviceType:'iPhone 17',storage:'256 GB',color:'Lavender',screenSize:'6.3"',modelNumber:'MG6A4AHA'
+  }),sourceUrl:'https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666789.html',
+    currency:'SAR',productPrice:4299,sourceRowId:'jarir-lavender'},
+  {...phone('eXtra','Apple iPhone 17 256GB Lavender',{
+   deviceType:'iPhone 17',storage:'256 GB',color:'Lavender',screenSize:'6.3 INCH',modelNumber:'MG6A4AH/A'
+  }),sourceUrl:'https://www.extra.com/en-sa/p/100460146',
+    currency:'SAR',productPrice:4299,sourceRowId:'extra-lavender'},
+ ];
+ // Deliberately repeat an accepted merchant/source row to detect loss of
+ // multiplicity (Set equality alone would mask it). This is a synthetic stress
+ // boundary, not an assertion that Jarir published two physical listings.
+ const input=[...observed,{...observed[0],sourceRowId:'jarir-black'}];
+ const rowIdentity=o=>[o.sourceRowId,o.merchant,o.sourceUrl,o.currency,o.productPrice].join('::');
+ const expectedRows=input.map(rowIdentity).sort();
+ const rotations=[
+  input,
+  [...input].reverse(),
+  [input[2],input[0],input[4],input[3],input[1]],
+ ];
+ for(const permutation of rotations){
+  const groups=groupComparableOffers(permutation);
+  assert.equal(groups.length,2,'Black and Lavender must be distinct configurations');
+  const actualRows=groups.flatMap(group=>group.offers).map(rowIdentity).sort();
+  assert.deepEqual(actualRows,expectedRows,'no fabricated, substituted or dropped accepted source rows');
+  const black=groups.find(group=>group.offers.some(o=>o.specs.color==='Black'));
+  const lavender=groups.find(group=>group.offers.some(o=>o.specs.color==='Lavender'));
+  assert.equal(black?.offers.length,3,'Black duplicate multiplicity must be retained');
+  assert.equal(lavender?.offers.length,2);
+  for(const group of [black,lavender])
+   assert.deepEqual(new Set(group.offers.map(o=>o.merchant)),new Set(['Jarir','eXtra']));
+ }
+});
