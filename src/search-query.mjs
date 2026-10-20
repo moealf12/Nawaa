@@ -534,6 +534,17 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   );
   if (hasUnrequestedVariant) confidence *= 0.82;
 
+  // A real merchant carrier-specific plan variant (e.g. Best Buy (AT&T) or
+  // (Verizon)) is not evidenced as an interchangeable unlocked phone for a
+  // generic Saudi-first search. This is NOT a claim the handset is SIM-locked:
+  // merely that activation, buyer eligibility and Saudi use are unverified.
+  // Preserve explicit shopper carrier intent and explicitly Unlocked listings.
+  const retailCarrierVariant = offerCategory === 'phone' &&
+    /\\(\\s*(?:at\\s*&\\s*t|verizon|t[- ]mobile)\\s*\\)/i.test(String(offer?.title || ''));
+  const carrierRequested = /(?:\\bat\\s*&\\s*t\\b|\\bverizon\\b|\\bt[- ]mobile\\b)/i.test(String(query || ''));
+  const unrequestedCarrierVariant = retailCarrierVariant && !carrierRequested;
+  if (unrequestedCarrierVariant) confidence *= 0.2;
+
   const titleSignalsUsed = /\b(?:used|pre owned|pre-owned|b grade|c grade|grade [bc])\b/.test(title);
   const titleSignalsRefurbished = /\b(?:refurbished|renewed|remanufactured)\b/.test(title);
   const inferredTitleCondition = titleSignalsRefurbished ? "refurbished" : titleSignalsUsed ? "used" : null;
@@ -561,13 +572,13 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const structuralTermsMatch = !categoryTokenRequested || (effectiveCategory && offerCategory === effectiveCategory);
   const exactMatch = confidence >= 0.92 && hits === q.length && structuralTermsMatch &&
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
-      !hasUnrequestedVariant && !conditionMismatch && !kindMismatch;
+      !hasUnrequestedVariant && !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
       hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : sparseLaptopEvidence ? "بيانات العرض لا تثبت وجود جهاز لابتوب كامل" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
