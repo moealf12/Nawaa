@@ -93,3 +93,22 @@ test('v18.2: internal laptop SSD and standalone replacement SSD cannot be confla
  assert.equal(productCategory(spare),'accessory');
  assert.equal(assessOfferMatch('HP laptop',spare).exactMatch,false);
 });
+
+test('v18.2 RED: compatible HP keyboards must never become exact laptop devices',()=>{
+ const observed=[
+  'HP 150 Desktop (Keyboard and Mouse), Wired, for Laptop/Desktop Computer/Gaming Desktop Computer/CPU Windows OS, Black',
+  'HP OMEN Encoder Cherry MX Brown Gaming Keyboard, Wired, for Laptop/Desktop Computer/CPU Windows OS, Black',
+  'HP OMEN Encoder Cherry MX Red Gaming Keyboard, Wired, for Laptop/Desktop Computer/CPU Windows OS, Black',
+  'HP 970 Programmable Wireless Keyboard, Bluetooth, for Laptop/Desktop Computer/CPU Windows OS, White',
+  'HP OMEN Spacer TKL Gaming Keyboard, Wireless, for Laptop/Desktop Computer/CPU Windows OS, Black',
+ ];
+ for(const title of observed){
+  const candidate=offer(title);
+  assert.equal(productCategory(candidate),'accessory',title);
+  assert.equal(assessOfferMatch('لابتوب اتش بي',candidate).exactMatch,false,title);
+  assert.equal(assessOfferMatch('HP laptop',candidate).exactMatch,false,title);
+ }
+ const laptop=offer('HP Pavilion 15 Laptop Intel Core i5 16GB RAM with Keyboard and Mouse Included','15-eg9000');
+ assert.equal(productCategory(laptop),'laptop');
+ assert.equal(assessOfferMatch('HP laptop',laptop).exactMatch,true);
+});
