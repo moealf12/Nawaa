@@ -254,8 +254,9 @@ const regionalGroup = cheaperUnavailableGroups.find(group =>
   group.offers.some(offer => offer.merchant === "Sharaf DG"));
 const regionalIntelligence = buildOfferIntelligence(regionalGroup);
 assert.ok(regionalIntelligence.rows.find(row => row.offer.merchant === "Sharaf DG").warnings.some(warning =>
-  warning.includes("غير مؤهل")
+  warning.includes("غير متوفر")
 ));
+assert.equal(regionalIntelligence.baselineOffer, null);
 assert.ok(unavailableIntelligence.insights.some(item =>
   item.type === "compatibility" && item.title.includes("SIM")
 ));
