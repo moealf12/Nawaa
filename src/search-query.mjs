@@ -213,6 +213,12 @@ function productCategoryWithDescription(offer, gaming) {
   // it in compatibility text. Captured Amazon first-ten X-LEADER example.
   // Preserve titles which actually START with the Apple iPhone device.
   const primaryRetailTitle=String(offer?.title || '');
+
+  // A title beginning "Capa ... iPhone" sells a Portuguese phone cover.
+  // The compatible iPhone model does not establish a complete handset.
+  if (/^\s*capas?\b/i.test(primaryRetailTitle) &&
+      /\biphone\s+\d+\b/i.test(primaryRetailTitle)) return 'accessory';
+
   if (/\b(?:for|compatible with|fits)\s+(?:apple\s+)?iphone\s+\d+\b/i.test(primaryRetailTitle) &&
       !/^\s*(?:(?:genuine|original|refurbished|renewed|used|new)\s+)?(?:apple\s+)?iphone\s+\d+\b/i.test(primaryRetailTitle))
     return 'accessory';
