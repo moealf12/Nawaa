@@ -62,6 +62,10 @@ export function productMatchScore(query, product) {
 }
 
 export function calculateComparableTotal(offer) {
+  // Currency trust boundary: original foreign amounts are not SAR totals.
+  // Source adapters must convert into SAR with provenance before comparison.
+  const code = String(offer?.currency || "").trim().toUpperCase();
+  if (code && code !== "SAR") return null;
   const components = [
     offer.productPrice,
     offer.shipping,
@@ -108,10 +112,24 @@ export function classifyOffer(offer) {
 }
 
 export function enrichOffer(offer) {
-  return {
+  // Never treat raw AED/USD/EUR numbers as Saudi riyals, even if a
+  // merchant adapter accidentally bypasses FX normalization.
+  // Retain the original numeric source amount for troubleshooting.
+  const code = String(offer?.currency || "").trim().toUpperCase();
+  const needsConversion = Boolean(code && code !== "SAR");
+  const safeOffer = needsConversion ? {
     ...offer,
-    totalSAR: calculateComparableTotal(offer),
-    bucket: classifyOffer(offer),
+    originalProductPrice: Number.isFinite(offer.originalProductPrice)
+      ? offer.originalProductPrice : offer.productPrice,
+    productPrice: null,
+    currency: code,
+    priceConfidence: "unverified_conversion",
+    priceConversionStatus: "unverified_currency",
+  } : offer;
+  return {
+    ...safeOffer,
+    totalSAR: calculateComparableTotal(safeOffer),
+    bucket: classifyOffer(safeOffer),
   };
 }
 
@@ -416,6 +434,7 @@ export function buildOfferIntelligence(group = {}) {
     if (offer.sourceMeta?.jeddahInStock === false) warnings.push("غير متوفر حاليًا في جدة");
     if (offer.availability === "out_of_stock") warnings.push("غير متوفر لدى المتجر");
     if (offer.availability === "unknown" && offer.sourceMeta?.jeddahInStock !== true) warnings.push("التوفر التفصيلي غير مؤكد");
+    if (offer.priceConversionStatus === "unverified_currency") warnings.push("سعر المصدر بعملة أجنبية؛ لم يُتحقق من تحويله إلى الريال");
     if (offer.canShipToSaudi === false) warnings.push("لا يشحن إلى السعودية");
     if (offer.canShipToSaudi == null) warnings.push("الشحن إلى السعودية غير مؤكد");
     if (missingCosts.length) warnings.push("تكلفة غير مكتملة: " + missingCosts.join("، "));
