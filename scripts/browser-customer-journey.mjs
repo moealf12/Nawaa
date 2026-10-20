@@ -241,6 +241,16 @@ try{
       };
       report.assertions.noSpanishAccessoryAsIphone=spanishAccessoryCards.length===0;
       report.assertions.noAliExpressGenericLandingAsExactIphone=untraceableAliExpress.length===0;
+      const compatibilityOnlyPhoneCards=report.firstTenGroups.filter(group=>{
+        const name=String(group.title||'');
+        return /\b(?:for|compatible with|fits)\s+(?:apple\s+)?iphone\s+\d+\b/i.test(name) &&
+          !/^\s*(?:(?:genuine|original|refurbished|renewed|used|new)\s+)?(?:apple\s+)?iphone\s+\d+\b/i.test(name);
+      });
+      report.iphoneCompatibilityOnlyProductTrust={
+        query,compatibleAccessoryTitles:compatibilityOnlyPhoneCards.map(g=>g.title),
+        evidenceScope:'real_first_ten_title_subject_not_independent_PDP_checkout'
+      };
+      report.assertions.noCompatibilityOnlyAccessoryAsIphone=compatibilityOnlyPhoneCards.length===0;
     }
     // Real customer smoke: HP computer searches must not surface sleeve, bag or
     // sling accessories as laptop product cards. Explicit accessory searches
