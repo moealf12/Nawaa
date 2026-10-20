@@ -43,6 +43,18 @@ export function resolveStructuredProductNodes(nodes = [], pageUrl = null) {
       return id.href;
     } catch { return null; }
   };
+  const pointsToDifferentPage = value => {
+    if (!page || typeof value !== "string" || !value.trim()) return false;
+    try {
+      const target = new URL(value, page);
+      // A group identifying an unrelated page (even on the same merchant)
+      // is cross-sell metadata, not the user's selected PDP subject.
+      // Page-level variant parameters do not change the PDP pathname.
+      return !["https:","http:"].includes(target.protocol) ||
+        target.origin !== page.origin ||
+        target.pathname.replace(/\\/+$/, "") !== page.pathname.replace(/\\/+$/, "");
+    } catch { return true; }
+  };
   const byId = new Map(), duplicateIds = new Set();
   for (const node of capped) {
     if (!isObject(node)) continue;
@@ -83,6 +95,9 @@ export function resolveStructuredProductNodes(nodes = [], pageUrl = null) {
   const groupedIds = new Set();
   const groups = [];
   for (const group of capped.filter(node => hasType(node, "ProductGroup"))) {
+    // A recommendation may declare its own ProductGroup inside the current
+    // document. Never promote that unrelated group over this PDP's Product.
+    if (pointsToDifferentPage(group.url) || pointsToDifferentPage(group["@id"])) continue;
     const declared = list(group.hasVariant);
     if (!declared.length || declared.length > MAX_VARIANTS) continue;
     const variants = declared.map(dereference);
