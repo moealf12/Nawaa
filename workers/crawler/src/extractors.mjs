@@ -20,7 +20,11 @@ function textPriceCandidates($){
  for(const selector of selectors){
   $(selector).slice(0,80).each((_,el)=>{
    const node=$(el);const raw=first(node.attr('data-price'),node.attr('data-product-price'),node.attr('content'),node.attr('aria-label'),node.text());
-   const price=num(raw);const cur=currency(raw)||currency(node.parent().text())||currency($('body').text().slice(0,12000));
+   const price=num(raw);// A currency printed elsewhere in the site footer is not proof that this
+   // specific price uses that currency. Prefer local evidence or explicit
+   // page product price metadata; never infer it from the entire body.
+   const cur=currency(raw)||currency(node.parent().text())||
+     currency(meta($,["product:price:currency","og:price:currency"]));
    if(price&&cur)out.push({price,currency:cur});
   });
  }
@@ -31,13 +35,23 @@ function fromVisibleDom($,url,merchant){
  if(title.length<3)return [];
  const prices=textPriceCandidates($);
  if(!prices.length)return [];
- const best=prices.sort((a,b)=>a.price-b.price)[0];
+ // Multiple different visible prices may represent accessories, discounts,
+ // financing or cross-sells. Without structured product evidence there is
+ // no safe basis for selecting the cheapest figure as the product's price.
+ const unique=[...new Map(prices.map(item=>[item.currency+"|"+item.price,item])).values()];
+ if(unique.length!==1)return [];
+ const best=unique[0];
  return [{title,brand:first(meta($,['product:brand']),$('[itemprop="brand"]').first().text()),merchant,sourceUrl:url,imageUrl:first(meta($,['og:image','twitter:image']),$('main img').first().attr('src')),currency:best.currency,productPrice:best.price,sku:null,availability:'unknown',condition:'new',extractionStrategy:'visible-dom'}];
 }
 
 export function extractOffersFromPage({$,url}){
  const merchant=new URL(url).hostname.replace(/^www\./,"");
- const all=[...ldProducts($).flatMap(p=>fromLd(p,url,merchant)),...fromMeta($,url,merchant),...fromVisibleDom($,url,merchant)];
+ // Exactly one evidence tier owns the page's sale price. Combining all
+ // tiers used to invent conflicting offers for the same product URL when
+ // a low-priced promo/accessory appeared in page furniture.
+ const structured=ldProducts($).flatMap(p=>fromLd(p,url,merchant));
+ const metadata=structured.length?[]:fromMeta($,url,merchant);
+ const all=structured.length?structured:metadata.length?metadata:fromVisibleDom($,url,merchant);
  const seen=new Set();
  return all.filter(x=>{const k=[x.sourceUrl,x.productPrice,x.currency].join("|");if(seen.has(k))return false;seen.add(k);return true;}).map(x=>({...x,observedAt:new Date().toISOString()}));
 }
