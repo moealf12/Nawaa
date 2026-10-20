@@ -89,6 +89,9 @@ test("v20.3 RED: related/recommended JSON-LD Product price cannot replace generi
    sku:"CASE-IPH17",offers:{"@type":"Offer",price:49,priceCurrency:"SAR",
      url:page+"/recommendations/case"}}
  ];
+ const inspector=probeJsonLd(graph(recommendations));
+ assert.equal(inspector.pricedProducts,0,
+   "the recommended phone case must not count as the family's trusted item price");
  await withHtml(graph(recommendations),async()=>{
   const generic=await resolveProductUrl(page);
   assert.equal(generic.originalProductPrice,null,
