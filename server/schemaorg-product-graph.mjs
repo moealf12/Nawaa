@@ -59,6 +59,17 @@ export function resolveStructuredProductNodes(nodes = []) {
     const declared = list(group.hasVariant);
     if (!declared.length || declared.length > MAX_VARIANTS) continue;
     const variants = declared.map(dereference);
+    // Reserve every declared child @id even if the referenced node is absent,
+    // malformed or ambiguous. Otherwise a surviving sibling can leak its price
+    // into an incomplete group's generic product page.
+    for (const declaredVariant of declared) {
+      if (typeof declaredVariant?.["@id"] === "string") groupedIds.add(declaredVariant["@id"]);
+    }
+    for (const variant of variants) {
+      if (variant && hasType(variant, "Product") && typeof variant["@id"] === "string") {
+        groupedIds.add(variant["@id"]);
+      }
+    }
     // No partial acceptance: one unresolved/mismatched referenced variant
     // means the group cannot be assigned an individual purchasable price.
     const complete = variants.every(value => value && hasType(value, "Product"));
