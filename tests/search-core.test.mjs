@@ -220,7 +220,7 @@ assert.ok(intelligence.insights.some((item) => item.type === "availability" && i
 assert.ok(intelligence.insights.some((item) => item.type === "cost"));
 
 
-const cheaperUnavailableGroup = groupComparableOffers([
+const cheaperUnavailableGroups = groupComparableOffers([
   {
     merchant:"eXtra",
     title:"Apple iPhone 17 256GB Black",
@@ -242,21 +242,25 @@ const cheaperUnavailableGroup = groupComparableOffers([
     productPrice:2998.95,shipping:null,importCost:0,tax:null,mandatoryFees:0,discount:0,
     condition:"new",availability:"out_of_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
   }
-])[0];
+]);
+assert.equal(cheaperUnavailableGroups.length, 2); // Explicit regional phone is not interchangeable with unknown region.
+const cheaperUnavailableGroup = cheaperUnavailableGroups.find(group =>
+  group.offers.some(offer => offer.merchant === "eXtra"));
 const unavailableIntelligence = buildOfferIntelligence(cheaperUnavailableGroup);
 assert.equal(unavailableIntelligence.baselineOffer.merchant, "eXtra");
 assert.equal(unavailableIntelligence.baselineValue, 3999);
-assert.ok(unavailableIntelligence.rows.find((row) => row.offer.merchant === "Sharaf DG").warnings.some((warning) =>
+assert.equal(unavailableIntelligence.rows.some(row => row.offer.merchant === "Sharaf DG"), false);
+const regionalGroup = cheaperUnavailableGroups.find(group =>
+  group.offers.some(offer => offer.merchant === "Sharaf DG"));
+const regionalIntelligence = buildOfferIntelligence(regionalGroup);
+assert.ok(regionalIntelligence.rows.find(row => row.offer.merchant === "Sharaf DG").warnings.some(warning =>
   warning.includes("غير مؤهل")
 ));
-assert.ok(unavailableIntelligence.insights.some((item) =>
-  item.type === "compatibility" && item.title.includes("المنطقة")
-));
-assert.ok(unavailableIntelligence.insights.some((item) =>
+assert.ok(unavailableIntelligence.insights.some(item =>
   item.type === "compatibility" && item.title.includes("SIM")
 ));
 
-const regionProfile = buildCanonicalProductProfile(cheaperUnavailableGroup.offers);
+const regionProfile = buildCanonicalProductProfile(regionalGroup.offers);
 assert.equal(regionProfile.regionVersion.value, "Middle East Version");
 
 
