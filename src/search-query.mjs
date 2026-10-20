@@ -179,6 +179,16 @@ function isEvidencedCompleteLaptop(offer = {}) {
   const retail = normalizeSearchQuery(offer.title || "");
   if (!/\b(?:laptop|notebook|chromebook|macbook|omnibook|elitebook|pavilion|probook|spectre|envy|victus|omen)\b/.test(retail)) return false;
   if (!/\b(?:intel|amd|ryzen|core(?: i[3579])?|celeron|pentium|snapdragon|processor|\d+gb ram|ram \d+gb|windows)\b/.test(retail)) return false;
+  // Retail subject beats compatibility metadata. A keyboard offered *for*
+  // laptops may mention CPU/Windows, but it is still a keyboard. If a laptop
+  // bundle genuinely includes a keyboard, the computer subject precedes
+  // the explicitly included peripheral.
+  const soldPeripheral=retail.search(/\b(?:keyboards?|mice|mouse)\b/);
+  if(soldPeripheral>=0){
+    const computerSubject=retail.search(/\b(?:laptop|notebook|chromebook|macbook)\b/);
+    if(computerSubject<0||soldPeripheral<computerSubject||
+       !/\b(?:with|includes|including|bundle)\b/.test(retail.slice(computerSubject,soldPeripheral))) return false;
+  }
   // A merchant selling an SSD *for* an HP laptop is not selling the laptop.
   // Inspect the actual retail item subject before allowing hardware cues
   // appearing in compatibility text (e.g. "Intel Core i7") to upgrade it.
