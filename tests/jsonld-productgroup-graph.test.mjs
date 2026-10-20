@@ -102,3 +102,49 @@ test("v20.3 RED: related/recommended JSON-LD Product price cannot replace generi
   assert.equal(explicit.sku,"IPH17-512");
  });
 });
+
+test("v20.4 RED: same-page absolute @id and fragment @id resolve the explicitly requested variant",async()=>{
+ const mixed=group.map(node=>({...node,
+   "@id":String(node["@id"]||"").startsWith("#")?page+node["@id"]:node["@id"]}));
+ const html=graph(mixed);
+ await withHtml(html,async()=>{
+  const resolved=await resolveProductUrl(page+"?variant=512");
+  assert.equal(resolved.sku,"IPH17-512");
+  assert.equal(resolved.originalProductPrice,4199);
+  assert.equal(resolved.sourceUrl,page+"?variant=512");
+ });
+ const inspected=probeJsonLd(graph([
+  {"@type":"Product","@id":page+"#single",name:"HP EliteBook 840 G10",
+    offers:{"@id":"#specific-offer"}},
+  {"@type":"Offer","@id":page+"#specific-offer",price:4999,priceCurrency:"SAR"}
+ ]),page);
+ assert.equal(inspected.pricedProducts,1);
+ assert.equal(inspected.sample[0].price,4999);
+});
+
+test("v20.4 RED: equivalent absolute and fragment ids with conflicting prices are ambiguous",async()=>{
+ const html=graph([
+  {"@type":"Product","@id":"#p",name:"HP EliteBook 840 G10",
+    offers:{"@id":"#offer"}},
+  {"@type":"Offer","@id":"#offer",price:4999,priceCurrency:"SAR"},
+  {"@type":"Offer","@id":page+"#offer",price:19,priceCurrency:"SAR"}
+ ]);
+ assert.equal(probeJsonLd(html,page).pricedProducts,0);
+ await withHtml(html,async()=>{
+  const resolved=await resolveProductUrl(page);
+  assert.equal(resolved.originalProductPrice,null,
+    "ambiguous duplicate @id must not become an exact purchasable price");
+ });
+});
+
+test("v20.4: off-page absolute @id must not borrow a same-fragment local offer",async()=>{
+ const html=graph([
+  {"@type":"Product","@id":"#p",name:"HP EliteBook 840 G10",
+    offers:{"@id":"https://foreign.example/another-product#price"}},
+  {"@type":"Offer","@id":"#price",price:1999,priceCurrency:"SAR"}
+ ]);
+ assert.equal(probeJsonLd(html,page).pricedProducts,0);
+ await withHtml(html,async()=>{
+  assert.equal((await resolveProductUrl(page)).originalProductPrice,null);
+ });
+});
