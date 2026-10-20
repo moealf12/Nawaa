@@ -299,7 +299,10 @@ test('v20 RED: generic product page must not silently select cheapest sibling va
   {"@type":"Offer","name":"512GB","sku":"IPH17-512","price":"4199","priceCurrency":"SAR",
     "url":"/products/shirt?variant=512"}
  ]};
- await withHtml('<script type="application/ld+json">'+JSON.stringify(item)+'</script>',async()=>{
+ const structuredHtml='<script type="application/ld+json">'+JSON.stringify(item)+'</script>';
+ assert.equal(extractionCandidates(structuredHtml,url).some(entry=>entry.strategy==='embedded_json'),false,
+  "JSON-LD must never be parsed a second time as independent embedded variant state");
+ await withHtml(structuredHtml,async()=>{
    const generic=await resolveProductUrl(url);
    assert.equal(generic.originalProductPrice,null,"ambiguous generic variant has no exact price");
    const exact=await resolveProductUrl(url+'?variant=512');
