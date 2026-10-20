@@ -148,3 +148,39 @@ test("v20.4: off-page absolute @id must not borrow a same-fragment local offer",
   assert.equal((await resolveProductUrl(page)).originalProductPrice,null);
  });
 });
+
+test("v20.5 RED: recommended foreign-page ProductGroup cannot replace current PDP Product",async()=>{
+ const html=graph([
+   {"@type":"ProductGroup","@id":"https://fixture.example/recommendations/phone#group",
+    url:"https://fixture.example/recommendations/phone",name:"Recommended Phone Case Family",
+    hasVariant:[{"@id":"https://fixture.example/recommendations/phone#case"}]},
+   {"@type":"Product","@id":"#main",url:page,name:"HP EliteBook 840 G10",
+    sku:"HP840G10",offers:{"@type":"Offer",price:4999,priceCurrency:"SAR",url:page}}
+ ]);
+ const inspector=probeJsonLd(html,page);
+ assert.equal(inspector.pricedProducts,1,
+   "an unrelated ProductGroup on a recommendation page must not mask the current page's product price");
+ assert.equal(inspector.sample[0].title,"HP EliteBook 840 G10");
+ await withHtml(html,async()=>{
+   const actual=await resolveProductUrl(page);
+   assert.equal(actual.originalProductPrice,4999);
+   assert.equal(actual.sku,"HP840G10");
+   assert.equal(actual.title,"HP EliteBook 840 G10");
+ });
+});
+
+test("v20.5 RED: recommendation group with local @id but explicit off-page url is not main PDP",async()=>{
+ const html=graph([
+   {"@type":"ProductGroup","@id":"#recommended-group",
+    url:"https://fixture.example/recommendations/phone",name:"Recommended Accessory Group",
+    hasVariant:[{"@id":"#absent"}]},
+   {"@type":"Product",name:"HP EliteBook 840 G10",url:page,
+    sku:"HP840G10",offers:{"@type":"Offer",price:4999,priceCurrency:"SAR",url:page}}
+ ]);
+ assert.equal(probeJsonLd(html,page).pricedProducts,1);
+ await withHtml(html,async()=>{
+   const actual=await resolveProductUrl(page);
+   assert.equal(actual.originalProductPrice,4999);
+   assert.equal(actual.title,"HP EliteBook 840 G10");
+ });
+});
