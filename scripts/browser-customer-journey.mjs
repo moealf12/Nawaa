@@ -212,6 +212,9 @@ try{
       // compatible protective shells, stylus pens, sleeves and laptop luggage.
       const accessoryTitles=report.firstTenGroups.filter(group=>{
         const title=group.title.toLowerCase();
+        // Real first-ten candidate evidence: laptop batteries and external
+        // power supplies were missed by the older sleeve/fan-only guard.
+        if(/\b(?:laptop|notebook) batter(?:y|ies)\b|\bbatter(?:y|ies) (?:replacement|compatible|for)\b|\bpower suppl(?:y|ies)\b/.test(title)) return true;
         if(/\b(?:sleeves?|slings?|briefcases?|rucksacks?|backpacks?|laptop bags?|laptop cases?|laptop pouches?|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with)\b/i.test(title))return true;
         const peripheral=title.search(/\b(?:keyboards?|mice|mouse)\b/);
         if(peripheral<0)return false;
