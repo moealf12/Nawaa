@@ -52,7 +52,7 @@ export function resolveStructuredProductNodes(nodes = [], pageUrl = null) {
       // Page-level variant parameters do not change the PDP pathname.
       return !["https:","http:"].includes(target.protocol) ||
         target.origin !== page.origin ||
-        target.pathname.replace(/\\/+$/, "") !== page.pathname.replace(/\\/+$/, "");
+        target.pathname.replace(/\/+$/, "") !== page.pathname.replace(/\/+$/, "");
     } catch { return true; }
   };
   const byId = new Map(), duplicateIds = new Set();
