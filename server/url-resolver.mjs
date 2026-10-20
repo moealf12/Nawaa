@@ -9,6 +9,7 @@ import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
 import { selectVariantCandidates } from "./product-variant.mjs";
 import { extractShopifyVariantState } from "./shopify-page-variant.mjs";
+import { resolveStructuredProductNodes } from "./schemaorg-product-graph.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
@@ -221,7 +222,7 @@ function extractJsonLd(html) {
       flattenJsonLd(JSON.parse(raw), out);
     } catch {}
   }
-  return out;
+  return resolveStructuredProductNodes(out);
 }
 
 function typeIncludesProduct(type) {
