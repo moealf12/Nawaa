@@ -640,7 +640,28 @@ export function extractTemuSearchOffers(html, query) {
 }
 
 
-export function extractAliExpressSearchOffers(html, query) {
+// A productId in embedded search state does not attest to the destination.
+// Historical real Chromium returned AliExpress offers pointing to a generic
+// BundleDeals2 landing page rather than the item's PDP. Do not manufacture
+// an /item/<id>.html URL when the merchant omitted a valid item URL.
+// This is URL/identity-shape attestation only; it does not claim a live PDP
+// fetch, current price, deliverability, or seller availability.
+function attestAliExpressItemUrl(raw, productId) {
+  const href = String(raw || "").trim();
+  if (!/^(?:https:\/\/|\/\/|\/item\/)/i.test(href)) return {url:null,reason:"unsupported_link_scheme_or_relative_path"};
+  let url;
+  try { url = new URL(href,"https://www.aliexpress.com"); }
+  catch { return {url:null,reason:"malformed_url"}; }
+  if (url.protocol !== "https:" || url.username || url.password ||
+      !/^(?:(?:www|m|[a-z]{2})\.)?aliexpress\.com$/i.test(url.hostname))
+    return {url:null,reason:"unsafe_or_nonmerchant_host"};
+  const id = url.pathname.match(/^\/item\/(\d{10,})\.html$/i)?.[1];
+  if (!id) return {url:null,reason:"non_item_pdp_path"};
+  if (id !== String(productId)) return {url:null,reason:"product_id_mismatch"};
+  return {url:url.href,reason:null};
+}
+
+export function extractAliExpressSearchOffers(html, query, diagnostics = null) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
   const starts = [];
@@ -677,12 +698,22 @@ export function extractAliExpressSearchOffers(html, query) {
     const hits = tokens.filter((token) => haystack.includes(token)).length;
     if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
     if (seen.has(productId)) continue;
-    seen.add(productId);
 
     let image = imageRaw ? decodeJsonString(imageRaw) : null;
     if (image?.startsWith("//")) image = "https:" + image;
-    const sourceUrl = decodeJsonString(sourceRaw).replace(/&amp;/g, "&");
-    offers.push({ productId, title, image, price, currency, sourceUrl });
+    const rawProductUrl = decodeJsonString(sourceRaw).replace(/&amp;/g, "&");
+    const attested = attestAliExpressItemUrl(rawProductUrl, productId);
+    if (!attested.url) {
+      if (diagnostics && typeof diagnostics === "object") {
+        diagnostics.rejectedProductLinks = (diagnostics.rejectedProductLinks || 0) + 1;
+        diagnostics.rejectionSamples ||= [];
+        if (diagnostics.rejectionSamples.length < 5)
+          diagnostics.rejectionSamples.push({productId,reason:attested.reason});
+      }
+      continue;
+    }
+    seen.add(productId);
+    offers.push({ productId, title, image, price, currency, sourceUrl:attested.url });
   }
   return offers;
 }
