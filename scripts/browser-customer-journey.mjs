@@ -183,9 +183,19 @@ try{
         const merchants=[...panel?.querySelectorAll('.merchant-row .merchant-main strong')||[]]
           .map(node=>node.textContent?.trim()||'').filter(Boolean);
         const merchantRows=panel?.querySelectorAll('.merchant-row').length||0;
-        const detailActions=panel?.querySelectorAll('.product-detail-btn').length||0;
+        const details=[...panel?.querySelectorAll('.product-detail-btn[data-source]')||[]];
+        const detailActions=details.length;
+        // Read only links already visible in the real customer's comparison
+        // drawer; no additional merchant requests or application mutation.
+        // Preserve product pathname for independent seller-SKU/variant audit.
+        const offerSourcePaths=details.slice(0,12).map(button=>{
+          try{
+            const url=new URL(button.getAttribute('data-source')||'');
+            return url.protocol==='https:' ? url.origin+url.pathname : null;
+          }catch{return null;}
+        }).filter(Boolean);
         return {index,title,advertisedPrice,coverage,merchantNames:[...new Set(merchants)],
-          merchantRows,detailActions};
+          merchantRows,detailActions,offerSourcePaths};
       },i);
       report.firstTenGroups.push(row);
     }
