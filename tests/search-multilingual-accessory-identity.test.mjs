@@ -57,3 +57,17 @@ test('v21.4 P0 RED: real Amazon compatibility-only iPhone kit cannot exact-match
   assert.equal(assessOfferMatch('iPhone 17',genuine).exactMatch,true);
   assert.equal(filterQueryOffers('iPhone 17',[genuine]).offers.length,1);
 });
+
+
+test('v21.8 RED: recorded Portuguese Capa Nomad iPhone 17 Pro cover is not a handset',()=>{
+ const cover={title:'Capa Nomad Back Couro iPhone 17 Pro Preta',merchant:'Recorded merchant',
+   sourceUrl:'https://www.amazon.sa/dp/B0FPGDG31T',specs:{},
+   condition:'new',availability:'unknown'};
+ assert.equal(productCategory(cover),'accessory');
+ assert.equal(assessOfferMatch('iPhone 17 Pro',cover).exactMatch,false);
+ assert.equal(filterQueryOffers('iPhone 17 Pro',[cover]).offers.length,0);
+ const handset={...cover,title:'Apple iPhone 17 Pro 256 GB Cosmic Orange',
+   sourceUrl:'https://www.jarir.com/sa-en/apple-iphone-17-pro-smartphones-666722.html'};
+ assert.equal(productCategory(handset),'phone');
+ assert.equal(assessOfferMatch('iPhone 17 Pro',handset).exactMatch,true);
+});
