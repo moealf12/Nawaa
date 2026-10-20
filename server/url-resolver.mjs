@@ -427,7 +427,13 @@ export function extractMetaProductState(html) {
 export function extractionCandidates(html, url = null) {
   const nodes = extractJsonLd(html);
   const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
-  const jsonld = products.find((p) => chooseOffer(p)) || products[0] || null;
+  // An explicit family ProductGroup is evidence for this product page.
+  // A separate priced Product in the same graph may be a recommendation or
+  // cross-sell, not the requested item. Never let its cheaper price displace
+  // an ambiguous generic family. Explicit variants are resolved downstream.
+  const groups = products.filter(p => p.schemaProductGroupEvidence === true);
+  const jsonld = groups.length ? (groups.length === 1 ? groups[0] : null)
+    : products.find((p) => chooseOffer(p)) || products[0] || null;
   const embedded = extractEmbeddedProductState(html);
   const hydrated = extractHydratedProductState(html);
   const storefront = (url && extractShopifyVariantState(html,url)) || extractStorefrontProductState(html);
