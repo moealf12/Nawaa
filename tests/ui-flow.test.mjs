@@ -209,7 +209,14 @@ test("query deep link starts exactly one live search and URL submission requests
   await new Promise(resolve=>setImmediate(resolve));
   const countCards=()=> (element('#results').innerHTML.match(/class="match-result-card/g)||[]).length;
   assert.equal(countCards(),10,'a fresh search must show ten products');
-  loadMoreButtons[0].events.click();assert.equal(countCards(),20,'the first Load more must add ten products');
+  // Progressive/interactive rerenders must not strand keyboard focus on a detached card.
+  const focusedKeyBeforeRerender = renderedCards[0].dataset.groupKey;
+  globalThis.document.activeElement = renderedCards[0];
+  loadMoreButtons[0].events.click();
+  assert.equal(countCards(),20,'the first Load more must add ten products');
+  assert.ok(renderedCards.find(card=>card.dataset.groupKey===focusedKeyBeforeRerender)?.focusRestored,
+    'focused product must be re-focused when an update replaces the result grid');
+  globalThis.document.activeElement = null;
   loadMoreButtons[0].events.click();assert.equal(countCards(),25,'the final Load more must retain all remaining products');
   assert.equal(loadMoreButtons.length,0,'no Load more remains after all products are visible');
   element('#resetResultFilters').events.click();assert.equal(countCards(),10,'reset filters restores the first ten products');
