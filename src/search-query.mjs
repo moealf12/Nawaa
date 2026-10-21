@@ -220,12 +220,12 @@ function productCategoryWithDescription(offer, gaming) {
   // Source-backed first-ten: PanzerGlass CARE Explorer is a protection bundle,
   // not the iPhone named solely as the compatible model. Do not misclassify
   // a genuine Apple iPhone bundle whose handset is the retail title's subject.
-  if (/\\biphone\\s+\\d+\\b/.test(soldTitle) &&
-      !/^(?:apple\\s+)?iphone\\s+\\d+\\b/.test(soldTitle) &&
-      /\\b(?:panzerglass|protection (?:package|bundle)|protective (?:case|kit))\\b/.test(soldTitle)) return 'accessory';
+  if (/\biphone\s+\d+\b/.test(soldTitle) &&
+      !/^(?:apple\s+)?iphone\s+\d+\b/.test(soldTitle) &&
+      /\b(?:panzerglass|protection (?:package|bundle)|protective (?:case|kit))\b/.test(soldTitle)) return 'accessory';
   // Printer paper, guides, drum units and repair kits are consumables/parts,
   // even if the compatibility text says HP Printer or LaserJet.
-  if (/\\b(?:printer paper|printing paper|paper jam|feed repair kit|repair kit|user guide|drum unit|ink bottles?|ink cartridg(?:e|es)|printer cartridg(?:e|es))\\b/.test(soldTitle))
+  if (/\b(?:printer paper|printing paper|paper jam|feed repair kit|repair kit|user guide|drum unit|ink bottles?|ink cartridg(?:e|es)|printer cartridg(?:e|es))\b/.test(soldTitle))
     return 'accessory';
 
   // A title beginning "Capa ... iPhone" sells a Portuguese phone cover.
@@ -435,7 +435,7 @@ export function describeProduct(offer = {}) {
   let kind = "product";
   // Recorded PS5 Slim Amazon faceplates are protective parts rather than a
   // complete console, even when their compatibility line says Digital Edition.
-  const protectiveConsolePart = /\\b(?:faceplates?|protective dissipation|replacement ventilation|replacement shells?|replacement panels?|scratch resistant installation)\\b/.test(title);
+  const protectiveConsolePart = /\b(?:faceplates?|protective dissipation|replacement ventilation|replacement shells?|replacement panels?|scratch resistant installation)\b/.test(title);
   if (platform) {
     if (protectiveConsolePart && !evidencedConsoleChassis &&
         !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
@@ -537,16 +537,16 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // Match the actual retail item, not only the broad accessory category:
   // HP ink is not an HP mouse, and a power cable/housing is not a disc drive.
   const retailSubject = normalizeSearchQuery(offer?.title || "");
-  const mouseRequested = /\\bmouse\\b/.test(normalizedQuery) && !/\\bmouse (?:pad|mat)\\b/.test(normalizedQuery);
+  const mouseRequested = /\bmouse\b/.test(normalizedQuery) && !/\bmouse (?:pad|mat)\b/.test(normalizedQuery);
   const wrongMouseSubject = mouseRequested &&
-    (!/\\b(?:mouse|mice)\\b/.test(retailSubject) ||
-     /\\bmouse (?:pad|mat)\\b/.test(retailSubject) ||
-     (intent.brand === "hp" && !/^hp\\b/.test(retailSubject) &&
+    (!/\b(?:mouse|mice)\b/.test(retailSubject) ||
+     /\bmouse (?:pad|mat)\b/.test(retailSubject) ||
+     (intent.brand === "hp" && !/^hp\b/.test(retailSubject) &&
       normalizeSearchQuery(offer?.specs?.brand || offer?.brand || "") !== "hp"));
-  const driveRequested = /\\b(?:disc|disk|optical|blu ray) drive\\b/.test(normalizedQuery);
+  const driveRequested = /\b(?:disc|disk|optical|blu ray) drive\b/.test(normalizedQuery);
   const wrongDriveSubject = driveRequested &&
-    (!/\\b(?:disc|disk|optical|blu ray) drive\\b/.test(retailSubject) ||
-      /\\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\\b/.test(retailSubject));
+    (!/\b(?:disc|disk|optical|blu ray) drive\b/.test(retailSubject) ||
+      /\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\b/.test(retailSubject));
   // Product-type words (mouse, laptop, perfume...) are structural intent rather
   // than free-text tokens: reward the matching category without polluting model/
   // variant token matching.
