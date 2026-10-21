@@ -148,13 +148,15 @@ try{
         result.assertions.noObservedProtectionBundleAsPhone=!hasPath(/panzerglass-care-3-in-1-explorer-bundle/i);
       if(query==='HP printer')
         result.assertions.noPrinterConsumablesAsDevices=!data.cards.some(c=>
-          /\b(?:printer paper|repair kit|user guide|drum unit|ink cartridges?|cartridges?|ink bottles?|paper jam)\b/i.test(c.title));
+          /\b(?:printer paper|repair kit|user guide|drum unit|ink cartridges?|cartridges?|ink bottles?|paper jam)\b/i.test(c.title) ||
+          /^(?:skydo|printertree)\b/i.test(c.title) || c.productLinks.some(link=>/B0DDPWLL4J/i.test(link)));
       if(query==='HP mouse')
         result.assertions.hpMouseSubjectOnly=data.cards.every(c=>
           /^\s*hp\b/i.test(c.title)&&/\b(?:mouse|mice)\b/i.test(c.title));
       if(query==='PS5 disc drive')
         result.assertions.completeDiscDriveOnly=data.cards.every(c=>
-          !/\b(?:power cable|empty shell|housing|travel case|carrying case|repair kit)\b/i.test(c.title));
+          !/\b(?:power cable|empty shell|housing|travel case|carrying case|repair kit|connector module|optical drive module|disc drive module|kem-497aaa)\b/i.test(c.title) &&
+          !c.productLinks.some(link=>/B0F29BN21J|B0CJ8SM93K/i.test(link)));
       if(query==='iPhone 17 Pro capinha')
         result.assertions.capinhaIsPhoneCase=data.cards.every(c=>
           /\b(?:case|cover|capa|capinha)\b/i.test(c.title));
