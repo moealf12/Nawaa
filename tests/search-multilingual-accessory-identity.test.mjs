@@ -243,3 +243,23 @@ test('v21.22 real SSE: monitor for PS5 Slim (console not included) must not beco
   assert.equal(filterQueryOffers('PS5 Slim',[monitor]).offers.length,0);
   assert.deepEqual(monitor,original,'raw source evidence remains unchanged');
 });
+
+
+test('v21.22 real first-ten: PS5 Slim cosmetic skin cannot be a console',()=>{
+  // Actual original product-title excerpt and canonical Amazon source observed
+  // in isolated real SSE Chromium. No fabrication of the clipped description.
+  const skin={title:'MightySkins Skin Compatible with Playstation 5 Slim Disk Edition Console Only - Puppy Fall | Protective, Durable',
+    merchant:'Amazon Saudi',sourceUrl:'https://www.amazon.sa/-/en/MightySkins-Skin-Compatible-Playstation-Console/dp/B0CP6HTP2C/ref=sr_1_203',
+    productPrice:330,currency:'SAR',condition:'new',availability:'unknown',specs:{}};
+  const original=structuredClone(skin);
+  assert.equal(productCategory(skin),'accessory');
+  assert.equal(assessOfferMatch('PS5 Slim',skin).exactMatch,false);
+  assert.equal(filterQueryOffers('PS5 Slim',[skin]).offers.length,0);
+  assert.equal(assessOfferMatch('PS5 Slim skin',skin).exactMatch,true,
+    'explicit cosmetic accessory intent is not suppressed');
+  assert.equal(filterQueryOffers('PS5 Slim skin',[skin]).offers.length,1);
+  const consoleBundle={...skin,title:'Sony PS5 Slim Digital Edition Console with Included Protective Skin'};
+  assert.equal(productCategory(consoleBundle),'console',
+    'complete console sold with an included skin remains a console');
+  assert.deepEqual(skin,original);
+});
