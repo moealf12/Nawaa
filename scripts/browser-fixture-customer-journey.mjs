@@ -513,22 +513,26 @@ try{
   assertCheck('mobile_no_horizontal_overflow',mobile.scrollWidth<=mobile.viewport+4,mobile);
   assertCheck('mobile_image_fallback_visible',mobile.fallback==='grid',mobile);
   await imgTab.screenshot({path:'browser-artifacts/fixture-mobile-image-fallback.png',fullPage:true});
-  // The same visible phone/model/storage/color may have DIFFERENT manufacturer
-  // codes: preserve separate groups, and show the distinguishing codes.
+  // Merchants may use different manufacturer SKUs for the SAME phone variant.
+  // The buyer must see one card and a genuine cross-merchant comparison.
   const duplicated=await navigate('fixture-iphone-models');
   await duplicated.locator('#results .match-result-card').first().waitFor();
   const duplicateCards=duplicated.locator('#results .match-result-card');
   const duplicateCount=await duplicateCards.count();
-  const labels=await duplicated.locator('#results .card-model-identifier').allTextContents();
   const titles=await duplicated.locator('#results .match-card-copy strong').allTextContents();
-  assertCheck('identical_phone_label_but_distinct_skus_stay_separate',duplicateCount===2,
+  const coverage=await duplicated.locator('#results .card-coverage').first().textContent();
+  assertCheck('identical_phone_configuration_groups_across_merchant_skus',duplicateCount===1,
     {duplicateCount,titles});
-  assertCheck('iphone_ambiguous_variant_labels_disclose_model_codes',
-    labels.length===2&&labels.some(x=>x.includes('MG674AH/A'))&&
-    labels.some(x=>x.includes('MG674LL/A')),{labels});
-  assertCheck('phone_identity_not_merged_by_title',
-    new Set(titles.map(x=>x.toLowerCase().trim())).size===1,{titles});
-  await duplicated.screenshot({path:'browser-artifacts/fixture-iphone-distinct-sku-cards.png',fullPage:true});
+  assertCheck('phone_card_retains_both_merchant_offers',
+    coverage.includes('عرضان') && coverage.includes('متجران'),{coverage});
+  await duplicateCards.first().click();
+  const comparisonRows=await duplicated.locator('.selected-comparison[open] .merchant-comparison .offer-row').count();
+  const skuSelectors=await duplicated.locator('[data-dimension="skuKey"]').count();
+  const note=await duplicated.locator('.selected-comparison[open] .model-identity-note').textContent();
+  assertCheck('phone_comparison_independent_of_sku_with_visible_caveat',
+    comparisonRows===2 && skuSelectors===0 && note.includes('دون اشتراط رقم SKU'),
+    {comparisonRows,skuSelectors,note});
+  await duplicated.screenshot({path:'browser-artifacts/fixture-iphone-cross-merchant-comparison.png',fullPage:true});
   // Assert both the actual matching function and the customer-visible UI.
   for (const [q,label] of [['PS5 DualSense Bundle','en'],['بلايستيشن 5 مع يد إضافية','ar']]) {
     const raw=searchPayload(q,null).offers.filter(o=>o.exactMatch);
