@@ -236,7 +236,37 @@ try{
   // v15.15: bounded diagnostic-only public catalog recovery probe. No provider
   // mutation, new endpoint, database write, or assertion that the item is on sale.
   // Use existing public-page resolver, 1 request/second minimum and bounded URLs.
-  const {fetchHtmlSafe,resolveProductUrl}=await import('../server/url-resolver.mjs');
+  const {fetchHtmlSafe,resolveProductUrl,extractionCandidates}=await import('../server/url-resolver.mjs');
+  // v21.23 read-only ONE-PDP forensic sample. Bound time and output; no merchant
+  // HTML or credentials are logged. This classifies origin of AED 2 in the
+  // candidate pipeline, not a production write or general price certification.
+  try{
+    const url='https://app.virginmegastore.ae/en/gaming/playstation-hardware-accessories/playstation-accessories/sony-playstation-disc-drive-for-ps5-add-on-/p/1033214';
+    const page=await fetchHtmlSafe(url,0,{signal:AbortSignal.timeout(10000)});
+    const html=page.html;
+    const entries=extractionCandidates(html,page.finalUrl);
+    const h1=/<h1\b[^>]*>[\s\S]{0,3000}?<\/h1>/i.exec(html);
+    const headingOffset=h1?h1.index+h1[0].length:null;
+    const snippets=headingOffset===null?[]:[...html.slice(headingOffset,headingOffset+12000)
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ')
+      .replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').matchAll(/\bAED\s*([0-9][0-9,.]*)/gi)]
+      .slice(0,8).map(m=>Number(m[1].replace(/,/g,'')));
+    console.log('V2123_VIRGIN_SOURCE_PRICE_FORENSICS '+JSON.stringify({
+      status:'CAPTURED',bytes:html.length,h1Found:Boolean(h1),
+      observedHeadingPrices:snippets,strategies:entries.slice(0,10).map(e=>({
+        strategy:e.strategy,adapterId:e.adapterId||null,
+        title:String(e.product?.name||'').slice(0,115),
+        sku:String(e.product?.sku||'').slice(0,30),
+        price:e.product?.offers?.price??null,
+        currency:e.product?.offers?.priceCurrency||null
+      })),
+      note:'live bounded candidate source observation, may change; not a verified invoice'
+    }));
+  }catch(error){
+    console.log('V2123_VIRGIN_SOURCE_PRICE_FORENSICS '+JSON.stringify({
+      status:'BLOCKED',error:String(error?.message||error).slice(0,180)}));
+  }
   const {parseJarirSearchHtml}=await import('../server/providers/jarir.mjs');
   const {load:cheerioLoad}=await import('cheerio');
   const jarirCatalogTargets=[
