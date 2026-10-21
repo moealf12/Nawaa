@@ -67,6 +67,12 @@ try{
                   return {title:String(o.title||'').slice(0,160),url,
                     merchant:String(o.merchant||'').slice(0,60),
                     price:o.productPrice??null,currency:String(o.currency||'').slice(0,8),
+                    originalPrice:o.originalProductPrice??null,
+                    originalCurrency:String(o.originalCurrency||'').slice(0,8),
+                    fxRate:o.fx?.rate??null,
+                    fxSource:String(o.fx?.source||'').slice(0,48),
+                    extraction:String(o.sourceMeta?.parsedFrom||'').slice(0,48),
+                    structuredPrice:o.sourceMeta?.searchPageStructuredPrice??null,
                     stock:String(o.availability||'unknown').slice(0,32),
                     exact:o.exactMatch===true,kind:String(o.productKind||'').slice(0,24)};
                 };
@@ -165,8 +171,16 @@ try{
       // The previous workflow was green while
       // genuine merchant accessory SKUs appeared as deceptively cheap devices.
       const hasPath=pattern=>data.cards.some(c=>c.productLinks.some(url=>pattern.test(url)));
-      if(query==='PS5 Slim')
+      if(query==='PS5 Slim') {
         result.assertions.noObservedFaceplatesAsConsoles=!hasPath(/B0CZL8886V|B0DKNVSGSM|B0CT5NH3NL|B0FMYJCSK7/i);
+        // Examine ORIGINAL SSE source titles, not sanitized canonical cards.
+        // No monitor stating the complete console is absent may masquerade
+        // as an exact console in accepted source candidates.
+        result.assertions.noExplicitlyExcludedConsoleAsExact=
+          !(data.stream?.finalOfferSources||[]).some(o=>o.exact===true &&
+            /\bconsole not included\b/i.test(o.title) &&
+            /\b(?:monitor|display|screen)\b/i.test(o.title));
+      }
       if(query==='iPhone 17 Pro Max')
         result.assertions.noObservedProtectionBundleAsPhone=!hasPath(/panzerglass-care-3-in-1-explorer-bundle/i);
       if(query==='HP printer')
