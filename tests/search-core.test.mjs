@@ -243,27 +243,26 @@ const cheaperUnavailableGroups = groupComparableOffers([
     condition:"new",availability:"out_of_stock",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
   }
 ]);
-assert.equal(cheaperUnavailableGroups.length, 2); // Explicit regional phone is not interchangeable with unknown region.
-const cheaperUnavailableGroup = cheaperUnavailableGroups.find(group =>
-  group.offers.some(offer => offer.merchant === "eXtra"));
+assert.equal(cheaperUnavailableGroups.length, 1,
+  "a region not specified by other merchants is not an explicit competing variant");
+const cheaperUnavailableGroup = cheaperUnavailableGroups[0];
 const unavailableIntelligence = buildOfferIntelligence(cheaperUnavailableGroup);
 assert.equal(unavailableIntelligence.baselineOffer.merchant, "eXtra");
 assert.equal(unavailableIntelligence.baselineValue, 3999);
-assert.equal(unavailableIntelligence.rows.some(row => row.offer.merchant === "Sharaf DG"), false);
-const regionalGroup = cheaperUnavailableGroups.find(group =>
-  group.offers.some(offer => offer.merchant === "Sharaf DG"));
-const regionalIntelligence = buildOfferIntelligence(regionalGroup);
-assert.ok(regionalIntelligence.rows.find(row => row.offer.merchant === "Sharaf DG").warnings.some(warning =>
-  warning.includes("غير متوفر")
-));
-assert.equal(regionalIntelligence.baselineOffer, null);
+const unavailableRow = unavailableIntelligence.rows.find(row => row.offer.merchant === "Sharaf DG");
+assert.ok(unavailableRow?.warnings.some(warning=>warning.includes("غير متوفر")),
+  "an out-of-stock regional listing must not become the lowest currently available price");
 assert.ok(unavailableIntelligence.insights.some(item =>
   item.type === "compatibility" && item.title.includes("SIM")
 ));
-
-const regionProfile = buildCanonicalProductProfile(regionalGroup.offers);
+const regionProfile = buildCanonicalProductProfile(cheaperUnavailableGroup.offers);
 assert.equal(regionProfile.regionVersion.value, "Middle East Version");
 
+// Explicit opposing regional hardware claims remain separate.
+const knownRegionOffers = cheaperUnavailableGroup.offers.slice(0,2).map(offer=>({
+  ...offer,specs:{...offer.specs,regionVersion:"USA"},
+}));
+assert.equal(groupComparableOffers([...knownRegionOffers,cheaperUnavailableGroup.offers[2]]).length,2);
 
 const formattedSkuGroups = groupComparableOffers([
   {
