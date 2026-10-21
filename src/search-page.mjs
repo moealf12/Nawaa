@@ -15,7 +15,7 @@ import {
 } from "./search-core.mjs";
 import {selectSearchStreamResult} from "./search-stream.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
-import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
+import {arabicCount, visibleProductSpecifications, displayProductSpecification} from "./product-card-presentation.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -743,20 +743,24 @@ function canonicalProfileMarkup(profile = {}) {
   };
   const order = Object.keys(labels);
   const rows = order
-    .filter((field) => profile[field]?.value)
+    .filter((field) => displayProductSpecification(field, profile[field]?.value) !== null)
     .slice(0, 12)
     .map((field) => {
       const item = profile[field];
+      const value = displayProductSpecification(field, item.value);
       const sources = item.sources?.length ? item.sources.join(" + ") : "مصدر واحد";
-      const alternatives = item.alternatives?.length
-        ? '<span class="spec-conflict">اختلاف: ' + item.alternatives.map((alt) =>
-            escapeHtml(alt.value) + (alt.sources?.length ? ' (' + escapeHtml(alt.sources.join(" + ")) + ')' : '')
+      const differentValues = (item.alternatives || [])
+        .map(alt => ({...alt, visibleValue: displayProductSpecification(field, alt.value)}))
+        .filter(alt => alt.visibleValue !== null && alt.visibleValue !== value);
+      const alternatives = differentValues.length
+        ? '<span class="spec-conflict">اختلاف: ' + differentValues.map(alt =>
+            escapeHtml(alt.visibleValue) + (alt.sources?.length ? ' (' + escapeHtml(alt.sources.join(" + ")) + ')' : '')
           ).join(" · ") + '</span>'
         : "";
       return `
         <div class="canonical-spec">
           <small>${escapeHtml(labels[field])}</small>
-          <b>${escapeHtml(item.value)}</b>
+          <b>${escapeHtml(value)}</b>
           <span>المصدر: ${escapeHtml(sources)}</span>
           ${alternatives}
         </div>
@@ -791,7 +795,11 @@ function productDisplayTitle(offer) {
       description.storage?.toUpperCase(),bundleLabel].filter(Boolean).join(" · ");
   }
   if (productCategory(offer) !== "phone") return offer.title || specs.series || specs.deviceType || "المنتج";
-  return [specs.deviceType || specs.series || offer.title, specs.storage, specs.color].filter(Boolean).join(" · ");
+  const device = displayProductSpecification("deviceType", specs.deviceType)
+    || displayProductSpecification("series", specs.series) || offer.title;
+  const storage = displayProductSpecification("storage", specs.storage);
+  const color = displayProductSpecification("color", specs.color);
+  return [device, storage, color].filter(Boolean).join(" · ");
 }
 
 function additionalResultsSection(label, groups) {
@@ -834,8 +842,8 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDis
   const phoneOffer = productCategory(offer) === "phone";
   const variantClarifier = repeatedDisplayNames.has(normalizedCardDisplayName(offer))
     ? phoneOffer
-      ? `<small class="card-model-identifier">نسخة المنطقة: ${escapeHtml(offer.specs?.regionVersion || "غير محددة")} · الشريحة: ${escapeHtml(offer.specs?.sim || "غير محددة")}</small>`
-      : `<small class="card-model-identifier">رقم الموديل: ${escapeHtml(String(offer.specs?.modelNumber || "غير مذكور"))} · ${escapeHtml(offer.merchant || "المتجر غير محدد")} (بحسب المتجر)</small>`
+      ? `<small class="card-model-identifier">نسخة المنطقة: ${escapeHtml(displayProductSpecification("regionVersion", offer.specs?.regionVersion) || "غير محددة")} · الشريحة: ${escapeHtml(displayProductSpecification("sim", offer.specs?.sim) || "غير محددة")}</small>`
+      : `<small class="card-model-identifier">رقم الموديل: ${escapeHtml(displayProductSpecification("modelNumber", offer.specs?.modelNumber) || "غير مذكور")} · ${escapeHtml(offer.merchant || "المتجر غير محدد")} (بحسب المتجر)</small>`
     : "";
   const uniqueMerchants = new Set((group.offers || []).map(item => item.merchant).filter(Boolean)).size;
   const countries = [...new Map((group.offers || []).filter(item => item.merchantCountryCode).map(item => [item.merchantCountryCode,item.merchantCountryNameAr || item.merchantCountryCode])).entries()];
@@ -985,6 +993,8 @@ function renderProduct(product, query) {
   els.urlHint.hidden = true;
 
   const selectedSpecs = featuredOffer?.specs || {};
+  const selectedRegion = displayProductSpecification("regionVersion", selectedSpecs.regionVersion);
+  const selectedSim = displayProductSpecification("sim", selectedSpecs.sim);
   const selectedTitle = featuredOffer ? productDisplayTitle(featuredOffer) : product.model;
 
   const comparisonMarkup = `
@@ -1002,8 +1012,8 @@ function renderProduct(product, query) {
                 <div class="config-summary">
                   <span>${selectedGroup.merchantCount} ${selectedGroup.merchantCount === 1 ? "متجر" : "متاجر"}</span>
                   <span>${conditionDisplay(featuredOffer.condition || "unknown")}</span>
-                  ${selectedSpecs.regionVersion ? '<span>' + escapeHtml(selectedSpecs.regionVersion) + '</span>' : ""}
-                  ${selectedSpecs.sim ? '<span>' + escapeHtml(selectedSpecs.sim) + '</span>' : ""}
+                  ${selectedRegion !== null ? '<span>' + escapeHtml(selectedRegion) + '</span>' : ""}
+                  ${selectedSim !== null ? '<span>' + escapeHtml(selectedSim) + '</span>' : ""}
                   <span>صلة بالبحث: ${Math.round((featuredOffer.matchConfidence || 0) * 100)}% (تقديرية)</span>
                   <small class="match-confidence-note">${productCategory(featuredOffer) === "phone"
                     ? "المقارنة تعتمد على إصدار الهاتف والسعة واللون والحالة؛ رقم SKU غير مطلوب. راجع الفروق الإقليمية ومواصفات كل عرض."
@@ -1555,7 +1565,8 @@ async function openQuote(product, offer, sourceQuery) {
   if (window.NAWAA_QUOTE_URL && window.NAWAA_QUOTE_API_ENABLED !== true) {
     const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
     destination.searchParams.set("request", [offer?.title || product.nameAr || sourceQuery,
-      offer?.specs?.modelNumber ? "SKU: " + offer.specs.modelNumber : "", offer?.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
+      displayProductSpecification("modelNumber", offer?.specs?.modelNumber)
+        ? "SKU: " + displayProductSpecification("modelNumber", offer.specs.modelNumber) : "", offer?.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
     location.href = destination.href;
     return;
   }
@@ -1565,7 +1576,7 @@ async function openQuote(product, offer, sourceQuery) {
     const apiBase=String(window.NAWAA_API_BASE||"").replace(/\/$/,"");
     const name=offer?.title||product.nameAr||product.nameEn||sourceQuery;
     if(!apiBase){quoteModalMessage("لم يُرسل الطلب","واجهة التسعير التجريبية غير متصلة بالخادم.");return}
-    const payload={productName:name,model:offer?.specs?.modelNumber||product.model||null,
+    const payload={productName:name,model:displayProductSpecification("modelNumber", offer?.specs?.modelNumber)||product.model||null,
       sourceUrl:offer?.sourceUrl||null};
     const requestKey=quoteRetryKey(payload);
     if(!requestKey){
