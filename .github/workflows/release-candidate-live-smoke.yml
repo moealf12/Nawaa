@@ -59,10 +59,10 @@ jobs:
           NAWAA_PROFILE_EXTRA: '1'
           NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
         run: node scripts/probe-extra-fields.mjs
-      - name: Check out the v15.20 pre-index-write-guard production parent on the same runner
+      - name: Check out exact production main SHA as causal A/B baseline on the same runner
         uses: actions/checkout@v4
         with:
-          ref: d40a65990bc551e2db20c73890874567e502bd10
+          ref: c9ddf054c07315bf12ef68c7bd4781345b66cc6d
           path: .latency-baseline
           persist-credentials: false
       - name: Reuse identical locked dependencies for the baseline
