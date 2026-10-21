@@ -222,6 +222,9 @@ function comparableIdentity(offer = {}) {
     edition: description.edition || "",
     form: description.form || "",
     bundle: description.isBundle ? normalizeSearchQuery(offer.title) : "standalone",
+    ...(category === "phone" ? { carrier: normalizeVariantPart(
+      String(offer.title || "").match(/\b(?:verizon|t[- ]mobile|at\s*&\s*t)\b/i)?.[0] || ""
+    ) } : {}),
   };
   for (const [key,value] of Object.entries(specs)) {
     if (category === "phone" && key.toLowerCase() === "processor") continue;
@@ -235,6 +238,25 @@ function comparableIdentity(offer = {}) {
 
 function comparablePair(a, b) {
   if (a.category !== b.category || a.brand !== b.brand || a.condition !== b.condition) return false;
+  if (a.category === "phone") {
+    // A phone is comparable by its sellable configuration, not by the store's
+    // SKU/MPN. Retailers often use different identifiers for the same model.
+    // Material version differences (condition, capacity, color, bundle, known
+    // regional/SIM or carrier incompatibility) still prevent unsafe grouping.
+    if (!a.model || a.model === "unknown-model" || a.model !== b.model) return false;
+    for (const key of ["storage","color"]) {
+      if (!a.attributes[key] || !b.attributes[key] ||
+          a.attributes[key] !== b.attributes[key]) return false;
+    }
+    if (a.attributes.bundle !== b.attributes.bundle) return false;
+    for (const key of ["region","sim","carrier"]) {
+      const left = a.attributes[key] || "", right = b.attributes[key] || "";
+      if (left && right && left !== right) return false;
+    }
+    // Missing regional/SIM evidence is not evidence of a different SKU.
+    // Preserve these values per offer for an honest comparison warning.
+    return true;
+  }
   if (a.sku && b.sku && a.sku !== b.sku) return false;
   const sameSku = Boolean(a.sku && a.sku === b.sku);
   for (const key of new Set([...Object.keys(a.attributes), ...Object.keys(b.attributes)])) {
@@ -266,6 +288,10 @@ export function offerVariantKey(offer = {}) {
     modelIdentifier ? "sku:" + modelIdentifier : [description.form,description.edition,description.storage].join(":"),
     offer.condition || "unknown", description.isBundle ? normalizeSearchQuery(offer.title) : "standalone"].join("|");
   const identity = comparableIdentity(offer);
+  if (identity.category === "phone") return [
+    identity.brand, identity.model, identity.attributes.storage,
+    identity.attributes.color, identity.condition, identity.attributes.bundle,
+  ].join("|");
   return [
     identity.brand,
     normalizedModel(offer),
@@ -696,11 +722,15 @@ export function buildVariantSelectorState(variantGroups = [], requested = {}) {
   const colorKey = pickFacetKey(requested.colorKey, colors, fallbackEntry.dimensions.colorKey);
   const colorEntries = conditionEntries.filter((entry) => entry.dimensions.colorKey === colorKey);
 
-  const skus = facetOptions(colorEntries, "skuKey", "skuLabel");
-  const skuKey = pickFacetKey(requested.skuKey, skus, fallbackEntry.dimensions.skuKey);
+  const phoneSelection = colorEntries.length > 0 &&
+    colorEntries.every(entry => productCategory(entry.group.bestOffer) === "phone");
+  // Phone comparison uses model, capacity, color and condition. SKU is
+  // retained as per-merchant metadata but is not a customer selection gate.
+  const skus = phoneSelection ? [] : facetOptions(colorEntries, "skuKey", "skuLabel");
+  const skuKey = phoneSelection ? "" : pickFacetKey(requested.skuKey, skus, fallbackEntry.dimensions.skuKey);
 
   const selectedEntry =
-    colorEntries.find((entry) => entry.dimensions.skuKey === skuKey)
+    (phoneSelection ? colorEntries[0] : colorEntries.find((entry) => entry.dimensions.skuKey === skuKey))
     || colorEntries[0]
     || conditionEntries[0]
     || storageEntries[0]
@@ -714,7 +744,7 @@ export function buildVariantSelectorState(variantGroups = [], requested = {}) {
       storageKey: selectedEntry?.dimensions.storageKey || storageKey,
       colorKey: selectedEntry?.dimensions.colorKey || colorKey,
       conditionKey: selectedEntry?.dimensions.conditionKey || conditionKey,
-      skuKey: selectedEntry?.dimensions.skuKey || skuKey,
+      skuKey: phoneSelection ? "" : selectedEntry?.dimensions.skuKey || skuKey,
     },
     labels: selectedEntry?.dimensions || {},
     options: { models, editions, storages, colors, conditions, skus },
