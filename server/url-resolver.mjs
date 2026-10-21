@@ -258,8 +258,11 @@ function embeddedOfferCandidate(node) {
     ["value","amount","price"]);
   const priceObj = selectedPrice?.raw && typeof selectedPrice.raw === "object" ? selectedPrice.raw : null;
   const price = selectedPrice?.amount ?? null;
-  const currency = firstValue(node, ["currency","priceCurrency","currencyCode","currency_code"]) ||
-    (priceObj && firstValue(priceObj, ["currency","currencyCode","currency_code"]));
+  // The selected price's explicit currency belongs to that exact sellable
+  // amount. A generic catalog/root currency is fallback only, never an
+  // override that converts a correctly priced SKU at the wrong FX rate.
+  const currency = (priceObj && firstValue(priceObj, ["currency","currencyCode","currency_code","priceCurrency"])) ||
+    firstValue(node, ["currency","priceCurrency","currencyCode","currency_code"]);
   const imageRaw = firstValue(node, ["image","imageUrl","image_url","thumbnail","thumbnailUrl"]);
   const image = typeof imageRaw === "string" ? imageRaw :
     (Array.isArray(imageRaw) ? imageRaw[0] : imageRaw && firstValue(imageRaw, ["url","src"]));
