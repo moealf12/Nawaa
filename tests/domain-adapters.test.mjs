@@ -277,3 +277,36 @@ test("v21.24 RED: current sellable price takes precedence over crossed-out and l
   assert.equal(extractDomainProduct(url,ambiguousPrice),null,
     "unqualified different prices have insufficient evidence for a purchase price");
 });
+
+
+test("v21.24 purchase-price provenance survives promo-only and cross-sell panels",()=>{
+  const url="https://app.virginmegastore.ae/en/items/p/438319";
+  const heading='<meta property="og:title" content="Sample Tablet"><h1>Sample Tablet</h1>';
+  const promoOnly=heading+'<div>Earn AED 20 cashback</div><div>Save up to AED 50</div>';
+  assert.equal(extractDomainProduct(url,promoOnly),null,
+    'cashback and reward-only amounts must not manufacture a retail price');
+  const validAfterPromo=heading+
+    '<div>Earn AED 20 cashback</div><div>Save up to AED 50</div>'+
+    '<div class="current-price">AED 399</div>'+
+    '<section class="similar-products">Accessory AED 4</section>';
+  assert.equal(extractDomainProduct(url,validAfterPromo)?.product?.offers?.price,399,
+    'promotions and unrelated cross-sells must not mask an actual sale price');
+  const relatedOnly=heading+
+    '<section class="related-products">Accessories AED 20</section>';
+  assert.equal(extractDomainProduct(url,relatedOnly),null,
+    'related products do not certify the primary item sale amount');
+});
+
+test("v21.24 non-Virgin adapter keeps current ASOS offer over crossed-out previous price",()=>{
+  // Synthetic STRUCTURAL cross-merchant control exercising the existing ASOS
+  // adapter's explicit current field, not an assertion about a live ASOS price.
+  const pageId=206633513;
+  const payload=JSON.stringify([{productId:pageId,
+    productPrice:{current:{value:80,text:"GBP 80"},previous:{value:120,text:"GBP 120"},currency:"GBP"}}]);
+  const html='<meta property="og:title" content="Nike Trainers">'+
+    "<script>window.asos.pdp.config.stockPriceResponse = '"+payload+"';</script>";
+  const result=extractDomainProduct("https://www.asos.com/nike/item/prd/"+pageId,html);
+  assert.equal(result?.adapterId,"asos");
+  assert.equal(result?.product?.offers?.price,80);
+  assert.equal(result?.product?.offers?.priceCurrency,"GBP");
+});
