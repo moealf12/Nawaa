@@ -783,7 +783,10 @@ export function buildCanonicalProductProfile(offers = []) {
 
     for (const offer of offers) {
       const raw = offer?.specs?.[field];
-      if (raw === null || raw === undefined || String(raw).trim() === "") continue;
+      // Rank only meaningful evidence. A majority of merchant placeholders must
+      // not suppress a minority's valid RAM/CPU/etc. Raw offers remain untouched.
+      // Field-aware policy preserves legitimate negative waterproof evidence.
+      if (displayProductSpecification(field, raw) === null) continue;
       const value = String(raw).trim();
       const normalized = canonicalSpecNorm(value);
       if (!normalized) continue;
