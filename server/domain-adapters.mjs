@@ -122,8 +122,11 @@ function buildCandidate(node, config) {
     ["amount","value","price","salePrice","formattedValue"]);
   const priceObject = selectedPrice?.raw && typeof selectedPrice.raw === "object" ? selectedPrice.raw : null;
   const price = selectedPrice?.amount ?? null;
-  const currency = firstValue(node, config.currencyKeys) ||
-    (priceObject && firstValue(priceObject, ["currency","currencyCode","priceCurrency","currencyIso"]));
+  // A declared currency on the selected price field is stronger than a
+  // generic catalog-level fallback (which may belong to another market).
+  const currency = (priceObject && firstValue(priceObject,
+    ["currency","currencyCode","priceCurrency","currencyIso"])) ||
+    firstValue(node, config.currencyKeys);
   if (typeof title !== "string" || title.trim().length < 3 || price === null || !currency) return null;
 
   const brandRaw = firstValue(node, config.brandKeys);
