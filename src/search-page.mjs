@@ -1157,7 +1157,10 @@ function renderProduct(product, query) {
   $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   els.results.querySelectorAll(".match-result-card").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      // A card click recreates the result grid. Restore keyboard/AT focus to
+      // the replacement button so Enter or Space can also close the comparison.
+      const keyboardActivation = event?.detail === 0;
       const group = exactGroups.find((item) => item.key === button.dataset.groupKey);
       const offer = group?.bestPriceOffer || group?.bestOffer;
       if (!offer) return;
@@ -1173,7 +1176,12 @@ function renderProduct(product, query) {
         skuKey: dimensions.skuKey,
       };
       renderProduct(product, query);
-      if (state.comparisonOpen) requestAnimationFrame(() => {
+      if (keyboardActivation) {
+        const replacementButton = Array.from(els.results.querySelectorAll(".match-result-card"))
+          .find((candidate) => candidate.dataset.groupKey === group.key);
+        replacementButton?.focus({ preventScroll: true });
+      }
+      if (state.comparisonOpen && !keyboardActivation) requestAnimationFrame(() => {
         document.querySelector(".product-configurator")?.scrollIntoView({ behavior:"smooth", block:"start" });
       });
     });
