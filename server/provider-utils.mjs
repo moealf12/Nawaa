@@ -74,3 +74,27 @@ export function makeProviderError(provider, error) {
     offers: [],
   };
 }
+
+
+// Reuse one deterministic, pure selection rule across embedded JSON and
+// storefront adapters. Invalid or zero-valued high-priority placeholders must
+// not conceal a valid, same-node purchase price. This does NOT arbitrate two
+// valid contradictory sale/current/final prices; configured field order still
+// controls that case pending attributable merchant evidence.
+export function firstPositivePriceField(node, fieldKeys = [], valueKeys = ["amount","value","price"]) {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return null;
+  for (const key of fieldKeys) {
+    const raw = node[key];
+    if (raw === undefined || raw === null || raw === "") continue;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      for (const amountKey of valueKeys) {
+        const amount = parseMoney(raw[amountKey]);
+        if (amount !== null && amount > 0) return { amount, raw, field:key };
+      }
+      continue;
+    }
+    const amount = parseMoney(raw);
+    if (amount !== null && amount > 0) return { amount, raw, field:key };
+  }
+  return null;
+}
