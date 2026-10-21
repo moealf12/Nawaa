@@ -32,10 +32,25 @@ const specFields = [
 const missingValue = /^(?:n\/?a|not applicable|not available|unknown|undefined|null|none|غير محدد|غير متوفر|غير معروف|لا يوجد)$/i;
 const booleanValue = /^(?:no|yes|false|true)$/i;
 
-export function visibleProductSpecifications(offer = {}) {
+const detailSpecFields = [
+  ["العلامة التجارية", "brand"], ["السلسلة", "series"],
+  ["نوع الجهاز", "deviceType"], ["اللون", "color"],
+  ["السعة", "storage"], ["الذاكرة RAM", "ram"],
+  ["المعالج", "processor"], ["حجم الشاشة", "screenSize"],
+  ["نوع الشاشة", "screenType"], ["الشبكة", "network"],
+  ["نوع الشريحة", "sim"], ["نسخة المنطقة", "regionVersion"],
+  ["نظام التشغيل", "operatingSystem"], ["الكاميرا الخلفية", "rearCamera"],
+  ["الكاميرا الأمامية", "frontCamera"], ["البطارية", "battery"],
+  ["مقاومة الماء", "waterproof"], ["رقم الموديل", "modelNumber"],
+  ["الباركود", "barcode"],
+];
+
+// One field-sensitive presentation policy for cards, comparisons and details.
+// Keep raw source evidence untouched. Identifiers preserve their exact text.
+function visibleSpecificationRows(offer, fields, maxRows) {
   const specs = offer?.specs || {};
   const result = [];
-  for (const [label, key] of specFields) {
+  for (const [label, key] of fields) {
     const raw = specs[key];
     if (raw === null || raw === undefined || typeof raw === "object") continue;
     const value = String(raw).trim();
@@ -44,11 +59,18 @@ export function visibleProductSpecifications(offer = {}) {
       if (key === "waterproof") {
         result.push([label, /^(?:yes|true)$/i.test(value) ? "نعم" : "لا"]);
       }
-      // "No" is not a RAM size, but is valid as a negative water-resistance flag.
       continue;
     }
     result.push([label, value]);
-    if (result.length === 10) break;
+    if (result.length === maxRows) break;
   }
   return result;
+}
+
+export function visibleProductSpecifications(offer = {}) {
+  return visibleSpecificationRows(offer, specFields, 10);
+}
+
+export function visibleProductDetailSpecifications(offer = {}) {
+  return visibleSpecificationRows(offer, detailSpecFields, Number.POSITIVE_INFINITY);
 }
