@@ -2,7 +2,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import https from "node:https";
 import { moneyToSAR } from "./fx.mjs";
-import { normalizeCondition, normalizeAvailability, parseMoney } from "./provider-utils.mjs";
+import { normalizeCondition, normalizeAvailability, parseMoney, firstPositivePriceField } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
@@ -253,9 +253,11 @@ function firstValue(obj, keys) {
 function embeddedOfferCandidate(node) {
   if (!node || typeof node !== "object" || Array.isArray(node)) return null;
   const title = firstValue(node, ["name","title","productName","product_name"]);
-  const priceRaw = firstValue(node, ["salePrice","sale_price","sellingPrice","finalPrice","currentPrice","current_price","price"]);
-  const priceObj = priceRaw && typeof priceRaw === "object" ? priceRaw : null;
-  const price = parseMoney(priceObj ? firstValue(priceObj, ["value","amount","price"]) : priceRaw);
+  const selectedPrice = firstPositivePriceField(node,
+    ["salePrice","sale_price","sellingPrice","finalPrice","currentPrice","current_price","price"],
+    ["value","amount","price"]);
+  const priceObj = selectedPrice?.raw && typeof selectedPrice.raw === "object" ? selectedPrice.raw : null;
+  const price = selectedPrice?.amount ?? null;
   const currency = firstValue(node, ["currency","priceCurrency","currencyCode","currency_code"]) ||
     (priceObj && firstValue(priceObj, ["currency","currencyCode","currency_code"]));
   const imageRaw = firstValue(node, ["image","imageUrl","image_url","thumbnail","thumbnailUrl"]);
