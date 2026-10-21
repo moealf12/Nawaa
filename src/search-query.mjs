@@ -681,11 +681,35 @@ export function mergeComparisonOffers(source, candidates = []) {
     if (url) seen.add(url);
     const match = assessOfferMatch(query, offer);
     const candidateSku = normalizeSku(offer.specs?.modelNumber);
-    const conflictingSku = sku && candidateSku && sku !== candidateSku;
+    const bothPhones = productCategory(source) === "phone" && productCategory(offer) === "phone";
+    // Store identifiers are not required to compare two phone configurations.
+    // The original search intent still validates model, storage and color.
+    const conflictingSku = !bothPhones && Boolean(sku && candidateSku && sku !== candidateSku);
     const conflictingCondition = source.condition !== offer.condition;
+    const incompatiblePhoneVersion = bothPhones && (
+      ["regionVersion","sim"].some(key => {
+        const left = normalizeSearchQuery(source.specs?.[key] || "");
+        const right = normalizeSearchQuery(offer.specs?.[key] || "");
+        return left && right && left !== right;
+      }) ||
+      // A carrier-tied contract is not known to be equivalent to an unlocked offer.
+      Boolean(
+        String(source.title || "").match(/\\b(?:verizon|t[- ]mobile|at\\s*&\\s*t)\\b/i)?.[0] !==
+        String(offer.title || "").match(/\\b(?:verizon|t[- ]mobile|at\\s*&\\s*t)\\b/i)?.[0]
+      )
+    );
+    const missingPhoneConfiguration = bothPhones && (
+      !normalizeSearchQuery(source.specs?.storage || parseSearchIntent(source.title || "").storage || "") ||
+      !normalizeSearchQuery(source.specs?.color || parseSearchIntent(source.title || "").color || "") ||
+      !normalizeSearchQuery(offer.specs?.storage || parseSearchIntent(offer.title || "").storage || "") ||
+      !normalizeSearchQuery(offer.specs?.color || parseSearchIntent(offer.title || "").color || "")
+    );
+    const verifiedPhoneIntent = !bothPhones || queryMatchReasons(query, offer).length === 0;
+    const comparisonConflict = conflictingSku || conflictingCondition || incompatiblePhoneVersion ||
+      missingPhoneConfiguration || !verifiedPhoneIntent;
     offers.push({ ...offer, ...match,
-      exactMatch: match.exactMatch && !conflictingSku && !conflictingCondition,
-      matchConfidence: conflictingSku || conflictingCondition ? Math.min(match.matchConfidence, 0.69) : match.matchConfidence,
+      exactMatch: match.exactMatch && !comparisonConflict,
+      matchConfidence: comparisonConflict ? Math.min(match.matchConfidence, 0.69) : match.matchConfidence,
     });
   }
   return offers;
