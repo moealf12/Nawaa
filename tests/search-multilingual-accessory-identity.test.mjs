@@ -226,3 +226,20 @@ test('v21.22 held-out retail-subject relationships: compatible component never b
   for(const {title,category} of realSubjects)
     assert.equal(productCategory(mk(title)),category,'true device bundle stays complete: '+title);
 });
+
+
+test('v21.22 real SSE: monitor for PS5 Slim (console not included) must not become a console',()=>{
+  // OBSERVED: original source title and source URL from isolated real-merchant
+  // Chromium at v21.22 candidate; previous SSE incorrectly marked this exact
+  // as console and attached an unresolved SAR 2.04 source-price observation.
+  // Price provenance is a SEPARATE unresolved issue, not test-validated here.
+  const monitor={title:'Shop for G-Story 14-Inch LED 4K Portable Gaming Monitor For PS5 Slim (Console Not Included) | Virgin Megastore UAE',
+    sourceUrl:'https://app.virginmegastore.ae/en/gaming/pc-gaming-hardware-accessories/gaming-monitors-displays/g-story-14-inch-led-4k-portable-gaming-monitor-for-ps5-slim-console-not-included-/p/47943',
+    merchant:'Virgin Megastore UAE',providerMarket:'virgin-ae',
+    productPrice:2.04,currency:'SAR',availability:'unknown',condition:'new',specs:{}};
+  const original=structuredClone(monitor);
+  assert.equal(productCategory(monitor),'monitor');
+  assert.equal(assessOfferMatch('PS5 Slim',monitor).exactMatch,false);
+  assert.equal(filterQueryOffers('PS5 Slim',[monitor]).offers.length,0);
+  assert.deepEqual(monitor,original,'raw source evidence remains unchanged');
+});
