@@ -161,9 +161,9 @@ test('v21.21 source-backed retail-subject distinction for PS5 heatsink and Germa
   assert.equal(productCategory(cartridge),'accessory');
   assert.equal(assessOfferMatch('HP printer',cartridge).exactMatch,false);
   assert.deepEqual(filterQueryOffers('HP printer',[cartridge]).offers,[]);
-  assert.equal(assessOfferMatch('PS5 heatsink',heatsink).exactMatch,true,
-    'explicit heatsink intent must remain discoverable');
-  assert.equal(filterQueryOffers('PS5 heatsink',[heatsink]).offers.length,1);
+  assert.equal(assessOfferMatch('PS5 Slim heatsink',heatsink).exactMatch,true,
+    'explicit heatsink intent for the compatible Slim model must remain exact');
+  assert.equal(filterQueryOffers('PS5 Slim heatsink',[heatsink]).offers.length,1);
   assert.equal(assessOfferMatch('HP Druckerpatronen',cartridge).exactMatch,true,
     'explicit German cartridge intent must remain discoverable');
   assert.equal(filterQueryOffers('HP Druckerpatronen',[cartridge]).offers.length,1);
