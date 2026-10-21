@@ -186,3 +186,36 @@ test("ASOS adapter extracts stockPriceResponse payload", () => {
   assert.equal(result?.product?.offers?.price, 80);
   assert.equal(result?.product?.offers?.priceCurrency, "GBP");
 });
+
+
+test("v21.23 RED: Virgin PDP price must be anchored to the sold product, not header promotion", () => {
+  const url="https://app.virginmegastore.ae/en/gaming/playstation-hardware-accessories/playstation-accessories/sony-playstation-disc-drive-for-ps5-add-on-/p/1033214";
+  // SYNTHETIC STRUCTURAL REPRODUCTION of real merchant price mismatch,
+  // source PDP actually advertises AED 339 while candidate recorded AED 2.
+  // Does not claim to be the exact raw merchant HTML captured by the runner.
+  const html=\`<html><head><meta property="og:title" content="Sony PlayStation Disc Drive for PS5 (Add-On)"></head>
+    <body><header><a href="/offers">AED 2 members' rewards</a></header>
+    <main><h1>Sony PlayStation Disc Drive for PS5 (Add-On)</h1>
+      <div class="product-price"><span>AED 339</span></div><button>Add to cart</button>
+    </main><section class="similar-products">Other Item AED 45</section></body></html>\`;
+  const actual=extractDomainProduct(url,html);
+  assert.equal(actual?.adapterId,"virginmegastore");
+  assert.equal(actual?.product?.offers?.price,339,
+    "header and cross-sells must not supply the product price");
+  assert.equal(actual?.product?.offers?.priceCurrency,"AED");
+  assert.equal(actual?.product?.sku,"1033214");
+  const candidate=extractionCandidates(html,url).find(x=>x.strategy==="domain_adapter");
+  assert.equal(candidate?.product?.offers?.price,339);
+});
+
+test("v21.23 Virgin verified sale and missing PDP price avoid unsafe header selection",()=>{
+  const url="https://app.virginmegastore.ae/en/item/p/1105698";
+  const sale='<header>Accessory AED 2</header><h1>Complete PS5 Slim Console</h1>'+
+    '<div class="product-current-price">AED 2,299</div><del>AED 2,499</del>'+
+    '<footer>Similar products AED 12</footer>';
+  assert.equal(extractDomainProduct(url,sale)?.product?.offers?.price,2299);
+  const uncertain='<header>Rewards AED 2</header><h1>Complete PS5 Slim Console</h1>'+
+    '<div>No verified purchase price on this page</div>';
+  assert.equal(extractDomainProduct(url,uncertain),null,
+    "unknown PDP price must remain unknown rather than borrowing nav price");
+});
