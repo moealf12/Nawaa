@@ -249,10 +249,13 @@ function comparablePair(a, b) {
           a.attributes[key] !== b.attributes[key]) return false;
     }
     if (a.attributes.bundle !== b.attributes.bundle) return false;
-    for (const key of ["region","sim","carrier"]) {
+    for (const key of ["region","sim"]) {
       const left = a.attributes[key] || "", right = b.attributes[key] || "";
       if (left && right && left !== right) return false;
     }
+    // Carrier-contract labels restrict eligibility, even when the other
+    // merchant omits an explicit carrier. Never silently mix with unlocked.
+    if (a.attributes.carrier !== b.attributes.carrier) return false;
     // Missing regional/SIM evidence is not evidence of a different SKU.
     // Preserve these values per offer for an honest comparison warning.
     return true;
