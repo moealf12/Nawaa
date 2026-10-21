@@ -374,7 +374,8 @@ try{
   await validTab.locator('#results .match-result-card').first().click();
   await validTab.locator('.selected-comparison[open] .product-configurator').waitFor();
   const goodBadges=await validTab.locator('.config-summary').innerText();
-  const goodProfile=await validTab.locator('.canonical-grid').innerText();
+  await validTab.locator('.selected-comparison[open] .canonical-section summary').click();
+  const goodProfile=await validTab.locator('.selected-comparison[open] .canonical-grid').innerText();
   assertCheck('v2116_selected_valid_region_sim_retained',
     goodBadges.includes('Middle East') && goodBadges.includes('Dual eSIM'),{goodBadges});
   assertCheck('v2116_canonical_valid_ram_and_processor_retained',
