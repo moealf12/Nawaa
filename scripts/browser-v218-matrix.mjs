@@ -47,15 +47,36 @@ try{
       context=await browser.newContext({viewport:{width:1365,height:850},locale:'ar-SA',timezoneId:'Asia/Riyadh',serviceWorkers:'block'});
       await context.addInitScript(()=>{
         const Native=window.EventSource;
-        window.__nawaaMatrix={done:false,snapshots:0,anyExact:false,exactSamples:[],lastOfferCount:0};
+        window.__nawaaMatrix={done:false,snapshots:0,anyExact:false,exactSamples:[],lastOfferCount:0,
+          seenOfferSources:[],seenSourceKeys:{},finalOfferSources:[],coveragePartial:null};
         if(!Native)return;
         window.EventSource=class extends Native {
           constructor(...args){
             super(...args);
             this.addEventListener('snapshot',event=>{
               try{
-                const offers=JSON.parse(event.data)?.offers||[];
+                const snapshot=JSON.parse(event.data),offers=snapshot?.offers||[];
                 const r=window.__nawaaMatrix;r.snapshots++;r.lastOfferCount=offers.length;
+                r.coveragePartial=snapshot?.coverage?.partial??r.coveragePartial;
+                // Capture the original offer subject and attributable source,
+                // separately from the canonical card title. Bounds protect
+                // CI output; no raw merchant HTML, URLs' query tokens or secrets.
+                const evidence=o=>{
+                  let url='';
+                  try{const parsed=new URL(String(o.sourceUrl||''));if(parsed.protocol==='https:')url=parsed.origin+parsed.pathname;}catch{}
+                  return {title:String(o.title||'').slice(0,160),url,
+                    merchant:String(o.merchant||'').slice(0,60),
+                    price:o.productPrice??null,currency:String(o.currency||'').slice(0,8),
+                    stock:String(o.availability||'unknown').slice(0,32),
+                    exact:o.exactMatch===true,kind:String(o.productKind||'').slice(0,24)};
+                };
+                r.finalOfferSources=offers.slice(0,20).map(evidence);
+                for(const o of offers){
+                  if(r.seenOfferSources.length>=40)break;
+                  const item=evidence(o),key=item.url||item.merchant+':'+item.title;
+                  if(!key||r.seenSourceKeys[key])continue;
+                  r.seenSourceKeys[key]=true;r.seenOfferSources.push(item);
+                }
                 for(const o of offers){
                   if(o.exactMatch===true){
                     r.anyExact=true;
