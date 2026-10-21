@@ -267,6 +267,59 @@ try{
     console.log('V2123_VIRGIN_SOURCE_PRICE_FORENSICS '+JSON.stringify({
       status:'BLOCKED',error:String(error?.message||error).slice(0,180)}));
   }
+  // v21.26: bounded authentic PDP audit of same-SKU price field contradictions.
+  // These two publicly advertised sale products displayed SAR 19/44 beside
+  // crossed-out SAR 49/109. Only a real captured source can establish which
+  // structured keys are present. No code repair is justified by these
+  // public-page observations alone.
+  for(const sample of [
+    {id:'3805958',url:'https://www.centrepointstores.com/sa/en/p/3805958',visibleCurrent:19,visibleOld:49},
+    {id:'5550476',url:'https://www.centrepointstores.com/sa/en/p/5550476',visibleCurrent:44,visibleOld:109}
+  ]){
+    try{
+      const page=await fetchHtmlSafe(sample.url,0,{signal:AbortSignal.timeout(8500)});
+      const html=page.html;
+      const entries=extractionCandidates(html,page.finalUrl);
+      const relevantKeys=['salePrice','sellingPrice','finalPrice','currentPrice','current_price','price','previousPrice','oldPrice','originalPrice','regularPrice','special_price'];
+      const snapshots=[];
+      // Do not execute arbitrary scripts: inspect only valid inline JSON payloads.
+      const scripts=html.match(/<script\b[^>]*>[\s\S]*?<\/script>/gi)||[];
+      for(const script of scripts.slice(0,75)){
+        const raw=script.replace(/^<script\b[^>]*>/i,'').replace(/<\/script>$/i,'').trim();
+        if(raw.length>1000000||!(/^[\[{]/.test(raw)))continue;
+        let parsed;try{parsed=JSON.parse(raw)}catch{continue}
+        const stack=[{node:parsed,depth:0}],seen=new Set();
+        while(stack.length&&snapshots.length<12){
+          const {node,depth}=stack.pop();
+          if(!node||typeof node!=='object'||seen.has(node)||depth>9)continue;seen.add(node);
+          if(!Array.isArray(node)){
+            const fields=Object.fromEntries(relevantKeys
+              .filter(key=>Object.prototype.hasOwnProperty.call(node,key))
+              .map(key=>[key,typeof node[key]==='object'
+                ? (node[key]?.value??node[key]?.amount??node[key]?.price??'OBJECT')
+                :node[key]]).map(([key,val])=>[key,String(val).slice(0,45)]));
+            const title=String(node.name||node.productName||node.title||'').slice(0,90);
+            const sku=String(node.sku||node.productId||node.code||'').slice(0,35);
+            if(Object.keys(fields).length>1 && (sku.includes(sample.id)||title))snapshots.push({sku,title,fields});
+          }
+          const children=Object.values(node);
+          for(const value of children.slice(0,120))if(value&&typeof value==='object')stack.push({node:value,depth:depth+1});
+        }
+      }
+      console.log('V2126_CENTREPOINT_SAME_ITEM_PRICES '+JSON.stringify({
+        status:'CAPTURED',id:sample.id,visibleCurrent:sample.visibleCurrent,
+        visibleOld:sample.visibleOld,bytes:html.length,candidateStrategies:entries.slice(0,8).map(e=>({
+          strategy:e.strategy,adapterId:e.adapterId||null,
+          title:String(e.product?.name||'').slice(0,90),sku:String(e.product?.sku||'').slice(0,40),
+          price:e.product?.offers?.price??null,currency:e.product?.offers?.priceCurrency||null
+        })),sameNodeFields:snapshots
+      }));
+    }catch(err){
+      console.log('V2126_CENTREPOINT_SAME_ITEM_PRICES '+JSON.stringify({
+        status:'BLOCKED',id:sample.id,error:String(err?.message||err).slice(0,160)
+      }));
+    }
+  }
   const {parseJarirSearchHtml}=await import('../server/providers/jarir.mjs');
   const {load:cheerioLoad}=await import('cheerio');
   const jarirCatalogTargets=[
