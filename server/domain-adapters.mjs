@@ -381,7 +381,10 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   // Crossed-out and explicitly "old/list/was" prices are historical evidence,
   // not the amount a customer can purchase for. Remove that marked evidence
   // before considering numeric strings; do not rely on DOM/HTML order.
-  const purchaseHtml = vicinity
+  // Stop at a separate cross-sell/related-product HTML subtree before
+  // removing tags, because its CSS boundary would otherwise be lost.
+  const nearProduct = vicinity.split(/<(?:div|section|aside)\b[^>]*\bclass\s*=\s*["'][^"']*(?:similar-products|related-products|recommended-products|cross-sell|upsell|you-may-like)[^"']*["'][^>]*>/i, 1)[0];
+  const purchaseHtml = nearProduct
     .replace(/<([a-z][\w:-]*)\b[^>]*\bclass\s*=\s*["'][^"']*(?:original-price|old-price|price-old|price-original|was-price|price-was|regular-price|list-price|compare-at-price)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<(del|s|strike)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
   const visible = decodeHtmlText(purchaseHtml)
@@ -392,7 +395,10 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   const preFinanceText = boundary ? visible.slice(0,boundary.index) : visible.slice(0,900);
   // Text-only sale presentations ("Was AED 599 Now AED 399") can lack
   // semantic HTML, but "Was" always refers to an obsolete price.
-  const scoped = preFinanceText.replace(/\b(?:was|previous(?:ly)?|regular price|original price|list price)\s*:?\s*(?:AED|د\.?إ\.?|Dhs?)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?/gi, " ");
+  const scoped = preFinanceText
+    .replace(/\b(?:was|previous(?:ly)?|regular price|original price|list price)\s*:?\s*(?:AED|د\.?إ\.?|Dhs?)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?/gi, " ")
+    .replace(/\b(?:earn|save|get|receive|redeem)\s+(?:(?:up to|as much as)\s+)?(?:AED|د\.?إ\.?|Dhs?)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?(?:\s+(?:cashback|rewards?|points?|coupons?|voucher))?/gi, " ")
+    .replace(/\b(?:cashback|rewards?|voucher|coupon)\s*:?\s*(?:AED|د\.?إ\.?|Dhs?)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?/gi, " ");
   const moneyPatterns = [
     /(?:AED|د\.?إ\.?|Dhs?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi,
     /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:AED|د\.?إ\.?|Dhs?)/gi,
