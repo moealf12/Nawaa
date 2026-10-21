@@ -172,7 +172,7 @@ try{
       // genuine merchant accessory SKUs appeared as deceptively cheap devices.
       const hasPath=pattern=>data.cards.some(c=>c.productLinks.some(url=>pattern.test(url)));
       if(query==='PS5 Slim') {
-        result.assertions.noObservedFaceplatesAsConsoles=!hasPath(/B0CZL8886V|B0DKNVSGSM|B0CT5NH3NL|B0FMYJCSK7/i);
+        result.assertions.noObservedFaceplatesAsConsoles=!hasPath(/B0CZL8886V|B0DKNVSGSM|B0CT5NH3NL|B0FMYJCSK7|B0CP6HTP2C/i);
         // Examine ORIGINAL SSE source titles, not sanitized canonical cards.
         // No monitor stating the complete console is absent may masquerade
         // as an exact console in accepted source candidates.
@@ -180,6 +180,11 @@ try{
           !(data.stream?.finalOfferSources||[]).some(o=>o.exact===true &&
             /\bconsole not included\b/i.test(o.title) &&
             /\b(?:monitor|display|screen)\b/i.test(o.title));
+        result.assertions.noCosmeticSkinAsConsole=
+          !(data.stream?.finalOfferSources||[]).some(o=>o.exact===true &&
+            /\b(?:skins?|vinyl wrap|decal)\b/i.test(o.title) &&
+            /\b(?:for|compatible with|fits)\b/i.test(o.title) &&
+            /(?:ps5|playstation 5)/i.test(o.title));
       }
       if(query==='iPhone 17 Pro Max')
         result.assertions.noObservedProtectionBundleAsPhone=!hasPath(/panzerglass-care-3-in-1-explorer-bundle/i);
