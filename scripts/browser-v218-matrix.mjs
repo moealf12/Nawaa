@@ -139,6 +139,25 @@ try{
         result.assertions.explicitAccessoryNotCertifiedConsole=!data.stream?.exactSamples?.some(s=>
           /\bconsole\b/i.test(s.title)&&!/\b(?:drive|cover|accessory)\b/i.test(s.title));
       }
+      // Source-linked buyer acceptance: the previous workflow was green while
+      // genuine merchant accessory SKUs appeared as deceptively cheap devices.
+      const hasPath=pattern=>data.cards.some(c=>c.productLinks.some(url=>pattern.test(url)));
+      if(query==='PS5 Slim')
+        result.assertions.noObservedFaceplatesAsConsoles=!hasPath(/B0CZL8886V|B0DKNVSGSM|B0CT5NH3NL/i);
+      if(query==='iPhone 17 Pro Max')
+        result.assertions.noObservedProtectionBundleAsPhone=!hasPath(/panzerglass-care-3-in-1-explorer-bundle/i);
+      if(query==='HP printer')
+        result.assertions.noPrinterConsumablesAsDevices=!data.cards.some(c=>
+          /\b(?:printer paper|repair kit|user guide|drum unit|ink cartridges?|cartridges?|ink bottles?|paper jam)\b/i.test(c.title));
+      if(query==='HP mouse')
+        result.assertions.hpMouseSubjectOnly=data.cards.every(c=>
+          /^\s*hp\b/i.test(c.title)&&/\b(?:mouse|mice)\b/i.test(c.title));
+      if(query==='PS5 disc drive')
+        result.assertions.completeDiscDriveOnly=data.cards.every(c=>
+          !/\b(?:power cable|empty shell|housing|travel case|carrying case|repair kit)\b/i.test(c.title));
+      if(query==='iPhone 17 Pro capinha')
+        result.assertions.capinhaIsPhoneCase=data.cards.every(c=>
+          /\b(?:case|cover|capa|capinha)\b/i.test(c.title));
       await page.setViewportSize({width:390,height:844});
       const mobile=await page.evaluate(()=>({viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
       result.mobile=mobile;
