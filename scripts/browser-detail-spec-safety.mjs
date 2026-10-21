@@ -64,12 +64,18 @@ try{
     const x=await page.evaluate(()=>({screen:innerWidth,scroll:document.documentElement.scrollWidth}));
     assert.ok(x.scroll<=x.screen+4,"horizontal overflow: "+JSON.stringify(x));
   }
-  await page.locator("#quoteBtn").click();
-  const draft=await page.evaluate(()=>JSON.parse(localStorage.getItem("nawaa_quote_draft")));
-  assert.equal(draft.model,"HP-ZX/A1");
-  assert.equal(draft.variant,"","invalid source placeholders must not contaminate quotation");
-  assert.equal(draft.sourceUrl,snapshot.offer.sourceUrl);
-  assert.equal(draft.observedProductPriceSAR,2999);
+  // Production config uses an external quotation URL. Intercept it to avoid
+  // contacting another domain while proving real click-to-request handoff.
+  await page.route("https://nawaa-store-jeddah.moezz12.chatgpt.site/**",route=>
+    route.fulfill({status:200,contentType:"text/html",body:"<!doctype html><title>Quote fixture</title>"}));
+  await Promise.all([
+    page.waitForURL(url=>url.hostname==="nawaa-store-jeddah.moezz12.chatgpt.site",{timeout:12000}),
+    page.locator("#quoteBtn").click(),
+  ]);
+  const quoteRequest=new URL(page.url()).searchParams.get("request")||"";
+  assert.ok(quoteRequest.includes("HP-ZX/A1"),"quote must retain valid model");
+  assert.ok(quoteRequest.includes(snapshot.offer.sourceUrl),"quote must retain source URL");
+  assert.ok(!quoteRequest.includes("N/A"),"quote must not inject placeholders");
   assert.deepEqual(pageErrors,[],"uncaught browser runtime errors");
   console.log("NAWAA_V2116_DETAIL_BROWSER_PASS "+JSON.stringify({
     widths:[320,390,1440],specCount:specs.length,invalidFiltered:5,
