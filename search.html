@@ -526,6 +526,11 @@
       .product-summary-card.is-expanded>.match-result-card{padding:13px;grid-template-columns:90px minmax(0,1fr)}
       .product-summary-card.is-expanded .match-card-image{height:90px}
     }
+    @media(min-width:481px) and (max-width:600px){
+      .product-summary-card .match-card-copy>strong{font-size:14px;line-height:1.5;min-height:62px}
+      .product-summary-card .match-card-price b{font-size:23px}
+      .product-summary-card .card-expand-label{min-height:46px;font-size:12px}
+    }
     /* Readability-first phone layout: a 159px tile is too narrow for Arabic/English
        product names, specifications, prices and a comparison affordance together. */
     @media(max-width:480px){
