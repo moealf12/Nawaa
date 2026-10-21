@@ -168,10 +168,13 @@ function isCompatibilityComponentSubject(normalizedTitle) {
   const relation = RETAIL_COMPATIBILITY_RELATION.exec(normalizedTitle);
   if (!relation) return false;
   const soldSubject = normalizedTitle.slice(0, relation.index).trim();
-  if (!soldSubject || RETAIL_INCLUDED_COMPONENT.test(soldSubject)) return false;
-  // Restrict the signal to the retail subject, not later compatibility nouns
-  // or device examples. The first six words allow a brand/model prefix.
-  return RETAIL_COMPONENT_NOUN.test(soldSubject.split(' ').slice(0,6).join(' '));
+  if (!soldSubject) return false;
+  // Resolve the PRIMARY sold item before its optional included accessories:
+  // "lens with pouch for camera" sells a lens; "camera with lens for travel"
+  // sells a camera. A secondary 'with' must not erase the actual first subject.
+  const primarySubject = soldSubject.split(RETAIL_INCLUDED_COMPONENT,1)[0].trim();
+  // Restrict the signal to the first retail phrase, not device compatibility.
+  return RETAIL_COMPONENT_NOUN.test(primarySubject.split(' ').slice(0,6).join(' '));
 }
 
 export function productCategory(offer = {}) {
