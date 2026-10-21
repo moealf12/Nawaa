@@ -52,6 +52,8 @@ function render(snapshot) {
   const title = offer.sourceMeta?.nameAr || offer.title || product.nameAr || product.nameEn || "منتج";
   const specs = specRows(offer);
   const visibleModelNumber = specs.find(([label]) => label === "رقم الموديل")?.[1] || "";
+  const visibleStorage = specs.find(([label]) => label === "السعة")?.[1] || "";
+  const visibleColor = specs.find(([label]) => label === "اللون")?.[1] || "";
   const availability = availabilityItems(offer);
   const total = Number.isFinite(offer.totalSAR) ? offer.totalSAR : null;
 
@@ -145,15 +147,15 @@ function render(snapshot) {
   $("#quoteBtn")?.addEventListener("click", () => {
     if (window.NAWAA_QUOTE_URL) {
       const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
-      destination.searchParams.set("request", [offer.title || title, offer.specs?.modelNumber || "", offer.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
+      destination.searchParams.set("request", [offer.title || title, visibleModelNumber, offer.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
       location.href = destination.href;
       return;
     }
     const draft = {
       createdAt: new Date().toISOString(),
       productName: title,
-      model: offer.specs?.modelNumber || product.model || null,
-      variant: [offer.specs?.storage, offer.specs?.color].filter(Boolean).join(" · "),
+      model: visibleModelNumber || product.model || null,
+      variant: [visibleStorage, visibleColor].filter(Boolean).join(" · "),
       sourceQuery: snapshot.query || null,
       observedMerchant: offer.merchant || null,
       observedProductPriceSAR: Number.isFinite(offer.productPrice) ? offer.productPrice : null,
