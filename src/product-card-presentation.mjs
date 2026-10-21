@@ -47,20 +47,25 @@ const detailSpecFields = [
 
 // One field-sensitive presentation policy for cards, comparisons and details.
 // Keep raw source evidence untouched. Identifiers preserve their exact text.
+// The same field-sensitive rule must guard cards, detail attributes,
+// selected variants and canonical comparison displays. Null means omit.
+// Never rewrite or infer the underlying merchant observation.
+export function displayProductSpecification(key, raw) {
+  if (raw === null || raw === undefined || typeof raw === "object") return null;
+  const value = String(raw).trim();
+  if (!value || missingValue.test(value)) return null;
+  if (booleanValue.test(value)) {
+    return key === "waterproof" ? (/^(?:yes|true)$/i.test(value) ? "نعم" : "لا") : null;
+  }
+  return value;
+}
+
 function visibleSpecificationRows(offer, fields, maxRows) {
   const specs = offer?.specs || {};
   const result = [];
   for (const [label, key] of fields) {
-    const raw = specs[key];
-    if (raw === null || raw === undefined || typeof raw === "object") continue;
-    const value = String(raw).trim();
-    if (!value || missingValue.test(value)) continue;
-    if (booleanValue.test(value)) {
-      if (key === "waterproof") {
-        result.push([label, /^(?:yes|true)$/i.test(value) ? "نعم" : "لا"]);
-      }
-      continue;
-    }
+    const value = displayProductSpecification(key, specs[key]);
+    if (value === null) continue;
     result.push([label, value]);
     if (result.length === maxRows) break;
   }
