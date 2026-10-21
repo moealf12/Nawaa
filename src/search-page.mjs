@@ -15,6 +15,7 @@ import {
 } from "./search-core.mjs";
 import {selectSearchStreamResult} from "./search-stream.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
+import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -377,7 +378,7 @@ async function renderUrlState(query, requestId) {
     recordPriceHistory(data.offers);
     state.product = product;
     renderProduct(product, query);
-    els.status.textContent = `مقارنة الرابط: ${data.offers.length} عروض · ${data.providersConfigured?.length || 0} مصادر بحث`;
+    els.status.textContent = `مقارنة الرابط: ${arabicCount(data.offers.length, "offer")} · ${data.providersConfigured?.length || 0} مصادر بحث`;
     els.urlHint.hidden = false;
     els.urlHint.innerHTML = '<div><strong>تم استخراج المنتج والبحث عن عروضه</strong><p>المصدر الأصلي محفوظ. أي اختلاف في النسخة أو رقم الموديل يبقى خارج المطابقات المباشرة.</p></div>';
     if (data.errors?.length) {
@@ -419,23 +420,7 @@ function countryFlag(code = "") {
 }
 
 function specEntries(offer) {
-  const specs = offer.specs || {};
-  const items = [
-    ["اللون", specs.color],
-    ["السعة", specs.storage],
-    ["الذاكرة", specs.ram],
-    ["المعالج", specs.processor],
-    ["الشاشة", specs.screenSize],
-    ["نوع الشاشة", specs.screenType],
-    ["الشبكة", specs.network],
-    ["الشريحة", specs.sim],
-    ["النظام", specs.operatingSystem],
-    ["الكاميرا الخلفية", specs.rearCamera],
-    ["الكاميرا الأمامية", specs.frontCamera],
-    ["البطارية", specs.battery],
-    ["مقاومة الماء", specs.waterproof],
-  ];
-  return items.filter(([, value]) => value !== null && value !== undefined && String(value).trim()).slice(0, 10);
+  return visibleProductSpecifications(offer);
 }
 
 function specsMarkup(offer) {
@@ -866,7 +851,7 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDis
         <strong>${escapeHtml(title)}</strong>
         ${variantClarifier}
         <div class="card-specs">${specs.map(([label,value])=>`<span>${escapeHtml(label)}: ${escapeHtml(value)}</span>`).join("")}<span>${conditionDisplay(offer.condition || "unknown")}</span></div>
-        <div class="card-coverage"><small>${group.offers.length} عروض · ${uniqueMerchants} ${uniqueMerchants === 1 ? "متجر" : "متاجر"}</small>
+        <div class="card-coverage"><small>${arabicCount(group.offers.length, "offer")} · ${arabicCount(uniqueMerchants, "merchant")}</small>
           <span class="card-countries">${countries.slice(0,3).map(([code,name])=>`<span aria-label="${escapeHtml(name)}" title="${escapeHtml(name)}">${countryFlag(code)}</span>`).join("")}${countries.length > 3 ? `<small>+${countries.length-3}</small>` : ""}</span>
         </div>
       </div>
@@ -992,8 +977,8 @@ function renderProduct(product, query) {
   const hasLive = product.offers.some((offer) => offer.dataKind === "live");
 
   els.status.textContent = hasLive
-    ? `بحث حي: ${summary.count} عرضًا · ${discoverySections.length} فئات · ${summary.sources} متاجر/بائعين`
-    : `وجدنا ${summary.count} عروض · ${discoverySections.length} فئات · ${summary.sources} مصادر`;
+    ? `بحث حي: ${arabicCount(summary.count, "offer")} · ${discoverySections.length} فئات · ${summary.sources} متاجر/بائعين`
+    : `وجدنا ${arabicCount(summary.count, "offer")} · ${discoverySections.length} فئات · ${summary.sources} مصادر`;
   els.urlHint.hidden = true;
 
   const selectedSpecs = featuredOffer?.specs || {};
@@ -1114,7 +1099,7 @@ function renderProduct(product, query) {
     <div class="results-toolbar">
       <label>التوفر <select id="availabilityFilter"><option value="all" ${state.availability === "all" ? "selected" : ""}>كل حالات التوفر</option><option value="in_stock" ${state.availability === "in_stock" ? "selected" : ""}>المتوفر فقط</option></select></label>
       <label>المتجر <select id="merchantFilter"><option value="all">كل المتاجر</option>${[...new Set(product.offers.map(o => o.merchant).filter(Boolean))].map(merchant => '<option value="'+escapeHtml(merchant)+'" '+(state.merchant === merchant ? 'selected' : '')+'>'+escapeHtml(merchant)+'</option>').join("")}</select></label>
-      <span>${filteredOffers.length} من ${product.offers.length} عرضًا</span>
+      <span>${arabicCount(filteredOffers.length, "offer")} من أصل ${arabicCount(product.offers.length, "offer")}</span>
       <button id="resetResultFilters" type="button">مسح الفلاتر</button>
     </div>
     ${!exactGroups.length ? '<div class="search-notice" role="status">'+(!filteredOffers.length ? 'لا توجد عروض ضمن الفلاتر الحالية. جرّب مسح الفلاتر.' : 'لم نجد النسخة المطلوبة مطابقةً بالكامل. البدائل أدناه تختلف عن طلبك؛ تحقق من الموديل والسعة واللون قبل الاختيار.')+'</div>' : ''}
@@ -1298,7 +1283,7 @@ async function loadMoreRemote(query) {
     state.visibleCounts = {};
     renderProduct(state.product,query);
     els.status.textContent = added > 0
-      ? `أضفنا ${added} عرضًا جديدًا · الإجمالي ${state.product.offers.length} عرضًا`
+      ? `أضفنا ${arabicCount(added, "offer")} جديدًا · الإجمالي ${arabicCount(state.product.offers.length, "offer")}`
       : (state.remoteExhausted ? "اكتمل أعمق نطاق بحث متاح حاليًا" : "لم تظهر نتائج جديدة في هذه الدفعة");
     if (lastData?.errors?.length) els.status.textContent += " · بعض المصادر أعادت نتائج جزئية";
   } catch (error) {
@@ -1380,7 +1365,7 @@ async function runSearch(rawQuery) {
                 state.product=liveProduct;
                 renderProduct(liveProduct,query);
                 const countries=new Set(payload.offers.map(o=>o.merchantCountryCode).filter(Boolean)).size;
-                els.status.textContent=`نتائج فورية: ${payload.offers.length} عرضًا · ${countries} دول` + (payload.cache?.stale ? " · جاري التحديث…" : "");
+                els.status.textContent=`نتائج فورية: ${arabicCount(payload.offers.length, "offer")} · ${arabicCount(countries, "country")}` + (payload.cache?.stale ? " · جاري التحديث…" : "");
               }
             } catch {}
           });
@@ -1435,7 +1420,7 @@ async function runSearch(rawQuery) {
         renderProduct(liveProduct, query);
         const countries = new Set(data.offers.map((o) => o.merchantCountryCode).filter(Boolean)).size;
         const attempted = (data.providers || []).reduce((sum, p) => sum + (p.searchedMarkets?.length || 0), 0);
-        els.status.textContent = `بحث حي: ${data.offers.length} عرضًا · ${countries} دول · ${data.providersConfigured?.length || 0} موصلات · ${attempted} أسواق/متاجر تم فحصها`;
+        els.status.textContent = `بحث حي: ${arabicCount(data.offers.length, "offer")} · ${arabicCount(countries, "country")} · ${data.providersConfigured?.length || 0} موصلات · ${attempted} أسواق/متاجر تم فحصها`;
         const coverageNotice=coverageStatusText(data.coverage,data.errors);
         if (coverageNotice) els.status.textContent += " · " + coverageNotice;
         else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";

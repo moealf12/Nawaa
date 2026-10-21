@@ -92,7 +92,7 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.doesNotMatch(element('#results').innerHTML,/NO LIVE OFFERS/);
 
   const consoleOffers = [
-    { ...offer, title:"Sony PlayStation 5 Slim Digital Console White",image:"https://img.example/digital-1.jpg", specs:{brand:"Sony",color:"White",modelNumber:"CFI-2016B01Y",storage:"825GB"} },
+    { ...offer, title:"Sony PlayStation 5 Slim Digital Console White",image:"https://img.example/digital-1.jpg", specs:{brand:"Sony",color:"White",modelNumber:"CFI-2016B01Y",storage:"825GB",ram:"No"} },
     { ...offer,merchant:"Jarir", title:"PS5 Digital Console",image:"https://img.example/digital-2.jpg",specs:{brand:"Sony",modelNumber:"CFI2016B01Y",storage:"825GB"}},
     { ...offer, title:"Sony PS5 Console 1TB Blu-ray Disc", specs:{brand:"Sony",color:"Black/White",modelNumber:"CFI2116A01Y",storage:"1TB"} },
     { ...offer, title:"PS5 EA SPORTS FC 25", specs:{brand:"EA"} },
@@ -112,6 +112,8 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(html,/aria-expanded="false"/);
   assert.match(html,/سعر المنتج من/);
   assert.match(html,/عروض/);
+  assert.doesNotMatch(html,/الذاكرة: No/,"a source boolean placeholder is not a valid PS5 memory specification");
+  assert.match(html,/عرضان · متجر/,"two matching merchant offers must be grammatically correct in customer card coverage");
   assert.match(html,/https:\/\/img.example\/digital-2.jpg/);
   let renderedCards = [],loadMoreButtons=[],detailButtons=[];
   let lastRenderedCardMarkup = null;
