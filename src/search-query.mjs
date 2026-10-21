@@ -118,7 +118,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|briefcases?|rucksacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with|(?:laptop|notebook) batter(?:y|ies)|(?:replacement|compatible|spare) batter(?:y|ies)|batter(?:y|ies) (?:replacement|compatible|for)|power suppl(?:y|ies)|stylus|stylus pen|photo paper|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|briefcases?|rucksacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with|(?:laptop|notebook) batter(?:y|ies)|(?:replacement|compatible|spare) batter(?:y|ies)|batter(?:y|ies) (?:replacement|compatible|for)|power suppl(?:y|ies)|stylus|stylus pen|photo paper|printer paper|printing paper|drum unit|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -543,7 +543,8 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
      /\bmouse (?:pad|mat)\b/.test(retailSubject) ||
      (intent.brand === "hp" && !/^hp\b/.test(retailSubject) &&
       normalizeSearchQuery(offer?.specs?.brand || offer?.brand || "") !== "hp"));
-  const driveRequested = /\b(?:disc|disk|optical|blu ray) drive\b/.test(normalizedQuery);
+  const driveRequested = /\b(?:disc|disk|optical|blu ray) drive\b/.test(normalizedQuery) &&
+    !/\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\b/.test(normalizedQuery);
   const wrongDriveSubject = driveRequested &&
     (!/\b(?:disc|disk|optical|blu ray) drive\b/.test(retailSubject) ||
       /\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\b/.test(retailSubject));
