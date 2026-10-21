@@ -219,3 +219,25 @@ test("v21.23 Virgin verified sale and missing PDP price avoid unsafe header sele
   assert.equal(extractDomainProduct(url,uncertain),null,
     "unknown PDP price must remain unknown rather than borrowing nav price");
 });
+
+
+test("v21.23 RED: Virgin divided price markup outranks payment-plan eligibility and loyalty amounts",()=>{
+  const url="https://app.virginmegastore.ae/en/ps5-disc-drive/p/1033214";
+  // SYNTHETIC structural reproduction informed by real candidate audit:
+  // PDP visible AED339, old scoped regex wrongly selected AED1000
+  // from Easy Payment Plans. Markup splits currency and amount.
+  const html='<meta property="og:title" content="Sony PS5 Add-On Disc Drive">'+
+    '<h1>Sony PS5 Add-On Disc Drive</h1><div class="pdp-price">'+
+    '<span>AED</span> &nbsp; <strong>339</strong></div>'+
+    '<div>Easy Payment Plans available for order over AED 1,000</div>'+
+    '<div>Earn 339 loyalty dots equivalent to AED 3.39</div>'+
+    '<div class="related-products">Gift AED 10</div>';
+  assert.equal(extractDomainProduct(url,html)?.product?.offers?.price,339,
+    'visible sold-product amount precedes payment-plan and loyalty values');
+  const noPurchasePrice='<meta property="og:title" content="Sony PS5 Add-On Disc Drive">'+
+    '<h1>Sony PS5 Add-On Disc Drive</h1>'+
+    '<div>Easy Payment Plans available for order over AED 1,000</div>'+
+    '<div>Earn loyalty dots equivalent to AED 3.39</div>';
+  assert.equal(extractDomainProduct(url,noPurchasePrice),null,
+    'financial plan and loyalty values cannot fabricate product purchase price');
+});
