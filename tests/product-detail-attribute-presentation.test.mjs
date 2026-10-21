@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {visibleProductDetailSpecifications, visibleProductSpecifications} from "../src/product-card-presentation.mjs";
+import {displayProductSpecification, visibleProductDetailSpecifications, visibleProductSpecifications} from "../src/product-card-presentation.mjs";
 
 test("product detail reuses card field-sensitive truth while retaining detail-only identifiers", () => {
   const offer={specs:{
@@ -67,4 +67,26 @@ test("actual product page DOM hides invalid RAM and retains quote handoff",async
   assert.equal(draft.model,"HP-ZX/A1");
   assert.equal(draft.observedProductPriceSAR,2999);
   assert.equal(draft.sourceUrl,"https://www.jarir.com/test");
+});
+
+
+test("shared selected-variant display policy is field sensitive, pure and provenance neutral",()=>{
+ const values={regionVersion:"No",sim:false,ram:"N/A",waterproof:"No",
+   modelNumber:"MG674AH/A",barcode:"0012-AZ",storage:"512 GB",color:"أزرق / Blue"};
+ const before=structuredClone(values);
+ const visible=Object.fromEntries(Object.entries(values).map(([key,val])=>[key,displayProductSpecification(key,val)]));
+ assert.deepEqual(visible,{
+   regionVersion:null,sim:null,ram:null,waterproof:"لا",modelNumber:"MG674AH/A",
+   barcode:"0012-AZ",storage:"512 GB",color:"أزرق / Blue"
+ });
+ for(const invalid of ["No","false","N/A","unknown","undefined","غير معروف"]){
+   assert.equal(displayProductSpecification("regionVersion",invalid),null,invalid);
+   assert.equal(displayProductSpecification("sim",invalid),null,invalid);
+ }
+ assert.equal(displayProductSpecification("regionVersion","Middle East"),"Middle East");
+ assert.equal(displayProductSpecification("sim","Dual eSIM"),"Dual eSIM");
+ assert.equal(displayProductSpecification("modelNumber","ZX-No/16"),"ZX-No/16");
+ assert.equal(displayProductSpecification("waterproof",false),"لا");
+ assert.equal(displayProductSpecification("waterproof",true),"نعم");
+ assert.deepEqual(values,before);
 });
