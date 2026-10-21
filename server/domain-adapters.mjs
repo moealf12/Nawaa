@@ -112,7 +112,13 @@ function normalizeCurrency(value) {
 function buildCandidate(node, config) {
   if (!node || typeof node !== "object" || Array.isArray(node)) return null;
   const title = firstValue(node, config.titleKeys);
-  const rawPrice = firstValue(node, config.priceKeys);
+  // An explicit current/selling price outranks the generic price field,
+  // which storefronts also use for the crossed-out prior amount. Preserve
+  // merchant-specific sale/final ordering and fall back to generic only
+  // when no explicit purchase-price field exists on THIS product node.
+  const prioritizedPriceKeys = config.priceKeys.filter((key) => key !== "price");
+  if (config.priceKeys.includes("price")) prioritizedPriceKeys.push("price");
+  const rawPrice = firstValue(node, prioritizedPriceKeys);
   const priceObject = rawPrice && typeof rawPrice === "object" ? rawPrice : null;
   const price = parseMoney(priceObject ? firstValue(priceObject, ["amount","value","price","salePrice","formattedValue"]) : rawPrice);
   const currency = firstValue(node, config.currencyKeys) ||
