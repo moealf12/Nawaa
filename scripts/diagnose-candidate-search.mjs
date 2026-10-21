@@ -286,6 +286,17 @@ try{
         .replace(/\s+/g,' ');
       const amounts=[...plain.matchAll(/\bAED\s*([0-9][0-9,.]*)/gi)]
         .slice(0,12).map(x=>Number(x[1].replace(/,/g,'')));
+      // Isolate tiny real DOM price markup around the PDP's first AED tokens.
+      // Preserve element classes/tags (the retail meaning may be in classes),
+      // redact URLs and script/style contents, limit to six 500-byte snippets.
+      const priceMarkup=fromHeading
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ');
+      const sourcePriceMarkup=[...priceMarkup.matchAll(/\bAED\b/gi)].slice(0,6)
+        .map(m=>({offset:m.index,
+          around:priceMarkup.slice(Math.max(0,m.index-300),m.index+220)
+            .replace(/https?:\/\/[^\s"'<>]+/gi,'[URL]')
+            .replace(/\s+/g,' ').slice(0,500)}));
       const priceFields=['salePrice','sale_price','sellingPrice','finalPrice','currentPrice','current_price','price','previousPrice','oldPrice','regularPrice','listPrice','formattedValue'];
       const claims=[];
       const jsonScripts=[...html.matchAll(/<script\b[^>]*type=['"](?:application\/json|application\/ld\+json)['"][^>]*>([\s\S]*?)<\/script>/gi)].slice(0,40);
@@ -310,7 +321,7 @@ try{
       }
       console.log('V2127_REAL_PDP_PRICE_FIELDS '+JSON.stringify({
         sku:sample.sku,status:'CAPTURED',bytes:html.length,h1:heading?heading[0].replace(/<[^>]+>/g,'').slice(0,110):null,
-        visibleAfterHeadingAED:amounts,candidates:candidates.slice(0,8).map(e=>({
+        visibleAfterHeadingAED:amounts,sourcePriceMarkup,candidates:candidates.slice(0,8).map(e=>({
           strategy:e.strategy,sku:String(e.product?.sku||'').slice(0,50),
           name:String(e.product?.name||'').slice(0,105),
           price:e.product?.offers?.price??null,currency:e.product?.offers?.priceCurrency??null
