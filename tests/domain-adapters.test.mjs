@@ -193,11 +193,11 @@ test("v21.23 RED: Virgin PDP price must be anchored to the sold product, not hea
   // SYNTHETIC STRUCTURAL REPRODUCTION of real merchant price mismatch,
   // source PDP actually advertises AED 339 while candidate recorded AED 2.
   // Does not claim to be the exact raw merchant HTML captured by the runner.
-  const html=\`<html><head><meta property="og:title" content="Sony PlayStation Disc Drive for PS5 (Add-On)"></head>
+  const html=`<html><head><meta property="og:title" content="Sony PlayStation Disc Drive for PS5 (Add-On)"></head>
     <body><header><a href="/offers">AED 2 members' rewards</a></header>
     <main><h1>Sony PlayStation Disc Drive for PS5 (Add-On)</h1>
       <div class="product-price"><span>AED 339</span></div><button>Add to cart</button>
-    </main><section class="similar-products">Other Item AED 45</section></body></html>\`;
+    </main><section class="similar-products">Other Item AED 45</section></body></html>`;
   const actual=extractDomainProduct(url,html);
   assert.equal(actual?.adapterId,"virginmegastore");
   assert.equal(actual?.product?.offers?.price,339,
