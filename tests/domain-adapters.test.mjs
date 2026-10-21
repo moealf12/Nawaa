@@ -310,3 +310,43 @@ test("v21.24 non-Virgin adapter keeps current ASOS offer over crossed-out previo
   assert.equal(result?.product?.offers?.price,80);
   assert.equal(result?.product?.offers?.priceCurrency,"GBP");
 });
+
+
+test("v21.25 RED: structured embedded/current price wins over historical generic price",()=>{
+  // SYNTHETIC controlled JSON evidence. This is not a claim that these are
+  // raw live listings. A named currentPrice belongs to this SAME sku/offer.
+  const url="https://www.centrepointstores.com.sa/p/current-variant-A";
+  const item={productName:"Example Current Variant A",productId:"current-variant-A",
+    brandName:"Example",imageUrl:"https://example.org/a.jpg",
+    price:899,previousPrice:899,currentPrice:599,currency:"SAR",
+    availability:"in_stock"};
+  const html='<script type="application/json">'+JSON.stringify({product:item})+'</script>';
+  const observed=extractionCandidates(html,url);
+  for(const strategy of ["embedded_json","storefront_data","domain_adapter"]){
+    const candidate=observed.find(x=>x.strategy===strategy);
+    if(!candidate)continue;
+    assert.equal(candidate.product?.offers?.price,599,
+      strategy+" must use current sale price, not generic historical price");
+    assert.equal(candidate.product?.sku,"current-variant-A");
+    assert.equal(candidate.product?.offers?.priceCurrency,"SAR");
+  }
+  const selected=observed.find(x=>x.strategy==="embedded_json");
+  assert.ok(selected,"embedded source must be inspectable");
+  assert.equal(selected.product.offers.price,599);
+  assert.equal(item.price,899,"merchant raw observation stays immutable");
+});
+
+test("v21.25 RED: hydrated and storefront currentPrice obey explicit current field",()=>{
+  const item={name:"Actual Model C Black",sku:"actual-c-black",brand:"Example",
+    price:{amount:799,currency:"SAR"},
+    currentPrice:{amount:649,currency:"SAR"},oldPrice:799,
+    image:"https://example.org/c.jpg"};
+  const storefront='<script type="application/json">'+JSON.stringify({product:item})+'</script>';
+  const hydrated='<script>window.__INITIAL_STATE__ = '+JSON.stringify({product:item})+';</script>';
+  const storefrontOffer=extractionCandidates(storefront,"https://www.test-store.example/p/model-c").find(x=>x.strategy==="storefront_data");
+  const hydratedOffer=extractionCandidates(hydrated,"https://www.test-store.example/p/model-c").find(x=>x.strategy==="hydrated_state");
+  assert.equal(storefrontOffer?.product?.offers?.price,649);
+  assert.equal(hydratedOffer?.product?.offers?.price,649);
+  assert.equal(storefrontOffer?.product?.sku,"actual-c-black");
+  assert.equal(hydratedOffer?.product?.sku,"actual-c-black");
+});
