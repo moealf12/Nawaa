@@ -157,6 +157,23 @@ export const PRODUCT_CATEGORIES = [
   ['office','مكتبية', /\b(?:office supplies|stationery|notebook|pens?|pencils?|paper shredder)\b/],
   ['tool','أدوات', /\b(?:drill|saw|screwdriver|power tool)\b/],
 ];
+// v21.22 EART-minimal: resolve the sold retail subject BEFORE the target of a
+// compatibility relation. This protects unrelated device families without an
+// SKU blacklist or a hosted ontology. An included accessory after 'with' does
+// not turn a complete device into a spare part. Raw merchant data stays intact.
+const RETAIL_COMPONENT_NOUN = /\b(?:lenses?|straps?|bands?|filters?|capsules?|docks?|heatsinks?|heat sinks?|cartridges?|toners?|replacement batteries|replacement battery)\b/;
+const RETAIL_COMPATIBILITY_RELATION = /\b(?:compatible with|designed for|fits|for)\b/;
+const RETAIL_INCLUDED_COMPONENT = /\b(?:with|including|includes|bundled with)\b/;
+function isCompatibilityComponentSubject(normalizedTitle) {
+  const relation = RETAIL_COMPATIBILITY_RELATION.exec(normalizedTitle);
+  if (!relation) return false;
+  const soldSubject = normalizedTitle.slice(0, relation.index).trim();
+  if (!soldSubject || RETAIL_INCLUDED_COMPONENT.test(soldSubject)) return false;
+  // Restrict the signal to the retail subject, not later compatibility nouns
+  // or device examples. The first six words allow a brand/model prefix.
+  return RETAIL_COMPONENT_NOUN.test(soldSubject.split(' ').slice(0,6).join(' '));
+}
+
 export function productCategory(offer = {}) {
   return productCategoryWithDescription(offer, describeProduct(offer));
 }
@@ -220,6 +237,7 @@ function productCategoryWithDescription(offer, gaming) {
   const primaryRetailTitle=String(offer?.title || '');
 
   const soldTitle = normalizeSearchQuery(primaryRetailTitle);
+  if (isCompatibilityComponentSubject(soldTitle)) return 'accessory';
   // A complete printer sold WITH supplies must remain a printer; HP-branded
   // cartridges mentioning printer compatibility are not complete printers.
   if (/\b(?:cartridges?|ink|toners?)\b/.test(soldTitle)) {
@@ -290,7 +308,14 @@ function explicitModels(value) {
 export function parseSearchIntent(value = "") {
   const normalizedQuery = normalizeSearchQuery(value);
   const brand = Object.keys(BRAND_CATEGORY_PRIORITIES).find(name => (' '+normalizedQuery+' ').includes(' '+name+' ')) || null;
-  const categoryDefinition = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
+  // An explicit component search (camera lens, watch strap, vacuum filter)
+  // is accessory intent even when it names the compatible device category.
+  // An explicitly included accessory ('camera with lens') keeps device intent.
+  const componentRequested = RETAIL_COMPONENT_NOUN.test(normalizedQuery) &&
+    !RETAIL_INCLUDED_COMPONENT.test(normalizedQuery);
+  const categoryDefinition = componentRequested
+    ? ['accessory','ملحقات وإكسسوارات',RETAIL_COMPONENT_NOUN]
+    : PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const kind = queryProductKind(normalizedQuery);
   const category = kind === 'console' || kind === 'game' ? kind : categoryDefinition?.[0] || (kind === 'accessory' ? 'accessory' : null);
   // Remove structural category phrases globally before deciding whether a query
