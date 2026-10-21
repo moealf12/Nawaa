@@ -213,6 +213,12 @@ function comparableIdentity(offer = {}) {
   const titleIntent = parseSearchIntent(offer.title || "");
   const rawStorage = normalizeVariantPart(specs.storage || titleIntent.storage || description.storage || "");
   const brand = normalizedBrand(specs.brand || offer.brand || titleIntent.brand || (description.platform === "ps5" || description.platform === "ps4" ? "Sony" : ""));
+  // Conflicting model claims *inside one merchant offer* must not be treated
+  // as a reliable identity, even when storage and color appear identical.
+  const declaredModel = parseSearchIntent(specs.deviceType || specs.model || "").model;
+  const titleModel = titleIntent.model;
+  const modelConflict = category === "phone" && Boolean(declaredModel && titleModel &&
+    normalizeVariantPart(declaredModel) !== normalizeVariantPart(titleModel));
   const attributes = {
     storage: rawStorage.match(/\b\d+(?:gb|tb)\b/)?.[0] || rawStorage,
     color: description.kind === "console" ? "" : normalizeVariantPart(specs.color || titleIntent.color || ""),
@@ -233,12 +239,14 @@ function comparableIdentity(offer = {}) {
       attributes[name] = name === "screensize" ? normalizedScreenSize(value) : normalizeVariantPart(value);
     }
   }
-  return {brand, category, model:normalizedModel(offer), sku:normalizedModelIdentifier(specs.modelNumber || ""), condition:normalizeVariantPart(offer.condition || "unknown"), attributes};
+  return {brand, category, model:normalizedModel(offer), modelConflict,
+    sku:normalizedModelIdentifier(specs.modelNumber || ""), condition:normalizeVariantPart(offer.condition || "unknown"), attributes};
 }
 
 function comparablePair(a, b) {
   if (a.category !== b.category || a.brand !== b.brand || a.condition !== b.condition) return false;
   if (a.category === "phone") {
+    if (a.modelConflict || b.modelConflict) return false;
     // A phone is comparable by its sellable configuration, not by the store's
     // SKU/MPN. Retailers often use different identifiers for the same model.
     // Material version differences (condition, capacity, color, bundle, known
