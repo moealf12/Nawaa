@@ -253,7 +253,7 @@ function firstValue(obj, keys) {
 function embeddedOfferCandidate(node) {
   if (!node || typeof node !== "object" || Array.isArray(node)) return null;
   const title = firstValue(node, ["name","title","productName","product_name"]);
-  const priceRaw = firstValue(node, ["salePrice","sale_price","sellingPrice","finalPrice","price","currentPrice","current_price"]);
+  const priceRaw = firstValue(node, ["salePrice","sale_price","sellingPrice","finalPrice","currentPrice","current_price","price"]);
   const priceObj = priceRaw && typeof priceRaw === "object" ? priceRaw : null;
   const price = parseMoney(priceObj ? firstValue(priceObj, ["value","amount","price"]) : priceRaw);
   const currency = firstValue(node, ["currency","priceCurrency","currencyCode","currency_code"]) ||
