@@ -86,3 +86,25 @@ test("direct phone comparison rejects a different model/variant and preserves no
   assert.equal(mergeComparisonOffers(p,[q])[1].exactMatch,false,
     "non-phone variants must retain the existing SKU conflict guard");
 });
+
+test("placeholder phone region and SIM evidence must not split sellable configurations",()=>{
+  const known=phone("Jarir",{specs:{...phone("Jarir").specs,
+    regionVersion:"Middle East",sim:"Dual eSIM"}});
+  for(const [regionVersion,sim] of [
+    ["No","undefined"],["N/A","false"],["unknown",null],["undefined","N/A"]
+  ]){
+    const other=phone("eXtra",{specs:{...phone("eXtra").specs,regionVersion,sim}});
+    const original=structuredClone(other);
+    const groups=groupComparableOffers([known,other]);
+    assert.equal(groups.length,1,"unknown region/SIM must not fabricate a variant: "+regionVersion+"/"+sim);
+    assert.equal(groups[0].offers.length,2);
+    const compared=mergeComparisonOffers(known,[other]);
+    assert.equal(compared[1].exactMatch,true,"direct comparison must treat placeholders as missing evidence");
+    assert.deepEqual(other,original,"source-provided evidence must remain unchanged");
+  }
+  const conflict=phone("eXtra",{specs:{...phone("eXtra").specs,
+    regionVersion:"USA",sim:"Physical SIM"}});
+  assert.equal(groupComparableOffers([known,conflict]).length,2,
+    "genuine region and SIM incompatibilities must stay isolated");
+  assert.equal(mergeComparisonOffers(known,[conflict])[1].exactMatch,false);
+});
