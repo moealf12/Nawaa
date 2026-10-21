@@ -392,7 +392,7 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   // removing tags, because its CSS boundary would otherwise be lost.
   const nearProduct = vicinity.split(/<(?:div|section|aside)\b[^>]*\bclass\s*=\s*["'][^"']*(?:similar-products|related-products|recommended-products|cross-sell|upsell|you-may-like)[^"']*["'][^>]*>/i, 1)[0];
   const purchaseHtml = nearProduct
-    .replace(/<([a-z][\w:-]*)\b[^>]*\bclass\s*=\s*["'][^"']*(?:original-price|old-price|price-old|price-original|was-price|price-was|regular-price|list-price|compare-at-price)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<([a-z][\w:-]*)\b[^>]*\bclass\s*=\s*["'][^"']*(?:original-price|old-price|price-old|price-original|was-price|price-was|regular-price|list-price|compare-at-price|price__value--original|gtm-price-value-original|price__number--strike-through)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<(del|s|strike)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
   const visible = decodeHtmlText(purchaseHtml)
     .replace(/&(?:nbsp|#160|#x0*a0);/gi," ")
