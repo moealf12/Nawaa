@@ -267,62 +267,6 @@ try{
     console.log('V2123_VIRGIN_SOURCE_PRICE_FORENSICS '+JSON.stringify({
       status:'BLOCKED',error:String(error?.message||error).slice(0,180)}));
   }
-  // v21.28: source-backed dual-merchant full/current/old/instalment price audit.
-  // Public PDPs are read-only; access failures are BLOCKED, never PASS.
-  // Log at most six relevant original-source claims, not full HTML/cookies.
-  for(const item of [
-    {merchant:'Jarir',sku:'673846',
-     url:'https://www.jarir.com/sa-en/apple-iphone-17-renewed-smartphones-673846.html'},
-    {merchant:'Sharaf DG',sku:'S500943806',
-     url:'https://saudi.sharafdg.com/en/product/apple-iphone-17-256gb-black-middle-east-version-with-facetime/'}
-  ]){
-    try{
-      const page=await fetchHtmlSafe(item.url,0,{signal:AbortSignal.timeout(9000)});
-      const entries=extractionCandidates(page.html,page.finalUrl);
-      const priceFields=['salePrice','sale_price','sellingPrice','finalPrice','currentPrice','current_price',
-        'price','previousPrice','oldPrice','originalPrice','regularPrice','priceCurrency'];
-      const sameNode=[];
-      const scripts=[...page.html.matchAll(/<script\b[^>]*type\s*=\s*["'](?:application\/ld\+json|application\/json)["'][^>]*>([\s\S]*?)<\/script>/gi)].slice(0,30);
-      for(const script of scripts){
-        if(script[1].length>600000)continue;
-        let root;try{root=JSON.parse(script[1])}catch{continue}
-        const stack=[{v:root,depth:0}],seen=new Set();
-        while(stack.length && sameNode.length<6){
-          const {v,depth}=stack.pop();
-          if(!v||typeof v!=='object'||seen.has(v)||depth>9)continue;seen.add(v);
-          if(!Array.isArray(v)){
-            const fields=Object.fromEntries(priceFields.filter(k=>Object.hasOwn(v,k)).map(k=>{
-              const raw=v[k],val=raw&&typeof raw==='object'?(raw.value??raw.amount??raw.price??'[object]'):raw;
-              return [k,String(val).slice(0,28)];
-            }));
-            const productId=String(v.sku??v.productId??v.itemId??v.id??'').slice(0,45);
-            const title=String(v.name??v.productName??v.title??'').slice(0,75);
-            if(Object.keys(fields).length>=2 &&
-              (productId===item.sku || title.toLowerCase().includes('iphone 17')))
-              sameNode.push({productId,title,fields});
-          }
-          for(const child of Object.values(v).slice(0,100))
-            if(child&&typeof child==='object')stack.push({v:child,depth:depth+1});
-        }
-      }
-      console.log('V2128_CROSS_MERCHANT_PRICE_PROOF '+JSON.stringify({
-        status:'CAPTURED',merchant:item.merchant,sku:item.sku,htmlBytes:page.html.length,
-        candidateSources:entries.slice(0,8).map(e=>({
-          strategy:e.strategy,sku:String(e.product?.sku||'').slice(0,45),
-          title:String(e.product?.name||'').slice(0,85),
-          purchasePrice:e.product?.offers?.price??null,
-          currency:e.product?.offers?.priceCurrency||null,
-          stock:String(e.product?.offers?.availability||'').slice(0,35)
-        })),
-        sameNode,
-        note:'A candidate price without matching identity is NOT source-verified product price'
-      }));
-    }catch(e){
-      console.log('V2128_CROSS_MERCHANT_PRICE_PROOF '+JSON.stringify({
-        status:'BLOCKED',merchant:item.merchant,sku:item.sku,error:String(e?.message||e).slice(0,140)
-      }));
-    }
-  }
   const {parseJarirSearchHtml}=await import('../server/providers/jarir.mjs');
   const {load:cheerioLoad}=await import('cheerio');
   const jarirCatalogTargets=[
