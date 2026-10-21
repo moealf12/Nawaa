@@ -526,7 +526,7 @@ try{
   assertCheck('phone_card_retains_both_merchant_offers',
     coverage.includes('عرضان') && coverage.includes('متجران'),{coverage});
   await duplicateCards.first().click();
-  const comparisonRows=await duplicated.locator('.selected-comparison[open] .merchant-comparison .offer-row').count();
+  const comparisonRows=await duplicated.locator('.selected-comparison[open] .merchant-comparison .merchant-row').count();
   const skuSelectors=await duplicated.locator('[data-dimension="skuKey"]').count();
   const note=await duplicated.locator('.selected-comparison[open] .model-identity-note').textContent();
   assertCheck('phone_comparison_independent_of_sku_with_visible_caveat',
