@@ -87,7 +87,10 @@ test('v21.20 source-backed first-ten counterfeit device and accessory-subtype gu
       'https://saudi.sharafdg.com/en/product/panzerglass-care-3-in-1-explorer-bundle-transparent-iphone-17-pro-max-pnzcr94434/')],
    ['HP printer',
     make('HP Printer Paper 8.5 x 11 Premium 28 lb 500 Sheets',
-      'https://www.amazon.sa/-/en/HP-Printer-Paper-Premium-Ream/dp/B00RUKC3PI/ref=sr_1_177')]
+      'https://www.amazon.sa/-/en/HP-Printer-Paper-Premium-Ream/dp/B00RUKC3PI/ref=sr_1_177')],
+   ['PS5 Slim',
+    make('Hzxkqmil Replacement Side Shell with Cooling Vents Anti-Scratch Accessories for PS5 Slim Console Disc Edition',
+      'https://www.amazon.sa/-/en/Hzxkqmil-Replacement-Ventilation-Anti-Scratch-Accessories/dp/B0DKNVSGSM/ref=sr_1_178')]
  ];
  for(const [query,offer] of cases){
    assert.equal(productCategory(offer),'accessory',offer.title);
