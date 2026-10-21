@@ -191,11 +191,19 @@ test('v21.22 held-out retail-subject relationships: compatible component never b
     {query:'Dyson vacuum',title:'Replacement Filter for Dyson V12 Vacuum Cleaner'},
     {query:'Nespresso coffee maker',title:'Coffee Capsules for Nespresso Coffee Maker'}
   ];
+  const explicitAccessoryQueries=[
+    'Sony camera lens','Apple Watch strap','Dyson vacuum filter','Nespresso coffee capsules'
+  ];
   for(const {query,title} of components){
     const offer=mk(title),raw=structuredClone(offer);
     assert.equal(productCategory(offer),'accessory','sold component not compatible device: '+title);
     assert.equal(assessOfferMatch(query,offer).exactMatch,false,'cannot exact-match device: '+title);
     assert.equal(filterQueryOffers(query,[offer]).offers.length,0,'cannot promote component: '+title);
+    const explicit=explicitAccessoryQueries[components.findIndex(x=>x.title===title)];
+    assert.equal(assessOfferMatch(explicit,offer).exactMatch,true,
+      'explicit part search must retain exact accessory: '+explicit);
+    assert.equal(filterQueryOffers(explicit,[offer]).offers.length,1,
+      'generalization must not destroy explicit-part recall: '+explicit);
     assert.deepEqual(offer,raw,'must preserve raw evidence');
   }
   const realSubjects=[
