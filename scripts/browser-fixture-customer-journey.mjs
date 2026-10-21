@@ -358,10 +358,12 @@ try{
       value:node.querySelector('b')?.textContent?.trim()
     })));
   const profileValues=Object.fromEntries(rawCanonical.map(({label,value})=>[label,value]));
+  const invalidFieldValues=new Set(['no','n/a','undefined','false','unknown']);
   assertCheck('v2116_no_placeholder_selected_region_or_sim',
-    !/(?:\\bNo\\b|N\\/A|undefined|false)/i.test(badBadges),{badBadges});
+    ![...invalidFieldValues].some(value=>badBadges.toLowerCase().split(/[^a-z/]+/).includes(value)),
+    {badBadges});
   assertCheck('v2116_no_placeholder_canonical_attributes',
-    !Object.values(profileValues).some(v=>/^(?:No|N\\/A|undefined|false)$/i.test(v)) &&
+    !Object.values(profileValues).some(v=>invalidFieldValues.has(String(v).trim().toLowerCase())) &&
     !('الذاكرة' in profileValues) && !('المعالج' in profileValues) &&
     !('نسخة المنطقة' in profileValues) && !('الشريحة' in profileValues),
     {profileValues});
