@@ -1,3 +1,5 @@
+import {visibleProductDetailSpecifications} from "./product-card-presentation.mjs";
+
 const $ = (selector) => document.querySelector(selector);
 const app = $("#productApp");
 
@@ -20,29 +22,7 @@ function countryFlag(code = "") {
 }
 
 function specRows(offer) {
-  const s = offer.specs || {};
-  const rows = [
-    ["العلامة التجارية", s.brand],
-    ["السلسلة", s.series],
-    ["نوع الجهاز", s.deviceType],
-    ["اللون", s.color],
-    ["السعة", s.storage],
-    ["الذاكرة RAM", s.ram],
-    ["المعالج", s.processor],
-    ["حجم الشاشة", s.screenSize],
-    ["نوع الشاشة", s.screenType],
-    ["الشبكة", s.network],
-    ["نوع الشريحة", s.sim],
-    ["نسخة المنطقة", s.regionVersion],
-    ["نظام التشغيل", s.operatingSystem],
-    ["الكاميرا الخلفية", s.rearCamera],
-    ["الكاميرا الأمامية", s.frontCamera],
-    ["البطارية", s.battery],
-    ["مقاومة الماء", s.waterproof],
-    ["رقم الموديل", s.modelNumber],
-    ["الباركود", s.barcode],
-  ];
-  return rows.filter(([, value]) => value !== null && value !== undefined && String(value).trim());
+  return visibleProductDetailSpecifications(offer);
 }
 
 function availabilityItems(offer) {
@@ -71,6 +51,7 @@ function render(snapshot) {
   const product = snapshot.product || {};
   const title = offer.sourceMeta?.nameAr || offer.title || product.nameAr || product.nameEn || "منتج";
   const specs = specRows(offer);
+  const visibleModelNumber = specs.find(([label]) => label === "رقم الموديل")?.[1] || "";
   const availability = availabilityItems(offer);
   const total = Number.isFinite(offer.totalSAR) ? offer.totalSAR : null;
 
@@ -96,7 +77,7 @@ function render(snapshot) {
         <span class="eyebrow">PRODUCT DETAIL / NAWAA</span>
         <h1>${escapeHtml(title)}</h1>
         <p class="model-line">
-          ${offer.specs?.modelNumber ? "رقم الموديل " + escapeHtml(offer.specs.modelNumber) + " · " : ""}
+          ${visibleModelNumber ? "رقم الموديل " + escapeHtml(visibleModelNumber) + " · " : ""}
           ${escapeHtml(offer.condition === "new" ? "جديد" : offer.condition || "")}
         </p>
 
