@@ -543,11 +543,22 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
      /\bmouse (?:pad|mat)\b/.test(retailSubject) ||
      (intent.brand === "hp" && !/^hp\b/.test(retailSubject) &&
       normalizeSearchQuery(offer?.specs?.brand || offer?.brand || "") !== "hp"));
+  // HP printer requests must identify an HP-manufactured sellable device.
+  // Third-party toner kits may mention every compatible LaserJet family but
+  // cannot become a low-priced HP printer merely by category/keyword matching.
+  const hpPrinterRequested = intent.brand === "hp" && effectiveCategory === "printer";
+  const merchantMaker = normalizeSearchQuery(offer?.specs?.brand || offer?.brand || "");
+  const wrongHpPrinterMaker = hpPrinterRequested &&
+    !/^(?:hp|hewlett packard)\b/.test(retailSubject) &&
+    !["hp","hewlett packard"].includes(merchantMaker);
+
+  const requestedInternalRepair = /\b(?:connector module|drive module|replacement module|internal optical|kem 497aaa)\b/.test(normalizedQuery);
   const driveRequested = /\b(?:disc|disk|optical|blu ray) drive\b/.test(normalizedQuery) &&
     !/\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\b/.test(normalizedQuery);
   const wrongDriveSubject = driveRequested &&
     (!/\b(?:disc|disk|optical|blu ray) drive\b/.test(retailSubject) ||
-      /\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\b/.test(retailSubject));
+      /\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\b/.test(retailSubject) ||
+      (!requestedInternalRepair && /\b(?:connector module|disc drive module|optical drive module|replacement module|kem 497aaa)\b/.test(retailSubject)));
   // Product-type words (mouse, laptop, perfume...) are structural intent rather
   // than free-text tokens: reward the matching category without polluting model/
   // variant token matching.
@@ -566,7 +577,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
-  if (wrongMouseSubject || wrongDriveSubject) confidence *= 0.1;
+  if (wrongMouseSubject || wrongDriveSubject || wrongHpPrinterMaker) confidence *= 0.1;
 
   // Brand-only searches still reject accessories that merely carry the name.
   // Query-only accessory intent was prepared outside the per-offer loop.
