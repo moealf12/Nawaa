@@ -114,5 +114,11 @@ test('v21.20 source-backed first-ten counterfeit device and accessory-subtype gu
  ];
  for(const [query,offer] of good)assert.equal(assessOfferMatch(query,offer).exactMatch,true,
    'valid sellable item must remain exact for '+query);
+ // More specific accessory searches remain distinct from generic device intent.
+ assert.equal(parseSearchIntent('HP printer paper').category,'accessory');
+ assert.equal(assessOfferMatch('HP printer paper',cases[2][1]).exactMatch,true,
+   'printer paper is relevant only when specifically requested');
+ assert.equal(assessOfferMatch('PS5 disc drive power cable',cable).exactMatch,true,
+   'explicit cable intent must not be suppressed by the disc-drive guard');
  assert.equal(describeProduct(good[0][1]).kind,'console');
 });
