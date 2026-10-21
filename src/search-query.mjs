@@ -42,6 +42,9 @@ const ALIASES = [
   ["اتش بي", "hp"], ["ديل", "dell"], ["لينوفو", "lenovo"], ["اسوس", "asus"],
   ["لابتوب", "laptop"], ["لابتوبات", "laptop"], ["لاب توب", "laptop"], ["حاسوب محمول", "laptop"],
   ["طابعه", "printer"], ["طابعات", "printer"], ["جوال", "phone"], ["جوالات", "phone"],
+  // Source-backed German cartridge terms for both shopper queries and offers.
+  ["druckerpatronen", "cartridge"], ["druckerpatrone", "cartridge"],
+  ["tintenpatronen", "cartridge"], ["tintenpatrone", "cartridge"],
   ["تلفزيون", "tv"], ["تلفزيونات", "tv"], ["شاشه", "monitor"], ["شاشات", "monitor"],
   ["سماعات", "headphones"], ["سماعه", "headphones"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
@@ -118,7 +121,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|briefcases?|rucksacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with|(?:laptop|notebook) batter(?:y|ies)|(?:replacement|compatible|spare) batter(?:y|ies)|batter(?:y|ies) (?:replacement|compatible|for)|power suppl(?:y|ies)|stylus|stylus pen|photo paper|printer paper|printing paper|drum unit|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|briefcases?|rucksacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with|(?:laptop|notebook) batter(?:y|ies)|(?:replacement|compatible|spare) batter(?:y|ies)|batter(?:y|ies) (?:replacement|compatible|for)|power suppl(?:y|ies)|stylus|stylus pen|photo paper|printer paper|printing paper|drum unit|heatsinks?|heat sinks?|thermal pads?|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -217,6 +220,17 @@ function productCategoryWithDescription(offer, gaming) {
   const primaryRetailTitle=String(offer?.title || '');
 
   const soldTitle = normalizeSearchQuery(primaryRetailTitle);
+  // A complete printer sold WITH supplies must remain a printer; HP-branded
+  // cartridges mentioning printer compatibility are not complete printers.
+  if (/\b(?:cartridges?|ink|toners?)\b/.test(soldTitle)) {
+    const included=soldTitle.match(/\b(?:with|including|includes)\b/);
+    if(included) {
+      const primary=soldTitle.slice(0,included.index);
+      if (/\b(?:printers?|deskjet|laserjet|officejet)\b/.test(primary) &&
+          !/\b(?:for|compatible|fits|cases?|covers?|cartridges?|toners?|ink|paper|replacement|repair)\b/.test(primary))
+        return 'printer';
+    }
+  }
   // Source-backed first-ten: PanzerGlass CARE Explorer is a protection bundle,
   // not the iPhone named solely as the compatible model. Do not misclassify
   // a genuine Apple iPhone bundle whose handset is the retail title's subject.
@@ -342,7 +356,7 @@ const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)
 const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
 // Console accessories may mention a complete PS5 console in compatibility text.
 // Reject peripheral product nouns before trusting 'Console / Digital Edition'.
-const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
+const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|heatsinks?|heat sinks?|thermal pads?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
 // Storage-media nouns identify a sold component, not the PS5 it fits.
 // A title-leading real console subject remains a console when its SSD is included.
 const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
