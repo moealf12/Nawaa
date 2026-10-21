@@ -361,15 +361,29 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   const image =
     source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] || null;
+  // The full HTML contains header offers, loyalty/instalment prices and
+  // recommendation prices unrelated to the currently sold item. A page-global
+  // "first AED" regex used to certify those as the product's full price.
+  // Require the principal retail <h1> and read only its immediate PDP price
+  // vicinity. If the price cannot be tied to the sold subject, return NO
+  // domain-adapter price and let independent structured candidates decide.
+  const heading = /<h1\b[^>]*>[\s\S]{0,3000}?<\/h1>/i.exec(source);
+  if (!heading || !decodeHtmlText(heading[0])) return null;
+  const headingEnd = heading.index + heading[0].length;
+  const vicinity = source.slice(headingEnd, headingEnd + 6000)
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+  // A second product panel or recommendations cannot supply this item's price.
+  const relatedBoundary = /<(?:h[2-6]|section)\b[^>]*>(?:(?!<\/(?:h[2-6]|section)>)[\s\S]){0,400}?(?:similar products|you might also like|related products)|\b(?:similar-products|recommended-products|browsing-history)\b/i.exec(vicinity);
+  const scoped = relatedBoundary ? vicinity.slice(0, relatedBoundary.index) : vicinity;
   const pricePatterns = [
     /(?:AED|د\.?إ\.?|Dhs?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
     /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:AED|د\.?إ\.?|Dhs?)/i,
     /["'](?:formattedValue|formattedPrice)["']\s*:\s*["'][^"'0-9]*(?:AED\s*)?([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
-    /["'](?:value|priceValue|salePrice|sellingPrice|finalPrice|currentPrice)["']\s*:\s*["']?([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
   ];
   let price = null;
   for (const pattern of pricePatterns) {
-    const match = source.match(pattern);
+    const match = scoped.match(pattern);
     const parsed = parseMoney(match?.[1]);
     if (parsed !== null && parsed > 0) { price = parsed; break; }
   }
