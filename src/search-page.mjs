@@ -935,6 +935,11 @@ function reconcileProductImageFallbacks(root) {
 }
 
 function renderProduct(product, query) {
+  // Live SSE updates may rebuild cards after a keyboard interaction. Preserve
+  // focus by stable group key so the shopper can continue from the same item.
+  const activeCard = document.activeElement;
+  const focusedGroupKey = activeCard?.classList?.contains("match-result-card")
+    ? activeCard.dataset.groupKey : null;
   const filteredOffers = product.offers.filter(offer =>
     (state.merchant === "all" || offer.merchant === state.merchant) &&
     (state.availability === "all" || offer.availability === "in_stock" || offer.sourceMeta?.jeddahInStock === true));
@@ -1121,7 +1126,7 @@ function renderProduct(product, query) {
       const limit = state.visibleCounts[section.key] || 10;
       return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
         <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
-        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup,repeatedDisplayNames)).join('')}</div>
+        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || group.key === focusedGroupKey || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup,repeatedDisplayNames)).join('')}</div>
         ${section.groups.length > limit ? `<button type="button" class="show-category" data-show-category="${escapeHtml(section.key)}">عرض المزيد من ${escapeHtml(section.label)} (${section.groups.length-limit})</button>` : ''}
       </section>`;
     }).join('')}
@@ -1157,7 +1162,10 @@ function renderProduct(product, query) {
   $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#resetResultFilters")?.addEventListener("click", () => { state.availability = "all"; state.merchant = "all"; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   els.results.querySelectorAll(".match-result-card").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      // A card click recreates the result grid. Restore keyboard/AT focus to
+      // the replacement button so Enter or Space can also close the comparison.
+      const keyboardActivation = event?.detail === 0;
       const group = exactGroups.find((item) => item.key === button.dataset.groupKey);
       const offer = group?.bestPriceOffer || group?.bestOffer;
       if (!offer) return;
@@ -1173,7 +1181,12 @@ function renderProduct(product, query) {
         skuKey: dimensions.skuKey,
       };
       renderProduct(product, query);
-      if (state.comparisonOpen) requestAnimationFrame(() => {
+      if (keyboardActivation) {
+        const replacementButton = Array.from(els.results.querySelectorAll(".match-result-card"))
+          .find((candidate) => candidate.dataset.groupKey === group.key);
+        replacementButton?.focus({ preventScroll: true });
+      }
+      if (state.comparisonOpen && !keyboardActivation) requestAnimationFrame(() => {
         document.querySelector(".product-configurator")?.scrollIntoView({ behavior:"smooth", block:"start" });
       });
     });
@@ -1212,6 +1225,11 @@ function renderProduct(product, query) {
   $("#quoteBestBtn")?.addEventListener("click", () => {
     if (featuredOffer) openQuote(product, featuredOffer, query);
   });
+  if (focusedGroupKey) {
+    const replacementCard = Array.from(els.results.querySelectorAll(".match-result-card"))
+      .find((candidate) => candidate.dataset.groupKey === focusedGroupKey);
+    (replacementCard || els.results.querySelector(".match-result-card"))?.focus({ preventScroll: true });
+  }
 }
 
 function renderNoMatch(query) {

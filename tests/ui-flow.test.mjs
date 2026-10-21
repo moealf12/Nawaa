@@ -114,6 +114,7 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(html,/عروض/);
   assert.match(html,/https:\/\/img.example\/digital-2.jpg/);
   let renderedCards = [],loadMoreButtons=[],detailButtons=[];
+  let lastRenderedCardMarkup = null;
   element('#results').querySelectorAll = selector => {
     if(selector==='.show-category') {
       loadMoreButtons=[...element('#results').innerHTML.matchAll(/data-show-category="([^"]+)"/g)].map(match=>({dataset:{showCategory:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;}}));
@@ -124,7 +125,12 @@ test("query deep link starts exactly one live search and URL submission requests
       return detailButtons;
     }
     if (selector !== '.match-result-card') return [];
-    renderedCards = [...element('#results').innerHTML.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;}}));
+    const markup = element('#results').innerHTML;
+    // Real DOM querySelectorAll returns the same nodes until innerHTML is replaced.
+    // Reuse mocks for repeated queries within a render (binding followed by focus restore).
+    if (markup === lastRenderedCardMarkup) return renderedCards;
+    lastRenderedCardMarkup = markup;
+    renderedCards = [...markup.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},classList:{contains(name){return name==='match-result-card';}},events:{},addEventListener(name,handler){this.events[name]=handler;},focus(options){this.focusRestored=true;this.focusOptions=options;}}));
     return renderedCards;
   };
   globalThis.requestAnimationFrame = callback => callback();
@@ -143,7 +149,18 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.ok(hpHtml.indexOf('HP Pavilion Laptop') < hpHtml.indexOf('HP USB Mouse'),'brand discovery must not lead with a cheap mouse');
   assert.match(hpHtml,/<details class="selected-comparison" hidden>/, 'comparison is closed until the customer selects a card');
   assert.doesNotMatch(hpHtml,/نسخة مختلفة عن الموديل المطلوب/);
-  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click();
+  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click({detail:0});
+  assert.ok(renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).focusRestored,
+    'keyboard card activation must focus the newly rendered button');
+  assert.equal(renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).focusOptions.preventScroll,true,
+    'restoring keyboard focus must not unexpectedly scroll the page');
+  // The original button was replaced, but a second keyboard activation must still close it.
+  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click({detail:0});
+  assert.match(element('#results').innerHTML,/<details class="selected-comparison" hidden>/,
+    'second keyboard activation must collapse the comparison');
+  assert.ok(renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).focusRestored,
+    'closing by keyboard must also restore focus');
+  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click({detail:0});
   assert.doesNotMatch(element('#searchStatus').textContent,/ألوان|سعات/, 'general discovery status must describe categories rather than phone variant counts');
 
   assert.match(element('#results').innerHTML,/<details class="selected-comparison" open>/);
@@ -198,7 +215,14 @@ test("query deep link starts exactly one live search and URL submission requests
   await new Promise(resolve=>setImmediate(resolve));
   const countCards=()=> (element('#results').innerHTML.match(/class="match-result-card/g)||[]).length;
   assert.equal(countCards(),10,'a fresh search must show ten products');
-  loadMoreButtons[0].events.click();assert.equal(countCards(),20,'the first Load more must add ten products');
+  // Progressive/interactive rerenders must not strand keyboard focus on a detached card.
+  const focusedKeyBeforeRerender = renderedCards[0].dataset.groupKey;
+  globalThis.document.activeElement = renderedCards[0];
+  loadMoreButtons[0].events.click();
+  assert.equal(countCards(),20,'the first Load more must add ten products');
+  assert.ok(renderedCards.find(card=>card.dataset.groupKey===focusedKeyBeforeRerender)?.focusRestored,
+    'focused product must be re-focused when an update replaces the result grid');
+  globalThis.document.activeElement = null;
   loadMoreButtons[0].events.click();assert.equal(countCards(),25,'the final Load more must retain all remaining products');
   assert.equal(loadMoreButtons.length,0,'no Load more remains after all products are visible');
   element('#resetResultFilters').events.click();assert.equal(countCards(),10,'reset filters restores the first ten products');
