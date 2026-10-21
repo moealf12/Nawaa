@@ -1126,7 +1126,7 @@ function renderProduct(product, query) {
       const limit = state.visibleCounts[section.key] || 10;
       return `<section class="match-results-section" aria-label="${escapeHtml(section.label)}">
         <div class="section-label"><h3>${escapeHtml(section.label)}</h3><b>${section.groups.length} منتجات</b></div>
-        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup,repeatedDisplayNames)).join('')}</div>
+        <div class="match-results-grid">${section.groups.filter((group,index)=>index < limit || group.key === focusedGroupKey || (state.comparisonOpen && group.key === state.selectedGroupKey)).map(group=>exactMatchCard(group,state.comparisonOpen ? selectedGroup : null,comparisonMarkup,repeatedDisplayNames)).join('')}</div>
         ${section.groups.length > limit ? `<button type="button" class="show-category" data-show-category="${escapeHtml(section.key)}">عرض المزيد من ${escapeHtml(section.label)} (${section.groups.length-limit})</button>` : ''}
       </section>`;
     }).join('')}
@@ -1228,7 +1228,7 @@ function renderProduct(product, query) {
   if (focusedGroupKey) {
     const replacementCard = Array.from(els.results.querySelectorAll(".match-result-card"))
       .find((candidate) => candidate.dataset.groupKey === focusedGroupKey);
-    replacementCard?.focus({ preventScroll: true });
+    (replacementCard || els.results.querySelector(".match-result-card"))?.focus({ preventScroll: true });
   }
 }
 
