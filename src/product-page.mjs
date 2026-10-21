@@ -1,3 +1,5 @@
+import {visibleProductDetailSpecifications} from "./product-card-presentation.mjs";
+
 const $ = (selector) => document.querySelector(selector);
 const app = $("#productApp");
 
@@ -20,29 +22,7 @@ function countryFlag(code = "") {
 }
 
 function specRows(offer) {
-  const s = offer.specs || {};
-  const rows = [
-    ["العلامة التجارية", s.brand],
-    ["السلسلة", s.series],
-    ["نوع الجهاز", s.deviceType],
-    ["اللون", s.color],
-    ["السعة", s.storage],
-    ["الذاكرة RAM", s.ram],
-    ["المعالج", s.processor],
-    ["حجم الشاشة", s.screenSize],
-    ["نوع الشاشة", s.screenType],
-    ["الشبكة", s.network],
-    ["نوع الشريحة", s.sim],
-    ["نسخة المنطقة", s.regionVersion],
-    ["نظام التشغيل", s.operatingSystem],
-    ["الكاميرا الخلفية", s.rearCamera],
-    ["الكاميرا الأمامية", s.frontCamera],
-    ["البطارية", s.battery],
-    ["مقاومة الماء", s.waterproof],
-    ["رقم الموديل", s.modelNumber],
-    ["الباركود", s.barcode],
-  ];
-  return rows.filter(([, value]) => value !== null && value !== undefined && String(value).trim());
+  return visibleProductDetailSpecifications(offer);
 }
 
 function availabilityItems(offer) {
@@ -71,6 +51,9 @@ function render(snapshot) {
   const product = snapshot.product || {};
   const title = offer.sourceMeta?.nameAr || offer.title || product.nameAr || product.nameEn || "منتج";
   const specs = specRows(offer);
+  const visibleModelNumber = specs.find(([label]) => label === "رقم الموديل")?.[1] || "";
+  const visibleStorage = specs.find(([label]) => label === "السعة")?.[1] || "";
+  const visibleColor = specs.find(([label]) => label === "اللون")?.[1] || "";
   const availability = availabilityItems(offer);
   const total = Number.isFinite(offer.totalSAR) ? offer.totalSAR : null;
 
@@ -96,7 +79,7 @@ function render(snapshot) {
         <span class="eyebrow">PRODUCT DETAIL / NAWAA</span>
         <h1>${escapeHtml(title)}</h1>
         <p class="model-line">
-          ${offer.specs?.modelNumber ? "رقم الموديل " + escapeHtml(offer.specs.modelNumber) + " · " : ""}
+          ${visibleModelNumber ? "رقم الموديل " + escapeHtml(visibleModelNumber) + " · " : ""}
           ${escapeHtml(offer.condition === "new" ? "جديد" : offer.condition || "")}
         </p>
 
@@ -164,15 +147,15 @@ function render(snapshot) {
   $("#quoteBtn")?.addEventListener("click", () => {
     if (window.NAWAA_QUOTE_URL) {
       const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
-      destination.searchParams.set("request", [offer.title || title, offer.specs?.modelNumber || "", offer.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
+      destination.searchParams.set("request", [offer.title || title, visibleModelNumber, offer.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
       location.href = destination.href;
       return;
     }
     const draft = {
       createdAt: new Date().toISOString(),
       productName: title,
-      model: offer.specs?.modelNumber || product.model || null,
-      variant: [offer.specs?.storage, offer.specs?.color].filter(Boolean).join(" · "),
+      model: visibleModelNumber || product.model || null,
+      variant: [visibleStorage, visibleColor].filter(Boolean).join(" · "),
       sourceQuery: snapshot.query || null,
       observedMerchant: offer.merchant || null,
       observedProductPriceSAR: Number.isFinite(offer.productPrice) ? offer.productPrice : null,

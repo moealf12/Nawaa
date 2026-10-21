@@ -9,6 +9,7 @@ on:
       - 'config.js'
       - 'scripts/browser-customer-journey.mjs'
       - 'scripts/browser-fixture-customer-journey.mjs'
+      - 'scripts/browser-detail-spec-safety.mjs'
       - 'scripts/browser-v218-matrix.mjs'
       - 'tests/ui-flow.test.mjs'
       - '.github/workflows/browser-customer-journey.yml'
@@ -81,6 +82,13 @@ jobs:
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
         run: node scripts/browser-fixture-customer-journey.mjs
+      - name: Independently verify actual product detail attribute truth in Chromium
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/browser-detail-spec-safety.mjs
       - name: Observe the currently published GitHub Pages and Render UI
         continue-on-error: true
         env:
