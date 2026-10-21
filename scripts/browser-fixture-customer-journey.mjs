@@ -192,6 +192,20 @@ function searchPayload(q,cursor) {
     return {offers:[first,second],errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
   }
+  if(q.includes('fixture-selected-placeholder') || q.includes('fixture-selected-valid')) {
+    const clean=q.includes('fixture-selected-valid');
+    return {
+      offers:[{...offer(5),specs:{
+        brand:'HP',deviceType:'Laptop',modelNumber:'HP-LAP-05',
+        storage:'512 GB',color:'Silver',
+        ram:clean?'16 GB':'No',processor:clean?'Intel Core i5':'undefined',
+        regionVersion:clean?'Middle East':'No',
+        sim:clean?'Dual eSIM':'N/A',waterproof:false,
+      }}],
+      errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+      nextCursor:null
+    };
+  }
   if(q.includes('fixture-detail-pending')) return {
     offers:[{...offer(5),image:'https://nawaa-detail-pending.invalid/photo.png'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
@@ -331,6 +345,42 @@ try{
   assertCheck('product_details_page_navigation',page.url().includes('/product.html?source='));
   const destination=new URL(page.url());
   assertCheck('selected_merchant_source_preserved',destination.searchParams.get('source')?.startsWith('https://www.example.org/laptop-'));
+  // P0-A combined PR #111/#112: verify actual selected-variant and canonical
+  // presentation on the live candidate UI, not merely helper output.
+  const placeholderTab=await navigate('fixture-selected-placeholder');
+  await placeholderTab.locator('#results .match-result-card').first().waitFor();
+  await placeholderTab.locator('#results .match-result-card').first().click();
+  await placeholderTab.locator('.selected-comparison[open] .product-configurator').waitFor();
+  const badBadges=await placeholderTab.locator('.config-summary').innerText();
+  const rawCanonical=await placeholderTab.locator('.canonical-grid').evaluate(el=>
+    [...el.querySelectorAll('.canonical-spec')].map(node=>({
+      label:node.querySelector('small')?.textContent?.trim(),
+      value:node.querySelector('b')?.textContent?.trim()
+    })));
+  const profileValues=Object.fromEntries(rawCanonical.map(({label,value})=>[label,value]));
+  assertCheck('v2116_no_placeholder_selected_region_or_sim',
+    !/(?:\\bNo\\b|N\\/A|undefined|false)/i.test(badBadges),{badBadges});
+  assertCheck('v2116_no_placeholder_canonical_attributes',
+    !Object.values(profileValues).some(v=>/^(?:No|N\\/A|undefined|false)$/i.test(v)) &&
+    !('الذاكرة' in profileValues) && !('المعالج' in profileValues) &&
+    !('نسخة المنطقة' in profileValues) && !('الشريحة' in profileValues),
+    {profileValues});
+  assertCheck('v2116_legitimate_negative_waterproof_preserved',
+    profileValues['مقاومة الماء']==='لا',{profileValues});
+  const validTab=await navigate('fixture-selected-valid');
+  await validTab.locator('#results .match-result-card').first().waitFor();
+  await validTab.locator('#results .match-result-card').first().click();
+  await validTab.locator('.selected-comparison[open] .product-configurator').waitFor();
+  const goodBadges=await validTab.locator('.config-summary').innerText();
+  const goodProfile=await validTab.locator('.canonical-grid').innerText();
+  assertCheck('v2116_selected_valid_region_sim_retained',
+    goodBadges.includes('Middle East') && goodBadges.includes('Dual eSIM'),{goodBadges});
+  assertCheck('v2116_canonical_valid_ram_and_processor_retained',
+    goodProfile.includes('16 GB') && goodProfile.includes('Intel Core i5'),{goodProfile});
+  const selectedMobile=await validTab.evaluate(()=>({viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
+  assertCheck('v2116_selected_variant_mobile_no_overflow',
+    selectedMobile.scrollWidth<=selectedMobile.viewport+4,selectedMobile);
+  // Preserve the original test's global search-request accounting below.
   const beforePages=searchRequests;
   let partial=await navigate('fixture-partial');
   await partial.locator('#results .no-match').waitFor({timeout:12000});
