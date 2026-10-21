@@ -23,11 +23,15 @@ test('incompatible regions, conditions, capacities and clothing sizes remain sep
  const shirt={...base,title:'Forest Shirt',brand:'Acme',specs:{Size:'M'}};
  assert.equal(groupComparableOffers([shirt,{...shirt,specs:{Size:'L'}}]).length,2);
 });
-test('a missing identifier cannot bridge conflicting manufacturer models',()=>{
+test('a phone matches by model capacity color and condition even across differing/missing SKUs',()=>{
  const first=phone('A','iPhone 17 256GB Black',{storage:'256GB',color:'Black',modelNumber:'MG674AH/A'});
  const second={...first,merchant:'B',specs:{...first.specs,modelNumber:'MG674LL/A'}};
  const unknown={...first,merchant:'C',specs:{storage:'256GB',color:'Black',brand:'Apple'}};
- for(const offers of [[first,unknown,second],[unknown,second,first],[second,first,unknown]]) assert.equal(groupComparableOffers(offers).length,3);
+ for(const offers of [[first,unknown,second],[unknown,second,first],[second,first,unknown]]) {
+   const groups=groupComparableOffers(offers);
+   assert.equal(groups.length,1,'SKU variants cannot fragment the same buyer-visible phone configuration');
+   assert.deepEqual(new Set(groups[0].offers.map(o=>o.merchant)),new Set(['A','B','C']));
+ }
 });
 
 test('unknown Saudi delivery never leads as a confirmed arrival total',async()=>{
@@ -74,11 +78,15 @@ test('real Jarir/eXtra iPhone 17 256GB Black same-MPN offers group despite inch-
  for(const altered of [
   {...extra,specs:{...extra.specs,storage:'512 GB'}},
   {...extra,specs:{...extra.specs,color:'Lavender'}},
-  {...extra,specs:{...extra.specs,modelNumber:'MG674LL/A'}},
-  {...extra,specs:{...extra.specs,screenSize:'6.9 INCH'}},
-  {...extra,specs:{...extra.specs,screenSize:'6.3 cm'}},
-  {...extra,specs:{...extra.specs,regionVersion:'USA'}}
  ]) assert.equal(groupComparableOffers([jarir,altered]).length,2);
+ for (const uncertain of [
+   {...extra,specs:{...extra.specs,screenSize:'6.9 INCH'}},
+   {...extra,specs:{...extra.specs,screenSize:'6.3 cm'}},
+   {...extra,specs:{...extra.specs,regionVersion:'USA'}}
+ ]) assert.equal(groupComparableOffers([jarir,uncertain]).length,1,
+   'non-core or unknown regional evidence should not impose an SKU-like split');
+ assert.equal(groupComparableOffers([jarir,{...extra,specs:{...extra.specs,modelNumber:'MG674LL/A'}}]).length,1,
+  'a different merchant SKU is not a different iPhone configuration');
 });
 
 test('real Jarir/eXtra iPhone 17 256GB Lavender same-MPN merchant pair groups',()=>{
