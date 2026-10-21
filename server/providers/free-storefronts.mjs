@@ -1,5 +1,5 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
-import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
+import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES, describeProduct } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 
@@ -911,6 +911,27 @@ export function extractBestBuySearchOffers(html, query) {
     const image = imageMatches.length ? decodeJsonString(imageMatches.at(-1)[1]) : null;
 
     if (!sourceUrl || !title) continue;
+    // Best Buy's search page interleaves product cards inside one large JSON
+    // hydration blob. The broad title neighborhood can borrow a neighboring
+    // product's name even if the SKU-specific PDP URL was selected correctly.
+    // Compare the actual RETAIL SUBJECT advertised by the descriptive PDP
+    // path with the scraped title. If both strongly identify incompatible
+    // gaming item types, never publish this name/URL/price combination.
+    // Ambiguous/non-descriptive slugs remain eligible for existing matching.
+    let pdpSlug = "";
+    try {
+      const parts = new URL(sourceUrl,"https://www.bestbuy.com").pathname.split("/").filter(Boolean);
+      if (parts[0] === "product" || parts[0] === "site")
+        pdpSlug = decodeURIComponent(parts[1] || "").replace(/[-_]+/g," ");
+    } catch {}
+    if (pdpSlug) {
+      const linkType = describeProduct({title:pdpSlug});
+      const nameType = describeProduct({title});
+      const known = new Set(["console","accessory","game"]);
+      if (linkType.platform && nameType.platform &&
+          known.has(linkType.kind) && known.has(nameType.kind) &&
+          linkType.kind !== nameType.kind) continue;
+    }
     const haystack = normalizeSearchQuery(title);
     const hits = tokens.filter((token) => haystack.includes(token)).length;
     if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
