@@ -137,3 +137,44 @@ test('v21.20 source-backed first-ten counterfeit device and accessory-subtype gu
    'explicit cable intent must not be suppressed by the disc-drive guard');
  assert.equal(describeProduct(good[0][1]).kind,'console');
 });
+
+
+test('v21.21 source-backed retail-subject distinction for PS5 heatsink and German HP ink',()=>{
+  // Recorded source URLs + identifying product descriptions from the v21.20
+  // first-ten manual audit. Amazon's live PDP content was not independently
+  // retrievable; these are deterministic counterexamples, NOT raw-PDP captures.
+  const source=(title,sourceUrl,brand='')=>({
+    title,sourceUrl,merchant:'Amazon Saudi',productPrice:139,
+    currency:'SAR',condition:'new',availability:'unknown',
+    specs:{brand},canShipToSaudi:null
+  });
+  const heatsink=source(
+    'M.2 Heatsink Compatible with PS5 Slim Digital Edition, Aluminum Heat Sink for Console',
+    'https://www.amazon.sa/-/en/spring-Heatsink-Compatible-Digital-Aluminum/dp/B0FMYJCSK7/ref=sr_1_142');
+  const cartridge=source(
+    'HP 912XL (3YL82AE) Multipack Original Druckerpatronen mit hoher Reichweite (für HP Officejet Pro)',
+    'https://www.amazon.sa/-/en/HP-3YL82AE-Multipack-Druckerpatronen-Reichweite/dp/B07RVXV1XH/ref=sr_1_75','HP');
+  const originals=structuredClone([heatsink,cartridge]);
+  assert.equal(productCategory(heatsink),'accessory');
+  assert.equal(assessOfferMatch('PS5 Slim',heatsink).exactMatch,false);
+  assert.deepEqual(filterQueryOffers('PS5 Slim',[heatsink]).offers,[]);
+  assert.equal(productCategory(cartridge),'accessory');
+  assert.equal(assessOfferMatch('HP printer',cartridge).exactMatch,false);
+  assert.deepEqual(filterQueryOffers('HP printer',[cartridge]).offers,[]);
+  assert.equal(assessOfferMatch('PS5 heatsink',heatsink).exactMatch,true,
+    'explicit heatsink intent must remain discoverable');
+  assert.equal(filterQueryOffers('PS5 heatsink',[heatsink]).offers.length,1);
+  assert.equal(assessOfferMatch('HP Druckerpatronen',cartridge).exactMatch,true,
+    'explicit German cartridge intent must remain discoverable');
+  assert.equal(filterQueryOffers('HP Druckerpatronen',[cartridge]).offers.length,1);
+  // Genuine complete devices and truly included accessories must remain exact.
+  const realPs5=source('PS5 Slim Digital Edition Console 825GB with included heatsink',
+    'https://www.bestbuy.com/product/playstation-5-slim-digital-edition-console-825gb/JXHQ37TYYL/sku/6646420');
+  const realPrinter=source('HP DeskJet 2320 Printer with included ink cartridges',
+    'https://saudi.sharafdg.com/en/product/hp-deskjet-2320-7wn42b-all-in-one-printer/','HP');
+  assert.equal(productCategory(realPs5),'console');
+  assert.equal(assessOfferMatch('PS5 Slim',realPs5).exactMatch,true);
+  assert.equal(productCategory(realPrinter),'printer');
+  assert.equal(assessOfferMatch('HP printer',realPrinter).exactMatch,true);
+  assert.deepEqual([heatsink,cartridge],originals,'raw merchant offer data must not be mutated');
+});
