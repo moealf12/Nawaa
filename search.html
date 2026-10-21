@@ -526,6 +526,29 @@
       .product-summary-card.is-expanded>.match-result-card{padding:13px;grid-template-columns:90px minmax(0,1fr)}
       .product-summary-card.is-expanded .match-card-image{height:90px}
     }
+    /* Readability-first phone layout: a 159px tile is too narrow for Arabic/English
+       product names, specifications, prices and a comparison affordance together. */
+    @media(max-width:480px){
+      .match-results-grid{grid-template-columns:minmax(0,1fr);gap:15px}
+      .product-summary-card{border-radius:22px}
+      .product-summary-card .match-result-card{min-height:0;padding:16px;gap:13px}
+      .product-summary-card .match-card-image{height:190px;border-radius:16px}
+      .product-summary-card .match-card-image img{padding:17px}
+      .product-summary-card .match-card-copy{gap:9px}
+      .product-summary-card .match-card-copy>.mini-kicker{font-size:11px;min-height:25px;padding:4px 10px}
+      .product-summary-card .match-card-copy>strong{font-size:16px;line-height:1.5;min-height:0}
+      .product-summary-card .card-specs>span{font-size:11px;padding:5px 8px}
+      .product-summary-card .card-coverage{flex-direction:row;align-items:center}
+      .product-summary-card .card-coverage>small{font-size:12px}
+      .product-summary-card .match-card-price{gap:12px;padding-top:14px}
+      .product-summary-card .match-card-price b{font-size:clamp(24px,7vw,28px)}
+      .product-summary-card .match-card-price small{font-size:12px}
+      .product-summary-card .card-expand-label{min-height:46px;font-size:13px}
+      .product-summary-card .card-delivery{font-size:11px}
+      .product-summary-card.is-expanded>.match-result-card{grid-template-columns:110px minmax(0,1fr)}
+      .product-summary-card.is-expanded .match-card-image{height:110px}
+      .product-summary-card.is-expanded .match-card-copy>strong{font-size:14px}
+    }
     @media(max-width:355px){
       .match-results-grid{grid-template-columns:minmax(0,1fr)}
       .product-summary-card .match-result-card{min-height:0;padding:15px}
