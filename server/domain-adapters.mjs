@@ -378,22 +378,35 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   // minimum (e.g. AED 1,000) into a PS5 add-on's full purchase price.
   // HTML can split "AED" and "339" across siblings / &nbsp; markup, so
   // identify the first amount in the VISIBLE principal-product text.
-  const visible = decodeHtmlText(vicinity)
+  // Crossed-out and explicitly "old/list/was" prices are historical evidence,
+  // not the amount a customer can purchase for. Remove that marked evidence
+  // before considering numeric strings; do not rely on DOM/HTML order.
+  const purchaseHtml = vicinity
+    .replace(/<([a-z][\w:-]*)\b[^>]*\bclass\s*=\s*["'][^"']*(?:original-price|old-price|price-old|price-original|was-price|price-was|regular-price|list-price|compare-at-price)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<(del|s|strike)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  const visible = decodeHtmlText(purchaseHtml)
     .replace(/&(?:nbsp|#160|#x0*a0);/gi," ")
     .replace(/[\u00a0\u202f]/g," ")
     .replace(/\s+/g," ").trim();
   const boundary = /\b(?:easy payment plans?|starting from|installments?|instalments?|loyalty dots?|tickit cashback|product availability|similar products|you might also like|related products|browsing history)\b/i.exec(visible);
-  const scoped = boundary ? visible.slice(0,boundary.index) : visible.slice(0,900);
-  const pricePatterns = [
-    /(?:AED|د\.?إ\.?|Dhs?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
-    /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:AED|د\.?إ\.?|Dhs?)/i,
+  const preFinanceText = boundary ? visible.slice(0,boundary.index) : visible.slice(0,900);
+  // Text-only sale presentations ("Was AED 599 Now AED 399") can lack
+  // semantic HTML, but "Was" always refers to an obsolete price.
+  const scoped = preFinanceText.replace(/\b(?:was|previous(?:ly)?|regular price|original price|list price)\s*:?\s*(?:AED|د\.?إ\.?|Dhs?)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?/gi, " ");
+  const moneyPatterns = [
+    /(?:AED|د\.?إ\.?|Dhs?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi,
+    /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:AED|د\.?إ\.?|Dhs?)/gi,
   ];
-  let price = null;
-  for (const pattern of pricePatterns) {
-    const match = scoped.match(pattern);
-    const parsed = parseMoney(match?.[1]);
-    if (parsed !== null && parsed > 0) { price = parsed; break; }
+  const amounts = new Set();
+  for (const pattern of moneyPatterns) {
+    for (const match of scoped.matchAll(pattern)) {
+      const amount = parseMoney(match[1]);
+      if (amount !== null && amount > 0) amounts.add(amount);
+    }
   }
+  // One attributable price or repeated copies of the SAME price are safe.
+  // Two unexplained different amounts cannot establish the checkout price.
+  const price = amounts.size === 1 ? amounts.values().next().value : null;
   if (!title || price === null) return null;
   return {
     name: decodeHtmlText(title),
