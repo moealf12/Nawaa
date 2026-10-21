@@ -6,9 +6,13 @@ import {once} from 'node:events';
 import {existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import net from 'node:net';
 
+// Ten v21.20 required real-source queries + four existing guardrail intents.
 const queries=[
-  'iPhone 17 256GB Black','iPhone 17 512GB','iPhone 17 Pro','Dior',
-  'PS5 disc drive','nawaa-unfindable-943271-20261003'
+  'PS5','PS5 Slim','PS5 disc drive',
+  'iPhone 17 Pro','iPhone 17 Pro Max','iPhone 17 Pro case','iPhone 17 Pro capinha',
+  'HP laptop','HP printer','HP mouse',
+  'iPhone 17 256GB Black','iPhone 17 512GB','Dior',
+  'nawaa-unfindable-943271-20261003'
 ];
 const negative=queries.at(-1);
 const out={environment:'isolated_pr_head',queries:[],errors:[],generatedAt:new Date().toISOString(),
@@ -85,13 +89,18 @@ try{
         const groups=[...root?.querySelectorAll('.match-result-card')||[]].slice(0,10);
         const cards=groups.map((g,index)=>{
           const title=g.querySelector('.match-card-copy strong')?.textContent?.trim()||'';
+          const category=g.querySelector('.mini-kicker')?.textContent?.trim()||'';
+          const advertisedPrice=g.querySelector('.match-card-price b')?.textContent?.trim()||'';
+          const image=g.querySelector('.match-card-image img');
+          const imageState=!image?'fallback':image.complete?(image.naturalWidth>0?'loaded':'blocked'):'pending';
           g.click();
           const panel=document.querySelector('#results .selected-comparison[open]');
           const merchants=[...panel?.querySelectorAll('.merchant-row .merchant-main strong')||[]]
             .map(n=>n.textContent?.trim()).filter(Boolean);
           const links=[...panel?.querySelectorAll('.product-detail-btn[data-source]')||[]]
             .map(n=>{try{const u=new URL(n.getAttribute('data-source')||'');return u.protocol==='https:'?u.origin+u.pathname:null;}catch{return null;}});
-          return {index,title,merchantRows:panel?.querySelectorAll('.merchant-row').length||0,
+          return {index,title,category,advertisedPrice,imageState,
+            merchantRows:panel?.querySelectorAll('.merchant-row').length||0,
             merchantNames:[...new Set(merchants)],productLinks:links.filter(Boolean)};
         });
         return {cards,visibleCount:root?.querySelectorAll('.match-result-card').length||0,
