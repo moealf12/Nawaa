@@ -130,7 +130,7 @@ test("query deep link starts exactly one live search and URL submission requests
     // Reuse mocks for repeated queries within a render (binding followed by focus restore).
     if (markup === lastRenderedCardMarkup) return renderedCards;
     lastRenderedCardMarkup = markup;
-    renderedCards = [...markup.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;},focus(options){this.focusRestored=true;this.focusOptions=options;}}));
+    renderedCards = [...markup.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},classList:{contains(name){return name==='match-result-card';}},events:{},addEventListener(name,handler){this.events[name]=handler;},focus(options){this.focusRestored=true;this.focusOptions=options;}}));
     return renderedCards;
   };
   globalThis.requestAnimationFrame = callback => callback();
