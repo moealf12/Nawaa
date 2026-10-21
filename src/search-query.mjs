@@ -694,8 +694,8 @@ export function mergeComparisonOffers(source, candidates = []) {
       }) ||
       // A carrier-tied contract is not known to be equivalent to an unlocked offer.
       Boolean(
-        String(source.title || "").match(/\\b(?:verizon|t[- ]mobile|at\\s*&\\s*t)\\b/i)?.[0] !==
-        String(offer.title || "").match(/\\b(?:verizon|t[- ]mobile|at\\s*&\\s*t)\\b/i)?.[0]
+        String(source.title || "").match(/\b(?:verizon|t[- ]mobile|at\s*&\s*t)\b/i)?.[0] !==
+        String(offer.title || "").match(/\b(?:verizon|t[- ]mobile|at\s*&\s*t)\b/i)?.[0]
       )
     );
     const missingPhoneConfiguration = bothPhones && (
