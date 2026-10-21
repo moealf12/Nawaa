@@ -90,3 +90,22 @@ test("shared selected-variant display policy is field sensitive, pure and proven
  assert.equal(displayProductSpecification("waterproof",true),"نعم");
  assert.deepEqual(values,before);
 });
+
+test("canonical RAM must not be concealed by multiple invalid merchant placeholders",async()=>{
+  const {buildCanonicalProductProfile}=await import("../src/search-core.mjs");
+  const originals=[
+    {merchant:"Jarir",specs:{ram:"8GB",processor:"Intel Core i5",waterproof:false}},
+    {merchant:"eXtra",specs:{ram:"No",processor:"undefined",waterproof:"No"}},
+    {merchant:"Sharaf DG",specs:{ram:"No",processor:"undefined",waterproof:false}}
+  ];
+  const before=structuredClone(originals);
+  const profile=buildCanonicalProductProfile(originals);
+  assert.equal(profile.ram?.value,"8GB","valid RAM cannot disappear when invalid placeholders outvote it");
+  assert.deepEqual(profile.ram?.sources,["Jarir"]);
+  assert.equal(profile.ram?.alternatives?.length,0,"invalid placeholders are not alternative specifications");
+  assert.equal(profile.processor?.value,"Intel Core i5");
+  assert.deepEqual(profile.processor?.sources,["Jarir"]);
+  assert.equal(profile.waterproof?.value !== undefined,true,"valid negatives must remain attributable");
+  assert.equal(displayProductSpecification("waterproof",profile.waterproof.value),"لا");
+  assert.deepEqual(originals,before,"raw merchant evidence must remain untouched");
+});
