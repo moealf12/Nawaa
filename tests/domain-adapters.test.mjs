@@ -438,3 +438,28 @@ test("v21.27 RED: original Virgin discounted-PDP DOM does not suppress actual sa
       'old struck price alone cannot establish a current purchase price');
   }
 });
+
+
+test("v21.28 RED: selected same-SKU sale field currency must override conflicting catalog default",()=>{
+  // SYNTHETIC targeted source-conflict regression, not an observed public PDP.
+  // Product-level currency may be a generic feed default; field-level
+  // currentPrice.currency is attributable to this chosen purchase amount.
+  const url='https://www.centrepointstores.com.sa/p/retail-currency-evidence';
+  const node={productName:'Retail Currency Evidence Test',productId:'retail-currency-evidence',
+    currentPrice:{amount:599,currencyCode:'SAR'},
+    salePrice:{amount:0,currencyCode:'AED'},
+    price:{amount:799,currencyCode:'AED'},
+    currency:'AED'};
+  const raw=structuredClone(node);
+  const html='<script type="application/json">'+JSON.stringify({product:node})+'</script>';
+  const candidates=extractionCandidates(html,url);
+  for(const strategy of ['embedded_json','storefront_data','domain_adapter']){
+    const item=candidates.find(c=>c.strategy===strategy);
+    assert.ok(item,'expected '+strategy+' candidate');
+    assert.equal(item.product.sku,'retail-currency-evidence');
+    assert.equal(item.product.offers.price,599);
+    assert.equal(item.product.offers.priceCurrency,'SAR',
+      'must use currency declared on the selected CURRENT price field, not root or rejected sale field');
+  }
+  assert.deepEqual(node,raw,'source observation must remain immutable');
+});
