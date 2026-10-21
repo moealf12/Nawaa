@@ -161,7 +161,7 @@ export const PRODUCT_CATEGORIES = [
 // compatibility relation. This protects unrelated device families without an
 // SKU blacklist or a hosted ontology. An included accessory after 'with' does
 // not turn a complete device into a spare part. Raw merchant data stays intact.
-const RETAIL_COMPONENT_NOUN = /\b(?:lens(?:es)?|straps?|bands?|filters?|capsules?|docks?|heatsinks?|heat sinks?|cartridges?|toners?|replacement batteries|replacement battery)\b/;
+const RETAIL_COMPONENT_NOUN = /\b(?:lens(?:es)?|straps?|bands?|filters?|capsules?|docks?|skins?|vinyl wraps?|decals?|heatsinks?|heat sinks?|cartridges?|toners?|replacement batteries|replacement battery)\b/;
 const RETAIL_COMPATIBILITY_RELATION = /\b(?:compatible with|designed for|fits|for)\b/;
 const RETAIL_INCLUDED_COMPONENT = /\b(?:with|including|includes|bundled with)\b/;
 function isCompatibilityComponentSubject(normalizedTitle) {
@@ -384,7 +384,7 @@ const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)
 const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
 // Console accessories may mention a complete PS5 console in compatibility text.
 // Reject peripheral product nouns before trusting 'Console / Digital Edition'.
-const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|heatsinks?|heat sinks?|thermal pads?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
+const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|skins?|vinyl wraps?|decals?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|heatsinks?|heat sinks?|thermal pads?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
 // Storage-media nouns identify a sold component, not the PS5 it fits.
 // A title-leading real console subject remains a console when its SSD is included.
 const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
