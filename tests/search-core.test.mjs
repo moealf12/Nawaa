@@ -291,8 +291,9 @@ const conflictingSkuGroups = groupComparableOffers([
     condition:"new",availability:"unknown",canShipToSaudi:true,exactMatch:true,matchConfidence:1,priceConfidence:"incomplete"
   }
 ]);
-assert.equal(conflictingSkuGroups.length, 2);
-assert.ok(conflictingSkuGroups.some((group) => group.bestOffer?.specs?.modelNumber === "3P181AH/A"));
+assert.equal(conflictingSkuGroups.length, 1,
+  "phone model, capacity and color define the comparison; conflicting merchant SKUs do not split it");
+assert.equal(conflictingSkuGroups[0].offers.length, 3);
 
 
 const skuSelectorGroups = groupComparableOffers([
@@ -321,9 +322,9 @@ const skuSelector = buildVariantSelectorState(skuSelectorGroups, {
   colorKey:"mist blue",
   conditionKey:"new",
 });
-assert.equal(skuSelector.options.skus.length, 2);
-assert.ok(skuSelector.options.skus.some((option) => option.key === "3p181aha"));
-assert.ok(skuSelector.options.skus.some((option) => option.key === "mg694aha"));
+assert.equal(skuSelectorGroups.length,1);
+assert.equal(skuSelector.options.skus.length,0,"phone configuration selection must not require a merchant SKU");
+assert.equal(skuSelector.selectedGroup.offers.length,3);
 
 const standardSkuSelector = buildVariantSelectorState(skuSelectorGroups, {
   modelKey:"iphone 17",
@@ -332,5 +333,5 @@ const standardSkuSelector = buildVariantSelectorState(skuSelectorGroups, {
   conditionKey:"new",
   skuKey:"mg694aha",
 });
-assert.equal(standardSkuSelector.labels.skuKey, "mg694aha");
-assert.equal(standardSkuSelector.selectedGroup.offers.length, 2);
+assert.equal(standardSkuSelector.selection.skuKey,"","a legacy requested SKU must not filter a phone's offers");
+assert.equal(standardSkuSelector.selectedGroup.offers.length, 3);
