@@ -3,7 +3,7 @@ import test from 'node:test';
 import dns from 'node:dns/promises';
 import {searchJarir,parseJarirSearchHtml,parseJarirConstructorPayload} from '../server/providers/jarir.mjs';
 import {searchExtraUnbxd} from '../server/providers/extra-unbxd.mjs';
-import {searchFreeStorefrontById,routeFreeStorefronts} from '../server/providers/free-storefronts.mjs';
+import {searchFreeStorefrontById,routeFreeStorefronts,extractBestBuySearchOffers} from '../server/providers/free-storefronts.mjs';
 import {auditSource} from '../server/audit-contract.mjs';
 
 const jarirItem=(title,id='1')=>({value:title,data:{id,url:`product-${id}.html`,price:3000,metadata:{}}});
@@ -99,4 +99,31 @@ test('Virgin Megastore UAE PDP adapter extracts AED price and numeric product id
   assert.equal(extracted?.product?.offers?.priceCurrency,'AED');
   assert.equal(extracted?.product?.sku,'123456');
   assert.match(extracted?.product?.name || '',/AirPods 4/i);
+});
+
+
+test('v21.28 RED real source-link identity: Best Buy console SKU cannot be titled as a standalone PS5 disc drive',()=>{
+  // REAL customer browser evidence: v21.28 exact-HEAD Chromium run
+  // #39691222285 surfaced a standalone Disc Drive TITLE with Best Buy
+  // source URL SKU 6646419. Official PDP is a PS5 Slim Console 1TB
+  // (Best Buy model 1000049888); title/source identity conflict is P0.
+  // Fixture is synthetic MINIMAL hydration ordering, not original HTML.
+  const consolePdp='https://www.bestbuy.com/product/playstation-5-slim-console-1tb/JXHQ37TYLC/sku/6646419';
+  const bad=['{"price":{"customerPrice":649.99},"skuId":"6646419",',
+    '"pdpUrl":"'+consolePdp+'",',
+    '"name":{"short":"PlayStation 5 Slim Console – 1TB"},',
+    // A different product name follows nearby in the broad ±16K scan.
+    '"name":{"short":"Sony Interactive Entertainment - Disc Drive For PS5 Digital Edition Consoles"}}'
+  ].join('');
+  const out=extractBestBuySearchOffers(bad,'PS5 disc drive');
+  assert.equal(out.some(x=>x.sourceUrl===consolePdp&&/disc drive/i.test(x.title)),false,
+    'never pair a standalone disc-drive title with a console PDP/SKU');
+  // A real standalone add-on DRIVE title and matching descriptive PDP URL
+  // must remain retrievable, not blindly blacklist Best Buy results.
+  const valid=['{"price":{"customerPrice":79.99},"skuId":"882200",',
+    '"pdpUrl":"https://www.bestbuy.com/product/sony-disc-drive-for-ps5-slim/XTEST/sku/882200",',
+    '"name":{"short":"Sony Disc Drive for PS5 Slim Digital Edition"}}'].join('');
+  const good=extractBestBuySearchOffers(valid,'PS5 disc drive');
+  assert.equal(good.length,1,'valid independently named accessory must survive');
+  assert.equal(good[0].productId,'882200');
 });
