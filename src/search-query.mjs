@@ -435,7 +435,7 @@ export function describeProduct(offer = {}) {
   let kind = "product";
   // Recorded PS5 Slim Amazon faceplates are protective parts rather than a
   // complete console, even when their compatibility line says Digital Edition.
-  const protectiveConsolePart = /\b(?:faceplates?|protective dissipation|replacement ventilation|replacement shells?|replacement panels?|scratch resistant installation)\b/.test(title);
+  const protectiveConsolePart = /\b(?:faceplates?|face plates?|protective dissipation|replacement ventilation|replacement shells?|replacement panels?|replacement (?:side |cover |console |cooling |ventilation ){0,4}(?:shells?|plates?|panels?|covers?|vents?)|cover plates?|scratch resistant installation)\b/.test(title);
   if (platform) {
     if (protectiveConsolePart && !evidencedConsoleChassis &&
         !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
