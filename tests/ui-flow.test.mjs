@@ -124,7 +124,7 @@ test("query deep link starts exactly one live search and URL submission requests
       return detailButtons;
     }
     if (selector !== '.match-result-card') return [];
-    renderedCards = [...element('#results').innerHTML.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;}}));
+    renderedCards = [...element('#results').innerHTML.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;},focus(options){this.focusRestored=true;this.focusOptions=options;}}));
     return renderedCards;
   };
   globalThis.requestAnimationFrame = callback => callback();
@@ -143,7 +143,18 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.ok(hpHtml.indexOf('HP Pavilion Laptop') < hpHtml.indexOf('HP USB Mouse'),'brand discovery must not lead with a cheap mouse');
   assert.match(hpHtml,/<details class="selected-comparison" hidden>/, 'comparison is closed until the customer selects a card');
   assert.doesNotMatch(hpHtml,/نسخة مختلفة عن الموديل المطلوب/);
-  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click();
+  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click({detail:0});
+  assert.ok(renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).focusRestored,
+    'keyboard card activation must focus the newly rendered button');
+  assert.equal(renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).focusOptions.preventScroll,true,
+    'restoring keyboard focus must not unexpectedly scroll the page');
+  // The original button was replaced, but a second keyboard activation must still close it.
+  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click({detail:0});
+  assert.match(element('#results').innerHTML,/<details class="selected-comparison" hidden>/,
+    'second keyboard activation must collapse the comparison');
+  assert.ok(renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).focusRestored,
+    'closing by keyboard must also restore focus');
+  renderedCards.find(card=>card.dataset.groupKey.includes('pavilion')).events.click({detail:0});
   assert.doesNotMatch(element('#searchStatus').textContent,/ألوان|سعات/, 'general discovery status must describe categories rather than phone variant counts');
 
   assert.match(element('#results').innerHTML,/<details class="selected-comparison" open>/);
