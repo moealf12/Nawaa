@@ -1,3 +1,4 @@
+import {displayProductSpecification} from "./product-card-presentation.mjs";
 // Shared by the API and browser: aliases affect matching and provider queries alike.
 const ALIASES = [
   ["قهوه", "coffee"], ["بن", "coffee"], ["قميص", "shirt"], ["ملابس", "clothing"],
@@ -688,8 +689,8 @@ export function mergeComparisonOffers(source, candidates = []) {
     const conflictingCondition = source.condition !== offer.condition;
     const incompatiblePhoneVersion = bothPhones && (
       ["regionVersion","sim"].some(key => {
-        const left = normalizeSearchQuery(source.specs?.[key] || "");
-        const right = normalizeSearchQuery(offer.specs?.[key] || "");
+        const left = normalizeSearchQuery(displayProductSpecification(key, source.specs?.[key]) || "");
+        const right = normalizeSearchQuery(displayProductSpecification(key, offer.specs?.[key]) || "");
         return left && right && left !== right;
       }) ||
       // A carrier-tied contract is not known to be equivalent to an unlocked offer.
