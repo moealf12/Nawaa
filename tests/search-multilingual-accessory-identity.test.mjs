@@ -206,6 +206,18 @@ test('v21.22 held-out retail-subject relationships: compatible component never b
       'generalization must not destroy explicit-part recall: '+explicit);
     assert.deepEqual(offer,raw,'must preserve raw evidence');
   }
+  // A spare part WITH another included part is still an accessory.
+  // Splitting at 'with' blindly would incorrectly promote the compatible
+  // camera/watch/vacuum/coffee maker into the item for sale.
+  const accessoriesWithInclusions=[
+    'Camera Lens with Cleaning Pouch for Sony Alpha Mirrorless Camera',
+    'Replacement Strap with Clasp for Apple Watch Series 10',
+    'Replacement Filter with Brush for Dyson V12 Vacuum Cleaner',
+    'Coffee Capsules with Descaling Kit for Nespresso Coffee Maker'
+  ];
+  for(const title of accessoriesWithInclusions)
+    assert.equal(productCategory(mk(title)),'accessory',
+      'leading component subject survives a secondary included accessory: '+title);
   const realSubjects=[
     {title:'Sony Alpha Mirrorless Camera with Included Lens',category:'camera'},
     {title:'Apple Watch Series 10 with Included Strap',category:'watch'},
