@@ -935,6 +935,11 @@ function reconcileProductImageFallbacks(root) {
 }
 
 function renderProduct(product, query) {
+  // Live SSE updates may rebuild cards after a keyboard interaction. Preserve
+  // focus by stable group key so the shopper can continue from the same item.
+  const activeCard = document.activeElement;
+  const focusedGroupKey = activeCard?.classList?.contains("match-result-card")
+    ? activeCard.dataset.groupKey : null;
   const filteredOffers = product.offers.filter(offer =>
     (state.merchant === "all" || offer.merchant === state.merchant) &&
     (state.availability === "all" || offer.availability === "in_stock" || offer.sourceMeta?.jeddahInStock === true));
@@ -1220,6 +1225,11 @@ function renderProduct(product, query) {
   $("#quoteBestBtn")?.addEventListener("click", () => {
     if (featuredOffer) openQuote(product, featuredOffer, query);
   });
+  if (focusedGroupKey) {
+    const replacementCard = Array.from(els.results.querySelectorAll(".match-result-card"))
+      .find((candidate) => candidate.dataset.groupKey === focusedGroupKey);
+    replacementCard?.focus({ preventScroll: true });
+  }
 }
 
 function renderNoMatch(query) {
