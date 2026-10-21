@@ -1,4 +1,4 @@
-import { parseMoney } from "./provider-utils.mjs";
+import { parseMoney, firstPositivePriceField } from "./provider-utils.mjs";
 
 const MAX_DEPTH = 14;
 const MAX_ARRAY_ITEMS = 600;
@@ -118,9 +118,10 @@ function buildCandidate(node, config) {
   // when no explicit purchase-price field exists on THIS product node.
   const prioritizedPriceKeys = config.priceKeys.filter((key) => key !== "price");
   if (config.priceKeys.includes("price")) prioritizedPriceKeys.push("price");
-  const rawPrice = firstValue(node, prioritizedPriceKeys);
-  const priceObject = rawPrice && typeof rawPrice === "object" ? rawPrice : null;
-  const price = parseMoney(priceObject ? firstValue(priceObject, ["amount","value","price","salePrice","formattedValue"]) : rawPrice);
+  const selectedPrice = firstPositivePriceField(node, prioritizedPriceKeys,
+    ["amount","value","price","salePrice","formattedValue"]);
+  const priceObject = selectedPrice?.raw && typeof selectedPrice.raw === "object" ? selectedPrice.raw : null;
+  const price = selectedPrice?.amount ?? null;
   const currency = firstValue(node, config.currencyKeys) ||
     (priceObject && firstValue(priceObject, ["currency","currencyCode","priceCurrency","currencyIso"]));
   if (typeof title !== "string" || title.trim().length < 3 || price === null || !currency) return null;
