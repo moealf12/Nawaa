@@ -97,6 +97,18 @@ test('v21.20 source-backed first-ten counterfeit device and accessory-subtype gu
    assert.equal(assessOfferMatch(query,offer).exactMatch,false,offer.title);
    assert.equal(filterQueryOffers(query,[offer]).offers.length,0,offer.title);
  }
+ const thirdPartyToner=make('Skydo H207A For HP Color LaserJet Pro MFP M283fdw M282nw W2211A W2210X',
+   'https://www.amazon.sa/-/en/Skydo-207A-H207A/dp/B0DDPWLL4J/ref=sr_1_144');
+ assert.equal(filterQueryOffers('HP printer',[thirdPartyToner]).offers.length,0,
+   'compatible third-party toner must not appear as an HP printer');
+ const internalDriveModule=make('Gorliskl Blu-Ray DVD Optical Disc Drive Connector Module Replacement for Sony PlayStation 5 PS5 KEM-497AAA',
+   'https://www.amazon.sa/-/en/Gorliskl-Connector-Replacement-PlayStation-KEM-497AAA/dp/B0F29BN21J/ref=sr_1_46');
+ assert.equal(filterQueryOffers('PS5 disc drive',[internalDriveModule]).offers.length,0,
+   'internal replacement connector is not the complete standalone PS5 add-on drive');
+ const internalDriveUnit=make('DVD Optical Disc Drive Module for Sony PS5 KEM-497AAA CFI-1215A 1200 only',
+   'https://www.amazon.sa/-/en/Optical-Drive-Module-KEM-497AAA-1215A/dp/B0CJ8SM93K/ref=sr_1_35');
+ assert.equal(filterQueryOffers('PS5 disc drive',[internalDriveUnit]).offers.length,0,
+   'repair drive module is distinct from a complete external add-on disc drive');
  const ink=make('HP GT52 M0H54AE Cyan Original Ink Bottle',
    'https://saudi.sharafdg.com/en/product/hp-gt52-m0h54ae-cyan-original-ink-bottle/');
  assert.equal(filterQueryOffers('HP mouse',[ink]).offers.length,0,
