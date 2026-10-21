@@ -350,3 +350,32 @@ test("v21.25 RED: hydrated and storefront currentPrice obey explicit current fie
   assert.equal(storefrontOffer?.product?.sku,"actual-c-black");
   assert.equal(hydratedOffer?.product?.sku,"actual-c-black");
 });
+
+
+test("v21.26 RED: invalid highest-priority price must not hide valid same-SKU current offer",()=>{
+  // SYNTHETIC code-level adversarial cases, NOT actual Centrepoint PDP capture.
+  // Live PDP capture for IDs 3805958 and 5550476 was BLOCKED by HTTP403.
+  const url='https://www.centrepointstores.com.sa/p/controlled-price-a';
+  for (const invalid of [0,'N/A',-1]){
+    const source={productName:'Controlled Product A',productId:'controlled-price-a',
+      brandName:'Sample',imageUrl:'https://example.org/item.png',
+      salePrice:invalid,currentPrice:599,price:799,currency:'SAR'};
+    const snapshot=structuredClone(source);
+    const html='<script type="application/json">'+JSON.stringify({product:source})+'</script>';
+    const candidates=extractionCandidates(html,url);
+    for (const strategy of ['embedded_json','storefront_data','domain_adapter']){
+      const candidate=candidates.find(x=>x.strategy===strategy);
+      assert.equal(candidate?.product?.offers?.price,599,
+        strategy+' should skip invalid sale field '+JSON.stringify(invalid));
+      assert.equal(candidate?.product?.sku,'controlled-price-a');
+      assert.equal(candidate?.product?.offers?.priceCurrency,'SAR');
+    }
+    assert.deepEqual(source,snapshot,'merchant raw price claims untouched');
+  }
+  const fallback={productName:'Controlled Product B',productId:'controlled-price-b',
+    salePrice:'N/A',currentPrice:'',price:349,currency:'SAR'};
+  const html='<script type="application/json">'+JSON.stringify({product:fallback})+'</script>';
+  for (const strategy of ['embedded_json','storefront_data','domain_adapter'])
+    assert.equal(extractionCandidates(html,url).find(x=>x.strategy===strategy)?.product?.offers?.price,349,
+      strategy+' retains single valid generic price when higher-priority fields unavailable');
+});
