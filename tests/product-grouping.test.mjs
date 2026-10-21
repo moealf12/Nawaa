@@ -78,10 +78,13 @@ test('real Jarir/eXtra iPhone 17 256GB Black same-MPN offers group despite inch-
  for(const altered of [
   {...extra,specs:{...extra.specs,storage:'512 GB'}},
   {...extra,specs:{...extra.specs,color:'Lavender'}},
-  {...extra,specs:{...extra.specs,screenSize:'6.9 INCH'}},
-  {...extra,specs:{...extra.specs,screenSize:'6.3 cm'}},
-  {...extra,specs:{...extra.specs,regionVersion:'USA'}}
  ]) assert.equal(groupComparableOffers([jarir,altered]).length,2);
+ for (const uncertain of [
+   {...extra,specs:{...extra.specs,screenSize:'6.9 INCH'}},
+   {...extra,specs:{...extra.specs,screenSize:'6.3 cm'}},
+   {...extra,specs:{...extra.specs,regionVersion:'USA'}}
+ ]) assert.equal(groupComparableOffers([jarir,uncertain]).length,1,
+   'non-core or unknown regional evidence should not impose an SKU-like split');
  assert.equal(groupComparableOffers([jarir,{...extra,specs:{...extra.specs,modelNumber:'MG674LL/A'}}]).length,1,
   'a different merchant SKU is not a different iPhone configuration');
 });
