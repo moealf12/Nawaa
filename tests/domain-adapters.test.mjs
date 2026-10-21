@@ -398,3 +398,43 @@ test("v21.26 selected positive price retains SAME FIELD currency and fallback se
   }
   assert.equal(item.salePrice.amount,"N/A","original merchant source unchanged");
 });
+
+
+test("v21.27 RED: original Virgin discounted-PDP DOM does not suppress actual sale",()=>{
+  // REAL DOM CLASS EVIDENCE, bounded from independently fetched merchant PDPs
+  // in candidate live smoke #39656584626: TP-Link SKU 1018562 had 359/399
+  // and Ring SKU 1048264 had 299/399 AED. The HTML below is a reduced
+  // structural fixture preserving the observed element classes, not raw HTML.
+  for (const sample of [
+    {sku:'1018562',now:359,was:399,
+      title:'TP-Link BE230 BE3600 Dual-Band Wi-Fi 7 Router'},
+    {sku:'1048264',now:299,was:399,
+      title:'Ring Outdoor Camera Plus 2K Indoor/Outdoor Security Camera Battery - White'}
+  ]){
+    const url='https://app.virginmegastore.ae/en/products/p/'+sample.sku;
+    const prices='<div class="productDetail__descriptionPriceQuantity">'+
+      '<div class="price__container d-flex __container--column">'+
+      '<div class=""><div class="price__value ">'+
+      '<span class="price__currency ">AED</span>'+
+      '<span class="price__number gtm-price-number">'+sample.now+'</span>'+
+      '</div></div><div class="price__value price__value--original gtm-price-value-original">'+
+      '<span class="price__currency price__currency--strike-through">AED</span>'+
+      '<span class="price__number price__number--strike-through gtm-price-num-strike-through">'+sample.was+'</span>'+
+      '</div></div>';
+    const html='<meta property="og:title" content="'+sample.title+'">'+
+      '<h1>'+sample.title+'</h1>'+prices+
+      '<div>Easy Payment Plans available on orders above AED 1,000</div>'+
+      '<div>Earn loyalty dots equivalent to AED 3.59</div>';
+    const found=extractDomainProduct(url,html);
+    assert.equal(found?.adapterId,'virginmegastore');
+    assert.equal(found?.product?.sku,sample.sku);
+    assert.equal(found?.product?.offers?.price,sample.now,
+      'source-attributed current price must survive crossed-out old price');
+    assert.equal(found?.product?.offers?.priceCurrency,'AED');
+    const oldOnly=html.replace(
+      /<div class=""><div class="price__value ">[\s\S]*?<\/div><\/div>/,
+      '');
+    assert.equal(extractDomainProduct(url,oldOnly),null,
+      'old struck price alone cannot establish a current purchase price');
+  }
+});
