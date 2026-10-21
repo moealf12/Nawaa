@@ -114,6 +114,7 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(html,/عروض/);
   assert.match(html,/https:\/\/img.example\/digital-2.jpg/);
   let renderedCards = [],loadMoreButtons=[],detailButtons=[];
+  let lastRenderedCardMarkup = null;
   element('#results').querySelectorAll = selector => {
     if(selector==='.show-category') {
       loadMoreButtons=[...element('#results').innerHTML.matchAll(/data-show-category="([^"]+)"/g)].map(match=>({dataset:{showCategory:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;}}));
@@ -124,7 +125,12 @@ test("query deep link starts exactly one live search and URL submission requests
       return detailButtons;
     }
     if (selector !== '.match-result-card') return [];
-    renderedCards = [...element('#results').innerHTML.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;},focus(options){this.focusRestored=true;this.focusOptions=options;}}));
+    const markup = element('#results').innerHTML;
+    // Real DOM querySelectorAll returns the same nodes until innerHTML is replaced.
+    // Reuse mocks for repeated queries within a render (binding followed by focus restore).
+    if (markup === lastRenderedCardMarkup) return renderedCards;
+    lastRenderedCardMarkup = markup;
+    renderedCards = [...markup.matchAll(/class="match-result-card[^"\n]*" data-group-key="([^"]*)"/g)].map(match=>({dataset:{groupKey:match[1]},events:{},addEventListener(name,handler){this.events[name]=handler;},focus(options){this.focusRestored=true;this.focusOptions=options;}}));
     return renderedCards;
   };
   globalThis.requestAnimationFrame = callback => callback();
