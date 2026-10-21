@@ -373,13 +373,20 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   const vicinity = source.slice(headingEnd, headingEnd + 6000)
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
-  // A second product panel or recommendations cannot supply this item's price.
-  const relatedBoundary = /<(?:h[2-6]|section)\b[^>]*>(?:(?!<\/(?:h[2-6]|section)>)[\s\S]){0,400}?(?:similar products|you might also like|related products)|\b(?:similar-products|recommended-products|browsing-history)\b/i.exec(vicinity);
-  const scoped = relatedBoundary ? vicinity.slice(0, relatedBoundary.index) : vicinity;
+  // Purchasable offer evidence ends BEFORE financing qualifications,
+  // cash-back/loyalty math and cross-sells. Never promote a payment-plan
+  // minimum (e.g. AED 1,000) into a PS5 add-on's full purchase price.
+  // HTML can split "AED" and "339" across siblings / &nbsp; markup, so
+  // identify the first amount in the VISIBLE principal-product text.
+  const visible = decodeHtmlText(vicinity)
+    .replace(/&(?:nbsp|#160|#x0*a0);/gi," ")
+    .replace(/[\u00a0\u202f]/g," ")
+    .replace(/\s+/g," ").trim();
+  const boundary = /\b(?:easy payment plans?|starting from|installments?|instalments?|loyalty dots?|tickit cashback|product availability|similar products|you might also like|related products|browsing history)\b/i.exec(visible);
+  const scoped = boundary ? visible.slice(0,boundary.index) : visible.slice(0,900);
   const pricePatterns = [
     /(?:AED|د\.?إ\.?|Dhs?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
     /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:AED|د\.?إ\.?|Dhs?)/i,
-    /["'](?:formattedValue|formattedPrice)["']\s*:\s*["'][^"'0-9]*(?:AED\s*)?([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
   ];
   let price = null;
   for (const pattern of pricePatterns) {
