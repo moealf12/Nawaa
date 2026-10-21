@@ -829,10 +829,13 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDis
   const offer = priced[0] || group.bestOffer || group.offers?.[0];
   if (!offer) return "";
   const title = productDisplayTitle(offer);
-  // Do not merge distinct manufacturer model numbers merely to avoid a
-  // duplicate-looking card. Explain why visually identical cards stay separate.
+  // A phone SKU is not a sellable variant selector. If lookalike cards remain,
+  // describe a material regional/SIM difference rather than implying SKU parity.
+  const phoneOffer = productCategory(offer) === "phone";
   const variantClarifier = repeatedDisplayNames.has(normalizedCardDisplayName(offer))
-    ? `<small class="card-model-identifier">رقم الموديل: ${escapeHtml(String(offer.specs?.modelNumber || "غير مذكور"))} · ${escapeHtml(offer.merchant || "المتجر غير محدد")} (بحسب المتجر)</small>`
+    ? phoneOffer
+      ? `<small class="card-model-identifier">نسخة المنطقة: ${escapeHtml(offer.specs?.regionVersion || "غير محددة")} · الشريحة: ${escapeHtml(offer.specs?.sim || "غير محددة")}</small>`
+      : `<small class="card-model-identifier">رقم الموديل: ${escapeHtml(String(offer.specs?.modelNumber || "غير مذكور"))} · ${escapeHtml(offer.merchant || "المتجر غير محدد")} (بحسب المتجر)</small>`
     : "";
   const uniqueMerchants = new Set((group.offers || []).map(item => item.merchant).filter(Boolean)).size;
   const countries = [...new Map((group.offers || []).filter(item => item.merchantCountryCode).map(item => [item.merchantCountryCode,item.merchantCountryNameAr || item.merchantCountryCode])).entries()];
@@ -943,8 +946,8 @@ function renderProduct(product, query) {
   const selectorGroups = state.selectedGroupKey ? exactGroups.filter(group => group.key === state.selectedGroupKey) : discoverySections.flatMap(section=>section.groups);
   const selectorGroupKeys = new Set(exactGroups.map((group) => group.key));
   const relatedGroups = groups.filter((group) => !selectorGroupKeys.has(group.key));
-  // Duplicate-looking names can refer to distinct regional manufacturer
-  // models or unverified merchant SKUs. Annotate rather than merge them.
+  // Duplicate-looking names may still represent material regional/SIM variants,
+  // different conditions, or non-phone manufacturer identifiers.
   const cardNameCounts = new Map();
   for (const group of exactGroups) {
     const available = (group.offers || []).filter(item =>
@@ -1002,7 +1005,9 @@ function renderProduct(product, query) {
                   ${selectedSpecs.regionVersion ? '<span>' + escapeHtml(selectedSpecs.regionVersion) + '</span>' : ""}
                   ${selectedSpecs.sim ? '<span>' + escapeHtml(selectedSpecs.sim) + '</span>' : ""}
                   <span>صلة بالبحث: ${Math.round((featuredOffer.matchConfidence || 0) * 100)}% (تقديرية)</span>
-                  <small class="match-confidence-note">هذه النسبة ليست إثباتًا لتطابق رقم الموديل أو SKU.</small>
+                  <small class="match-confidence-note">${productCategory(featuredOffer) === "phone"
+                    ? "المقارنة تعتمد على إصدار الهاتف والسعة واللون والحالة؛ رقم SKU غير مطلوب. راجع الفروق الإقليمية ومواصفات كل عرض."
+                    : "هذه النسبة ليست إثباتًا لتطابق رقم الموديل أو SKU."}</small>
                 </div>
               </div>
               <div class="config-price">
@@ -1018,7 +1023,7 @@ function renderProduct(product, query) {
               ${selectorRow("السعة", "storageKey", selector.options.storages, selector.selection.storageKey)}
               ${describeProduct(featuredOffer).kind !== "console" ? selectorRow("اللون", "colorKey", selector.options.colors, selector.selection.colorKey) : ""}
               ${selectorRow("الحالة", "conditionKey", selector.options.conditions, selector.selection.conditionKey)}
-              ${selector.options.skus?.length > 1
+              ${productCategory(featuredOffer) !== "phone" && selector.options.skus?.length > 1
                 ? selectorRow("رقم الموديل", "skuKey", selector.options.skus, selector.selection.skuKey)
                 : ""}
             </div>
@@ -1027,9 +1032,11 @@ function renderProduct(product, query) {
               <div>
                 <span class="mini-kicker">مقارنة المتاجر</span>
                 <h4>مقارنة عروض النسخة المختارة</h4>
-                <small class="model-identity-note">${sameModelEvidence
-                  ? "رقم الموديل متطابق بحسب بيانات المتاجر، وليس إثباتًا مستقلًا لتطابق SKU."
-                  : "لا تتوفر أدلة كافية لتأكيد تطابق رقم الموديل بين جميع العروض؛ راجع مواصفات كل متجر قبل الشراء."}</small>
+                <small class="model-identity-note">${productCategory(featuredOffer) === "phone"
+                  ? "جُمعت عروض الهاتف بناءً على الموديل والسعة واللون والحالة، دون اشتراط رقم SKU موحد. اختلافات المنطقة والشريحة غير المؤكدة تظهر في تفاصيل المتاجر."
+                  : sameModelEvidence
+                    ? "رقم الموديل متطابق بحسب بيانات المتاجر، وليس إثباتًا مستقلًا لتطابق SKU."
+                    : "لا تتوفر أدلة كافية لتأكيد تطابق رقم الموديل بين جميع العروض؛ راجع مواصفات كل متجر قبل الشراء."}</small>
               </div>
               ${Number.isFinite(selectedGroup.savingsToNext)
                 ? '<span class="saving-pill">فرق ' + fmt(selectedGroup.savingsToNext) + ' عن العرض التالي</span>'
