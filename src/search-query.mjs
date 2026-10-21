@@ -479,7 +479,14 @@ export function describeProduct(offer = {}) {
   // complete console, even when their compatibility line says Digital Edition.
   const protectiveConsolePart = /\b(?:faceplates?|face plates?|protective dissipation|replacement ventilation|replacement shells?|replacement panels?|replacement (?:side |cover |console |cooling |ventilation ){0,4}(?:shells?|plates?|panels?|covers?|vents?)|cover plates?|scratch resistant installation)\b/.test(title);
   if (platform) {
-    if (protectiveConsolePart && !evidencedConsoleChassis &&
+    // Merchant inclusion evidence is negative: a gaming monitor explicitly
+    // stating "console not included" is NOT a complete PS5 console. Resolve
+    // the actual monitor item through the shared product category classifier.
+    // This applies by retail relationship, not a merchant/ASIN blacklist.
+    if (/\bconsole not included\b/.test(title) &&
+        /\b(?:monitors?|screens?|displays?)\b/.test(title) &&
+        !evidencedConsoleChassis) kind = "product";
+    else if (protectiveConsolePart && !evidencedConsoleChassis &&
         !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
     else if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
     else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
