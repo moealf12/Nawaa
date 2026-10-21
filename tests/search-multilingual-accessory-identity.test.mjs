@@ -178,3 +178,31 @@ test('v21.21 source-backed retail-subject distinction for PS5 heatsink and Germa
   assert.equal(assessOfferMatch('HP printer',realPrinter).exactMatch,true);
   assert.deepEqual([heatsink,cartridge],originals,'raw merchant offer data must not be mutated');
 });
+
+
+test('v21.22 held-out retail-subject relationships: compatible component never becomes its target',()=>{
+  // SYNTHETIC METAMORPHIC HOLDOUTS — not claimed as live merchant observations.
+  // New category families are kept separate from previous PS5/iPhone/HP examples.
+  const mk=title=>({title,merchant:'Synthetic relationship holdout',sourceUrl:'https://example.org/fixture',
+    productPrice:500,currency:'SAR',condition:'new',availability:'unknown',specs:{}});
+  const components=[
+    {query:'Sony camera',title:'Camera Lens for Sony Alpha Mirrorless Camera'},
+    {query:'Apple Watch',title:'Replacement Strap for Apple Watch Series 10'},
+    {query:'Dyson vacuum',title:'Replacement Filter for Dyson V12 Vacuum Cleaner'},
+    {query:'Nespresso coffee maker',title:'Coffee Capsules for Nespresso Coffee Maker'}
+  ];
+  for(const {query,title} of components){
+    const offer=mk(title),raw=structuredClone(offer);
+    assert.equal(productCategory(offer),'accessory','sold component not compatible device: '+title);
+    assert.equal(assessOfferMatch(query,offer).exactMatch,false,'cannot exact-match device: '+title);
+    assert.equal(filterQueryOffers(query,[offer]).offers.length,0,'cannot promote component: '+title);
+    assert.deepEqual(offer,raw,'must preserve raw evidence');
+  }
+  const realSubjects=[
+    {title:'Sony Alpha Mirrorless Camera with Included Lens',category:'camera'},
+    {title:'Apple Watch Series 10 with Included Strap',category:'watch'},
+    {title:'Dyson V12 Vacuum Cleaner with Included Filter',category:'vacuum'}
+  ];
+  for(const {title,category} of realSubjects)
+    assert.equal(productCategory(mk(title)),category,'true device bundle stays complete: '+title);
+});
