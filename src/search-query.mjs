@@ -161,7 +161,7 @@ export const PRODUCT_CATEGORIES = [
 // compatibility relation. This protects unrelated device families without an
 // SKU blacklist or a hosted ontology. An included accessory after 'with' does
 // not turn a complete device into a spare part. Raw merchant data stays intact.
-const RETAIL_COMPONENT_NOUN = /\b(?:lenses?|straps?|bands?|filters?|capsules?|docks?|heatsinks?|heat sinks?|cartridges?|toners?|replacement batteries|replacement battery)\b/;
+const RETAIL_COMPONENT_NOUN = /\b(?:lens(?:es)?|straps?|bands?|filters?|capsules?|docks?|heatsinks?|heat sinks?|cartridges?|toners?|replacement batteries|replacement battery)\b/;
 const RETAIL_COMPATIBILITY_RELATION = /\b(?:compatible with|designed for|fits|for)\b/;
 const RETAIL_INCLUDED_COMPONENT = /\b(?:with|including|includes|bundled with)\b/;
 function isCompatibilityComponentSubject(normalizedTitle) {
