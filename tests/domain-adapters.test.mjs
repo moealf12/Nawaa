@@ -241,3 +241,39 @@ test("v21.23 RED: Virgin divided price markup outranks payment-plan eligibility 
   assert.equal(extractDomainProduct(url,noPurchasePrice),null,
     'financial plan and loyalty values cannot fabricate product purchase price');
 });
+
+
+test("v21.24 RED: current sellable price takes precedence over crossed-out and loyalty prices",()=>{
+  // SYNTHETIC METAMORPHIC DISCOUNT FIXTURES.
+  // Real merchant evidence motivating the class: Jarir renewed iPhone 17
+  // shows SAR 2999 full price, crossed-out SAR 3799, and SAR 182/month;
+  // Virgin page evidence contains financing thresholds and AED values.
+  // These are NOT captures of original merchant HTML or claims of live prices.
+  const url="https://app.virginmegastore.ae/en/electronics/p/762381";
+  const og='<meta property="og:title" content="Sample Headphones"><h1>Sample Headphones</h1>';
+  const oldBeforeCurrent=og+
+    '<div class="original-price"><del>AED 599</del></div>'+
+    '<div class="current-price"><strong>AED 399</strong></div>'+
+    '<div>Easy Payment Plans for orders above AED 1000</div>';
+  const textBeforeCurrent=og+
+    '<div>Was AED 599 Now AED 399</div>'+
+    '<div>Earn AED 3 cashback</div>';
+  const noActualPrice=og+
+    '<div class="original-price"><del>AED 599</del></div>'+
+    '<div>Easy Payment Plans on orders above AED 1000</div>';
+  const ambiguousPrice=og+
+    '<div>AED 599</div><div>AED 399</div><button>Add to cart</button>';
+  const currentBeforeOld=og+
+    '<div class="current-price">AED 399</div>'+
+    '<span class="original-price"><s>AED 599</s></span>';
+  for(const html of [oldBeforeCurrent,textBeforeCurrent,currentBeforeOld]){
+    const result=extractDomainProduct(url,html);
+    assert.equal(result?.product?.offers?.price,399,
+      "full current price must win over explicit crossed-out old/list price");
+    assert.equal(result?.product?.offers?.priceCurrency,"AED");
+  }
+  assert.equal(extractDomainProduct(url,noActualPrice),null,
+    "a strikethrough-only old price is not a present purchase price");
+  assert.equal(extractDomainProduct(url,ambiguousPrice),null,
+    "unqualified different prices have insufficient evidence for a purchase price");
+});
