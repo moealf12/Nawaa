@@ -379,3 +379,22 @@ test("v21.26 RED: invalid highest-priority price must not hide valid same-SKU cu
     assert.equal(extractionCandidates(html,url).find(x=>x.strategy===strategy)?.product?.offers?.price,349,
       strategy+' retains single valid generic price when higher-priority fields unavailable');
 });
+
+
+test("v21.26 selected positive price retains SAME FIELD currency and fallback semantics",()=>{
+  // SYNTHETIC same-product source object, not a direct Centrepoint PDP capture.
+  const item={productName:"Controlled Item Currency Variant",productId:"test-current-currency",
+    salePrice:{amount:"N/A",currencyCode:"AED"},
+    currentPrice:{amount:599,currencyCode:"SAR"},
+    price:{amount:799,currencyCode:"AED"}};
+  const html='<script type="application/json">'+JSON.stringify({product:item})+'</script>';
+  const url='https://www.centrepointstores.com.sa/p/controlled-item-current-currency';
+  for(const strategy of ['embedded_json','storefront_data','domain_adapter']){
+    const candidate=extractionCandidates(html,url).find(x=>x.strategy===strategy);
+    assert.equal(candidate?.product?.offers?.price,599,strategy);
+    assert.equal(candidate?.product?.offers?.priceCurrency,'SAR',
+      strategy+' must not borrow AED currency from rejected salePrice');
+    assert.equal(candidate?.product?.sku,'test-current-currency');
+  }
+  assert.equal(item.salePrice.amount,"N/A","original merchant source unchanged");
+});
