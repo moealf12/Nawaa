@@ -139,17 +139,19 @@ try{
         result.assertions.explicitAccessoryNotCertifiedConsole=!data.stream?.exactSamples?.some(s=>
           /\bconsole\b/i.test(s.title)&&!/\b(?:drive|cover|accessory)\b/i.test(s.title));
       }
-      // Source-linked buyer acceptance: the previous workflow was green while
+      // Source-linked buyer acceptance includes v21.21 German cartridge and
+      // PS5 heatsink P0 evidence, not just faceplates/English toner.
+      // The previous workflow was green while
       // genuine merchant accessory SKUs appeared as deceptively cheap devices.
       const hasPath=pattern=>data.cards.some(c=>c.productLinks.some(url=>pattern.test(url)));
       if(query==='PS5 Slim')
-        result.assertions.noObservedFaceplatesAsConsoles=!hasPath(/B0CZL8886V|B0DKNVSGSM|B0CT5NH3NL/i);
+        result.assertions.noObservedFaceplatesAsConsoles=!hasPath(/B0CZL8886V|B0DKNVSGSM|B0CT5NH3NL|B0FMYJCSK7/i);
       if(query==='iPhone 17 Pro Max')
         result.assertions.noObservedProtectionBundleAsPhone=!hasPath(/panzerglass-care-3-in-1-explorer-bundle/i);
       if(query==='HP printer')
         result.assertions.noPrinterConsumablesAsDevices=!data.cards.some(c=>
           /\b(?:printer paper|repair kit|user guide|drum unit|ink cartridges?|cartridges?|ink bottles?|paper jam)\b/i.test(c.title) ||
-          /^(?:skydo|printertree)\b/i.test(c.title) || c.productLinks.some(link=>/B0DDPWLL4J/i.test(link)));
+          /^(?:skydo|printertree)\b/i.test(c.title) || c.productLinks.some(link=>/B0DDPWLL4J|B07RVXV1XH/i.test(link)));
       if(query==='HP mouse')
         result.assertions.hpMouseSubjectOnly=data.cards.every(c=>
           /^\s*hp\b/i.test(c.title)&&/\b(?:mouse|mice)\b/i.test(c.title));
