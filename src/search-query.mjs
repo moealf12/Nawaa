@@ -33,7 +33,8 @@ const ALIASES = [
   ["جيجابايت", "gb"], ["جيجا بايت", "gb"], ["جيجا", "gb"], ["تيرابايت", "tb"],
   ["اسود", "black"], ["ابيض", "white"], ["لافندر", "lavender"], ["ازرق", "blue"],
   ["اخضر", "green"], ["ذهبي", "gold"], ["فضي", "silver"],
-  ["كفر", "case"], ["حافظه", "case"], ["شاحن", "charger"], ["كيبل", "cable"],
+  ["كفر", "case"], ["حافظه", "case"], ["شاحن", "charger"],
+  ["capinha", "case"], ["capinhas", "case"], ["كيبل", "cable"],
   ["مجدد", "refurbished"], ["مستعمل", "used"], ["جديد", "new"],
   ["اشرطه", "games"], ["العاب", "games"], ["لعبه", "game"],
   ["جهاز", "console"], ["رقمي", "digital"], ["ديجيتال", "digital"], ["اقراص", "disc"], ["سليم", "slim"],
@@ -214,6 +215,18 @@ function productCategoryWithDescription(offer, gaming) {
   // it in compatibility text. Captured Amazon first-ten X-LEADER example.
   // Preserve titles which actually START with the Apple iPhone device.
   const primaryRetailTitle=String(offer?.title || '');
+
+  const soldTitle = normalizeSearchQuery(primaryRetailTitle);
+  // Source-backed first-ten: PanzerGlass CARE Explorer is a protection bundle,
+  // not the iPhone named solely as the compatible model. Do not misclassify
+  // a genuine Apple iPhone bundle whose handset is the retail title's subject.
+  if (/\\biphone\\s+\\d+\\b/.test(soldTitle) &&
+      !/^(?:apple\\s+)?iphone\\s+\\d+\\b/.test(soldTitle) &&
+      /\\b(?:panzerglass|protection (?:package|bundle)|protective (?:case|kit))\\b/.test(soldTitle)) return 'accessory';
+  // Printer paper, guides, drum units and repair kits are consumables/parts,
+  // even if the compatibility text says HP Printer or LaserJet.
+  if (/\\b(?:printer paper|printing paper|paper jam|feed repair kit|repair kit|user guide|drum unit|ink bottles?|ink cartridg(?:e|es)|printer cartridg(?:e|es))\\b/.test(soldTitle))
+    return 'accessory';
 
   // A title beginning "Capa ... iPhone" sells a Portuguese phone cover.
   // The compatible iPhone model does not establish a complete handset.
@@ -420,8 +433,13 @@ export function describeProduct(offer = {}) {
   const isBundle = /\bbundle\b/.test(title) ||
     explicitlyIncludedConsoleAccessory(title, offer.title) || identifiedConsoleBundle;
   let kind = "product";
+  // Recorded PS5 Slim Amazon faceplates are protective parts rather than a
+  // complete console, even when their compatibility line says Digital Edition.
+  const protectiveConsolePart = /\\b(?:faceplates?|protective dissipation|replacement ventilation|replacement shells?|replacement panels?|scratch resistant installation)\\b/.test(title);
   if (platform) {
-    if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
+    if (protectiveConsolePart && !evidencedConsoleChassis &&
+        !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
+    else if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
     else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       GENUINE_CONSOLE_BUNDLE(title) ||
       identifiedConsoleBundle ||
@@ -516,6 +534,19 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       !/\b(?:controller (?:holders?|stands?|chargers?|charging stations?)|dualsense (?:charging|dock))\b/.test(retailPackageTitle));
   }
   const offerCategory = productCategoryWithDescription(offer, description);
+  // Match the actual retail item, not only the broad accessory category:
+  // HP ink is not an HP mouse, and a power cable/housing is not a disc drive.
+  const retailSubject = normalizeSearchQuery(offer?.title || "");
+  const mouseRequested = /\\bmouse\\b/.test(normalizedQuery) && !/\\bmouse (?:pad|mat)\\b/.test(normalizedQuery);
+  const wrongMouseSubject = mouseRequested &&
+    (!/\\b(?:mouse|mice)\\b/.test(retailSubject) ||
+     /\\bmouse (?:pad|mat)\\b/.test(retailSubject) ||
+     (intent.brand === "hp" && !/^hp\\b/.test(retailSubject) &&
+      normalizeSearchQuery(offer?.specs?.brand || offer?.brand || "") !== "hp"));
+  const driveRequested = /\\b(?:disc|disk|optical|blu ray) drive\\b/.test(normalizedQuery);
+  const wrongDriveSubject = driveRequested &&
+    (!/\\b(?:disc|disk|optical|blu ray) drive\\b/.test(retailSubject) ||
+      /\\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\\b/.test(retailSubject));
   // Product-type words (mouse, laptop, perfume...) are structural intent rather
   // than free-text tokens: reward the matching category without polluting model/
   // variant token matching.
@@ -534,6 +565,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
+  if (wrongMouseSubject || wrongDriveSubject) confidence *= 0.1;
 
   // Brand-only searches still reject accessories that merely carry the name.
   // Query-only accessory intent was prepared outside the per-offer loop.
