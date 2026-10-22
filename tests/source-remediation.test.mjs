@@ -5,6 +5,7 @@ import {searchJarir,parseJarirSearchHtml,parseJarirConstructorPayload} from '../
 import {searchExtraUnbxd} from '../server/providers/extra-unbxd.mjs';
 import {searchFreeStorefrontById,routeFreeStorefronts,extractBestBuySearchOffers} from '../server/providers/free-storefronts.mjs';
 import {auditSource} from '../server/audit-contract.mjs';
+import {fetchHtmlSafe} from '../server/url-resolver.mjs';
 
 const jarirItem=(title,id='1')=>({value:title,data:{id,url:`product-${id}.html`,price:3000,metadata:{}}});
 const extraItem=(title,id='1',storage=null)=>({id,name:title,currentPrice:3000,available:true,featureEnMemoryInternal:storage});
@@ -424,4 +425,21 @@ test('v21.38 RED: audit distinguishes discovered Best Buy SKU links lacking owne
     const silent=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',{perStore:3});
     assert.equal(silent.diagnostics.identityAudit,null,'only opt-in audits expose diagnostics');
   });
+});
+
+test('v21.39 RED: optional safe PDP stage timeline identifies DNS, transport and response completion',async()=>{
+  const traces=[];
+  const page='https://www.bestbuy.com/product/apple-airpods-4-white/TEST/sku/10190062';
+  const html='<html><head><title>Apple AirPods 4</title></head><body></body></html>';
+  await withFetch(async()=>new Response(html,{headers:{'content-type':'text/html'}}),async()=>{
+    const result=await fetchHtmlSafe(page,0,{onStage:stage=>traces.push(stage)});
+    assert.equal(result.html,html);
+  });
+  assert.deepEqual(traces,[
+    'dns_lookup_start',
+    'dns_lookup_done',
+    'request_start',
+    'response_headers',
+    'response_body_complete'
+  ],'evidence-only timeline must identify phases without merchant URLs, DNS data, prices or secrets');
 });
