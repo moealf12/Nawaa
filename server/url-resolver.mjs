@@ -13,6 +13,9 @@ import { resolveStructuredProductNodes } from "./schemaorg-product-graph.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
+// v21.39: Diagnostic phase markers contain no URLs, IPs, cookies, prices or
+// merchant HTML. An observer must never change resolver behavior.
+const reportStage = (onStage, stage) => { try { if (typeof onStage === 'function') onStage(stage); } catch {} };
 
 function isPrivateIpv4(ip) {
   const p = ip.split(".").map(Number);
@@ -45,14 +48,16 @@ function isPrivateIp(ip) {
   return true;
 }
 
-export async function resolvePublicHttpsTarget(url) {
+export async function resolvePublicHttpsTarget(url, {onStage} = {}) {
   const parsed = new URL(url);
   if (parsed.protocol !== "https:") throw new Error("Only HTTPS product URLs are allowed");
   if (!parsed.hostname || parsed.username || parsed.password) throw new Error("Invalid product URL");
   if (parsed.port && parsed.port !== "443") throw new Error("Non-standard ports are not allowed");
 
   const lookupHost = parsed.hostname.replace(/^\\[|\\]$/g, "");
+  reportStage(onStage, 'dns_lookup_start');
   const records = await dns.lookup(lookupHost, { all: true, verbatim: true });
+  reportStage(onStage, 'dns_lookup_done');
   if (!records.length) throw new Error("Host could not be resolved");
   if (records.some((record) => isPrivateIp(record.address))) throw new Error("Private/internal addresses are not allowed");
   const pinned = records.find((record) => record.family === 4) || records[0];
@@ -67,18 +72,20 @@ const PRODUCT_HEADERS = {
   pragma: "no-cache",
 };
 
-async function fetchHtmlWithMockableFetch(target, redirects, signal) {
+async function fetchHtmlWithMockableFetch(target, redirects, signal, onStage) {
+  reportStage(onStage, 'request_start');
   const response = await fetch(target.parsed, {
     redirect: "manual",
     headers: PRODUCT_HEADERS,
     signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
   });
+  reportStage(onStage, 'response_headers');
   if ([301,302,303,307,308].includes(response.status)) {
     await response.body?.cancel();
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without location");
-    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal});
+    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal,onStage});
   }
   if (!response.ok) throw new Error("Product page returned " + response.status);
   const type = response.headers.get("content-type") || "";
@@ -93,15 +100,17 @@ async function fetchHtmlWithMockableFetch(target, redirects, signal) {
     if(total>MAX_HTML_BYTES){await reader.cancel();throw new Error("Product page is too large");}
     chunks.push(part.value);
   }
+  reportStage(onStage, 'response_body_complete');
   const merged=new Uint8Array(total);let offset=0;
   for(const chunk of chunks){merged.set(chunk,offset);offset+=chunk.byteLength;}
   return {finalUrl:target.parsed.href,html:new TextDecoder().decode(merged)};
 }
 
-function fetchHtmlPinned(target, redirects, signal) {
+function fetchHtmlPinned(target, redirects, signal, onStage) {
   return new Promise((resolve, reject) => {
     if(signal?.aborted)return reject(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
     const hostname = target.parsed.hostname.replace(/^\\[|\\]$/g, "");
+    reportStage(onStage, 'request_start');
     const request = https.request({
       protocol:"https:",
       hostname,
@@ -116,13 +125,14 @@ function fetchHtmlPinned(target, redirects, signal) {
         else callback(null,target.address,target.family);
       },
     }, (response) => {
+      reportStage(onStage, 'response_headers');
       const status = response.statusCode || 0;
       if ([301,302,303,307,308].includes(status)) {
         response.resume();
         if (redirects >= MAX_REDIRECTS) return reject(new Error("Too many redirects"));
         const location = response.headers.location;
         if (!location) return reject(new Error("Redirect without location"));
-        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal}).then(resolve,reject);
+        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal,onStage}).then(resolve,reject);
         return;
       }
       if (status < 200 || status >= 300) {
@@ -141,7 +151,12 @@ function fetchHtmlPinned(target, redirects, signal) {
         chunks.push(chunk);
       });
       response.on("error",reject);
-      response.on("end",()=>resolve({finalUrl:target.parsed.href,html:Buffer.concat(chunks,total).toString("utf8")}));
+      response.on("end",()=>{reportStage(onStage,"response_body_complete");resolve({finalUrl:target.parsed.href,html:Buffer.concat(chunks,total).toString("utf8")});});
+    });
+    request.once('socket', socket => {
+      reportStage(onStage, 'socket_assigned');
+      socket.once('connect', () => reportStage(onStage, 'tcp_connected'));
+      socket.once('secureConnect', () => reportStage(onStage, 'tls_connected'));
     });
     const abort=()=>request.destroy(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
     signal?.addEventListener("abort",abort,{once:true});
@@ -152,13 +167,13 @@ function fetchHtmlPinned(target, redirects, signal) {
   });
 }
 
-export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
-  const target = await resolvePublicHttpsTarget(url);
+export async function fetchHtmlSafe(url, redirects = 0, {signal,onStage} = {}) {
+  const target = await resolvePublicHttpsTarget(url,{onStage});
   if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
-    return fetchHtmlWithMockableFetch(target, redirects, signal);
+    return fetchHtmlWithMockableFetch(target, redirects, signal, onStage);
   }
-  return fetchHtmlPinned(target, redirects, signal);
+  return fetchHtmlPinned(target, redirects, signal, onStage);
 }
 
 function decodeHtml(value = "") {
@@ -543,7 +558,9 @@ function declaredSchemaProductType(product) {
 
 export async function extractProductDocument(url, options = {}) {
   const fetched = await fetchHtmlSafe(url, 0, options);
+  reportStage(options.onStage,'extraction_start');
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
+  reportStage(options.onStage,'extraction_done');
   return {
     finalUrl:fetched.finalUrl,
     candidates,
@@ -576,7 +593,9 @@ export async function resolveProductUrl(url, options = {}) {
     return offer && offer.price !== null && offer.currency;
   }) || candidates[0] || null;
   const freshnessState = freshnessSummary(candidates);
+  reportStage(options.onStage,'reconciliation_start');
   const reconciliation = reconcileProductCandidates(candidates, selected);
+  reportStage(options.onStage,'reconciliation_done');
   const compatibleCandidates = reconciliation.identity?.accepted?.length
     ? reconciliation.identity.accepted
     : candidates;
@@ -603,9 +622,11 @@ export async function resolveProductUrl(url, options = {}) {
   const originalPrice = (offer && offer.price) ?? null;
   const originalCurrency = (offer && offer.currency) || null;
 
+  reportStage(options.onStage,'fx_conversion_start');
   const priceSAR = originalPrice !== null && originalCurrency
     ? await moneyToSAR(originalPrice, originalCurrency).catch(() => null)
     : null;
+  reportStage(options.onStage,'fx_conversion_done');
 
   const country = inferCountry(finalUrl, originalCurrency);
   const rawCondition = product && product.itemCondition || "";
