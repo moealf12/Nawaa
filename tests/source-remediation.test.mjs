@@ -298,3 +298,39 @@ test('v21.33: labeled Best Buy record recall and ownership precision stay invari
     assert.deepEqual(padded,offers,'irrelevant surrounding text must not alter product ownership');
   }
 });
+
+
+test('v21.34: opt-in Best Buy provenance distinguishes priced search hydration from PDP resolution',async()=>{
+  const link='https://www.bestbuy.com/product/apple-airpods-4-white/JJGCQ83JQ5/sku/10190062';
+  const searchUrl='https://www.bestbuy.com/site/searchpage.jsp?st=';
+  const pdp='<html><head><meta property="og:title" content="Apple AirPods 4 White"></head><body><script type="application/ld+json">'+
+    JSON.stringify({'@type':'Product',name:'Apple AirPods 4 White',sku:'10190062',
+      image:'https://pisces.bbystatic.com/airpods-4.jpg',
+      offers:{'@type':'Offer',price:108,priceCurrency:'USD',url:link}})+
+    '</script></body></html>';
+  await withFetch(async url=>new Response(String(url).startsWith(searchUrl)
+    ?'<html><body><a href="'+link+'">Apple AirPods 4 White</a></body></html>'
+    :pdp,{headers:{'content-type':'text/html'}}),async()=>{
+    const result=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
+      {perStore:3,identityAudit:true});
+    assert.equal(result.diagnostics?.identityAudit?.stage,'pdp_resolution');
+    assert.equal(result.diagnostics.identityAudit.pdpResolvedOfferCount,1);
+    assert.equal(result.diagnostics.identityAudit.samples[0]?.urlSku,'10190062');
+    assert.equal(result.diagnostics.identityAudit.samples[0]?.acceptedByQueryFilter,true);
+    assert.ok(result.offers.some(o=>o.sourceUrl===link),'valid priced PDP retained');
+    const silent=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',{perStore:3});
+    assert.equal(silent.diagnostics?.identityAudit,null,'identity audit is opt-in only');
+  });
+  const hydration=JSON.stringify({products:[{
+    price:{customerPrice:108},skuId:'10190062',pdpUrl:link,
+    name:{short:'Apple AirPods 4 White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-4.jpg'}
+  }]});
+  await withFetch(async()=>new Response(hydration,{headers:{'content-type':'text/html'}}),async()=>{
+    const result=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
+      {perStore:3,identityAudit:true});
+    assert.equal(result.diagnostics?.identityAudit?.stage,'search_hydration');
+    assert.equal(result.diagnostics.identityAudit.htmlPriceOfferCount,1);
+    assert.equal(result.diagnostics.identityAudit.pdpResolvedOfferCount,0);
+  });
+});

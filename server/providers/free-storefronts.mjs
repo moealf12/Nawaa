@@ -1691,6 +1691,32 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       diagnostics:{
         queryFilter,
         queryFilterSamples,
+        // CI validation opt-in: identify the acquisition path and which
+        // strategies supplied the candidate's name and price. No raw merchant
+        // HTML, cookies, credentials, or user-specific search inputs are stored.
+        // This does not change candidate selection or customer-facing fields.
+        identityAudit: store.id === "bestbuy-us" && options.identityAudit === true ? {
+          stage: htmlFirstOffers.length ? "search_hydration" :
+            primarySearchOffers.length ? "direct_provider" :
+            resolutionLinks.length ? "pdp_resolution" : "no_candidates",
+          htmlPriceOfferCount:htmlFirstOffers.length,
+          productLinksDiscovered:links.length,
+          pdpResolvedOfferCount:resolvedOffers.length,
+          candidateOfferCount:allOffers.length,
+          acceptedOfferCount:offers.length,
+          samples:allOffers.slice(0,6).map(offer => ({
+            urlSku:/\/sku\/(\d+)(?:[/?#]|$)/i.exec(String(offer.resolvedPageUrl || offer.sourceUrl || ""))?.[1] || null,
+            extractedSku:offer.sku || offer.specs?.modelNumber || null,
+            title:typeof offer.title === "string" ? offer.title.slice(0,140) : null,
+            originalPrice:offer.originalProductPrice ?? null,
+            originalCurrency:offer.originalCurrency || null,
+            extractionStrategy:offer.extraction?.strategy || (htmlFirstOffers.length ? "search_hydration" : "none"),
+            nameSource:offer.extraction?.fieldSources?.name?.strategy || null,
+            priceSource:offer.extraction?.fieldSources?.offers?.strategy || null,
+            identityRejectedCandidates:offer.extraction?.identity?.summary?.rejected ?? null,
+            acceptedByQueryFilter:filteredOffers.includes(offer),
+          })),
+        } : null,
         // Keep bounded rejection reasons without replaying user-specific URL
         // query strings, credentials or merchant cookies into CI artifacts.
         productLinkTrust:store.id === "aliexpress-cn" ? aliexpressProductLinkTrust : null,

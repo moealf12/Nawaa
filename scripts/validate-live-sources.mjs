@@ -26,7 +26,7 @@ const rows = [];
 for (const [store, query] of CASES) {
   const started = Date.now();
   try {
-    const result = await searchFreeStorefrontById(store, query, { perStore: 3 });
+    const result = await searchFreeStorefrontById(store, query, { perStore: 3, identityAudit: store === "bestbuy-us" });
     const offers = result.offers || [];
     // SKU is useful identity metadata, but it is not a requirement for a usable price result.
     // A live source must return the shopper-facing essentials: product, URL, image and price.
@@ -46,7 +46,8 @@ for (const [store, query] of CASES) {
       // Preserve bounded source-provided rejection evidence. Without these
       // first-five titles/reasons a 51→0 Amazon run cannot distinguish a
       // relevance filter from a source response change.
-      queryFilterSamples:result.diagnostics?.queryFilterSamples || []});
+      queryFilterSamples:result.diagnostics?.queryFilterSamples || [],
+      identityAudit:store === "bestbuy-us" ? result.diagnostics?.identityAudit || null : null});
   } catch (error) {
     rows.push({store,query,status:"PROBED_FAILED",candidates:0,offers:0,valid:0,ms:Date.now()-started,error:error?.message || String(error)});
   }
