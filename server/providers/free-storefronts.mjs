@@ -1699,6 +1699,33 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       : filteredOffers.slice(0, perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
+    // v21.38: Optional and bounded source-discovery gap evidence. A discovered
+    // SKU link without a SAME-SKU priced hydration offer is a diagnostic
+    // candidate, not proof of inventory, price, or a recoverable false negative.
+    // Never trigger extra PDP fetches or change storefront offer selection here.
+    const bestBuyDiscoveryGap = store.id === "bestbuy-us" && options.identityAudit === true
+      ? (() => {
+          const pricedSkus = new Set(htmlFirstOffers
+            .map(item => String(item.productId || "").trim()).filter(Boolean));
+          const linkOnly = [];
+          const seenSkus = new Set();
+          for (const link of links) {
+            try {
+              const parsed = new URL(String(link.url || ""));
+              const sku = /\\/sku\\/(\\d+)(?:\\/|$)/i.exec(parsed.pathname)?.[1];
+              if (!sku || pricedSkus.has(sku) || seenSkus.has(sku)) continue;
+              seenSkus.add(sku);
+              // Strip queries and hashes from the audit artifact.
+              linkOnly.push({sku,url:parsed.origin + parsed.pathname});
+            } catch {}
+          }
+          return {
+            discoveredLinkWithoutPricedOfferCount:linkOnly.length,
+            discoveredLinkWithoutPricedOfferSamples:linkOnly.slice(0,5),
+            linkSampleLimited:Number.isFinite(candidateLimit),
+          };
+        })()
+      : null;
     sourceReliability.record(store.id, {
       transportOk: !verificationBlocked,
       offers: offers.length,
@@ -1727,6 +1754,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           pdpResolvedOfferCount:resolvedOffers.length,
           candidateOfferCount:allOffers.length,
           acceptedOfferCount:offers.length,
+          ...bestBuyDiscoveryGap,
           samples:allOffers.slice(0,6).map(offer => ({
             urlSku:/\/sku\/(\d+)(?:[/?#]|$)/i.exec(String(offer.resolvedPageUrl || offer.sourceUrl || ""))?.[1] || null,
             extractedSku:offer.sku || offer.specs?.modelNumber || null,
