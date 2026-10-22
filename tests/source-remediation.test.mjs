@@ -367,3 +367,30 @@ test('v21.35 RED: real-observed Best Buy AirPods SKU/PDP generation conflict can
   assert.equal(restored[0].sourceUrl,url4);
   assert.equal(restored[0].price,158);
 });
+
+
+test('v21.36 RED: Best Buy bare AirPods4 SKU cannot inherit neighboring accessory-kit bundle title',()=>{
+  // Live source-validation recorded SKU 6447385 with a bundle title even
+  // though its PDP sells the standalone AirPods4 ANC. HTML is SYNTHETIC.
+  const bareUrl='https://www.bestbuy.com/product/apple-airpods-4-with-active-noise-cancellation-white/JJGCQ832YX/sku/6447385';
+  const bundleUrl='https://www.bestbuy.com/product/bundle-apple-airpods-4-with-active-noise-cancellation-black-accessory-kit-white/JX386JGXGZ/sku/12309526';
+  const wrong={price:{customerPrice:119.99},skuId:'6447385',pdpUrl:bareUrl,
+    name:{short:'Bundle - Apple - AirPods 4 with Active Noise Cancellation Black Accessory Kit - White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/bundle.jpg'}};
+  const bundle={price:{customerPrice:174.99},skuId:'12309526',pdpUrl:bundleUrl,
+    name:{short:'Bundle - Apple - AirPods 4 with Active Noise Cancellation Black Accessory Kit - White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/bundle.jpg'}};
+  for(const rows of [[wrong,bundle],[bundle,wrong]]){
+    const found=extractBestBuySearchOffers(JSON.stringify({products:rows}),'airpods');
+    assert.deepEqual(found.map(x=>x.productId),['12309526'],
+      'standalone SKU with sibling bundle name rejected; genuine accessory-kit bundle retained');
+    assert.equal(found[0]?.sourceUrl,bundleUrl);
+  }
+  const bareCorrect={...wrong,
+    name:{short:'Apple - AirPods 4 with Active Noise Cancellation - White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-4.jpg'}};
+  const valid=extractBestBuySearchOffers(JSON.stringify({products:[bareCorrect,bundle]}),'airpods');
+  assert.deepEqual(new Set(valid.map(x=>x.productId)),new Set(['6447385','12309526']),
+    'do not sacrifice independently titled standalone or legitimate bundle');
+  assert.equal(valid.find(x=>x.productId==='6447385')?.price,119.99);
+});
