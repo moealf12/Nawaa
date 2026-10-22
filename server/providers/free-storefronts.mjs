@@ -1070,6 +1070,14 @@ export function extractBestBuySearchOffers(html, query) {
       if (linkAirpods && titleAirpods &&
           (linkAirpods.pro !== titleAirpods.pro ||
            linkAirpods.generation !== titleAirpods.generation)) continue;
+      // v21.36: A standalone AirPods SKU/PDP was actually assigned a nearby
+      // "Bundle ... Accessory Kit" title. Reject only when the title explicitly
+      // advertises an accessory-kit bundle but the descriptive PDP slug does
+      // not identify that kit. A genuine kit PDP remains eligible.
+      if (linkAirpods && titleAirpods &&
+          /^bundle\s*[-–:]?\s*/i.test(title) &&
+          /\baccessory\s+kit\b/i.test(title) &&
+          !/\b(?:bundle|accessory\s+kit)\b/i.test(pdpSlug)) continue;
     }
     const haystack = normalizeSearchQuery(title);
     const hits = tokens.filter((token) => haystack.includes(token)).length;
