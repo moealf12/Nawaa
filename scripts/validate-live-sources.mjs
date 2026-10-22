@@ -20,7 +20,7 @@ async function probeBestBuyLinkOnlyCandidates(identityAudit) {
       const pdp = await resolveProductUrl(parsed.origin + parsed.pathname,
         {signal:AbortSignal.timeout(4000)});
       const finalUrl = new URL(pdp.resolvedPageUrl || pdp.sourceUrl || "");
-      const finalSku = /\\/sku\\/(\\d+)(?:\\/|$)/i.exec(finalUrl.pathname)?.[1] || null;
+      const finalSku = /\/sku\/(\d+)(?:\/|$)/i.exec(finalUrl.pathname)?.[1] || null;
       const sameSku = finalSku === sku && finalUrl.hostname === "www.bestbuy.com";
       const hasPricedCandidate = Number.isFinite(pdp.originalProductPrice) &&
         pdp.originalProductPrice > 0 && Boolean(pdp.originalCurrency);
