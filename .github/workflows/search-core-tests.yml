@@ -241,7 +241,8 @@ jobs:
 
   disposable-quote-lifecycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    # Reserve time for npm installation plus HTTP and Chromium quote checks.
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:16
@@ -267,6 +268,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - run: npm ci --ignore-scripts
       - name: Real quote HTTP, durable PostgreSQL, concurrency, expiration, authorization
         run: node scripts/certify-quote-http.mjs
