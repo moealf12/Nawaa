@@ -890,6 +890,51 @@ export function extractBestBuySearchOffers(html, query) {
     try { return JSON.parse('"' + value + '"'); } catch { return decodeHtml(value).replace(/\\"/g, '"').replace(/\\u0026/gi, "&").replace(/\\\//g, "/"); }
   };
 
+  // v21.29: Prefer the smallest complete JSON object that owns the matched
+  // price/SKU, matching PDP, title and image. A wide text neighborhood is NOT
+  // evidence that the last name/image belongs to this SKU. This bounded,
+  // opt-in structural path preserves the historical fallback for hydration
+  // formats that cannot be parsed as an independently attributable record.
+  const scopedRecordFor = (anchor, requiredEnd, sku) => {
+    const begin = Math.max(0, anchor - 16000);
+    const end = Math.min(source.length, anchor + 7000);
+    const stack = [];
+    let quoted = false;
+    let escaped = false;
+    for (let i = begin; i < end; i++) {
+      const char = source[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') { quoted = true; continue; }
+      if (char === "{") { stack.push(i); continue; }
+      if (char !== "}") continue;
+      const open = stack.pop();
+      if (open === undefined || open > anchor || i + 1 < requiredEnd) continue;
+      const recordText = source.slice(open, i + 1);
+      if (recordText.length > 23000) continue;
+      try { JSON.parse(recordText); } catch { continue; }
+      const skuIds = new Set([...recordText.matchAll(/"skuId":"(\d+)"/g)].map((entry) => entry[1]));
+      // A wrapper containing multiple distinct SKUs cannot establish field
+      // ownership. It must never be treated as one independently owned item.
+      if (skuIds.size !== 1 || !skuIds.has(sku)) continue;
+      const urls = [...recordText.matchAll(/"pdpUrl":"((?:\\.|[^"\\])+)"/g)]
+        .map((entry) => decodeJsonString(entry[1]))
+        .filter((url) => !/\/openbox(?:[/?#]|$)/i.test(url) &&
+          new RegExp("/sku/" + sku + "(?:[/?#]|$)", "i").test(url));
+      const titles = [...new Set([...recordText.matchAll(/"name":\{"short":"((?:\\.|[^"\\])*)"/g)]
+        .map((entry) => decodeJsonString(entry[1])).filter(Boolean))];
+      if (!urls.length || titles.length !== 1) continue;
+      const images = [...new Set([...recordText.matchAll(/"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g)]
+        .map((entry) => decodeJsonString(entry[1])).filter(Boolean))];
+      return { sourceUrl:urls.at(-1), title:titles[0], image:images.length === 1 ? images[0] : null };
+    }
+    return null;
+  };
+
   while ((match = priceRe.exec(source))) {
     const price = Number(match[1]);
     const sku = match[2];
@@ -902,13 +947,14 @@ export function extractBestBuySearchOffers(html, query) {
     const pdpMatches = [...block.matchAll(/"pdpUrl":"((?:\\.|[^"\\])+)"/g)]
       .map((item) => decodeJsonString(item[1]))
       .filter((url) => !/\/openbox(?:[/?#]|$)/i.test(url) && new RegExp("/sku/" + sku + "(?:[/?#]|$)", "i").test(url));
-    const sourceUrl = pdpMatches.at(-1) || null;
+    const owned = scopedRecordFor(match.index, priceRe.lastIndex, sku);
+    const sourceUrl = owned?.sourceUrl || pdpMatches.at(-1) || null;
 
     const nameMatches = [...block.matchAll(/"name":\{"short":"((?:\\.|[^"\\])*)"/g)];
-    const title = nameMatches.length ? decodeJsonString(nameMatches.at(-1)[1]) : null;
+    const title = owned?.title || (nameMatches.length ? decodeJsonString(nameMatches.at(-1)[1]) : null);
 
     const imageMatches = [...block.matchAll(/"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g)];
-    const image = imageMatches.length ? decodeJsonString(imageMatches.at(-1)[1]) : null;
+    const image = owned ? owned.image : imageMatches.length ? decodeJsonString(imageMatches.at(-1)[1]) : null;
 
     if (!sourceUrl || !title) continue;
     // Best Buy's search page interleaves product cards inside one large JSON
