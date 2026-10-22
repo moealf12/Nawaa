@@ -1055,6 +1055,21 @@ export function extractBestBuySearchOffers(html, query) {
       if (linkType.platform && nameType.platform &&
           known.has(linkType.kind) && known.has(nameType.kind) &&
           linkType.kind !== nameType.kind) continue;
+      // v21.35: Live Best Buy source validation exposed AirPods 5 title on an
+      // AirPods 4 ANC SKU/PDP. Never publish an explicit cross-generation or
+      // Pro/non-Pro disagreement between the retailer PDP slug and title.
+      // Do NOT infer a replacement title or claim the unverified price belongs
+      // to either model. Exact separately owned AirPods 4 and 5 remain eligible.
+      const airpodsModel = value => {
+        const match = String(value).normalize("NFKC")
+          .match(/\bair\s*pods\s*(pro\s*)?([1-9]\d?)\b/i);
+        return match ? { pro:Boolean(match[1]), generation:Number(match[2]) } : null;
+      };
+      const linkAirpods = airpodsModel(pdpSlug);
+      const titleAirpods = airpodsModel(title);
+      if (linkAirpods && titleAirpods &&
+          (linkAirpods.pro !== titleAirpods.pro ||
+           linkAirpods.generation !== titleAirpods.generation)) continue;
     }
     const haystack = normalizeSearchQuery(title);
     const hits = tokens.filter((token) => haystack.includes(token)).length;

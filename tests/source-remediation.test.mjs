@@ -303,21 +303,22 @@ test('v21.33: labeled Best Buy record recall and ownership precision stay invari
 test('v21.34: opt-in Best Buy provenance distinguishes priced search hydration from PDP resolution',async()=>{
   const link='https://www.bestbuy.com/product/apple-airpods-4-white/JJGCQ83JQ5/sku/10190062';
   const searchUrl='https://www.bestbuy.com/site/searchpage.jsp?st=';
-  const pdp='<html><head><meta property="og:title" content="Apple AirPods 4 White"></head><body><script type="application/ld+json">'+
-    JSON.stringify({'@type':'Product',name:'Apple AirPods 4 White',sku:'10190062',
-      image:'https://pisces.bbystatic.com/airpods-4.jpg',
-      offers:{'@type':'Offer',price:108,priceCurrency:'USD',url:link}})+
-    '</script></body></html>';
+  // Deliberately unpriced PDP: the probe must trace the resolution path
+  // without fabricating an accepted offer when no sellable price is proven.
+  const pdp='<html><head><meta property="og:title" content="Apple AirPods 4 White"></head>'+
+    '<body><h1>Apple AirPods 4 White</h1></body></html>';
   await withFetch(async url=>new Response(String(url).startsWith(searchUrl)
     ?'<html><body><a href="'+link+'">Apple AirPods 4 White</a></body></html>'
     :pdp,{headers:{'content-type':'text/html'}}),async()=>{
     const result=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
       {perStore:3,identityAudit:true});
     assert.equal(result.diagnostics?.identityAudit?.stage,'pdp_resolution');
-    assert.equal(result.diagnostics.identityAudit.pdpResolvedOfferCount,1);
-    assert.equal(result.diagnostics.identityAudit.samples[0]?.urlSku,'10190062');
-    assert.equal(result.diagnostics.identityAudit.samples[0]?.acceptedByQueryFilter,true);
-    assert.ok(result.offers.some(o=>o.sourceUrl===link),'valid priced PDP retained');
+    assert.ok(result.diagnostics.identityAudit.productLinksDiscovered >= 1,
+      'the linked SKU is discovered for attempted PDP resolution');
+    assert.equal(result.diagnostics.identityAudit.pdpResolvedOfferCount,0,
+      'an unpriced PDP cannot establish a sellable offer');
+    assert.equal(result.diagnostics.identityAudit.samples.length,0);
+    assert.deepEqual(result.offers,[]);
     const silent=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',{perStore:3});
     assert.equal(silent.diagnostics?.identityAudit,null,'identity audit is opt-in only');
   });
