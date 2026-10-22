@@ -1006,10 +1006,10 @@ export function extractBestBuySearchOffers(html, query) {
         if (char === '"') { quoted = true; continue; }
         if (char !== "}") continue;
         let next = i + 1;
-        while (/\\s/.test(source[next] || "")) next++;
+        while (/\s/.test(source[next] || "")) next++;
         if (source[next] !== ",") continue;
         next++;
-        while (/\\s/.test(source[next] || "")) next++;
+        while (/\s/.test(source[next] || "")) next++;
         if (source[next] === "{" && next < priorSku) priorBoundary = next;
       }
     }
