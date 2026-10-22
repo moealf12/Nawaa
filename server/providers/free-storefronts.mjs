@@ -935,7 +935,33 @@ export function extractBestBuySearchOffers(html, query) {
     return null;
   };
 
+  // A textual price→SKU match must not close the containing product object
+  // before reaching its SKU. Allow nested price objects, but never bridge to a
+  // sibling record. Bounded to the pre-existing regex's 2,200-character span.
+  const priceSkuWithinRecord = (candidate) => {
+    let depth = 0, quoted = false, escaped = false;
+    for (const char of candidate) {
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') { quoted = true; continue; }
+      if (char === "{") depth++;
+      else if (char === "}" && --depth < 0) return false;
+    }
+    return !quoted;
+  };
+
   while ((match = priceRe.exec(source))) {
+    if (!priceSkuWithinRecord(match[0])) {
+      // A rejected match may have consumed another valid product's price.
+      // Resume at the next price anchor INSIDE the consumed span, if any.
+      const next = source.indexOf('"price":{"customerPrice":', match.index + 1);
+      if (next >= 0 && next < priceRe.lastIndex) priceRe.lastIndex = next;
+      continue;
+    }
     const price = Number(match[1]);
     const sku = match[2];
     if (!Number.isFinite(price) || price <= 0 || seen.has(sku)) continue;
