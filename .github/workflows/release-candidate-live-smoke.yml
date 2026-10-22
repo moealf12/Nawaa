@@ -28,7 +28,8 @@ concurrency:
 jobs:
   real-source-candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Multi-source SSE and controlled A/B latency need room beyond npm install.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,6 +37,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - name: Install locked dependencies (no lifecycle scripts)
         run: npm ci --ignore-scripts
       - name: Test disposable candidate HTTP API and live storefronts (no production writes)
