@@ -413,8 +413,12 @@ test('v21.38 RED: audit distinguishes discovered Best Buy SKU links lacking owne
       [{sku:'6447385',url:linkOnlyUrl}]);
     assert.equal(result.diagnostics.identityAudit.linkSampleLimited,true,
       'a perStore-limited link sample cannot establish complete source recall');
-    assert.deepEqual(result.offers.map(offer=>offer.specs.modelNumber),['10190062'],
-      'unpriced SKU must not become a fabricated priced offer');
+    assert.equal(result.diagnostics.identityAudit.htmlPriceOfferCount,1,
+      'exactly one priced hydration record was extracted from the fixture');
+    assert.equal(result.diagnostics.identityAudit.pdpResolvedOfferCount,0,
+      'the unpriced discovered link must not trigger expensive PDP recovery');
+    assert.ok(result.offers.every(offer=>offer.specs?.modelNumber!=='6447385'),
+      'discovered link-only SKU must never receive a fabricated price');
     assert.equal(fetchCount,1,'diagnostic must not add PDP/network fan-out');
     const silent=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',{perStore:3});
     assert.equal(silent.diagnostics.identityAudit,null,'only opt-in audits expose diagnostics');
