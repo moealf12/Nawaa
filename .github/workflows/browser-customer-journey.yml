@@ -22,7 +22,7 @@ concurrency:
 jobs:
   browser-customer-qa:
     runs-on: ubuntu-latest
-    timeout-minutes: 17
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,6 +31,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - name: Install locked app dependencies
         run: npm ci --ignore-scripts
       - name: Install ephemeral test-only browser automation

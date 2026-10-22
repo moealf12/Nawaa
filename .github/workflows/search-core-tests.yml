@@ -242,7 +242,7 @@ jobs:
   disposable-quote-lifecycle:
     runs-on: ubuntu-latest
     # Reserve time for npm installation plus HTTP and Chromium quote checks.
-    timeout-minutes: 10
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
