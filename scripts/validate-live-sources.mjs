@@ -1,4 +1,40 @@
 import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
+import { resolveProductUrl } from "../server/url-resolver.mjs";
+
+// CI-only forensic probe. Never consulted by production ranking/extraction.
+// A PDP may suggest a matching priced record, but this probe does NOT certify
+// full cross-field ownership or authorize publication of a recovered offer.
+async function probeBestBuyLinkOnlyCandidates(identityAudit) {
+  const candidates = (identityAudit?.discoveredLinkWithoutPricedOfferSamples || []).slice(0,2);
+  return Promise.all(candidates.map(async ({sku,url}) => {
+    const base = {sku,requestedUrl:url};
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "https:" || parsed.hostname !== "www.bestbuy.com" ||
+          parsed.username || parsed.password || parsed.port ||
+          !new RegExp("/sku/" + sku + "(?:/|$)", "i").test(parsed.pathname)) {
+        return {...base,status:"INVALID_DISCOVERY_URL"};
+      }
+      // Existing resolver performs HTTPS/DNS/redirect validation. Four seconds
+      // per page, maximum two parallel source requests, no retries or bypasses.
+      const pdp = await resolveProductUrl(parsed.origin + parsed.pathname,
+        {signal:AbortSignal.timeout(4000)});
+      const finalUrl = new URL(pdp.resolvedPageUrl || pdp.sourceUrl || "");
+      const finalSku = /\\/sku\\/(\\d+)(?:\\/|$)/i.exec(finalUrl.pathname)?.[1] || null;
+      const sameSku = finalSku === sku && finalUrl.hostname === "www.bestbuy.com";
+      const hasPricedCandidate = Number.isFinite(pdp.originalProductPrice) &&
+        pdp.originalProductPrice > 0 && Boolean(pdp.originalCurrency);
+      return {...base,status:"PDP_PROBED_NOT_CERTIFIED",sameSku,
+        hasPricedCandidate,priceFieldSource:pdp.extraction?.fieldSources?.offers?.strategy || null,
+        identityRejections:pdp.extraction?.identity?.summary?.rejected ?? null,
+        title:typeof pdp.title === "string" ? pdp.title.slice(0,120) : null,
+        originalCurrency:pdp.originalCurrency || null};
+    } catch (error) {
+      return {...base,status:"PDP_UNVERIFIED",error:String(error?.message || error).slice(0,140)};
+    }
+  }));
+}
+
 
 const CASES = [
   // Saudi/GCC certification batch: prioritize sources that can materially
@@ -27,6 +63,9 @@ for (const [store, query] of CASES) {
   const started = Date.now();
   try {
     const result = await searchFreeStorefrontById(store, query, { perStore: 3, identityAudit: store === "bestbuy-us" });
+    const identityAudit = store === "bestbuy-us" ? result.diagnostics?.identityAudit || null : null;
+    if (identityAudit) identityAudit.unpricedLinkPdpProbes =
+      await probeBestBuyLinkOnlyCandidates(identityAudit);
     const offers = result.offers || [];
     // SKU is useful identity metadata, but it is not a requirement for a usable price result.
     // A live source must return the shopper-facing essentials: product, URL, image and price.
@@ -47,7 +86,7 @@ for (const [store, query] of CASES) {
       // first-five titles/reasons a 51→0 Amazon run cannot distinguish a
       // relevance filter from a source response change.
       queryFilterSamples:result.diagnostics?.queryFilterSamples || [],
-      identityAudit:store === "bestbuy-us" ? result.diagnostics?.identityAudit || null : null});
+      identityAudit});
   } catch (error) {
     rows.push({store,query,status:"PROBED_FAILED",candidates:0,offers:0,valid:0,ms:Date.now()-started,error:error?.message || String(error)});
   }
