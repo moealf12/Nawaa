@@ -271,7 +271,7 @@ function productCategoryWithDescription(offer, gaming) {
       /\b(?:panzerglass|protection (?:package|bundle)|protective (?:case|kit))\b/.test(soldTitle)) return 'accessory';
   // Printer paper, guides, drum units and repair kits are consumables/parts,
   // even if the compatibility text says HP Printer or LaserJet.
-  if (/\b(?:printer paper|printing paper|paper jam|feed repair kit|repair kit|user guide|drum unit|ink bottles?|ink cartridg(?:e|es)|printer cartridg(?:e|es))\b/.test(soldTitle))
+  if (/\b(?:printer paper|printing paper|paper trays? replacement|paper jam|feed repair kit|repair kit|user guide|drum unit|ink bottles?|ink cartridg(?:e|es)|printer cartridg(?:e|es))\b/.test(soldTitle))
     return 'accessory';
 
   // A title beginning "Capa ... iPhone" sells a Portuguese phone cover.
