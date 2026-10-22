@@ -264,3 +264,37 @@ test('v21.32 RED: Best Buy leading fallback must not borrow title and image from
   assert.equal(retained?.title,ownTitle.product.name.short);
   assert.equal(retained?.image,ownTitle.product.primaryImage.piscesHref);
 });
+
+
+test('v21.33: labeled Best Buy record recall and ownership precision stay invariant under adjacent records', () => {
+  // SYNTHETIC ground truth, NOT original Best Buy source or real-checkout evidence.
+  // The omitted title on SKU 760099 is intentional: its price and PDP alone
+  // cannot justify offering the preceding or following handset title.
+  const rows=[
+    {price:{customerPrice:999.99},skuId:'760001',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-256gb/X1/sku/760001',name:{short:'Apple iPhone 17 Pro 256GB'},primaryImage:{piscesHref:'https://images.bestbuy.com/pro-256.jpg'}},
+    {product:{skuId:'760002',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-max-512gb/X2/sku/760002',name:{short:'Apple iPhone 17 Pro Max 512GB'},primaryImage:{piscesHref:'https://images.bestbuy.com/max-512.jpg'}},price:{customerPrice:1299.99},skuId:'760002'},
+    {product:{skuId:'760099',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-1tb/X3/sku/760099'},price:{customerPrice:1399.99},skuId:'760099'}
+  ];
+  const expected=new Map(rows.slice(0,2).map(r=>[r.skuId,{
+    sku:r.skuId,price:r.price.customerPrice,title:r.name?.short??r.product?.name?.short,
+    image:r.primaryImage?.piscesHref??r.product?.primaryImage?.piscesHref,
+    url:r.pdpUrl??r.product?.pdpUrl
+  }]));
+  for(const ordering of [rows,[...rows].reverse(),[rows[1],rows[2],rows[0]]]){
+    const source=JSON.stringify({products:ordering});
+    const offers=extractBestBuySearchOffers(source,'iPhone 17 Pro');
+    const correct=offers.filter(o=> {
+      const truth=expected.get(o.productId);
+      return truth && o.price===truth.price && o.title===truth.title &&
+        o.image===truth.image && o.sourceUrl===truth.url && o.currency==='USD';
+    });
+    const precision=offers.length ? correct.length/offers.length : null;
+    const recall=correct.length/expected.size;
+    assert.equal(offers.length,2,'no unverified sibling or missing-title SKU admitted');
+    assert.equal(precision,1,'all admitted records agree with their labeled field owner');
+    assert.equal(recall,1,'all labeled sellable records retained');
+    assert.equal(offers.some(o=>o.productId==='760099'),false);
+    const padded=extractBestBuySearchOffers(' '.repeat(31)+source+' '.repeat(17),'iPhone 17 Pro');
+    assert.deepEqual(padded,offers,'irrelevant surrounding text must not alter product ownership');
+  }
+});
