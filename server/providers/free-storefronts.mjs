@@ -1712,7 +1712,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           for (const link of links) {
             try {
               const parsed = new URL(String(link.url || ""));
-              const sku = /\\/sku\\/(\\d+)(?:\\/|$)/i.exec(parsed.pathname)?.[1];
+              const sku = /\/sku\/(\d+)(?:\/|$)/i.exec(parsed.pathname)?.[1];
               if (!sku || pricedSkus.has(sku) || seenSkus.has(sku)) continue;
               seenSkus.add(sku);
               // Strip queries and hashes from the audit artifact.
