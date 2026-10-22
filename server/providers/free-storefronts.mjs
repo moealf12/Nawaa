@@ -927,10 +927,13 @@ export function extractBestBuySearchOffers(html, query) {
           new RegExp("/sku/" + sku + "(?:[/?#]|$)", "i").test(url));
       const titles = [...new Set([...recordText.matchAll(/"name":\{"short":"((?:\\.|[^"\\])*)"/g)]
         .map((entry) => decodeJsonString(entry[1])).filter(Boolean))];
-      if (!urls.length || titles.length !== 1) continue;
+      // A parseable, SKU-unique record with its own PDP is authoritative even
+      // if its title is missing or ambiguous. Never use a neighboring text
+      // fallback to invent the record's absent identity.
+      if (!urls.length) continue;
       const images = [...new Set([...recordText.matchAll(/"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g)]
         .map((entry) => decodeJsonString(entry[1])).filter(Boolean))];
-      return { sourceUrl:urls.at(-1), title:titles[0], image:images.length === 1 ? images[0] : null };
+      return { sourceUrl:urls.at(-1), title:titles.length === 1 ? titles[0] : null, image:images.length === 1 ? images[0] : null };
     }
     return null;
   };
@@ -974,6 +977,9 @@ export function extractBestBuySearchOffers(html, query) {
       .map((item) => decodeJsonString(item[1]))
       .filter((url) => !/\/openbox(?:[/?#]|$)/i.test(url) && new RegExp("/sku/" + sku + "(?:[/?#]|$)", "i").test(url));
     const owned = scopedRecordFor(match.index, priceRe.lastIndex, sku);
+    // A trustworthy parsed per-SKU object that lacks a unique title is not a
+    // license to borrow one from adjacent products in the hydration blob.
+    if (owned && !owned.title) continue;
     const sourceUrl = owned?.sourceUrl || pdpMatches.at(-1) || null;
 
     // v21.31: Missing structured scope must not borrow the last name/image
