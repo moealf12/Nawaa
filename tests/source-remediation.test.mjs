@@ -163,6 +163,20 @@ test('v21.30 RED: Best Buy price and SKU cannot bridge sibling JSON records',()=
     const offers=extractBestBuySearchOffers(JSON.stringify({products:ordered}),'iPhone 17 Pro');
     assert.deepEqual(offers,[], 'sibling price must not attach to another SKU');
   }
+  // A bridging regex must also leave the later valid record discoverable:
+  // source A lacks SKU, source B has its own proper price and SKU.
+  const ownPrice=[
+    {price:{customerPrice:999.99},name:{short:'Apple iPhone 17 Pro 256GB'}},
+    {price:{customerPrice:1299.99},skuId:'760002',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-max-512gb/P17MAX/sku/760002',name:{short:'Apple iPhone 17 Pro Max 512GB'}}
+  ];
+  const found=extractBestBuySearchOffers(JSON.stringify({products:ownPrice}),'iPhone 17 Pro');
+  assert.equal(found.length,1,'retains the structurally complete second product');
+  assert.equal(found[0].productId,'760002');
+  assert.equal(found[0].price,1299.99,'the valid SKU retains its OWN price, not its predecessor price');
+  // Normal nested price object and sibling SKU property still belong to the
+  // same sellable record, and must not be rejected as cross-record pollution.
+  const nested={price:{customerPrice:1499.99},skuId:'760003',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-max-1tb/P17ONE/sku/760003',name:{short:'Apple iPhone 17 Pro Max 1TB'}};
+  assert.equal(extractBestBuySearchOffers(JSON.stringify(nested),'iPhone 17 Pro')[0]?.price,1499.99);
   // Complete independently owned product records still parse, including
   // either list ordering; avoid fixing contamination by suppressing recall.
   const valid=[
