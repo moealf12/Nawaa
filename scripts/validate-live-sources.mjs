@@ -8,6 +8,11 @@ async function probeBestBuyLinkOnlyCandidates(identityAudit) {
   const candidates = (identityAudit?.discoveredLinkWithoutPricedOfferSamples || []).slice(0,2);
   return Promise.all(candidates.map(async ({sku,url}) => {
     const base = {sku,requestedUrl:url};
+    const started = performance.now();
+    const stages = [];
+    const onStage = stage => {
+      if (stages.length < 20) stages.push({stage,elapsedMs:Math.round(performance.now()-started)});
+    };
     try {
       const parsed = new URL(url);
       if (parsed.protocol !== "https:" || parsed.hostname !== "www.bestbuy.com" ||
@@ -18,19 +23,21 @@ async function probeBestBuyLinkOnlyCandidates(identityAudit) {
       // Existing resolver performs HTTPS/DNS/redirect validation. Four seconds
       // per page, maximum two parallel source requests, no retries or bypasses.
       const pdp = await resolveProductUrl(parsed.origin + parsed.pathname,
-        {signal:AbortSignal.timeout(4000)});
+        {signal:AbortSignal.timeout(4000),onStage});
       const finalUrl = new URL(pdp.resolvedPageUrl || pdp.sourceUrl || "");
       const finalSku = /\/sku\/(\d+)(?:\/|$)/i.exec(finalUrl.pathname)?.[1] || null;
       const sameSku = finalSku === sku && finalUrl.hostname === "www.bestbuy.com";
       const hasPricedCandidate = Number.isFinite(pdp.originalProductPrice) &&
         pdp.originalProductPrice > 0 && Boolean(pdp.originalCurrency);
       return {...base,status:"PDP_PROBED_NOT_CERTIFIED",sameSku,
+        lastStage:stages.at(-1)?.stage || null,stages,
         hasPricedCandidate,priceFieldSource:pdp.extraction?.fieldSources?.offers?.strategy || null,
         identityRejections:pdp.extraction?.identity?.summary?.rejected ?? null,
         title:typeof pdp.title === "string" ? pdp.title.slice(0,120) : null,
         originalCurrency:pdp.originalCurrency || null};
     } catch (error) {
-      return {...base,status:"PDP_UNVERIFIED",error:String(error?.message || error).slice(0,140)};
+      return {...base,status:"PDP_UNVERIFIED",lastStage:stages.at(-1)?.stage || null,
+        stages,error:String(error?.message || error).slice(0,140)};
     }
   }));
 }
