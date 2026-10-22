@@ -127,3 +127,24 @@ test('v21.28 RED real source-link identity: Best Buy console SKU cannot be title
   assert.equal(good.length,1,'valid independently named accessory must survive');
   assert.equal(good[0].productId,'882200');
 });
+
+
+test('v21.29 RED: Best Buy neighboring same-category records cannot exchange title or image ownership',()=> {
+  // Synthetic minimized product-object adjacency: both titles describe phones, so
+  // the v21.28 console/accessory category guard cannot detect this contamination.
+  const rows=[
+    {price:{customerPrice:999.99},skuId:"760001",pdpUrl:"https://www.bestbuy.com/product/apple-iphone-17-pro-256gb/P17PRO/sku/760001",name:{short:"Apple iPhone 17 Pro 256GB"},primaryImage:{piscesHref:"https://images.bestbuy.com/pro-256.jpg"}},
+    {price:{customerPrice:1299.99},skuId:"760002",pdpUrl:"https://www.bestbuy.com/product/apple-iphone-17-pro-max-512gb/P17MAX/sku/760002",name:{short:"Apple iPhone 17 Pro Max 512GB"},primaryImage:{piscesHref:"https://images.bestbuy.com/max-512.jpg"}}
+  ];
+  for(const ordered of [rows,[...rows].reverse()]){
+    const offers=extractBestBuySearchOffers(JSON.stringify({products:ordered}),"iPhone 17 Pro");
+    assert.equal(offers.length,2,"preserve both legitimately distinct handset products");
+    const bySku=new Map(offers.map(offer=>[offer.productId,offer]));
+    for(const row of rows){
+      assert.equal(bySku.get(row.skuId)?.title,row.name.short,"SKU must own its own title");
+      assert.equal(bySku.get(row.skuId)?.image,row.primaryImage.piscesHref,"SKU must own its own image");
+      assert.equal(bySku.get(row.skuId)?.sourceUrl,row.pdpUrl,"SKU must own its own PDP link");
+      assert.equal(bySku.get(row.skuId)?.price,row.price.customerPrice,"SKU must own its own price");
+    }
+  }
+});
