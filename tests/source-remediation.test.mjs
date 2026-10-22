@@ -191,3 +191,42 @@ test('v21.30 RED: Best Buy price and SKU cannot bridge sibling JSON records',()=
     }
   }
 });
+
+
+test('v21.31 RED: Best Buy malformed hydration fallback cannot borrow a neighboring handset title or image', () => {
+  // Synthetic malformed hydration fragments (NOT authentic Best Buy HTML).
+  // Each record is separately price/SKU-bearing but lacks a full parseable JSON
+  // object. The v21.29 structured scope is intentionally unavailable.
+  const rows = [
+    {sku:'760001', price:999.99, slug:'apple-iphone-17-pro-256gb', title:'Apple iPhone 17 Pro 256GB', image:'https://images.bestbuy.com/pro-256.jpg'},
+    {sku:'760002', price:1299.99, slug:'apple-iphone-17-pro-max-512gb', title:'Apple iPhone 17 Pro Max 512GB', image:'https://images.bestbuy.com/max-512.jpg'}
+  ];
+  const render = row => [
+    '"price":{"customerPrice":'+row.price+'},"skuId":"'+row.sku+'",',
+    '"pdpUrl":"https://www.bestbuy.com/product/'+row.slug+'/XTEST/sku/'+row.sku+'",',
+    '"name":{"short":"'+row.title+'"},',
+    '"primaryImage":{"piscesHref":"'+row.image+'"}'
+  ].join('');
+  for(const order of [rows,[...rows].reverse()]){
+    const malformed=order.map(render).join(',\n');
+    const offers=extractBestBuySearchOffers(malformed,'iPhone 17 Pro');
+    assert.equal(offers.length,2,'both legitimate malformed-source offers should remain');
+    for(const row of rows){
+      const offer=offers.find(o=>o.productId===row.sku);
+      assert.equal(offer?.price,row.price);
+      assert.equal(offer?.title,row.title,'fallback must not borrow neighboring name');
+      assert.equal(offer?.image,row.image,'fallback must not borrow neighboring image');
+      assert.match(offer?.sourceUrl||'',new RegExp('/sku/'+row.sku+'$'));
+    }
+  }
+  // A missing title in one malformed record must not borrow the next record's
+  // title and invent a seemingly valid exact handset offer.
+  const noTitle=[
+    '"price":{"customerPrice":999.99},"skuId":"760001",',
+    '"pdpUrl":"https://www.bestbuy.com/product/apple-iphone-17-pro-256gb/XTEST/sku/760001",',
+    render(rows[1])
+  ].join(',');
+  const offers=extractBestBuySearchOffers(noTitle,'iPhone 17 Pro');
+  assert.equal(offers.some(o=>o.productId==='760001'),false,'missing local title is not evidence of the neighbor title');
+  assert.equal(offers.find(o=>o.productId==='760002')?.title,rows[1].title);
+});
