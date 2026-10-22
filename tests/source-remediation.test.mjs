@@ -334,3 +334,35 @@ test('v21.34: opt-in Best Buy provenance distinguishes priced search hydration f
     assert.equal(result.diagnostics.identityAudit.pdpResolvedOfferCount,0);
   });
 });
+
+
+test('v21.35 RED: real-observed Best Buy AirPods SKU/PDP generation conflict cannot be published',()=>{
+  // The SKU/PDP/title conflict was OBSERVED in a live GitHub source-validation
+  // run; this input is deliberately SYNTHETIC, not saved original merchant HTML.
+  const url4='https://www.bestbuy.com/product/apple-airpods-4-with-active-noise-cancellation-white/JJGCQ832YX/sku/10190061';
+  const url5='https://www.bestbuy.com/product/apple-airpods-5-true-wireless-active-noise-cancelling-earbuds-with-wireless-charging-case-white/JJGCQP634G/sku/6376564';
+  const bad={price:{customerPrice:158},skuId:'10190061',pdpUrl:url4,
+    name:{short:'Apple - AirPods 5 True Wireless Active Noise Cancelling Earbuds with Wireless Charging Case - White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-5.jpg'}};
+  const good5={price:{customerPrice:149},skuId:'6376564',pdpUrl:url5,
+    name:{short:'Apple - AirPods 5 True Wireless Active Noise Cancelling Earbuds with Wireless Charging Case - White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-5.jpg'}};
+  const good4={price:{customerPrice:119.99},skuId:'6447385',
+    pdpUrl:'https://www.bestbuy.com/product/apple-airpods-4-with-active-noise-cancellation-white/JJGCQ832YX/sku/6447385',
+    name:{short:'Apple - AirPods 4 with Active Noise Cancellation - White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-4.jpg'}};
+  for(const rows of [[bad,good5,good4],[good4,bad,good5],[good5,good4,bad]]){
+    const found=extractBestBuySearchOffers(JSON.stringify({products:rows}),'airpods');
+    assert.deepEqual(new Set(found.map(x=>x.productId)),new Set(['6376564','6447385']),
+      'a mismatched AirPods4 URL cannot sell under AirPods5 title; exact 4/5 variants survive');
+    assert.equal(found.find(x=>x.productId==='6376564')?.price,149);
+    assert.equal(found.find(x=>x.productId==='6447385')?.price,119.99);
+  }
+  const restored=extractBestBuySearchOffers(JSON.stringify({products:[{
+    ...bad,name:{short:'Apple - AirPods 4 with Active Noise Cancellation - White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-4.jpg'}
+  }]}),'airpods');
+  assert.equal(restored.length,1,'legitimate own-title AirPods4 SKU must not be blacklisted');
+  assert.equal(restored[0].sourceUrl,url4);
+  assert.equal(restored[0].price,158);
+});
