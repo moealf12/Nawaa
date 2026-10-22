@@ -230,3 +230,37 @@ test('v21.31 RED: Best Buy malformed hydration fallback cannot borrow a neighbor
   assert.equal(offers.some(o=>o.productId==='760001'),false,'missing local title is not evidence of the neighbor title');
   assert.equal(offers.find(o=>o.productId==='760002')?.title,rows[1].title);
 });
+
+
+test('v21.32 RED: Best Buy leading fallback must not borrow title and image from previous SKU record', () => {
+  // SYNTHETIC valid sibling JSON products, not captured Best Buy hydration.
+  // Product B has its own price, SKU and PDP but NO attributable title/image.
+  // Its embedded SKU occurs before the price, activating v21.31 leading fallback.
+  const a = {
+    price:{customerPrice:999.99}, skuId:'760001',
+    pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-256gb/A/sku/760001',
+    name:{short:'Apple iPhone 17 Pro 256GB'},
+    primaryImage:{piscesHref:'https://images.bestbuy.com/pro-256.jpg'}
+  };
+  const b = {
+    product:{skuId:'760002',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-max-512gb/B/sku/760002'},
+    price:{customerPrice:1299.99},skuId:'760002'
+  };
+  const offers=extractBestBuySearchOffers(JSON.stringify({products:[a,b]}),'iPhone 17 Pro');
+  assert.equal(offers.find(offer=>offer.productId==='760001')?.title,a.name.short,
+    'the original titled sibling stays retrievable');
+  assert.equal(offers.some(offer=>offer.productId==='760002'),false,
+    'the untitled SKU must not inherit the previous sibling title/image');
+  const ownTitle={
+    product:{skuId:'760002',pdpUrl:b.product.pdpUrl,
+      name:{short:'Apple iPhone 17 Pro Max 512GB'},
+      primaryImage:{piscesHref:'https://images.bestbuy.com/max-512.jpg'}},
+    price:{customerPrice:1299.99},skuId:'760002'
+  };
+  const valid=extractBestBuySearchOffers(JSON.stringify({products:[a,ownTitle]}),'iPhone 17 Pro');
+  const retained=valid.find(offer=>offer.productId==='760002');
+  assert.equal(retained?.price,1299.99,
+    'a valid child with its own leading title and correct price must remain');
+  assert.equal(retained?.title,ownTitle.product.name.short);
+  assert.equal(retained?.image,ownTitle.product.primaryImage.piscesHref);
+});
