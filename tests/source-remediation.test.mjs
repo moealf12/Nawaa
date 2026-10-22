@@ -394,3 +394,29 @@ test('v21.36 RED: Best Buy bare AirPods4 SKU cannot inherit neighboring accessor
     'do not sacrifice independently titled standalone or legitimate bundle');
   assert.equal(valid.find(x=>x.productId==='6447385')?.price,119.99);
 });
+
+test('v21.38 RED: audit distinguishes discovered Best Buy SKU links lacking owned priced hydration records',async()=>{
+  const pricedUrl='https://www.bestbuy.com/product/apple-airpods-4-white/TEST/sku/10190062';
+  const linkOnlyUrl='https://www.bestbuy.com/product/apple-airpods-4-with-active-noise-cancellation-white/TEST/sku/6447385';
+  const pricedRecord={price:{customerPrice:108},skuId:'10190062',pdpUrl:pricedUrl,
+    name:{short:'Apple AirPods 4 White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-4.jpg'}};
+  const html='<html><a href="'+linkOnlyUrl+'">Apple AirPods 4 ANC</a>'+
+    '<script>'+JSON.stringify({products:[pricedRecord]})+'</script></html>';
+  let fetchCount=0;
+  await withFetch(async()=>{fetchCount++;return new Response(html,{headers:{'content-type':'text/html'}});},async()=>{
+    const result=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
+      {perStore:3,identityAudit:true});
+    assert.equal(result.diagnostics.identityAudit.stage,'search_hydration');
+    assert.equal(result.diagnostics.identityAudit.discoveredLinkWithoutPricedOfferCount,1);
+    assert.deepEqual(result.diagnostics.identityAudit.discoveredLinkWithoutPricedOfferSamples,
+      [{sku:'6447385',url:linkOnlyUrl}]);
+    assert.equal(result.diagnostics.identityAudit.linkSampleLimited,true,
+      'a perStore-limited link sample cannot establish complete source recall');
+    assert.deepEqual(result.offers.map(offer=>offer.specs.modelNumber),['10190062'],
+      'unpriced SKU must not become a fabricated priced offer');
+    assert.equal(fetchCount,1,'diagnostic must not add PDP/network fan-out');
+    const silent=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',{perStore:3});
+    assert.equal(silent.diagnostics.identityAudit,null,'only opt-in audits expose diagnostics');
+  });
+});
