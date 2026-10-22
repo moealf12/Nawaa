@@ -148,3 +148,32 @@ test('v21.29 RED: Best Buy neighboring same-category records cannot exchange tit
     }
   }
 });
+
+
+test('v21.30 RED: Best Buy price and SKU cannot bridge sibling JSON records',()=> {
+  // Synthetic minimized parser counterexample: the first record has a valid
+  // positive price but no SKU, while the next sibling has a SKU/URL/title.
+  // Neither record alone contains a valid sellable offer. Adjacent-text regex
+  // must not fabricate an offer from their unrelated fields.
+  const rows=[
+    {price:{customerPrice:999.99},name:{short:'Apple iPhone 17 Pro 256GB'}},
+    {skuId:'760002',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-max-512gb/P17MAX/sku/760002',name:{short:'Apple iPhone 17 Pro Max 512GB'}}
+  ];
+  for(const ordered of [rows,[...rows].reverse()]){
+    const offers=extractBestBuySearchOffers(JSON.stringify({products:ordered}),'iPhone 17 Pro');
+    assert.deepEqual(offers,[], 'sibling price must not attach to another SKU');
+  }
+  // Complete independently owned product records still parse, including
+  // either list ordering; avoid fixing contamination by suppressing recall.
+  const valid=[
+    {price:{customerPrice:999.99},skuId:'760001',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-256gb/P17PRO/sku/760001',name:{short:'Apple iPhone 17 Pro 256GB'}},
+    {price:{customerPrice:1299.99},skuId:'760002',pdpUrl:'https://www.bestbuy.com/product/apple-iphone-17-pro-max-512gb/P17MAX/sku/760002',name:{short:'Apple iPhone 17 Pro Max 512GB'}}
+  ];
+  for(const ordered of [valid,[...valid].reverse()]){
+    const offers=extractBestBuySearchOffers(JSON.stringify({products:ordered}),'iPhone 17 Pro');
+    assert.equal(offers.length,2);
+    for(const row of valid){
+      assert.equal(offers.find(offer=>offer.productId===row.skuId)?.price,row.price.customerPrice);
+    }
+  }
+});
