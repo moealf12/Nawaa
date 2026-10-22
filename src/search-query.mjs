@@ -244,12 +244,12 @@ function productCategoryWithDescription(offer, gaming) {
   // An ink multipack that lists compatible DeskJet/OfficeJet/Envy models after
   // "including" is a consumable, not a printer. Only the seller's subject before
   // the compatibility list may establish a complete printing device.
-  const compatiblePrinterList = soldTitle.match(/\\b(?:including|compatible with|for|fits)\\b/);
+  const compatiblePrinterList = soldTitle.match(/\b(?:including|compatible with|for|fits)\b/);
   if (compatiblePrinterList) {
     const retailSubjectBeforeList = soldTitle.slice(0, compatiblePrinterList.index);
-    const isInkPackSubject = /\\b(?:multi\\s?pack|twin\\s?pack|cartridges?|toners?|ink(?:jet)?(?:\\s+(?:pack|set|refill))?)\\b/.test(retailSubjectBeforeList);
-    const hasPrinterDeviceSubject = /\\b(?:printers?|deskjet|laserjet|officejet|smart tank|ecotank)\\b/.test(retailSubjectBeforeList);
-    const mentionsCompatiblePrinters = /\\b(?:printers?|deskjet|laserjet|officejet|envy)\\b/.test(soldTitle.slice(compatiblePrinterList.index));
+    const isInkPackSubject = /\b(?:multi\s?pack|twin\s?pack|cartridges?|toners?|ink(?:jet)?(?:\s+(?:pack|set|refill))?)\b/.test(retailSubjectBeforeList);
+    const hasPrinterDeviceSubject = /\b(?:printers?|deskjet|laserjet|officejet|smart tank|ecotank)\b/.test(retailSubjectBeforeList);
+    const mentionsCompatiblePrinters = /\b(?:printers?|deskjet|laserjet|officejet|envy)\b/.test(soldTitle.slice(compatiblePrinterList.index));
     if (isInkPackSubject && !hasPrinterDeviceSubject && mentionsCompatiblePrinters) return 'accessory';
   }
   // A complete printer sold WITH supplies must remain a printer; HP-branded
