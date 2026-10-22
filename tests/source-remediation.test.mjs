@@ -403,8 +403,8 @@ test('v21.38 RED: audit distinguishes discovered Best Buy SKU links lacking owne
     primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-4.jpg'}};
   const html='<html><a href="'+linkOnlyUrl+'">Apple AirPods 4 ANC</a>'+
     '<script>'+JSON.stringify({products:[pricedRecord]})+'</script></html>';
-  let fetchCount=0;
-  await withFetch(async()=>{fetchCount++;return new Response(html,{headers:{'content-type':'text/html'}});},async()=>{
+  const requestedUrls=[];
+  await withFetch(async url=>{requestedUrls.push(String(url));return new Response(html,{headers:{'content-type':'text/html'}});},async()=>{
     const result=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
       {perStore:3,identityAudit:true});
     assert.equal(result.diagnostics.identityAudit.stage,'search_hydration');
@@ -419,7 +419,8 @@ test('v21.38 RED: audit distinguishes discovered Best Buy SKU links lacking owne
       'the unpriced discovered link must not trigger expensive PDP recovery');
     assert.ok(result.offers.every(offer=>offer.specs?.modelNumber!=='6447385'),
       'discovered link-only SKU must never receive a fabricated price');
-    assert.equal(fetchCount,1,'diagnostic must not add PDP/network fan-out');
+    assert.equal(requestedUrls.filter(url=>url.startsWith('https://www.bestbuy.com/')).length,1,
+      'the audit must not make additional Best Buy PDP requests; FX may independently fetch rates');
     const silent=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',{perStore:3});
     assert.equal(silent.diagnostics.identityAudit,null,'only opt-in audits expose diagnostics');
   });
