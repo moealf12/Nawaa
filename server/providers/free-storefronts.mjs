@@ -988,11 +988,34 @@ export function extractBestBuySearchOffers(html, query) {
       source.startsWith('"skuId":"' + sku + '"', priorSku) &&
       match.index - priorSku <= 3000 &&
       source.indexOf('"price":{"customerPrice":', priorSku) === match.index;
-    // Limit preceding fields to the nearest explicitly same-SKU reference.
-    // An unrelated earlier SKU cannot license preceding descriptive evidence.
-    const priorBoundary = Math.max(start, priorSku - 3000,
-      source.lastIndexOf('"skuId":"', priorSku - 1) + 9);
-    const leading = priorSkuBelongsHere ? source.slice(priorBoundary, priorSku) : "";
+    // A previous sibling's fields can appear AFTER that sibling's SKU.
+    // Do not carry those fields into a new object's leading title/image.
+    // Scan only the bounded 3K prefix and ignore delimiters inside strings.
+    const leadStart = Math.max(start, priorSku - 3000);
+    let priorBoundary = leadStart;
+    if (priorSkuBelongsHere) {
+      let quoted = false, escaped = false;
+      for (let i = leadStart; i < priorSku; i++) {
+        const char = source[i];
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (char === "\\") escaped = true;
+          else if (char === '"') quoted = false;
+          continue;
+        }
+        if (char === '"') { quoted = true; continue; }
+        if (char !== "}") continue;
+        let next = i + 1;
+        while (/\\s/.test(source[next] || "")) next++;
+        if (source[next] !== ",") continue;
+        next++;
+        while (/\\s/.test(source[next] || "")) next++;
+        if (source[next] === "{" && next < priorSku) priorBoundary = next;
+      }
+    }
+    // Include fields both before and after a same-SKU prefix, up to price.
+    // Valid Best Buy nested cards sometimes place title/image after skuId.
+    const leading = priorSkuBelongsHere ? source.slice(priorBoundary, match.index) : "";
     const uniqueFields = (input, regex) => [...new Set([...input.matchAll(regex)]
       .map((item) => decodeJsonString(item[1])).filter(Boolean))];
     const trailingNames = uniqueFields(trailing, /"name":\{"short":"((?:\\.|[^"\\])*)"/g);
