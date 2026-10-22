@@ -976,20 +976,34 @@ export function extractBestBuySearchOffers(html, query) {
     const owned = scopedRecordFor(match.index, priceRe.lastIndex, sku);
     const sourceUrl = owned?.sourceUrl || pdpMatches.at(-1) || null;
 
-    // v21.31: When a full per-SKU JSON object cannot be recovered, do not
-    // borrow the LAST neighboring name/image from the broad +/- hydration scan.
-    // Limit fallback descriptive fields to this price/SKU entry and stop at
-    // the next price-bearing candidate. Missing/ambiguous fields stay missing.
+    // v21.31: Missing structured scope must not borrow the last name/image
+    // from an entire hydration neighborhood. Prefer fields before the next
+    // price anchor; permit leading fields only when a preceding SKU explicitly
+    // equals the currently selected SKU (legacy Best Buy nested product card).
     const nextPriceAnchor = source.indexOf('"price":{"customerPrice":', priceRe.lastIndex);
     const fallbackEnd = Math.min(end, nextPriceAnchor < 0 ? end : nextPriceAnchor);
-    const fallbackBlock = source.slice(match.index, fallbackEnd);
-    const fallbackTitles = [...new Set([...fallbackBlock.matchAll(/"name":\{"short":"((?:\\.|[^"\\])*)"/g)]
+    const trailing = source.slice(match.index, fallbackEnd);
+    const priorSku = source.lastIndexOf('"skuId":"', match.index - 1);
+    const priorSkuBelongsHere = priorSku >= start &&
+      source.startsWith('"skuId":"' + sku + '"', priorSku) &&
+      match.index - priorSku <= 3000 &&
+      source.indexOf('"price":{"customerPrice":', priorSku) === match.index;
+    // Limit preceding fields to the nearest explicitly same-SKU reference.
+    // An unrelated earlier SKU cannot license preceding descriptive evidence.
+    const priorBoundary = Math.max(start, priorSku - 3000,
+      source.lastIndexOf('"skuId":"', priorSku - 1) + 9);
+    const leading = priorSkuBelongsHere ? source.slice(priorBoundary, priorSku) : "";
+    const uniqueFields = (input, regex) => [...new Set([...input.matchAll(regex)]
       .map((item) => decodeJsonString(item[1])).filter(Boolean))];
-    const title = owned?.title ?? (fallbackTitles.length === 1 ? fallbackTitles[0] : null);
+    const trailingNames = uniqueFields(trailing, /"name":\{"short":"((?:\\.|[^"\\])*)"/g);
+    const leadingNames = uniqueFields(leading, /"name":\{"short":"((?:\\.|[^"\\])*)"/g);
+    const title = owned?.title ?? (trailingNames.length === 1 ? trailingNames[0]
+      : trailingNames.length === 0 && leadingNames.length === 1 ? leadingNames[0] : null);
 
-    const fallbackImages = [...new Set([...fallbackBlock.matchAll(/"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g)]
-      .map((item) => decodeJsonString(item[1])).filter(Boolean))];
-    const image = owned ? owned.image : fallbackImages.length === 1 ? fallbackImages[0] : null;
+    const trailingImages = uniqueFields(trailing, /"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g);
+    const leadingImages = uniqueFields(leading, /"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g);
+    const image = owned ? owned.image : trailingImages.length === 1 ? trailingImages[0]
+      : trailingImages.length === 0 && leadingImages.length === 1 ? leadingImages[0] : null;
 
     if (!sourceUrl || !title) continue;
     // Best Buy's search page interleaves product cards inside one large JSON
