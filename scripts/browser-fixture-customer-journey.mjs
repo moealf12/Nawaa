@@ -1462,7 +1462,7 @@ try{
     const fallbackCountBeforeHide=await lifecycleTab.evaluate(()=>window.__lifecycleFallbacks.length);
     await lifecycleTab.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
     await lifecycleTab.waitForTimeout(70);
-    const dispose=await lifecycleTab.evaluate(()=>({
+    const dispose=await lifecycleTab.evaluate((fallbackCountBeforeHide)=>({
       closed:window.__lifecycleStreams[4].closed,
       timeoutCleared:window.__lifecycleTimeouts[4]?.cleared||false,
       fallbacksBefore:fallbackCountBeforeHide,
