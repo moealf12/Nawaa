@@ -498,6 +498,8 @@ test('v21.40: live-observed Best Buy priced AirPods 4 ANC survives alongside bun
   const requests=[];
   await withFetch(async url=>{
     requests.push(String(url));
+    if(String(url).startsWith('https://api.frankfurter.dev/v2/rate/USD/sar'))
+      return Response.json({rate:3.75,date:'2026-10-23'});
     return new Response(html,{headers:{'content-type':'text/html'}});
   },async()=>{
     const found=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
