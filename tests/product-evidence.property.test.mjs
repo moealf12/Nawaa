@@ -103,3 +103,68 @@ test('property: same listing and matching title cannot override conflicting inde
     },
   ), checks);
 });
+
+
+test('property: conflicting Offer identifiers cannot override own ProductGroup variant ownership', () => {
+  // A legitimate product has a valid price-bearing offer. A different sibling's
+  // SKU/MPN in that offer is contradictory evidence, not a replacement identity.
+  // The other variant remains independently sellable (recall protection).
+  const page = 'https://merchant.example/p/wireless-earbuds';
+  fc.assert(fc.property(
+    fc.integer({ min: 100001, max: 999999 }),
+    fc.constantFrom('sku', 'mpn'),
+    fc.constantFrom('SAR', 'USD', 'AED'),
+    (suffix, conflictingField, currency) => {
+      const first = { sku: 'SKU-A-' + suffix, mpn: 'MODEL-A-' + suffix };
+      const second = { sku: 'SKU-B-' + suffix, mpn: 'MODEL-B-' + suffix };
+      const nodes = [
+        {
+          '@type': 'ProductGroup',
+          '@id': page + '#group',
+          url: page,
+          hasVariant: [{ '@id': page + '#a' }, { '@id': page + '#b' }],
+        },
+        {
+          '@type': 'Product',
+          '@id': page + '#a',
+          name: 'Wireless earbuds standard',
+          ...first,
+          offers: {
+            '@type': 'Offer',
+            url: page + '?variant=a',
+            price: 129,
+            priceCurrency: currency,
+            [conflictingField]: second[conflictingField],
+          },
+        },
+        {
+          '@type': 'Product',
+          '@id': page + '#b',
+          name: 'Wireless earbuds ANC',
+          ...second,
+          offers: {
+            '@type': 'Offer',
+            url: page + '?variant=b',
+            price: 199,
+            priceCurrency: currency,
+            sku: second.sku,
+            mpn: second.mpn,
+          },
+        },
+      ];
+      const resolved = resolveStructuredProductNodes(nodes, page);
+      assert.equal(resolved.length, 1);
+      assert.equal(resolved[0].schemaProductGroupEvidence, true);
+      const offers = resolved[0].offers;
+      assert.equal(offers.length, 2);
+      assert.equal(offers[0]['@type'], 'UnverifiedOffer',
+        'conflicting direct Offer identifier must invalidate only the affected price');
+      assert.equal(offers[0].price, undefined);
+      assert.equal(offers[1].sku, second.sku);
+      assert.equal(offers[1].mpn, second.mpn);
+      assert.equal(offers[1].price, 199,
+        'legitimately identified sibling must remain recoverable');
+      assert.equal(offers[1].priceCurrency, currency);
+    },
+  ), checks);
+});
