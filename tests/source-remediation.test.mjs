@@ -593,3 +593,52 @@ test('v21.42 RED: Best Buy audit isolates direct SKU record from sibling price a
     });
   }
 });
+
+
+test('v21.43 RED: Best Buy same-SKU audit reports bounded price field shapes without sibling leakage',async()=>{
+  const sku='10190062';
+  const url='https://www.bestbuy.com/product/apple-airpods-4-white/TEST/sku/'+sku;
+  const neighbor={
+    skuId:'6376564',price:{customerPrice:149},
+    pdpUrl:'https://www.bestbuy.com/product/apple-airpods-5/TEST/sku/6376564',
+    name:{short:'Apple AirPods 5 White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-5.jpg'}
+  };
+  const cases=[
+    {label:'owned alternate nested fields, no sale-price certification',
+      owner:{skuId:sku,pdpUrl:url,name:{short:'Apple AirPods 4 White'},
+        price:{regularPrice:129.99,salePrice:null,currency:'USD'}},
+      expected:[{path:'price',type:'object'},{path:'price.regularPrice',type:'number'},
+        {path:'price.salePrice',type:'null'}]},
+    {label:'owned direct and alternate pricing containers',
+      owner:{skuId:sku,pdpUrl:url,name:{short:'Apple AirPods 4 White'},
+        currentPrice:108,pricing:{finalPrice:'$107',stockStatus:'in-stock'}},
+      expected:[{path:'currentPrice',type:'number'},{path:'pricing',type:'object'},
+        {path:'pricing.finalPrice',type:'string'}]},
+    {label:'owner has no price, priced sibling must not leak',
+      owner:{skuId:sku,pdpUrl:url,name:{short:'Apple AirPods 4 White'}},
+      expected:[]}
+  ];
+  for(const {label,owner,expected} of cases){
+    const html='<a href="'+url+'">AirPods 4</a><script>'+
+      JSON.stringify({products:[neighbor,owner]})+'</script>';
+    let merchantCalls=0;
+    await withFetch(async requestUrl=>{
+      if(String(requestUrl).startsWith('https://api.frankfurter.dev/'))
+        return Response.json({rate:3.75,date:'2026-10-23'});
+      merchantCalls++;
+      return new Response(html,{headers:{'content-type':'text/html'}});
+    },async()=>{
+      const found=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
+        {perStore:3,identityAudit:true});
+      assert.deepEqual(found.diagnostics.identityAudit.discoveredLinkPriceShapeSamples,
+        [{sku,fields:expected}],label);
+      assert.equal(found.diagnostics.identityAudit.discoveredLinkRecordSamples[0].structuralStatus,
+        'OWN_SKU_RECORD_MISSING_PRICE',
+        'alternative field presence is not verified standalone selling price');
+      assert.ok(found.offers.every(o=>o.specs?.modelNumber!==sku),
+        'only the real extractor may accept verified source-own price');
+      assert.equal(merchantCalls,1,'diagnostic never adds PDP requests');
+    });
+  }
+});
