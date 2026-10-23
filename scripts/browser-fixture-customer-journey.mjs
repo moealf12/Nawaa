@@ -280,9 +280,30 @@ try{
     if(u.searchParams.has('cursor'))cursorRequests++;
     const q=testQuery(requestUrl),payload=searchPayload(q,u.searchParams.get('cursor'));
     if(u.pathname.endsWith('/stream')) {
-      const mode=q.match(/fixture-performance-\d+-(single|progress|duplicate)/)?.[1]||'single';
+      const mode=q.match(/fixture-performance-\d+-(single|progress|duplicate|price|currency|condition|availability|source|coverage|remove|merchant|variant|cursor|image)/)?.[1]||'single';
+      const mutations=new Set(['price','currency','condition','availability','source',
+        'coverage','remove','merchant','variant','cursor','image']);
+      const mutateOffer=offer=>{
+        if(mode==='price')return {...offer,productPrice:offer.productPrice+71};
+        if(mode==='currency')return {...offer,currency:'AED'};
+        if(mode==='condition')return {...offer,condition:'refurbished'};
+        if(mode==='availability')return {...offer,availability:'out_of_stock'};
+        if(mode==='source')return {...offer,sourceUrl:offer.sourceUrl+'?variant=changed'};
+        if(mode==='merchant')return {...offer,merchant:'Fixture Mutated Seller'};
+        if(mode==='variant')return {...offer,specs:{...offer.specs,modelNumber:'HP-LAP-DISTINCT-01',ram:'16GB'}};
+        if(mode==='image')return {...offer,image:'https://nawaa-fixture.invalid/changed.jpg'};
+        return offer;
+      };
+      const mutated=mutations.has(mode)?{
+        ...payload,
+        offers:mode==='remove'?payload.offers.slice(1):
+          payload.offers.map((o,i)=>i===0?mutateOffer(o):o),
+        coverage:mode==='coverage'?{...payload.coverage,partial:true}:payload.coverage,
+        nextCursor:mode==='cursor'?'signed-test-depth-1':payload.nextCursor
+      }:null;
       const frames=mode==='progress'?[{...payload,offers:payload.offers.slice(0,5)},payload]:
-        mode==='duplicate'?[payload,payload]:[payload];
+        mode==='duplicate'?[payload,payload]:
+        mutated?[payload,mutated]:[payload];
       const body=frames.map(x=>'event: snapshot\n'+'data: '+JSON.stringify(x)+'\n\n').join('')+
         'event: done\n'+'data: {}\n\n';
       await route.fulfill({status:200,contentType:'text/event-stream; charset=utf-8',headers:corsHeaders,body});
@@ -968,6 +989,135 @@ try{
         return [phase,{calls:all.length,medianMs:median(all),maxMs:Math.max(...all)}];
       }))}];
   }));
+
+  // v21.54: compare original instrumented code with a test-only counterfactual
+  // that skips ONLY strictly byte-equivalent successive SSE snapshot processing.
+  // Full final reconciliation remains untouched in both variants.
+  // This does NOT authorize a production optimizer or learner.
+  const candidatePatch=(from,to,label)=>{
+    const n=candidateSource.split(from).length-1;
+    if(n!==1)throw Error('candidate_patch_anchor_'+label+'_'+n);
+    candidateSource=candidateSource.replace(from,to);
+  };
+  let candidateSource=patchedSource;
+  candidatePatch('              best=payload;',
+    '              const __sameSnapshot=__criticalSpan("candidate.deepCompare",()=>Boolean(best) && JSON.stringify(best)===JSON.stringify(payload));\n'+
+    '              if(__sameSnapshot)window.__nawaaSkippedDuplicate=(window.__nawaaSkippedDuplicate||0)+1;\n'+
+    '              best=payload;','snapshot_compare');
+  candidatePatch('                __criticalSpan("history.total",()=>recordPriceHistory(payload.offers));',
+    '                if(!__sameSnapshot)__criticalSpan("history.total",()=>recordPriceHistory(payload.offers));','skip_history');
+  candidatePatch('                __criticalSpan("render.total",()=>renderProduct(liveProduct,query));',
+    '                if(!__sameSnapshot)__criticalSpan("render.total",()=>renderProduct(liveProduct,query));','skip_render');
+  const counterCases=[
+    ['duplicate','HP laptop fixture-performance-24-duplicate',3],
+    ['progressive','HP laptop fixture-performance-24-progress',2],
+    ['price','HP laptop fixture-performance-24-price',1],
+    ['currency','HP laptop fixture-performance-24-currency',1],
+    ['condition','HP laptop fixture-performance-24-condition',1],
+    ['availability','HP laptop fixture-performance-24-availability',1],
+    ['source','HP laptop fixture-performance-24-source',1],
+    ['coverage','HP laptop fixture-performance-24-coverage',1],
+    ['remove','HP laptop fixture-performance-24-remove',1],
+    ['merchant','HP laptop fixture-performance-24-merchant',1],
+    ['variant','HP laptop fixture-performance-24-variant',1],
+    ['cursor','HP laptop fixture-performance-24-cursor',1],
+    ['image','HP laptop fixture-performance-24-image',1],
+  ];
+  const counterResults={kind:'test_only_counterfactual_no_production_optimization',
+    optimization:'skip byte-identical intermediate SSE snapshot computation only',
+    semantics:'baseline vs candidate full result and final price history',samples:[],
+    realMerchantOwnershipCertified:false,productionP95Certified:false};
+  const executeCounter=async(query,candidate)=>{
+    const tab=await context.newPage();
+    tab.setDefaultTimeout(12000);
+    await tab.addInitScript(()=>{
+      try{localStorage.removeItem('nawaa_price_history_v1');}catch{}
+      window.__criticalPath=[];
+      window.__nawaaSkippedDuplicate=0;
+      window.__nawaaFirstCardDom=null;
+      window.__nawaaFirstCardFrame=null;
+      const attach=()=>{
+        const root=document.querySelector('#results');
+        if(!root)return;
+        const observe=()=>{
+          if(window.__nawaaFirstCardDom!==null)return;
+          if(!root.querySelector('.match-result-card'))return;
+          window.__nawaaFirstCardDom=performance.now();
+          requestAnimationFrame(()=>{window.__nawaaFirstCardFrame=performance.now();});
+        };
+        new MutationObserver(observe).observe(root,{childList:true,subtree:true});
+        observe();
+      };
+      if(document.readyState==='loading')
+        document.addEventListener('DOMContentLoaded',attach,{once:true});
+      else attach();
+    });
+    if(candidate)await tab.route(url=>url.hostname==='127.0.0.1'&&url.pathname==='/src/search-page.mjs',
+      async route=>route.fulfill({status:200,contentType:'text/javascript; charset=utf-8',body:candidateSource}));
+    try{
+      await tab.goto(base+'/search.html?q='+encodeURIComponent(query),
+        {waitUntil:'domcontentloaded',timeout:20000});
+      await tab.waitForFunction(()=>{
+        const status=document.querySelector('#searchStatus')?.textContent||'';
+        return status.startsWith('بحث حي:')&&
+          Number.isFinite(window.__nawaaFirstCardFrame);
+      },null,{timeout:12000});
+      return await tab.evaluate(()=>{
+        const content=document.querySelector('#results')?.textContent?.replace(/\s+/g,' ').trim()||'';
+        const cards=[...document.querySelectorAll('#results .match-result-card')].map(c=>({
+          group:c.dataset.groupKey||null,title:c.querySelector('.match-card-copy strong')?.textContent?.trim()||'',
+          price:c.querySelector('.match-card-price b')?.textContent?.trim()||''
+        }));
+        const tasks=window.__criticalPath||[];
+        return {cards,content,status:document.querySelector('#searchStatus')?.textContent||'',
+          history:localStorage.getItem('nawaa_price_history_v1'),
+          loadMore:document.querySelector('#loadMoreRemote')?.textContent||null,
+          domToFrameMs:Math.round((window.__nawaaFirstCardFrame-window.__nawaaFirstCardDom)*100)/100,
+          skipped:Number(window.__nawaaSkippedDuplicate||0),
+          compareMs:tasks.filter(x=>x.phase==='candidate.deepCompare').reduce((a,b)=>a+b.ms,0),
+          historyCalls:tasks.filter(x=>x.phase==='history.total').length,
+          renderCalls:tasks.filter(x=>x.phase==='render.total').length};
+      });
+    }finally{await tab.close();}
+  };
+  for(const [name,query,rounds] of counterCases){
+    for(let round=0;round<rounds;round++){
+      const order=round%2?[true,false]:[false,true];
+      const outcomes={};
+      for(const candidate of order)outcomes[candidate?'candidate':'original']=await executeCounter(query,candidate);
+      const original=outcomes.original,optimized=outcomes.candidate;
+      const expectedSkip=name==='duplicate'?1:0;
+      const semanticallySame=JSON.stringify({
+        cards:original.cards,content:original.content,status:original.status,
+        history:original.history,loadMore:original.loadMore
+      })===JSON.stringify({
+        cards:optimized.cards,content:optimized.content,status:optimized.status,
+        history:optimized.history,loadMore:optimized.loadMore
+      });
+      const item={name,round,semanticallySame,
+        originalFrameMs:original.domToFrameMs,candidateFrameMs:optimized.domToFrameMs,
+        originalHistoryCalls:original.historyCalls,candidateHistoryCalls:optimized.historyCalls,
+        originalRenderCalls:original.renderCalls,candidateRenderCalls:optimized.renderCalls,
+        actualSkip:optimized.skipped,expectedSkip,compareMs:Math.round(optimized.compareMs*100)/100};
+      counterResults.samples.push(item);
+      assertCheck('counterfactual_'+name+'_'+round,
+        semanticallySame&&optimized.skipped===expectedSkip&&
+        (expectedSkip===1?
+          original.renderCalls===optimized.renderCalls+1&&original.historyCalls===optimized.historyCalls+1:
+          original.renderCalls===optimized.renderCalls&&original.historyCalls===optimized.historyCalls),
+        item);
+    }
+  }
+  const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
+  counterResults.duplicate=(()=>{
+    const data=counterResults.samples.filter(x=>x.name==='duplicate');
+    return {n:data.length,originalFrameMeanMs:Math.round(mean(data.map(x=>x.originalFrameMs))*100)/100,
+      candidateFrameMeanMs:Math.round(mean(data.map(x=>x.candidateFrameMs))*100)/100,
+      comparisonOverheadMeanMs:Math.round(mean(data.map(x=>x.compareMs))*100)/100};
+  })();
+  traces.counterfactual=counterResults;
+  writeFileSync('browser-artifacts/fixture-counterfactual-v2154.json',JSON.stringify(counterResults,null,2));
+  console.log('NAWAA_V2154_COUNTERFACTUAL '+JSON.stringify(counterResults));
   summary.browserForensics=traces;
   writeFileSync('browser-artifacts/fixture-browser-forensics.json',JSON.stringify(traces,null,2));
   console.log('NAWAA_FIXTURE_BROWSER_FORENSICS '+JSON.stringify(traces));
