@@ -1,6 +1,7 @@
 import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
 import { resolveProductUrl } from "../server/url-resolver.mjs";
 import { classifyPdpProbeFailure } from "./bestbuy-pdp-probe-status.mjs";
+import { countDistinctLiveMerchants } from "./live-source-validation-counts.mjs";
 
 // CI-only forensic probe. Never consulted by production ranking/extraction.
 // A PDP may suggest a matching priced record, but this probe does NOT certify
@@ -53,7 +54,7 @@ const CASES = [
   ["sharafdg-ae","hp laptop"],["virgin-ae","iphone 17"],["virgin-ae","airpods"],["virgin-ae","apple watch"],["virgin-ae","macbook"],["virgin-ae","playstation 5"],["xcite-kw","hp laptop"],
   ["lulu-ae","iphone 17"],["carrefour-ae","iphone 17"],["microless-ae","iphone 17"],["jumbo-ae","iphone 17"],
   ["goldenscent-sa","dior sauvage"],["ounass-sa","nike shoes"],["sunandsand-sa","nike shoes"],
-  ["virgin-sa","airpods"],["homecentre-sa","office chair"],["mumzworld-sa","stroller"],
+  ["homecentre-sa","office chair"],["mumzworld-sa","stroller"],
   ["asos-global","nike air max"],["farfetch-sa","gucci shoes"],["etsy-global","silver necklace"],
   ["newegg-global","gaming laptop"],["bhphoto-us","canon camera"],["walmart-us","airpods"],
   ["bestbuy-us","apple airpods 4"],["nike-sa","nike shoes"],["adidas-sa","adidas shoes"],
@@ -63,7 +64,7 @@ const CASES = [
   ["ssense-global","nike shoes"],["jomashop-global","seiko watch"],["fragrancex-global","dior perfume"],
   ["lookfantastic-global","cerave cleanser"],["cultbeauty-global","niod serum"],["stockx-global","nike shoes"],["goat-global","nike shoes"],
   ["amazon-ae","airpods"],["noon-ae","airpods"],["sharafdg-ae","airpods"],
-  ["virgin-ae","airpods"],["xcite-kw","airpods"],["lulu-ae","airpods"],
+  ["xcite-kw","airpods"],["lulu-ae","airpods"],
 ];
 
 let live = 0;
@@ -104,11 +105,14 @@ console.table(rows);
 const failed = rows.filter((row) => row.status === "PROBED_FAILED").length;
 const probedOnly = rows.filter((row) => row.status === "PROBED").length;
 const liveSources = rows.filter((row) => row.status === "LIVE_VALIDATED").map((row) => row.store);
-const report = {checked:CASES.length,liveValidated:live,liveSources,probedOnly,failed,rows};
+// Preserve the historical per-query counter while exposing real distinct-store coverage.
+// A retailer passing five queries is still one validated merchant for this gate.
+const uniqueLiveValidated = countDistinctLiveMerchants(rows);
+const report = {checked:CASES.length,liveValidated:live,uniqueLiveValidated,liveSources,probedOnly,failed,rows};
 console.log(JSON.stringify(report,null,2));
 await import("node:fs").then(({writeFileSync}) => writeFileSync("live-source-validation.json", JSON.stringify(report,null,2)));
 const minimumLive = Number(process.env.MIN_LIVE_SOURCES || 8);
-if (live < minimumLive) {
-  console.error(`VALIDATION_GATE_FAILED: ${live}/${minimumLive} required sources reached LIVE_VALIDATED.`);
+if (uniqueLiveValidated < minimumLive) {
+  console.error(`VALIDATION_GATE_FAILED: ${uniqueLiveValidated}/${minimumLive} distinct merchants reached LIVE_VALIDATED (${live} passing queries).`);
   process.exitCode = 1;
 }
