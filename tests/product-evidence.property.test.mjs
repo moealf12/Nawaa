@@ -168,3 +168,50 @@ test('property: conflicting Offer identifiers cannot override own ProductGroup v
     },
   ), checks);
 });
+
+
+test('v21.49 property: ProductGroup explicit variant destination must not inherit another variant Offer URL', () => {
+  const page='https://merchant.example/p/wireless-earbuds';
+  fc.assert(fc.property(
+    fc.integer({min:100001,max:999999}),
+    fc.constantFrom('SAR','USD','AED'),
+    fc.constantFrom('explicit_conflict','shared_page_positive','exact_variant_positive'),
+    (suffix,currency,caseKind)=>{
+      const skuA='SKU-A-'+suffix,skuB='SKU-B-'+suffix;
+      const ownAUrl=caseKind==='shared_page_positive'?page:page+'?variant=a';
+      const offeredAUrl=caseKind==='explicit_conflict'?page+'?variant=b':page+'?variant=a';
+      const nodes=[
+        {'@type':'ProductGroup','@id':page+'#group',url:page,
+          hasVariant:[{'@id':page+'#a'},{'@id':page+'#b'}]},
+        {'@type':'Product','@id':page+'#a',
+          name:'Earbuds standard',sku:skuA,url:ownAUrl,
+          offers:{'@type':'Offer',sku:skuA,price:129,
+            priceCurrency:currency,url:offeredAUrl}},
+        {'@type':'Product','@id':page+'#b',
+          name:'Earbuds ANC',sku:skuB,url:page+'?variant=b',
+          offers:{'@type':'Offer',sku:skuB,price:199,
+            priceCurrency:currency,url:page+'?variant=b'}},
+      ];
+      const resolved=resolveStructuredProductNodes(nodes,page);
+      assert.equal(resolved.length,1);
+      assert.equal(resolved[0].schemaProductGroupEvidence,true);
+      const offers=resolved[0].offers;
+      assert.equal(offers.length,2);
+      if(caseKind==='explicit_conflict'){
+        assert.equal(offers[0]['@type'],'UnverifiedOffer',
+          'the product claiming variant=a must not publish variant=b price destination');
+        assert.equal(offers[0].price,undefined);
+      }else{
+        assert.equal(offers[0].sku,skuA,
+          'legitimate exact and shared-PDP variants must remain sellable');
+        assert.equal(offers[0].price,129);
+        assert.equal(offers[0].priceCurrency,currency);
+        assert.equal(offers[0].url,page+'?variant=a');
+      }
+      assert.equal(offers[1].sku,skuB);
+      assert.equal(offers[1].price,199,
+        'unrelated legitimate sibling must retain its own price');
+      assert.equal(offers[1].url,page+'?variant=b');
+    }
+  ),checks);
+});
