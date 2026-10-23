@@ -10,7 +10,9 @@
     "audit:source": "node scripts/audit-source.mjs",
     "audit:matrix": "node scripts/audit-matrix.mjs",
     "benchmark:search": "node scripts/search-quality-benchmark.mjs",
-    "validate:sources": "node scripts/validate-live-sources.mjs"
+    "validate:sources": "node scripts/validate-live-sources.mjs",
+    "lint": "eslint server/product-identity.mjs server/schemaorg-product-graph.mjs server/audit-contract.mjs server/provider-utils.mjs tests/product-evidence.property.test.mjs --max-warnings=0",
+    "test:property": "node --test tests/product-evidence.property.test.mjs"
   },
   "engines": {
     "node": ">=22"
