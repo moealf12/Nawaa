@@ -1261,6 +1261,148 @@ try{
   }
   writeFileSync('browser-artifacts/fixture-render-only-v2155.json',JSON.stringify(renderOnlyReport,null,2));
   console.log('NAWAA_V2155_RENDER_ONLY '+JSON.stringify(renderOnlyReport));
+  // v21.56: deterministic lifecycle RED/ GREEN on the exact customer module.
+  // Manually delivered events and timeouts expose obsolete fallback requests and
+  // post-terminal snapshots without waiting 30 real seconds or calling merchants.
+  const lifecycleTab=await context.newPage();
+  lifecycleTab.setDefaultTimeout(10000);
+  await lifecycleTab.addInitScript(()=>{
+    try{localStorage.removeItem('nawaa_price_history_v1');}catch{}
+    window.__lifecycleStreams=[];
+    window.__lifecycleFallbacks=[];
+    window.__lifecycleTimeouts=[];
+    const originalSetTimeout=window.setTimeout.bind(window);
+    const originalClearTimeout=window.clearTimeout.bind(window);
+    window.setTimeout=(callback,delay,...args)=>{
+      if(delay===30000){
+        const entry={id:-(window.__lifecycleTimeouts.length+1),
+          callback:()=>callback(...args),cleared:false,fired:false};
+        window.__lifecycleTimeouts.push(entry);
+        return entry.id;
+      }
+      return originalSetTimeout(callback,delay,...args);
+    };
+    window.clearTimeout=id=>{
+      const entry=window.__lifecycleTimeouts.find(t=>t.id===id);
+      if(entry){entry.cleared=true;return;}
+      return originalClearTimeout(id);
+    };
+    const originalFetch=window.fetch.bind(window);
+    window.fetch=(input,...rest)=>{
+      const value=typeof input==='string'?input:input?.url||'';
+      if(value.includes('/api/search?'))window.__lifecycleFallbacks.push(value);
+      return originalFetch(input,...rest);
+    };
+    window.EventSource=class{
+      constructor(url){
+        this.url=url;this.listeners=new Map();this.closeCalls=0;this.closed=false;
+        window.__lifecycleStreams.push(this);
+      }
+      addEventListener(type,listener){
+        if(!this.listeners.has(type))this.listeners.set(type,[]);
+        this.listeners.get(type).push(listener);
+      }
+      emit(type,data='{}'){
+        for(const listener of this.listeners.get(type)||[])listener({data});
+      }
+      snapshot(data){this.emit('snapshot',JSON.stringify(data));}
+      done(){this.emit('done');}
+      error(){this.emit('error');}
+      close(){this.closed=true;this.closeCalls++;}
+    };
+    window.__firePendingStreamTimers=()=>{
+      for(const timer of window.__lifecycleTimeouts){
+        if(timer.cleared||timer.fired)continue;
+        timer.fired=true;timer.callback();
+      }
+    };
+  });
+  await lifecycleTab.route(url=>url.hostname==='127.0.0.1'&&url.pathname==='/src/search-page.mjs',
+    async route=>route.fulfill({status:200,contentType:'text/javascript; charset=utf-8',
+      body:readFileSync(new URL('../src/search-page.mjs',import.meta.url),'utf8')}));
+  const lifecycleQueryA='HP laptop fixture-performance-6-single';
+  const lifecycleQueryB='HP laptop fixture-performance-24-single';
+  try{
+    await lifecycleTab.goto(base+'/search.html?q='+encodeURIComponent(lifecycleQueryA),
+      {waitUntil:'domcontentloaded',timeout:20000});
+    await lifecycleTab.waitForFunction(()=>window.__lifecycleStreams.length===1);
+    await lifecycleTab.evaluate(p=>window.__lifecycleStreams[0].snapshot(p),
+      searchPayload(lifecycleQueryA,null));
+    await lifecycleTab.locator('#results .match-result-card').first().waitFor();
+    await lifecycleTab.evaluate(query=>{
+      document.querySelector('#searchInput').value=query;
+      document.querySelector('#searchForm').requestSubmit();
+    },lifecycleQueryB);
+    await lifecycleTab.waitForFunction(()=>window.__lifecycleStreams.length===2);
+    const canceled=await lifecycleTab.evaluate(()=>({
+      firstClosed:window.__lifecycleStreams[0].closed,
+      firstTimeoutCleared:window.__lifecycleTimeouts[0]?.cleared||false,
+      timerCount:window.__lifecycleTimeouts.length
+    }));
+    assertCheck('v2156_cancel_closes_and_clears_prior_timer',
+      canceled.firstClosed&&canceled.firstTimeoutCleared&&canceled.timerCount===2,canceled);
+    await lifecycleTab.evaluate(p=>window.__lifecycleStreams[1].snapshot(p),
+      searchPayload(lifecycleQueryB,null));
+    const beforeLate=await lifecycleTab.evaluate(()=>({
+      cards:document.querySelectorAll('#results .match-result-card').length,
+      status:document.querySelector('#searchStatus')?.textContent||''
+    }));
+    await lifecycleTab.evaluate(p=>{
+      const old=window.__lifecycleStreams[0];
+      old.snapshot(p);old.done();old.error();
+      window.__firePendingStreamTimers();
+    },searchPayload(lifecycleQueryA,null));
+    await lifecycleTab.waitForTimeout(80);
+    const afterLate=await lifecycleTab.evaluate(()=>({
+      cards:document.querySelectorAll('#results .match-result-card').length,
+      status:document.querySelector('#searchStatus')?.textContent||'',
+      fallbacks:window.__lifecycleFallbacks.slice()
+    }));
+    assertCheck('v2156_old_stream_cannot_schedule_json_fallback',
+      afterLate.fallbacks.length===0,afterLate);
+    assertCheck('v2156_old_stream_does_not_mutate_new_search',
+      beforeLate.cards===afterLate.cards&&
+      beforeLate.status===afterLate.status&&beforeLate.cards===10,
+      {beforeLate,afterLate});
+    await lifecycleTab.evaluate(()=>window.__lifecycleStreams[1].done());
+    await lifecycleTab.waitForFunction(()=>document.querySelector('#searchStatus')?.textContent?.startsWith('بحث حي:'));
+    const beforeTerminalReplay=await lifecycleTab.evaluate(()=>({
+      cards:[...document.querySelectorAll('#results .match-result-card')].map(c=>c.dataset.groupKey),
+      status:document.querySelector('#searchStatus')?.textContent||'',
+      history:localStorage.getItem('nawaa_price_history_v1'),
+      closeCalls:window.__lifecycleStreams[1].closeCalls,
+      secondTimeoutCleared:window.__lifecycleTimeouts[1]?.cleared||false
+    }));
+    await lifecycleTab.evaluate(p=>{
+      const stream=window.__lifecycleStreams[1];
+      stream.done();stream.error();stream.snapshot(p);
+      window.__firePendingStreamTimers();
+    },searchPayload(lifecycleQueryA,null));
+    await lifecycleTab.waitForTimeout(80);
+    const afterTerminalReplay=await lifecycleTab.evaluate(()=>({
+      cards:[...document.querySelectorAll('#results .match-result-card')].map(c=>c.dataset.groupKey),
+      status:document.querySelector('#searchStatus')?.textContent||'',
+      history:localStorage.getItem('nawaa_price_history_v1'),
+      closeCalls:window.__lifecycleStreams[1].closeCalls,
+      secondTimeoutCleared:window.__lifecycleTimeouts[1]?.cleared||false,
+      fallbacks:window.__lifecycleFallbacks.slice()
+    }));
+    const identical=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+    assertCheck('v2156_terminal_idempotent_and_post_done_snapshot_ignored',
+      identical(beforeTerminalReplay.cards,afterTerminalReplay.cards)&&
+      beforeTerminalReplay.status===afterTerminalReplay.status&&
+      beforeTerminalReplay.history===afterTerminalReplay.history&&
+      beforeTerminalReplay.closeCalls===1&&afterTerminalReplay.closeCalls===1&&
+      beforeTerminalReplay.secondTimeoutCleared&&afterTerminalReplay.secondTimeoutCleared&&
+      afterTerminalReplay.fallbacks.length===0,
+      {beforeTerminalReplay,afterTerminalReplay});
+    const lifecycleEvidence={canceled,beforeLate,afterLate,beforeTerminalReplay,afterTerminalReplay,
+      scope:'fixture controlled events; actual production module, no external merchants',
+      p95Certified:false};
+    writeFileSync('browser-artifacts/fixture-sse-lifecycle-v2156.json',
+      JSON.stringify(lifecycleEvidence,null,2));
+    console.log('NAWAA_V2156_SSE_LIFECYCLE '+JSON.stringify(lifecycleEvidence));
+  }finally{await lifecycleTab.close();}
   summary.browserForensics=traces;
   writeFileSync('browser-artifacts/fixture-browser-forensics.json',JSON.stringify(traces,null,2));
   console.log('NAWAA_FIXTURE_BROWSER_FORENSICS '+JSON.stringify(traces));
