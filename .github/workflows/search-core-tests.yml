@@ -11,6 +11,7 @@ on:
       - "scripts/**"
       - "*.html"
       - "package*.json"
+      - "eslint.config.mjs"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - "scripts/**"
       - "*.html"
       - "package*.json"
+      - "eslint.config.mjs"
       - ".github/workflows/search-core-tests.yml"
 
 permissions:
@@ -37,7 +39,9 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci --ignore-scripts
-      - name: Run test suite
+      - name: Static correctness checks (no formatting or runtime effect)
+        run: npm run lint
+      - name: Run existing node:test suite, including bounded property tests
         run: npm test
       - name: Live Crawlee smoke test against Jarir Saudi
         if: github.head_ref == 'feature/crawlee-local-ingestion-20261006'
