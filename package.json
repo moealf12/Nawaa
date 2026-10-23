@@ -16,10 +16,14 @@
     "node": ">=22"
   },
   "dependencies": {
-    "meilisearch": "^0.48.2",
-    "pg": "^8.16.3",
     "cheerio": "^1.1.2",
-    "crawlee": "3.18.2"
+    "crawlee": "3.18.2",
+    "meilisearch": "^0.48.2",
+    "pg": "^8.16.3"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "eslint": "9.39.5",
+    "fast-check": "4.10.2",
+    "globals": "17.13.0"
+  }
 }
