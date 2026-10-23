@@ -443,3 +443,17 @@ test('v21.39 RED: optional safe PDP stage timeline identifies DNS, transport and
     'response_body_complete'
   ],'evidence-only timeline must identify phases without merchant URLs, DNS data, prices or secrets');
 });
+
+test('v21.40 RED: Best Buy diagnostic stage classifies completed-TLS header timeout without claiming source block',async()=>{
+  const {classifyPdpProbeFailure} = await import('../scripts/bestbuy-pdp-probe-status.mjs');
+  assert.equal(classifyPdpProbeFailure(['dns_lookup_start','dns_lookup_done','request_start','tcp_connected','tls_connected'],
+    {name:'TimeoutError',message:'The operation was aborted due to timeout'}),'PDP_HTTP_HEADERS_TIMEOUT');
+  assert.equal(classifyPdpProbeFailure(['dns_lookup_start'],{name:'TimeoutError'}),
+    'PDP_DNS_TIMEOUT');
+  assert.equal(classifyPdpProbeFailure(['dns_lookup_done','request_start','response_headers'],{name:'TimeoutError'}),
+    'PDP_RESPONSE_BODY_TIMEOUT');
+  assert.equal(classifyPdpProbeFailure(['dns_lookup_done','request_start','response_headers','response_body_complete','extraction_start'],{name:'TimeoutError'}),
+    'PDP_EXTRACTION_TIMEOUT');
+  assert.equal(classifyPdpProbeFailure(['dns_lookup_start'],{name:'Error',message:'HTTP 403'}),
+    'PDP_UNVERIFIED');
+});
