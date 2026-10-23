@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import dns from 'node:dns/promises';
 import {searchJarir,parseJarirSearchHtml,parseJarirConstructorPayload} from '../server/providers/jarir.mjs';
@@ -641,4 +642,25 @@ test('v21.43 RED: Best Buy same-SKU audit reports bounded price field shapes wit
       assert.equal(merchantCalls,1,'diagnostic never adds PDP requests');
     });
   }
+});
+
+
+test('v21.45 RED: live source validation must not repeat identical merchant/query work',()=>{
+  // Protect the already expensive sequential zero-cost validation matrix.
+  // Repeated source snapshots are only useful when explicitly compared; the
+  // current script neither compares attempts nor labels repeatability probes.
+  const src=readFileSync(new URL('../scripts/validate-live-sources.mjs',import.meta.url),'utf8');
+  const start=src.indexOf('const CASES = [');
+  const finish=src.indexOf('let live =',start);
+  assert.ok(start>=0 && finish>start,'validation case matrix must remain inspectable');
+  const cases=[...src.slice(start,finish).matchAll(/\[\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\]/g)]
+    .map(([,store,query])=>[store,query]);
+  assert.ok(cases.length>0,'do not silently lose the source validation matrix');
+  const keys=cases.map(([store,query])=>store.trim().toLowerCase()+
+    '\u0000'+query.trim().replace(/\s+/g,' ').toLowerCase());
+  const duplicates=keys.flatMap((key,i)=>keys.indexOf(key)===i?[]:[
+    {store:cases[i][0],query:cases[i][1],first:keys.indexOf(key)+1,duplicate:i+1}
+  ]);
+  assert.deepEqual(duplicates,[],
+    'duplicate store+query entries add avoidable network traffic and distort validation counts');
 });
