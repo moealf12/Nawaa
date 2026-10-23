@@ -878,6 +878,51 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
   return offers;
 }
 
+// CI-only, bounded structural check for source-observed link-only Best Buy SKU.
+// The nearest *parseable* JSON object with its own skuId is inspected; prices
+// in sibling/parent objects cannot establish SKU ownership. Even a direct
+// price field is merely a candidate for independent offer verification.
+function classifyBestBuyLinkOnlySkuRecord(html, sku) {
+  const source=String(html||"");
+  if(!/^\d{4,12}$/.test(String(sku))) return "SKU_TOKEN_UNSCOPED";
+  const marker=new RegExp('"skuId"\\s*:\\s*"' + sku + '"',"g");
+  let found=false, match, occurrences=0;
+  while((match=marker.exec(source)) && occurrences++<3) {
+    found=true;
+    const markerEnd=marker.lastIndex;
+    const leftLimit=Math.max(0,match.index-16000);
+    let cursor=match.index, attempts=0;
+    while(attempts++<64) {
+      const start=source.lastIndexOf("{",cursor-1);
+      if(start<leftLimit) break;
+      cursor=start;
+      let depth=0, quoted=false, escaped=false, stop=-1;
+      const limit=Math.min(source.length,start+23000);
+      for(let i=start;i<limit;i++) {
+        const ch=source[i];
+        if(quoted) {
+          if(escaped) escaped=false;
+          else if(ch==="\\") escaped=true;
+          else if(ch==='"') quoted=false;
+        } else if(ch==='"') quoted=true;
+        else if(ch==="{") depth++;
+        else if(ch==="}" && --depth===0) {stop=i+1;break;}
+      }
+      if(stop<markerEnd) continue;
+      let object;
+      try {object=JSON.parse(source.slice(start,stop));} catch {continue;}
+      if(!object || typeof object!=="object" || Array.isArray(object) ||
+         !Object.hasOwn(object,"skuId") || String(object.skuId)!==String(sku)) continue;
+      const ownPrice=Object.hasOwn(object,"price")?object.price:null;
+      const salePrice=ownPrice && typeof ownPrice==="object" && !Array.isArray(ownPrice)
+        ? Number(ownPrice.customerPrice) : NaN;
+      return Number.isFinite(salePrice) && salePrice>0
+        ? "OWN_SKU_RECORD_PRICE_CANDIDATE" : "OWN_SKU_RECORD_MISSING_PRICE";
+    }
+  }
+  return found ? "SKU_TOKEN_UNSCOPED" : "LINK_ONLY";
+}
+
 export function extractBestBuySearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
@@ -1728,6 +1773,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             discoveredLinkSkuMarkerSamples:linkOnly.slice(0,5).map(({sku})=>({
               sku,
               literalSkuIdMarkerInHtml:new RegExp('"skuId"\\s*:\\s*"' + sku + '"').test(html || ""),
+            })),
+            discoveredLinkRecordSamples:linkOnly.slice(0,5).map(({sku})=>({
+              sku,structuralStatus:classifyBestBuyLinkOnlySkuRecord(html,sku),
             })),
             linkSampleLimited:Number.isFinite(candidateLimit),
           };
