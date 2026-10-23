@@ -457,3 +457,59 @@ test('v21.40 RED: Best Buy diagnostic stage classifies completed-TLS header time
   assert.equal(classifyPdpProbeFailure(['dns_lookup_start'],{name:'Error',message:'HTTP 403'}),
     'PDP_UNVERIFIED');
 });
+
+test('v21.40: live-observed Best Buy priced AirPods 4 ANC survives alongside bundle and unpriced standard link',async()=>{
+  // Deterministic reconstruction from exact-HEAD live source-validation
+  // observations; this is NOT a saved merchant response or live-price proof.
+  const records=[
+    {price:{customerPrice:149},skuId:'6376564',
+      pdpUrl:'https://www.bestbuy.com/product/apple-airpods-5-true-wireless-active-noise-cancelling-earbuds-with-wireless-charging-case-white/JJGCQP634G/sku/6376564',
+      name:{short:'Apple - AirPods 5 True Wireless Active Noise Cancelling Earbuds with Wireless Charging Case - White'},
+      primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-5.jpg'}},
+    {price:{customerPrice:158},skuId:'10190061',
+      pdpUrl:'https://www.bestbuy.com/product/apple-airpods-4-with-active-noise-cancellation-white/JJGCQ832YX/sku/10190061',
+      name:{short:'Apple - AirPods 4 with Active Noise Cancellation - White'},
+      primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-4-anc.jpg'}},
+    {price:{customerPrice:249.99},skuId:'6376563',
+      pdpUrl:'https://www.bestbuy.com/product/apple-airpods-pro-3-wireless-active-noise-cancelling-earbuds-with-heart-rate-sensing-feature-white/JJGCQLYK5F/sku/6376563',
+      name:{short:'Apple - AirPods Pro 3, Wireless Active Noise Cancelling Earbuds - White'},
+      primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-pro-3.jpg'}},
+    {price:{customerPrice:174.99},skuId:'12309526',
+      pdpUrl:'https://www.bestbuy.com/product/bundle-apple-airpods-4-with-active-noise-cancellation-black-accessory-kit-white/JX386JGXGZ/sku/12309526',
+      name:{short:'Bundle - Apple - AirPods 4 with Active Noise Cancellation Black Accessory Kit - White'},
+      primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-4-bundle.jpg'}}
+  ];
+  const linkOnly='https://www.bestbuy.com/product/apple-airpods-4-white/JJGCQ83JQ5/sku/10190062';
+  for(const order of [records,[...records].reverse()]){
+    const html='<a href="'+linkOnly+'">Apple AirPods 4 White</a><script>'+
+      JSON.stringify({products:order})+'</script>';
+    const priced=extractBestBuySearchOffers(html,'apple airpods 4');
+    assert.deepEqual(new Set(priced.map(item=>item.productId)),
+      new Set(['6376564','10190061','6376563','12309526']),
+      'all independently price-bearing SKUs survive extraction regardless of sibling order');
+    assert.equal(priced.find(item=>item.productId==='10190061')?.price,158);
+    assert.ok(!priced.some(item=>item.productId==='10190062'),
+      'a link-only product must not borrow a priced neighbor\'s price');
+  }
+  // User-facing search retains both valid AirPods 4 forms when FX is available,
+  // while opt-in audit continues to identify link-only unresolved SKUs.
+  const html='<a href="'+linkOnly+'">Apple AirPods 4 White</a><script>'+
+    JSON.stringify({products:records})+'</script>';
+  const requests=[];
+  await withFetch(async url=>{
+    requests.push(String(url));
+    return new Response(html,{headers:{'content-type':'text/html'}});
+  },async()=>{
+    const found=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
+      {perStore:3,identityAudit:true});
+    assert.deepEqual(new Set(found.offers.map(x=>x.specs.modelNumber)),
+      new Set(['10190061','12309526']),
+      'preserve legitimate standalone ANC and separately owned bundle; exclude AirPods 5 / Pro 3');
+    assert.equal(found.diagnostics.identityAudit.discoveredLinkWithoutPricedOfferCount,1);
+    assert.deepEqual(found.diagnostics.identityAudit.discoveredLinkWithoutPricedOfferSamples,
+      [{sku:'10190062',url:linkOnly}]);
+    assert.equal(found.diagnostics.identityAudit.pdpResolvedOfferCount,0);
+    assert.equal(requests.filter(x=>x.startsWith('https://www.bestbuy.com/')).length,1,
+      'audit must not cause synchronous PDP fanout');
+  });
+});
