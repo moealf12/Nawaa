@@ -1722,6 +1722,13 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           return {
             discoveredLinkWithoutPricedOfferCount:linkOnly.length,
             discoveredLinkWithoutPricedOfferSamples:linkOnly.slice(0,5),
+            // Lexical hint only, not a product record, price or ownership claim.
+            // These signals are sampled in the opt-in CI audit; no extra
+            // network traffic and no customer-facing extraction changes.
+            discoveredLinkSkuMarkerSamples:linkOnly.slice(0,5).map(({sku})=>({
+              sku,
+              literalSkuIdMarkerInHtml:new RegExp('"skuId"\\\\s*:\\\\s*"' + sku + '"').test(html || ""),
+            })),
             linkSampleLimited:Number.isFinite(candidateLimit),
           };
         })()
