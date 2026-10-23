@@ -1727,7 +1727,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             // network traffic and no customer-facing extraction changes.
             discoveredLinkSkuMarkerSamples:linkOnly.slice(0,5).map(({sku})=>({
               sku,
-              literalSkuIdMarkerInHtml:new RegExp('"skuId"\\\\s*:\\\\s*"' + sku + '"').test(html || ""),
+              literalSkuIdMarkerInHtml:new RegExp('"skuId"\\s*:\\s*"' + sku + '"').test(html || ""),
             })),
             linkSampleLimited:Number.isFinite(candidateLimit),
           };
