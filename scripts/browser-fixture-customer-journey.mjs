@@ -790,6 +790,10 @@ try{
     for(const [name,query,instrumented] of order){
       const tab=await context.newPage();
       await tab.addInitScript(detailed=>{
+        // Each observation starts with identical client-side history state.
+        // Otherwise the page's 800-point price-history store accumulates across
+        // trials and confounds apparent DOM/frame differences.
+        try{localStorage.removeItem('nawaa_price_history_v1');}catch{}
         const m={firstDom:null,frame:null,frame2:null,open:null,snapshot:null,
           snapshots:0,callbacks:0,longTasks:[],firstKey:null};
         window.__perfFixture=m;
