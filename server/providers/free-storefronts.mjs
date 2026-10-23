@@ -1456,6 +1456,12 @@ function routeScore(store, intent, normalizedQuery) {
   return { score, reasons, exactCategory, explicitBrand, broad };
 }
 
+// Read-only registry view for source-validation preflight. Reuse the actual
+// production storefront definitions instead of maintaining a second CI list.
+export function configuredFreeStorefrontIds() {
+  return STORES.map(({id}) => id);
+}
+
 export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const normalizedQuery = normalizeSearchQuery(query);
   const intent = parseSearchIntent(normalizedQuery);
