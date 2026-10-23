@@ -45,6 +45,7 @@ const state = {
   selectedGroupKey: null,
   nextCursor: null,
   eventSource: null,
+  cancelActiveStream: null,
   remoteLoading: false,
   remoteExhausted: false,
   requestId: 0,
@@ -1322,6 +1323,9 @@ async function runSearch(rawQuery) {
     return;
   }
 
+  // Settling the superseded stream also clears its timeout; merely closing
+  // EventSource leaves its Promise pending and can launch obsolete JSON fallback.
+  state.cancelActiveStream?.();
   state.eventSource?.close?.();
   state.eventSource = null;
   const requestId = ++state.requestId;
@@ -1363,9 +1367,23 @@ async function runSearch(rawQuery) {
           state.eventSource=source;
           let best=null;
           let bestWithOffers=null;
-          const finish=(value)=>{ source.close(); if(state.eventSource===source) state.eventSource=null; resolve(value); };
+          let finished=false;
+          let timeoutId=null;
+          // A stream is settled once: cancellation, completion, error and timeout
+          // all release its timer and connection. Replayed events are inert.
+          const finish=(value,error=null)=>{
+            if(finished) return;
+            finished=true;
+            if(timeoutId!==null) clearTimeout(timeoutId);
+            source.close();
+            if(state.eventSource===source) state.eventSource=null;
+            if(state.cancelActiveStream===cancelStream) state.cancelActiveStream=null;
+            if(error) reject(error); else resolve(value);
+          };
+          const cancelStream=()=>finish(null);
+          state.cancelActiveStream=cancelStream;
           source.addEventListener("snapshot",(event)=>{
-            if(requestId !== state.requestId) return finish(best || {});
+            if(finished || requestId !== state.requestId) return;
             try {
               const payload=JSON.parse(event.data);
               // Always retain the newest snapshot, including the final empty/non-empty
@@ -1389,17 +1407,26 @@ async function runSearch(rawQuery) {
           // A late empty diagnostic snapshot must never erase offers already
           // rendered from an earlier live snapshot. Keep its final cursor and
           // diagnostics while carrying forward the newest verified offers.
-          source.addEventListener("done",()=>finish(selectSearchStreamResult(best,bestWithOffers)));
-          source.addEventListener("error",()=>{
-            source.close();
-            if(state.eventSource===source) state.eventSource=null;
-            const result=selectSearchStreamResult(best,bestWithOffers);
-            if(result) resolve(result); else reject(new Error("stream_failed"));
+          source.addEventListener("done",()=>{
+            if(requestId!==state.requestId) return cancelStream();
+            finish(selectSearchStreamResult(best,bestWithOffers));
           });
-          const timeoutId=setTimeout(()=>{ const result=selectSearchStreamResult(best,bestWithOffers); if(result) finish(result); else { source.close(); reject(new Error("stream_timeout")); } },30000);
-          source.addEventListener("done",()=>clearTimeout(timeoutId),{once:true});
+          source.addEventListener("error",()=>{
+            if(requestId!==state.requestId) return cancelStream();
+            const result=selectSearchStreamResult(best,bestWithOffers);
+            if(result) finish(result);
+            else finish(null,new Error("stream_failed"));
+          });
+          timeoutId=setTimeout(()=>{
+            if(requestId!==state.requestId) return cancelStream();
+            const result=selectSearchStreamResult(best,bestWithOffers);
+            if(result) finish(result);
+            else finish(null,new Error("stream_timeout"));
+          },30000);
         }).catch(()=>null);
       }
+      // Superseded streams must not initiate a redundant JSON fallback.
+      if (requestId !== state.requestId) return;
       if (!data) {
         data = await fetchJsonWithRetry(
           apiBase + "/api/search?q=" + encodeURIComponent(query),
@@ -1635,6 +1662,9 @@ async function openQuote(product, offer, sourceQuery) {
   els.quoteModal.classList.add("open");
   els.quoteModal.setAttribute("aria-hidden", "false");
 }
+
+// Release the stream when the document is disposed (including page navigation).
+addEventListener("pagehide",()=>state.cancelActiveStream?.());
 
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
