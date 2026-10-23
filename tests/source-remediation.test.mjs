@@ -599,7 +599,7 @@ test('v21.43 RED: Best Buy same-SKU audit reports bounded price field shapes wit
   const sku='10190062';
   const url='https://www.bestbuy.com/product/apple-airpods-4-white/TEST/sku/'+sku;
   const neighbor={
-    skuId:'6376564',price:{customerPrice:149},
+    price:{customerPrice:149},skuId:'6376564',
     pdpUrl:'https://www.bestbuy.com/product/apple-airpods-5/TEST/sku/6376564',
     name:{short:'Apple AirPods 5 White'},
     primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-5.jpg'}
