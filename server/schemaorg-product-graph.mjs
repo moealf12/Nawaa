@@ -131,16 +131,29 @@ export function resolveStructuredProductNodes(nodes = [], pageUrl = null) {
       }
       const associated = resolvedOffers(variant);
       if (!associated?.length) return [{ "@type":"UnverifiedOffer" }];
-      return associated.map(offer => ({
-        ...offer,
-        // Identity metadata belongs to THIS declared variant, never a sibling.
-        sku:offer.sku || variant.sku || null,
-        mpn:offer.mpn || variant.mpn || null,
-        name:offer.name || variant.name || null,
-        url:offer.url || variant.url || null,
-        image:offer.image || variant.image || null,
-        color:offer.color || variant.color || null,
-      }));
+      return associated.map(offer => {
+        // A directly stated Offer SKU/MPN must not contradict the owning Product
+        // variant's own identifier. Do not combine its price with a different
+        // variant's identity, even if both are in the same trusted graph.
+        const identifierConflict = ["sku", "mpn"].some(field => {
+          const productId = variant[field];
+          const offerId = offer[field];
+          return productId != null && offerId != null &&
+            String(productId).trim() !== "" && String(offerId).trim() !== "" &&
+            String(productId).trim() !== String(offerId).trim();
+        });
+        if (identifierConflict) return { "@type":"UnverifiedOffer" };
+        return {
+          ...offer,
+          // Identity metadata belongs to THIS declared variant, never a sibling.
+          sku:offer.sku || variant.sku || null,
+          mpn:offer.mpn || variant.mpn || null,
+          name:offer.name || variant.name || null,
+          url:offer.url || variant.url || null,
+          image:offer.image || variant.image || null,
+          color:offer.color || variant.color || null,
+        };
+      });
     });
     groups.push({
       "@type":"Product",
