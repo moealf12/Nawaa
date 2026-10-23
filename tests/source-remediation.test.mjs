@@ -540,3 +540,56 @@ test('v21.41 RED: unpriced Best Buy link audit distinguishes literal hydration S
     });
   }
 });
+
+test('v21.42 RED: Best Buy audit isolates direct SKU record from sibling price and unscoped source tokens',async()=>{
+  const targetSku='10190062';
+  const targetUrl='https://www.bestbuy.com/product/apple-airpods-4-white/TEST/sku/'+targetSku;
+  const sibling={
+    price:{customerPrice:149},skuId:'6376564',
+    pdpUrl:'https://www.bestbuy.com/product/apple-airpods-5-white/TEST/sku/6376564',
+    name:{short:'Apple AirPods 5 White'},
+    primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-5.jpg'}
+  };
+  const cases=[
+    {
+      name:'direct unpriced SKU with independently priced sibling',
+      script:JSON.stringify({products:[{
+        skuId:targetSku,pdpUrl:targetUrl,name:{short:'Apple AirPods 4 White'}
+      },sibling]}),
+      expected:'OWN_SKU_RECORD_MISSING_PRICE'
+    },
+    {
+      name:'same SKU owns a price field but mismatching AirPods generation must remain excluded',
+      script:JSON.stringify({products:[{
+        skuId:targetSku,price:{customerPrice:109},
+        pdpUrl:targetUrl,name:{short:'Apple AirPods 5 White'},
+        primaryImage:{piscesHref:'https://pisces.bbystatic.com/airpods-5.jpg'}
+      },sibling]}),
+      expected:'OWN_SKU_RECORD_PRICE_CANDIDATE'
+    },
+    {
+      name:'unscoped SKU token must not borrow parent or sibling price',
+      script:JSON.stringify({products:[sibling]})+';window.broken = {"skuId":"10190062"',
+      expected:'SKU_TOKEN_UNSCOPED'
+    }
+  ];
+  for(const testCase of cases){
+    const html='<a href="'+targetUrl+'">Apple AirPods 4</a><script>'+testCase.script+'</script>';
+    let bestBuyRequests=0;
+    await withFetch(async url=>{
+      if(String(url).startsWith('https://api.frankfurter.dev/'))
+        return Response.json({rate:3.75,date:'2026-10-23'});
+      bestBuyRequests++;
+      return new Response(html,{headers:{'content-type':'text/html'}});
+    },async()=>{
+      const res=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
+        {perStore:3,identityAudit:true});
+      assert.deepEqual(res.diagnostics.identityAudit.discoveredLinkRecordSamples,
+        [{sku:targetSku,structuralStatus:testCase.expected}],
+        testCase.name);
+      assert.ok(res.offers.every(x=>x.specs?.modelNumber!==targetSku),
+        'no uncertain or cross-generation SKU may be published');
+      assert.equal(bestBuyRequests,1,'no diagnostic PDP/network fanout');
+    });
+  }
+});
