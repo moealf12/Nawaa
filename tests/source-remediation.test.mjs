@@ -664,3 +664,21 @@ test('v21.45 RED: live source validation must not repeat identical merchant/quer
   assert.deepEqual(duplicates,[],
     'duplicate store+query entries add avoidable network traffic and distort validation counts');
 });
+
+
+test('v21.45 RED: minimum live sources gate must count distinct merchants, not successful queries',async()=>{
+  const {countDistinctLiveMerchants}=await import('../scripts/live-source-validation-counts.mjs');
+  const sample=[
+    {store:'virgin-ae',status:'LIVE_VALIDATED',query:'airpods'},
+    {store:'virgin-ae',status:'LIVE_VALIDATED',query:'macbook'},
+    {store:'virgin-ae',status:'LIVE_VALIDATED',query:'iphone 17'},
+    {store:'amazon-sa',status:'LIVE_VALIDATED',query:'iphone 17'},
+    {store:'bestbuy-us',status:'PROBED',query:'airpods'}
+  ];
+  assert.equal(countDistinctLiveMerchants(sample),2,
+    'three successful Virgin queries represent one merchant, not three');
+  assert.equal(countDistinctLiveMerchants([...sample,{store:'BESTBUY-US',status:'LIVE_VALIDATED'}]),3,
+    'count validated stores only, with normalized identities');
+  assert.ok(countDistinctLiveMerchants(sample)<3,
+    'minimum-three merchant gate must not pass with four successes from two merchants');
+});
