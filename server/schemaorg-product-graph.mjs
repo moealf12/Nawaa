@@ -154,7 +154,7 @@ export function resolveStructuredProductNodes(nodes = [], pageUrl = null) {
             const declared = new URL(variant.url, page);
             const destination = new URL(offer.url, page);
             const samePage = declared.origin === destination.origin &&
-              declared.pathname.replace(/\\/+$/, "") === destination.pathname.replace(/\\/+$/, "");
+              declared.pathname.replace(/\/+$/, "") === destination.pathname.replace(/\/+$/, "");
             const declaredVariant = declared.searchParams.get("variant");
             const offeredVariant = destination.searchParams.get("variant");
             return samePage && declaredVariant !== null && offeredVariant !== null &&
