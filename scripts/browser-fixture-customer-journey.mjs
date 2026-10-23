@@ -1412,7 +1412,67 @@ try{
       beforeTerminalReplay.secondTimeoutCleared&&afterTerminalReplay.secondTimeoutCleared&&
       afterTerminalReplay.fallbacks.length===0,
       {beforeTerminalReplay,afterTerminalReplay});
+    // Cancel after a valid offer, then deliver the old terminal/error messages
+    // while a third-generation search is still streaming.
+    const submitLifecycle=async query=>lifecycleTab.evaluate(q=>{
+      document.querySelector('#searchInput').value=q;
+      document.querySelector('#searchForm').requestSubmit();
+    },query);
+    await submitLifecycle(lifecycleQueryA);
+    await lifecycleTab.waitForFunction(()=>window.__lifecycleStreams.length===3);
+    await lifecycleTab.evaluate(p=>window.__lifecycleStreams[2].snapshot(p),
+      searchPayload(lifecycleQueryA,null));
+    await lifecycleTab.locator('#results .match-result-card').first().waitFor();
+    await submitLifecycle(lifecycleQueryB);
+    await lifecycleTab.waitForFunction(()=>window.__lifecycleStreams.length===4);
+    const thirdCanceled=await lifecycleTab.evaluate(()=>({
+      closed:window.__lifecycleStreams[2].closed,
+      timerCleared:window.__lifecycleTimeouts[2]?.cleared||false,
+      fallbacks:window.__lifecycleFallbacks.length
+    }));
+    await lifecycleTab.evaluate(p=>window.__lifecycleStreams[3].snapshot(p),
+      searchPayload(lifecycleQueryB,null));
+    const newestBefore=await lifecycleTab.evaluate(()=>({
+      text:document.querySelector('#results')?.textContent||'',
+      status:document.querySelector('#searchStatus')?.textContent||''
+    }));
+    await lifecycleTab.evaluate(p=>{
+      const obsolete=window.__lifecycleStreams[2];
+      obsolete.snapshot(p);obsolete.done();obsolete.error();
+      window.__firePendingStreamTimers([2]);
+    },searchPayload(lifecycleQueryA,null));
+    await lifecycleTab.waitForTimeout(70);
+    const newestAfter=await lifecycleTab.evaluate(()=>({
+      text:document.querySelector('#results')?.textContent||'',
+      status:document.querySelector('#searchStatus')?.textContent||'',
+      fallbacks:window.__lifecycleFallbacks.length
+    }));
+    assertCheck('v2156_cancel_after_offer_then_supersede_is_safe',
+      thirdCanceled.closed&&thirdCanceled.timerCleared&&
+      newestBefore.text===newestAfter.text&&
+      newestBefore.status===newestAfter.status&&
+      thirdCanceled.fallbacks===newestAfter.fallbacks,
+      {thirdCanceled,newestBefore,newestAfter});
+    await lifecycleTab.evaluate(()=>window.__lifecycleStreams[3].done());
+    await lifecycleTab.waitForFunction(()=>document.querySelector('#searchStatus')?.textContent?.startsWith('بحث حي:'));
+
+    // A disposed page must not initiate a new fallback after its stream settles.
+    await submitLifecycle(lifecycleQueryA);
+    await lifecycleTab.waitForFunction(()=>window.__lifecycleStreams.length===5);
+    const fallbackCountBeforeHide=await lifecycleTab.evaluate(()=>window.__lifecycleFallbacks.length);
+    await lifecycleTab.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+    await lifecycleTab.waitForTimeout(70);
+    const dispose=await lifecycleTab.evaluate(()=>({
+      closed:window.__lifecycleStreams[4].closed,
+      timeoutCleared:window.__lifecycleTimeouts[4]?.cleared||false,
+      fallbacksBefore:fallbackCountBeforeHide,
+      fallbacksAfter:window.__lifecycleFallbacks.length
+    }),fallbackCountBeforeHide);
+    assertCheck('v2156_pagehide_releases_stream_without_fallback',
+      dispose.closed&&dispose.timeoutCleared&&
+      dispose.fallbacksBefore===dispose.fallbacksAfter,dispose);
     const lifecycleEvidence={canceled,beforeLate,afterLate,beforeTerminalReplay,afterTerminalReplay,
+      thirdCanceled,newestBefore,newestAfter,dispose,
       scope:'fixture controlled events; actual production module, no external merchants',
       p95Certified:false};
     writeFileSync('browser-artifacts/fixture-sse-lifecycle-v2156.json',
