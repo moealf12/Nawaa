@@ -1,0 +1,38 @@
+# Temporary one-shot maintenance task: generate consistent package-lock with npm.
+# This file is removed after the candidate packages have been verified.
+name: NAWAA temporary dev-tooling lock sync
+on:
+  pull_request:
+    types: [synchronize]
+    paths:
+      - ".github/workflows/nawaa-temporary-tooling-lock.yml"
+permissions:
+  contents: write
+jobs:
+  lock-sync:
+    if: >-
+      github.head_ref == 'integration/v21-16-v21-18-truth-qa' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate canonical npm lockfile and dev-only dependencies
+        run: npm install --save-dev --save-exact eslint@9.39.5 fast-check@4.10.2 globals@17.13.0 --ignore-scripts --no-audit --no-fund
+      - name: Check exact frozen installation
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Commit only npm manifest and generated lockfile
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git diff --cached --quiet && exit 0
+          git commit -m "build(dev): add eslint and fast-check with npm-generated lockfile"
+          git push origin "HEAD:${{ github.head_ref }}"
