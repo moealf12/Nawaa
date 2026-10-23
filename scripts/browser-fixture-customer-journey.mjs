@@ -8,6 +8,7 @@ import {once} from 'node:events';
 import {existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import net from 'node:net';
 import {assessOfferMatch,describeProduct} from '../src/search-query.mjs';
+import {groupComparableOffers} from '../src/search-core.mjs';
 
 if(process.env.NODE_ENV !== 'test') throw Error('fixture_browser_requires_test_env');
 mkdirSync('browser-artifacts',{recursive:true});
@@ -41,6 +42,11 @@ const initial=Array.from({length:25},(_,i)=>offer(i+1));
 const extra=Array.from({length:5},(_,i)=>offer(i+26));
 const corsHeaders={'access-control-allow-origin':'*'};
 function searchPayload(q,cursor) {
+  if(q.includes('fixture-performance-')){
+    const n=Math.min(60,Number(q.match(/fixture-performance-(\d+)-/)?.[1]||24));
+    return {offers:Array.from({length:n},(_,i)=>({...offer(i+1),image:null})),
+      errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
+  }
   if(q==='PS5 Slim'){
     // v15.18 E1: real Jarir category records from 2026-10-18.
     // Intercepted browser fixture, NOT real-time stock evidence.
@@ -274,7 +280,11 @@ try{
     if(u.searchParams.has('cursor'))cursorRequests++;
     const q=testQuery(requestUrl),payload=searchPayload(q,u.searchParams.get('cursor'));
     if(u.pathname.endsWith('/stream')) {
-      const body='event: snapshot\n'+'data: '+JSON.stringify(payload)+'\n\n'+'event: done\n'+'data: {}\n\n';
+      const mode=q.match(/fixture-performance-\d+-(single|progress|duplicate)/)?.[1]||'single';
+      const frames=mode==='progress'?[{...payload,offers:payload.offers.slice(0,5)},payload]:
+        mode==='duplicate'?[payload,payload]:[payload];
+      const body=frames.map(x=>'event: snapshot\n'+'data: '+JSON.stringify(x)+'\n\n').join('')+
+        'event: done\n'+'data: {}\n\n';
       await route.fulfill({status:200,contentType:'text/event-stream; charset=utf-8',headers:corsHeaders,body});
     }else{
       await route.fulfill({status:200,contentType:'application/json',headers:corsHeaders,
@@ -761,6 +771,104 @@ try{
     viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
   assertCheck('usb_hub_mobile_layout_no_overflow',hubMobile.scrollWidth<=hubMobile.viewport+4,hubMobile);
   await hubShoppingTab.screenshot({path:'browser-artifacts/fixture-ps5-usb-hub-mobile.png',fullPage:true});
+
+  // v21.52: fixed-offer Chromium experiments, using the existing intercepted
+  // SSE endpoint. Diagnostics do not certify real source ownership or paint.
+  const experiments=[
+    ['en_control','HP laptop fixture-performance-24-single',false],
+    ['en_observed','HP laptop fixture-performance-24-single',true],
+    ['ar_observed','لابتوب اتش بي fixture-performance-24-single',true],
+    ['progressive','HP laptop fixture-performance-24-progress',true],
+    ['duplicate','HP laptop fixture-performance-24-duplicate',true],
+    ['small','HP laptop fixture-performance-6-single',true],
+    ['large','HP laptop fixture-performance-48-single',true],
+  ];
+  const traces={scope:'synthetic_fixture_not_real_merchants',samples:[],
+    productTruthCertified:false,compositorPaintCertified:false,p95Certified:false};
+  for(let round=0;round<3;round++){
+    const order=round%2?[...experiments].reverse():experiments;
+    for(const [name,query,instrumented] of order){
+      const tab=await context.newPage();
+      await tab.addInitScript(detailed=>{
+        const m={firstDom:null,frame:null,frame2:null,open:null,snapshot:null,
+          snapshots:0,callbacks:0,longTasks:[],firstKey:null};
+        window.__perfFixture=m;
+        const check=()=>{
+          m.callbacks++;
+          if(m.firstDom!==null)return;
+          const card=document.querySelector('#results .match-result-card');
+          if(!card)return;
+          m.firstDom=performance.now();m.firstKey=card.dataset.groupKey||null;
+          requestAnimationFrame(()=>{m.frame=performance.now();
+            requestAnimationFrame(()=>{m.frame2=performance.now();});});
+        };
+        const init=()=>{
+          const root=document.querySelector('#results');
+          if(root){new MutationObserver(check).observe(root,{childList:true,subtree:true});check();}
+        };
+        if(document.readyState==='loading')
+          document.addEventListener('DOMContentLoaded',init,{once:true});
+        else init();
+        try{new PerformanceObserver(list=>{
+          for(const entry of list.getEntries())
+            if(m.longTasks.length<16)m.longTasks.push(Math.round(entry.duration));
+        }).observe({entryTypes:['longtask']});}catch{}
+        if(detailed&&window.EventSource){
+          const Native=window.EventSource;
+          window.EventSource=class extends Native{
+            constructor(...args){
+              super(...args);m.open=performance.now();
+              this.addEventListener('snapshot',e=>{
+                m.snapshots++;
+                try{if(m.snapshot===null&&JSON.parse(e.data)?.offers?.length)
+                  m.snapshot=performance.now();}catch{}
+              });
+            }
+          };
+        }
+      },instrumented);
+      try{
+        await tab.goto(base+'/search.html?q='+encodeURIComponent(query),
+          {waitUntil:'domcontentloaded',timeout:20000});
+        await tab.waitForFunction(()=>Number.isFinite(window.__perfFixture?.frame2),
+          null,{timeout:12000});
+        const m=await tab.evaluate(()=>{
+          const x=window.__perfFixture;
+          const span=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&a>=b
+            ?Math.round(100*(a-b))/100:null;
+          return {firstDomMs:Math.round(x.firstDom),frameMs:Math.round(x.frame),
+            domToFrameMs:span(x.frame,x.firstDom),domToSecondFrameMs:span(x.frame2,x.firstDom),
+            sseToDomMs:span(x.firstDom,x.snapshot),snapshots:x.snapshots,
+            callbackCount:x.callbacks,longTasks:x.longTasks,firstKey:x.firstKey,
+            visibleCards:document.querySelectorAll('#results .match-result-card').length};
+        });
+        const groups=groupComparableOffers(searchPayload(query,null).offers,'lowest');
+        const target=groups.find(g=>g.key===m.firstKey);
+        const result={name,round,...m,fixtureGroupMatched:Boolean(target?.bestOffer),
+          fixtureModel:target?.bestOffer?.specs?.modelNumber||null,
+          realSourceOwnershipCertified:false,paintCertified:false};
+        traces.samples.push(result);
+        assertCheck('perf_'+name+'_'+round,
+          Number.isFinite(result.domToFrameMs)&&result.frameMs>=result.firstDomMs&&
+          result.visibleCards>0&&result.fixtureGroupMatched,result);
+      }finally{await tab.close();}
+    }
+  }
+  const median=values=>{
+    const v=values.filter(Number.isFinite).sort((a,b)=>a-b),i=Math.floor(v.length/2);
+    return v.length%2?v[i]:(v[i-1]+v[i])/2;
+  };
+  traces.groups=Object.fromEntries(experiments.map(([name])=>{
+    const rows=traces.samples.filter(r=>r.name===name);
+    return [name,{n:rows.length,medianDomToFrameMs:median(rows.map(r=>r.domToFrameMs)),
+      minDomToFrameMs:Math.min(...rows.map(r=>r.domToFrameMs)),
+      maxDomToFrameMs:Math.max(...rows.map(r=>r.domToFrameMs)),
+      medianDomMs:median(rows.map(r=>r.firstDomMs)),
+      longTasks:rows.flatMap(r=>r.longTasks)}];
+  }));
+  summary.browserForensics=traces;
+  writeFileSync('browser-artifacts/fixture-browser-forensics.json',JSON.stringify(traces,null,2));
+  console.log('NAWAA_FIXTURE_BROWSER_FORENSICS '+JSON.stringify(traces));
   assertCheck('no_browser_script_errors',browserErrors.length===0,browserErrors);
   summary.counts={...summary.counts,filtered,searchRequests,cursorRequests,blockedImages};
   summary.mobile=mobile;
