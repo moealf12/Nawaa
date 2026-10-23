@@ -884,7 +884,7 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
 // price field is merely a candidate for independent offer verification.
 function classifyBestBuyLinkOnlySkuRecord(html, sku) {
   const source=String(html||"");
-  if(!/^\d{4,12}$/.test(String(sku))) return "SKU_TOKEN_UNSCOPED";
+  if(!/^\d{4,12}$/.test(String(sku))) return {status:"SKU_TOKEN_UNSCOPED",fields:[]};
   const marker=new RegExp('"skuId"\\s*:\\s*"' + sku + '"',"g");
   let found=false, match, occurrences=0;
   while((match=marker.exec(source)) && occurrences++<3) {
@@ -916,11 +916,39 @@ function classifyBestBuyLinkOnlySkuRecord(html, sku) {
       const ownPrice=Object.hasOwn(object,"price")?object.price:null;
       const salePrice=ownPrice && typeof ownPrice==="object" && !Array.isArray(ownPrice)
         ? Number(ownPrice.customerPrice) : NaN;
-      return Number.isFinite(salePrice) && salePrice>0
-        ? "OWN_SKU_RECORD_PRICE_CANDIDATE" : "OWN_SKU_RECORD_MISSING_PRICE";
+      // Audit only: inspect the field names/types of the same parsed SKU
+      // object. Never return prices, arbitrary merchant keys or sibling fields.
+      // These paths are hints for a later independent price-owner verification.
+      const rootKeys=[
+        "currentPrice","discountedPrice","finalPrice","listPrice","offer",
+        "offers","price","prices","pricing","regularPrice","retailPrice","salePrice",
+      ];
+      const nestedKeys=new Set([
+        "amount","customerPrice","currentPrice","discountedPrice","finalPrice",
+        "listPrice","price","regularPrice","retailPrice","salePrice","value",
+      ]);
+      const fields=[];
+      const type=value=>value===null ? "null" :
+        Array.isArray(value) ? "array" : typeof value;
+      for(const key of rootKeys) {
+        if(!Object.hasOwn(object,key) || fields.length>=12) continue;
+        const value=object[key];
+        fields.push({path:key,type:type(value)});
+        if(!value || typeof value!=="object" || Array.isArray(value)) continue;
+        for(const child of Object.keys(value).sort()) {
+          if(fields.length>=12) break;
+          if(nestedKeys.has(child))
+            fields.push({path:key+"."+child,type:type(value[child])});
+        }
+      }
+      return {
+        status:Number.isFinite(salePrice) && salePrice>0
+          ? "OWN_SKU_RECORD_PRICE_CANDIDATE" : "OWN_SKU_RECORD_MISSING_PRICE",
+        fields,
+      };
     }
   }
-  return found ? "SKU_TOKEN_UNSCOPED" : "LINK_ONLY";
+  return {status:found ? "SKU_TOKEN_UNSCOPED" : "LINK_ONLY",fields:[]};
 }
 
 export function extractBestBuySearchOffers(html, query) {
@@ -1764,6 +1792,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
               linkOnly.push({sku,url:parsed.origin + parsed.pathname});
             } catch {}
           }
+          const recordInspections=linkOnly.slice(0,5).map(({sku})=>({
+            sku,...classifyBestBuyLinkOnlySkuRecord(html,sku),
+          }));
           return {
             discoveredLinkWithoutPricedOfferCount:linkOnly.length,
             discoveredLinkWithoutPricedOfferSamples:linkOnly.slice(0,5),
@@ -1774,8 +1805,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
               sku,
               literalSkuIdMarkerInHtml:new RegExp('"skuId"\\s*:\\s*"' + sku + '"').test(html || ""),
             })),
-            discoveredLinkRecordSamples:linkOnly.slice(0,5).map(({sku})=>({
-              sku,structuralStatus:classifyBestBuyLinkOnlySkuRecord(html,sku),
+            discoveredLinkRecordSamples:recordInspections.map(({sku,status})=>({
+              sku,structuralStatus:status,
+            })),
+            discoveredLinkPriceShapeSamples:recordInspections.map(({sku,fields})=>({
+              sku,fields,
             })),
             linkSampleLimited:Number.isFinite(candidateLimit),
           };
