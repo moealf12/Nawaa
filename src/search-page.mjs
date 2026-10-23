@@ -1664,7 +1664,11 @@ async function openQuote(product, offer, sourceQuery) {
 }
 
 // Release the stream when the document is disposed (including page navigation).
-addEventListener("pagehide",()=>state.cancelActiveStream?.());
+addEventListener("pagehide",()=>{
+  // A disposed page must not start JSON fallback after stream cancellation.
+  state.requestId += 1;
+  state.cancelActiveStream?.();
+});
 
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
