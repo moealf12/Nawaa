@@ -1139,7 +1139,8 @@ try{
     '                  lastRenderedPayload=event.data;\n'+
     '                }else window.__renderOnlySkips=(window.__renderOnlySkips||0)+1;', 'render_only');
   const sourceForCase=async({candidate,variant,interaction})=>{
-    const q='HP laptop fixture-performance-6-single';
+    const q=variant==='perf48'?'HP laptop fixture-performance-48-single':
+      'HP laptop fixture-performance-6-single';
     const payload=searchPayload(q,null);
     const makeOffer=x=>variant==='missingObservedAt'?(({observedAt,...others})=>others)(x):x;
     const full={...payload,offers:payload.offers.map(makeOffer)};
@@ -1207,14 +1208,17 @@ try{
       if(interaction==='comparison')await tab.locator('#results .match-result-card').first().click();
       if(interaction==='keyboard')await tab.locator('#results .match-result-card').first().focus();
       const first=await measure();
-      await tab.evaluate(p=>window.__controlledStream.sendSnapshot(p),
-        variant==='priceMutation'?changed:full);
+      const duplicateHandlerMs=await tab.evaluate(p=>{
+        const started=performance.now();
+        window.__controlledStream.sendSnapshot(p);
+        return performance.now()-started;
+      },variant==='priceMutation'?changed:full);
       const second=await measure();
       await tab.evaluate(()=>window.__controlledStream.done());
       await tab.waitForFunction(()=>document.querySelector('#searchStatus')?.textContent?.startsWith('بحث حي:'),
         null,{timeout:6000});
       const final=await measure();
-      return {before,first,second,final};
+      return {before,first,second,final,duplicateHandlerMs};
     }finally{await tab.close();}
   };
   const renderOnlyCases=[
@@ -1225,13 +1229,17 @@ try{
     ['comparison','explicit','comparison',0],
     ['keyboard','explicit','keyboard',1],
     ['changingPrice','priceMutation','none',0],
+    ['perf48_1','perf48','none',1],
+    ['perf48_2','perf48','none',1],
+    ['perf48_3','perf48','none',1],
   ];
   const renderOnlyReport={kind:'test_only_render_only_snapshot_counterfactual',
     source:'unchanged production module instrumented at Chromium request interception',
     independentMerchantProvenanceCertified:false,p95Certified:false,samples:[]};
   for(const [name,variant,interaction,expectedSkip] of renderOnlyCases){
     const results={};
-    for(const candidate of [false,true])
+    const runOrder=name==='perf48_2'?[true,false]:[false,true];
+    for(const candidate of runOrder)
       results[candidate?'candidate':'original']=await sourceForCase({candidate,variant,interaction});
     const a=results.original,b=results.candidate;
     const same=(x,y)=>JSON.stringify(x)===JSON.stringify(y);
@@ -1252,13 +1260,23 @@ try{
     const item={name,parity,historyPreserved,lastSeenAdvances,skipped,expectedSkip,
       renderCallsAtSecond:[a.second.renderCalls,b.second.renderCalls],
       historyCallsAtSecond:[a.second.historyCalls,b.second.historyCalls],
-      finalRenderCalls:[a.final.renderCalls,b.final.renderCalls]};
+      finalRenderCalls:[a.final.renderCalls,b.final.renderCalls],
+      duplicateHandlerMs:[a.duplicateHandlerMs,b.duplicateHandlerMs]};
     renderOnlyReport.samples.push(item);
     assertCheck('v2155_render_only_'+name,
       parity&&historyPreserved&&lastSeenAdvances&&skipped===expectedSkip&&
       a.second.renderCalls===b.second.renderCalls+expectedSkip&&
       a.final.renderCalls===b.final.renderCalls+expectedSkip,item);
   }
+  renderOnlyReport.handlerBenchmark={
+    scope:'same-source Chromium micro-simulation; duplicate snapshot handler duration only',
+    environment:'synthetic 48-offer fixture; three paired trials, alternating order',
+    samples:renderOnlyReport.samples.filter(x=>x.name.startsWith('perf48_')).map(x=>({
+      name:x.name,baselineMs:x.duplicateHandlerMs[0],candidateMs:x.duplicateHandlerMs[1],
+      deltaMs:x.duplicateHandlerMs[0]-x.duplicateHandlerMs[1]
+    })),
+    firstOfferP95Certified:false,customerPaintCertified:false,productionOptimizationApplied:false
+  };
   writeFileSync('browser-artifacts/fixture-render-only-v2155.json',JSON.stringify(renderOnlyReport,null,2));
   console.log('NAWAA_V2155_RENDER_ONLY '+JSON.stringify(renderOnlyReport));
   // v21.56: deterministic lifecycle RED/ GREEN on the exact customer module.
