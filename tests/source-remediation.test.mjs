@@ -515,3 +515,28 @@ test('v21.40: live-observed Best Buy priced AirPods 4 ANC survives alongside bun
       'audit must not cause synchronous PDP fanout');
   });
 });
+
+test('v21.41 RED: unpriced Best Buy link audit distinguishes literal hydration SKU marker from link-only mention',async()=>{
+  const priced={price:{customerPrice:158},skuId:'10190061',
+    pdpUrl:'https://www.bestbuy.com/product/apple-airpods-4-anc/TEST/sku/10190061',
+    name:{short:'Apple AirPods 4 ANC'},primaryImage:{piscesHref:'https://pisces.bbystatic.com/4anc.jpg'}};
+  const base='https://www.bestbuy.com/product/apple-airpods-4-white/TEST/sku/10190062';
+  const unresolved={skuId:'10190062',pdpUrl:base,name:{short:'Apple AirPods 4 White'}};
+  for(const [hasUnpricedRecord,expectedMarker] of [[false,false],[true,true]]){
+    const html='<html><a href="'+base+'">Apple AirPods 4 White</a><script>'+
+      JSON.stringify({products:hasUnpricedRecord?[priced,unresolved]:[priced]})+'</script></html>';
+    await withFetch(async url=>String(url).startsWith('https://api.frankfurter.dev/')
+      ?Response.json({rate:3.75,date:'2026-10-23'})
+      :new Response(html,{headers:{'content-type':'text/html'}}),async()=>{
+      const r=await searchFreeStorefrontById('bestbuy-us','apple airpods 4',
+        {perStore:3,identityAudit:true});
+      assert.deepEqual(r.diagnostics.identityAudit.discoveredLinkSkuMarkerSamples,
+        [{sku:'10190062',literalSkuIdMarkerInHtml:expectedMarker}],
+        'lexical source presence only; no claim of price or record ownership');
+      assert.ok(r.offers.every(o=>o.specs?.modelNumber!=='10190062'),
+        'an unpriced source record and mere PDP link cannot inherit a neighboring price');
+      assert.equal(r.diagnostics.identityAudit.pdpResolvedOfferCount,0,
+        'diagnostic must not add PDP traffic');
+    });
+  }
+});
