@@ -5,7 +5,7 @@
 import {chromium} from 'playwright';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {existsSync,mkdirSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdirSync,writeFileSync,readFileSync} from 'node:fs';
 import net from 'node:net';
 import {assessOfferMatch,describeProduct} from '../src/search-query.mjs';
 import {groupComparableOffers} from '../src/search-core.mjs';
@@ -783,6 +783,71 @@ try{
     ['small','HP laptop fixture-performance-6-single',true],
     ['large','HP laptop fixture-performance-48-single',true],
   ];
+
+  // v21.53 test-only source transform. Production source is read but NEVER
+  // edited: the local Chromium route serves this instrumented test copy.
+  let patchedSource=readFileSync(new URL('../src/search-page.mjs',import.meta.url),'utf8');
+  const patch=(from,to,name)=>{
+    const count=patchedSource.split(from).length-1;
+    if(count!==1)throw Error('critical_path_patch_anchor_'+name+'_'+count);
+    patchedSource=patchedSource.replace(from,to);
+  };
+  const helper=[
+    'const __criticalSpan=(phase,fn)=>{',
+    '  const start=performance.now();',
+    '  try{return fn();}finally{',
+    '    if(Array.isArray(window.__criticalPath)&&window.__criticalPath.length<150)',
+    '      window.__criticalPath.push({phase,ms:Math.round((performance.now()-start)*1000)/1000});',
+    '  }',
+    '};',
+    'const $ = (selector) => document.querySelector(selector);'
+  ].join('\n');
+  patch('const $ = (selector) => document.querySelector(selector);',helper,'helper');
+  const wrappers=[
+    ['  const groups = groupComparableOffers(offers, "lowest");',
+     '  const groups = __criticalSpan("history.group",()=>groupComparableOffers(offers, "lowest"));','history_group'],
+    ['  const ranked = rankOffers(filteredOffers, state.mode);',
+     '  const ranked = __criticalSpan("render.rank",()=>rankOffers(filteredOffers, state.mode));','render_rank'],
+    ['  const summary = summarizeOffers(product.offers);',
+     '  const summary = __criticalSpan("render.summary",()=>summarizeOffers(product.offers));','render_summary'],
+    ['  const groups = groupComparableOffers(filteredOffers, state.mode);',
+     '  const groups = __criticalSpan("render.group",()=>groupComparableOffers(filteredOffers, state.mode));','render_group'],
+    ['  const discoverySections = buildDiscoverySections(query, exactGroups);',
+     '  const discoverySections = __criticalSpan("render.discovery",()=>buildDiscoverySections(query, exactGroups));','discovery'],
+    ['  const selector = buildVariantSelectorState(selectorGroups, state.selectorSelection);',
+     '  const selector = __criticalSpan("render.variant",()=>buildVariantSelectorState(selectorGroups, state.selectorSelection));','variant'],
+    ['  const selectedIntelligence = selectedGroup ? buildOfferIntelligence(selectedGroup) : null;',
+     '  const selectedIntelligence = selectedGroup ? __criticalSpan("render.intelligence",()=>buildOfferIntelligence(selectedGroup)) : null;','intelligence'],
+    ['  const canonicalProfile = buildCanonicalProductProfile(selectedGroup?.offers || []);',
+     '  const canonicalProfile = __criticalSpan("render.canonical",()=>buildCanonicalProductProfile(selectedGroup?.offers || []));','canonical'],
+    ['                recordPriceHistory(payload.offers);',
+     '                __criticalSpan("history.total",()=>recordPriceHistory(payload.offers));','history_total'],
+    ['                renderProduct(liveProduct,query);',
+     '                __criticalSpan("render.total",()=>renderProduct(liveProduct,query));','render_total']
+  ];
+  for(const [from,to,label] of wrappers)patch(from,to,label);
+  const tick=String.fromCharCode(96);
+  patch('  els.results.innerHTML = '+tick+'\n    <section class="result-head">',
+    '  const __htmlStart=performance.now();\n  els.results.innerHTML = '+tick+'\n    <section class="result-head">','html_begin');
+  patch("  els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{",
+    '  if(Array.isArray(window.__criticalPath))window.__criticalPath.push({phase:"render.htmlAndDom",ms:Math.round((performance.now()-__htmlStart)*1000)/1000});\n'+
+    "  els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{",'html_end');
+  const signature=tab=>tab.evaluate(()=>[...document.querySelectorAll('#results .match-result-card')].map(card=>({
+    key:card.dataset.groupKey||'',
+    title:card.querySelector('.match-card-copy strong')?.textContent?.trim()||'',
+    price:card.querySelector('.match-card-price b')?.textContent?.trim()||''
+  })));
+  const references=new Map();
+  for(const query of [...new Set(experiments.map(x=>x[1]))]){
+    const tab=await navigate(query);
+    try{
+      await tab.locator('#results .match-result-card').first().waitFor({timeout:12000});
+      references.set(query,await signature(tab));
+    }finally{await tab.close();}
+  }
+  await context.route(url=>url.hostname==='127.0.0.1'&&url.pathname==='/src/search-page.mjs',
+    async route=>route.fulfill({status:200,contentType:'text/javascript; charset=utf-8',
+      body:patchedSource}));
   const traces={scope:'synthetic_fixture_not_real_merchants',samples:[],
     productTruthCertified:false,compositorPaintCertified:false,p95Certified:false};
   for(let round=0;round<3;round++){
@@ -797,6 +862,29 @@ try{
         const m={firstDom:null,frame:null,frame2:null,open:null,snapshot:null,
           snapshots:0,callbacks:0,longTasks:[],firstKey:null};
         window.__perfFixture=m;
+        window.__criticalPath=[];
+        // DOM write duration is measured through a scoped test-page instance
+        // setter, not a change to the runtime implementation.
+        const installDomSetter=()=>{
+          const root=document.querySelector('#results');
+          if(!root)return;
+          const descriptor=Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');
+          Object.defineProperty(root,'innerHTML',{
+            configurable:true,
+            get(){return descriptor.get.call(this);},
+            set(html){
+              const t=performance.now();
+              descriptor.set.call(this,html);
+              if(typeof html==='string'&&html.includes('match-results-section')&&
+                 window.__criticalPath.length<150)
+                window.__criticalPath.push({phase:'render.domSet',
+                  ms:Math.round((performance.now()-t)*1000)/1000});
+            }
+          });
+        };
+        if(document.readyState==='loading')
+          document.addEventListener('DOMContentLoaded',installDomSetter,{once:true});
+        else installDomSetter();
         const check=()=>{
           m.callbacks++;
           if(m.firstDom!==null)return;
@@ -844,17 +932,23 @@ try{
             domToFrameMs:span(x.frame,x.firstDom),domToSecondFrameMs:span(x.frame2,x.firstDom),
             sseToDomMs:span(x.firstDom,x.snapshot),snapshots:x.snapshots,
             callbackCount:x.callbacks,longTasks:x.longTasks,firstKey:x.firstKey,
-            visibleCards:document.querySelectorAll('#results .match-result-card').length};
+            visibleCards:document.querySelectorAll('#results .match-result-card').length,
+            phaseBudget:window.__criticalPath||[]};
         });
         const groups=groupComparableOffers(searchPayload(query,null).offers,'lowest');
         const target=groups.find(g=>g.key===m.firstKey);
-        const result={name,round,...m,fixtureGroupMatched:Boolean(target?.bestOffer),
+        const unchanged=JSON.stringify(await signature(tab))===JSON.stringify(references.get(query));
+        const result={name,round,...m,semanticParityToOriginal:unchanged,
+          fixtureGroupMatched:Boolean(target?.bestOffer),
           fixtureModel:target?.bestOffer?.specs?.modelNumber||null,
           realSourceOwnershipCertified:false,paintCertified:false};
         traces.samples.push(result);
         assertCheck('perf_'+name+'_'+round,
           Number.isFinite(result.domToFrameMs)&&result.frameMs>=result.firstDomMs&&
-          result.visibleCards>0&&result.fixtureGroupMatched,result);
+          result.visibleCards>0&&result.fixtureGroupMatched&&result.semanticParityToOriginal&&
+          result.phaseBudget.some(x=>x.phase==='history.total')&&
+          result.phaseBudget.some(x=>x.phase==='render.total')&&
+          result.phaseBudget.some(x=>x.phase==='render.domSet'),result);
       }finally{await tab.close();}
     }
   }
@@ -868,7 +962,11 @@ try{
       minDomToFrameMs:Math.min(...rows.map(r=>r.domToFrameMs)),
       maxDomToFrameMs:Math.max(...rows.map(r=>r.domToFrameMs)),
       medianDomMs:median(rows.map(r=>r.firstDomMs)),
-      longTasks:rows.flatMap(r=>r.longTasks)}];
+      longTasks:rows.flatMap(r=>r.longTasks),
+      phases:Object.fromEntries([...new Set(rows.flatMap(r=>r.phaseBudget.map(x=>x.phase)))].map(phase=>{
+        const all=rows.flatMap(r=>r.phaseBudget.filter(x=>x.phase===phase).map(x=>x.ms));
+        return [phase,{calls:all.length,medianMs:median(all),maxMs:Math.max(...all)}];
+      }))}];
   }));
   summary.browserForensics=traces;
   writeFileSync('browser-artifacts/fixture-browser-forensics.json',JSON.stringify(traces,null,2));
