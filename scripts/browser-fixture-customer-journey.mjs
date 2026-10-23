@@ -1118,6 +1118,149 @@ try{
   traces.counterfactual=counterResults;
   writeFileSync('browser-artifacts/fixture-counterfactual-v2154.json',JSON.stringify(counterResults,null,2));
   console.log('NAWAA_V2154_COUNTERFACTUAL '+JSON.stringify(counterResults));
+
+  // v21.55: controlled SSE micro-simulation. No customer-facing module is
+  // changed. Compare render-only deduplication to original instrumented code:
+  // price-history writes and final reconciliation remain enabled in both.
+  let renderOnlyCandidate=patchedSource;
+  const transformRenderOnly=(from,to,label)=>{
+    const n=renderOnlyCandidate.split(from).length-1;
+    if(n!==1)throw Error('render_only_anchor_'+label+'_'+n);
+    renderOnlyCandidate=renderOnlyCandidate.replace(from,to);
+  };
+  transformRenderOnly('          let bestWithOffers=null;',
+    '          let bestWithOffers=null;\n          let lastRenderedPayload=null;', 'scoped_snapshot');
+  transformRenderOnly('              best=payload;',
+    '              const __sameRenderedPayload=event.data===lastRenderedPayload && !state.comparisonOpen && !state.selectedGroupKey;\n'+
+    '              best=payload;', 'same_payload');
+  transformRenderOnly('                __criticalSpan("render.total",()=>renderProduct(liveProduct,query));',
+    '                if(!__sameRenderedPayload){\n'+
+    '                  __criticalSpan("render.total",()=>renderProduct(liveProduct,query));\n'+
+    '                  lastRenderedPayload=event.data;\n'+
+    '                }else window.__renderOnlySkips=(window.__renderOnlySkips||0)+1;', 'render_only');
+  const sourceForCase=async({candidate,variant,interaction})=>{
+    const q='HP laptop fixture-performance-6-single';
+    const payload=searchPayload(q,null);
+    const makeOffer=x=>variant==='missingObservedAt'?(({observedAt,...others})=>others)(x):x;
+    const full={...payload,offers:payload.offers.map(makeOffer)};
+    const changed={...full,offers:full.offers.map((o,i)=>i===0?{...o,productPrice:o.productPrice+91}:o)};
+    const tab=await context.newPage();
+    tab.setDefaultTimeout(10000);
+    await tab.addInitScript(()=>{
+      const NativeDate=Date;
+      window.__controlledTicks=0;
+      window.Date=class extends NativeDate{
+        constructor(...args){if(args.length)super(...args);else super(1790000000000+window.__controlledTicks*3000);}
+        static now(){return 1790000000000+window.__controlledTicks*3000;}
+      };
+      try{localStorage.removeItem('nawaa_price_history_v1');}catch{}
+      window.__criticalPath=[];
+      window.__renderOnlySkips=0;
+      window.__controlledStream=null;
+      window.EventSource=class{
+        constructor(){
+          this.handlers=new Map();
+          window.__controlledStream=this;
+        }
+        addEventListener(name,fn){
+          if(!this.handlers.has(name))this.handlers.set(name,[]);
+          this.handlers.get(name).push(fn);
+        }
+        sendSnapshot(body){
+          window.__controlledTicks++;
+          for(const fn of this.handlers.get('snapshot')||[])fn({data:JSON.stringify(body)});
+        }
+        done(){for(const fn of this.handlers.get('done')||[])fn({data:'{}'});}
+        close(){this.closed=true;}
+      };
+    });
+    await tab.route(url=>url.hostname==='127.0.0.1'&&url.pathname==='/src/search-page.mjs',
+      async route=>route.fulfill({status:200,contentType:'text/javascript; charset=utf-8',
+        body:candidate?renderOnlyCandidate:patchedSource}));
+    const measure=()=>tab.evaluate(()=>{
+      const cards=[...document.querySelectorAll('#results .match-result-card')].map(c=>({
+        group:c.dataset.groupKey||'',title:c.querySelector('.match-card-copy strong')?.textContent||''
+      }));
+      const raw=localStorage.getItem('nawaa_price_history_v1');
+      const history=raw?JSON.parse(raw):[];
+      const task=window.__criticalPath||[];
+      return {
+        cards,
+        status:document.querySelector('#searchStatus')?.textContent||'',
+        focused:document.activeElement?.dataset?.groupKey||null,
+        selected:document.querySelector('.selected-comparison')?.textContent?.replace(/\s+/g,' ').trim()||null,
+        merchant:document.querySelector('#merchantFilter')?.value||'all',
+        renderCalls:task.filter(x=>x.phase==='render.total').length,
+        historyCalls:task.filter(x=>x.phase==='history.total').length,
+        skips:window.__renderOnlySkips||0,
+        history,html:document.querySelector('#results')?.textContent?.replace(/\s+/g,' ').trim()||''
+      };
+    });
+    try{
+      await tab.goto(base+'/search.html?q='+encodeURIComponent(q),{waitUntil:'domcontentloaded'});
+      await tab.waitForFunction(()=>Boolean(window.__controlledStream),null,{timeout:6000});
+      await tab.evaluate(p=>window.__controlledStream.sendSnapshot(p),full);
+      await tab.locator('#results .match-result-card').first().waitFor();
+      const before=await measure();
+      if(interaction==='focus')await tab.locator('#results .match-result-card').first().focus();
+      if(interaction==='filter')await tab.locator('#merchantFilter').selectOption('Jarir');
+      if(interaction==='comparison')await tab.locator('#results .match-result-card').first().click();
+      if(interaction==='keyboard')await tab.locator('#results .match-result-card').first().focus();
+      const first=await measure();
+      await tab.evaluate(p=>window.__controlledStream.sendSnapshot(p),
+        variant==='priceMutation'?changed:full);
+      const second=await measure();
+      await tab.evaluate(()=>window.__controlledStream.done());
+      await tab.waitForFunction(()=>document.querySelector('#searchStatus')?.textContent?.startsWith('بحث حي:'),
+        null,{timeout:6000});
+      const final=await measure();
+      return {before,first,second,final};
+    }finally{await tab.close();}
+  };
+  const renderOnlyCases=[
+    ['plain','explicit','none',1],
+    ['noTimestamp','missingObservedAt','none',1],
+    ['focus','explicit','focus',1],
+    ['filter','explicit','filter',1],
+    ['comparison','explicit','comparison',0],
+    ['keyboard','explicit','keyboard',1],
+    ['changingPrice','priceMutation','none',0],
+  ];
+  const renderOnlyReport={kind:'test_only_render_only_snapshot_counterfactual',
+    source:'unchanged production module instrumented at Chromium request interception',
+    independentMerchantProvenanceCertified:false,p95Certified:false,samples:[]};
+  for(const [name,variant,interaction,expectedSkip] of renderOnlyCases){
+    const results={};
+    for(const candidate of [false,true])
+      results[candidate?'candidate':'original']=await sourceForCase({candidate,variant,interaction});
+    const a=results.original,b=results.candidate;
+    const same=(x,y)=>JSON.stringify(x)===JSON.stringify(y);
+    const parity=['before','first','second','final'].every(stage=>{
+      const l=a[stage],r=b[stage];
+      return same(l.cards,r.cards)&&l.status===r.status&&
+        l.focused===r.focused&&l.selected===r.selected&&
+        l.merchant===r.merchant&&same(l.history,r.history)&&l.html===r.html;
+    });
+    const historyPreserved=a.second.historyCalls===b.second.historyCalls&&
+      same(a.second.history,b.second.history)&&
+      a.final.historyCalls===b.final.historyCalls;
+    const lastSeenAdvances=variant==='missingObservedAt'?
+      a.before.history.length>0&&
+      a.before.history.some((row,i)=>row.lastSeenAt!==a.second.history[i]?.lastSeenAt):
+      true;
+    const skipped=b.second.skips;
+    const item={name,parity,historyPreserved,lastSeenAdvances,skipped,expectedSkip,
+      renderCallsAtSecond:[a.second.renderCalls,b.second.renderCalls],
+      historyCallsAtSecond:[a.second.historyCalls,b.second.historyCalls],
+      finalRenderCalls:[a.final.renderCalls,b.final.renderCalls]};
+    renderOnlyReport.samples.push(item);
+    assertCheck('v2155_render_only_'+name,
+      parity&&historyPreserved&&lastSeenAdvances&&skipped===expectedSkip&&
+      a.second.renderCalls===b.second.renderCalls+expectedSkip&&
+      a.final.renderCalls===b.final.renderCalls+expectedSkip,item);
+  }
+  writeFileSync('browser-artifacts/fixture-render-only-v2155.json',JSON.stringify(renderOnlyReport,null,2));
+  console.log('NAWAA_V2155_RENDER_ONLY '+JSON.stringify(renderOnlyReport));
   summary.browserForensics=traces;
   writeFileSync('browser-artifacts/fixture-browser-forensics.json',JSON.stringify(traces,null,2));
   console.log('NAWAA_FIXTURE_BROWSER_FORENSICS '+JSON.stringify(traces));
