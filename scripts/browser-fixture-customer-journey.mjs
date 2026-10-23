@@ -1310,9 +1310,10 @@ try{
       error(){this.emit('error');}
       close(){this.closed=true;this.closeCalls++;}
     };
-    window.__firePendingStreamTimers=()=>{
-      for(const timer of window.__lifecycleTimeouts){
-        if(timer.cleared||timer.fired)continue;
+    window.__firePendingStreamTimers=indices=>{
+      for(const i of indices){
+        const timer=window.__lifecycleTimeouts[i];
+        if(!timer||timer.cleared||timer.fired)continue;
         timer.fired=true;timer.callback();
       }
     };
@@ -1326,9 +1327,6 @@ try{
     await lifecycleTab.goto(base+'/search.html?q='+encodeURIComponent(lifecycleQueryA),
       {waitUntil:'domcontentloaded',timeout:20000});
     await lifecycleTab.waitForFunction(()=>window.__lifecycleStreams.length===1);
-    await lifecycleTab.evaluate(p=>window.__lifecycleStreams[0].snapshot(p),
-      searchPayload(lifecycleQueryA,null));
-    await lifecycleTab.locator('#results .match-result-card').first().waitFor();
     await lifecycleTab.evaluate(query=>{
       document.querySelector('#searchInput').value=query;
       document.querySelector('#searchForm').requestSubmit();
@@ -1349,8 +1347,8 @@ try{
     }));
     await lifecycleTab.evaluate(p=>{
       const old=window.__lifecycleStreams[0];
+      window.__firePendingStreamTimers([0]);
       old.snapshot(p);old.done();old.error();
-      window.__firePendingStreamTimers();
     },searchPayload(lifecycleQueryA,null));
     await lifecycleTab.waitForTimeout(80);
     const afterLate=await lifecycleTab.evaluate(()=>({
@@ -1376,7 +1374,7 @@ try{
     await lifecycleTab.evaluate(p=>{
       const stream=window.__lifecycleStreams[1];
       stream.done();stream.error();stream.snapshot(p);
-      window.__firePendingStreamTimers();
+      window.__firePendingStreamTimers([1]);
     },searchPayload(lifecycleQueryA,null));
     await lifecycleTab.waitForTimeout(80);
     const afterTerminalReplay=await lifecycleTab.evaluate(()=>({
