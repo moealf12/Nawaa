@@ -682,3 +682,24 @@ test('v21.45 RED: minimum live sources gate must count distinct merchants, not s
   assert.ok(countDistinctLiveMerchants(sample)<3,
     'minimum-three merchant gate must not pass with four successes from two merchants');
 });
+
+
+test('v21.46 RED: live validation matrix may only reference configured storefronts',async()=>{
+  const {configuredFreeStorefrontIds}=await import('../server/providers/free-storefronts.mjs');
+  assert.equal(typeof configuredFreeStorefrontIds,'function',
+    'reuse the real storefront registry rather than a duplicate CI-only merchant list');
+  const supported=new Set(configuredFreeStorefrontIds());
+  assert.ok(supported.has('bestbuy-us')&&supported.has('amazon-sa'),
+    'the registry must contain known configured stores');
+  assert.equal(supported.has('carrefour-ae'),false,
+    'a planned but unconfigured merchant must not be silently validated');
+  const source=readFileSync(new URL('../scripts/validate-live-sources.mjs',import.meta.url),'utf8');
+  const begin=source.indexOf('const CASES = [');
+  const end=source.indexOf('let live =',begin);
+  assert.ok(begin>=0&&end>begin,'the case registry must remain inspectable');
+  const entries=[...source.slice(begin,end).matchAll(/\[\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\]/g)]
+    .map(([,store,query])=>({store,query}));
+  const unsupported=entries.filter(({store})=>!supported.has(store));
+  assert.deepEqual(unsupported,[],
+    'stale merchant identifiers must fail deterministic preflight, not waste a live-source CI request');
+});
