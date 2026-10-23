@@ -1,4 +1,4 @@
-import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
+import { searchFreeStorefrontById, configuredFreeStorefrontIds } from "../server/providers/free-storefronts.mjs";
 import { resolveProductUrl } from "../server/url-resolver.mjs";
 import { classifyPdpProbeFailure } from "./bestbuy-pdp-probe-status.mjs";
 import { countDistinctLiveMerchants } from "./live-source-validation-counts.mjs";
@@ -52,7 +52,7 @@ const CASES = [
   ["amazon-sa","iphone 17"],["lulu-sa","iphone 17"],["samsung-sa","galaxy s25"],
   ["virgin-sa","airpods"],["amazon-ae","iphone 17"],["noon-ae","iphone 17"],
   ["sharafdg-ae","hp laptop"],["virgin-ae","iphone 17"],["virgin-ae","airpods"],["virgin-ae","apple watch"],["virgin-ae","macbook"],["virgin-ae","playstation 5"],["xcite-kw","hp laptop"],
-  ["lulu-ae","iphone 17"],["carrefour-ae","iphone 17"],["microless-ae","iphone 17"],["jumbo-ae","iphone 17"],
+  ["lulu-ae","iphone 17"],["microless-ae","iphone 17"],["jumbo-ae","iphone 17"],
   ["goldenscent-sa","dior sauvage"],["ounass-sa","nike shoes"],["sunandsand-sa","nike shoes"],
   ["homecentre-sa","office chair"],["mumzworld-sa","stroller"],
   ["asos-global","nike air max"],["farfetch-sa","gucci shoes"],["etsy-global","silver necklace"],
@@ -66,6 +66,16 @@ const CASES = [
   ["amazon-ae","airpods"],["noon-ae","airpods"],["sharafdg-ae","airpods"],
   ["xcite-kw","airpods"],["lulu-ae","airpods"],
 ];
+
+// Prevent invalid CI source coverage claims and avoid executing probes against
+// merchant IDs which are not configured in the actual storefront registry.
+// Carrefour UAE remains unconfigured and must be onboarded with real source
+// evidence before it is reintroduced into this validation matrix.
+const configuredStorefronts = new Set(configuredFreeStorefrontIds());
+const unconfiguredCases = CASES.filter(([store]) => !configuredStorefronts.has(store));
+if (unconfiguredCases.length) {
+  throw new Error("UNCONFIGURED_LIVE_SOURCE_CASES: " + JSON.stringify(unconfiguredCases));
+}
 
 let live = 0;
 const rows = [];
