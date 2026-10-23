@@ -1,5 +1,6 @@
 import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
 import { resolveProductUrl } from "../server/url-resolver.mjs";
+import { classifyPdpProbeFailure } from "./bestbuy-pdp-probe-status.mjs";
 
 // CI-only forensic probe. Never consulted by production ranking/extraction.
 // A PDP may suggest a matching priced record, but this probe does NOT certify
@@ -36,7 +37,8 @@ async function probeBestBuyLinkOnlyCandidates(identityAudit) {
         title:typeof pdp.title === "string" ? pdp.title.slice(0,120) : null,
         originalCurrency:pdp.originalCurrency || null};
     } catch (error) {
-      return {...base,status:"PDP_UNVERIFIED",lastStage:stages.at(-1)?.stage || null,
+      return {...base,status:"PDP_UNVERIFIED",reasonCode:classifyPdpProbeFailure(stages,error),
+        lastStage:stages.at(-1)?.stage || null,
         stages,error:String(error?.message || error).slice(0,140)};
     }
   }));
