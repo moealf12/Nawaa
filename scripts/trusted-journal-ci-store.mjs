@@ -97,7 +97,7 @@ export function createIsolatedTrustedJournalStore(){
       'observed_at timestamptz NOT NULL,revision text NOT NULL,record_id text NOT NULL,'+
       'is_conflicted boolean NOT NULL DEFAULT false)');
     await pool.query('CREATE OR REPLACE FUNCTION nawaa_ci_reject_source_history_mutation() '+
-      "RETURNS trigger LANGUAGE plpgsql AS $ BEGIN RAISE EXCEPTION 'append-only source head history'; END; $");
+      "RETURNS trigger LANGUAGE plpgsql AS $trusted_history$ BEGIN RAISE EXCEPTION 'append-only source head history'; END; $trusted_history$");
     await pool.query('DROP TRIGGER IF EXISTS nawaa_ci_head_history_immutable ON '+HISTORY);
     await pool.query('CREATE TRIGGER nawaa_ci_head_history_immutable BEFORE UPDATE OR DELETE ON '+
       HISTORY+' FOR EACH ROW EXECUTE FUNCTION nawaa_ci_reject_source_history_mutation()');
