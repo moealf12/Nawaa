@@ -367,7 +367,9 @@ try{
       observed.firstCard.productPrice===sourceRecord.productPrice&&
       observed.firstCard.merchant===sourceRecord.merchant&&
       observed.firstCard.modelNumber===sourceRecord.specs.modelNumber&&
-      observed.firstCard.currency===sourceRecord.currency,observed.firstCard);
+      observed.firstCard.currency===sourceRecord.currency&&
+      observed.firstCard.imageMatchesOwnOffer&&
+      observed.firstCard.expectedImage===(sourceRecord.image||null),observed.firstCard);
     assertCheck('v2157_timeline_request_scoping_and_monotonic_observability',
       observed.requestId>0&&observed.milestones.T0<=observed.milestones.T1&&
       observed.milestones.T1<=observed.milestones.T3&&
