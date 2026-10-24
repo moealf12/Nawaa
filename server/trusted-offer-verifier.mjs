@@ -66,7 +66,7 @@ function offerKey(o){
     k==='sku'?o?.sku??o?.sourceMeta?.productId:o?.gtin));
   return fingerprint([
     o?.title,o?.productPrice,o?.currency,o?.merchant,o?.observedAt,destination(o?.sourceUrl),
-    o?.image||null,identity,VARIANT_KEYS.map(k=>claimValue(o,k))
+    typeof o?.image==='string'?o.image:null,identity,VARIANT_KEYS.map(k=>claimValue(o,k))
   ]);
 }
 function fail(state,reason){return Object.freeze({state,eligible:false,reason,policyVersion:POLICY});}
