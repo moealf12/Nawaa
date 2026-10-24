@@ -16,6 +16,7 @@ const page=()=>({
   specs:{brand:'Sony',modelNumber:'CFI2116B01Y',color:'White'},
   condition:'new',availability:'in_stock',
   extraction:{fieldSources:fields(),conflictSummary:{hasConflicts:false},
+    reconciled:false,availableStrategies:['jsonld'],
     identity:{summary:{accepted:1,rejected:0}}}
 });
 const offer=()=>({
@@ -197,4 +198,18 @@ test('v21.62: inbound authority-looking flags are not propagated to attested rec
     assert.equal(Object.hasOwn(attempt.offer,key),false,key);
   }
   assert.equal(await session.accepts(attempt),true);
+});
+
+test('v21.62: equal parser strategy does not prove identical record when two Products are discovered',async()=>{
+  for(const extraction of [
+    {...page().extraction,availableStrategies:['jsonld','jsonld']},
+    {...page().extraction,identity:{summary:{accepted:2,rejected:0}}},
+    {...page().extraction,reconciled:true},
+    {...page().extraction,availableStrategies:['hydrated_state']},
+    {...page().extraction,availableStrategies:['jsonld','meta']}
+  ]){
+    const attempt=await setup(async()=>({...page(),extraction})).verify(offer());
+    assert.equal(attempt.eligible,false,JSON.stringify(extraction));
+    assert.equal(attempt.reason,'ambiguous_product_reconciliation');
+  }
 });
