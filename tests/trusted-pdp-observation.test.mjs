@@ -334,7 +334,8 @@ test('v21.63 refreshed PDP cannot override known hard SKU, MPN, GTIN or selected
     {...offer(),sku:'644723'},
     {...offer(),sourceMeta:{productId:'644723'},sku:undefined},
     {...offer(),specs:{...offer().specs,modelNumber:'CFI2116A01Y'}},
-    {...offer(),specs:{...offer().specs,barcode:'9999'}},
+    {...offer(),gtin:'1111111111111'}, // PDP absence must remain unresolved, not inherit an invented GTIN
+    {...offer(),specs:{...offer().specs,barcode:'9999'},gtin:'1111111111111'},
     {...offer(),specs:{...offer().specs,color:'Black'}},
     {...offer(),condition:'refurbished'}
   ];
@@ -356,4 +357,59 @@ test('v21.63 listing cannot hide conflicting internal merchant SKU behind a matc
   const result=await setup().verifySelectedRevision(indexed);
   assert.equal(result.eligible,false);
   assert.equal(result.reason,'conflicting_catalog_sku_sources');
+});
+
+test('v21.64 RED: indexed barcode missing at selected PDP is unresolved and never copied into a new PDP revision',async()=>{
+  const prior={...offer(),specs:{...offer().specs,barcode:'0123456789012'}};
+  const session=setup();
+  const issued=await session.verifySelectedRevision(prior);
+  assert.equal(issued.state,'VERIFIED',issued.reason);
+  assert.equal(issued.certificateScope,'selected_pdp_revision_predicates');
+  assert.equal(issued.historicalClaims.barcode,'MISSING_EVIDENCE');
+  assert.equal(issued.historicalClaims.gtin,'NOT_CLAIMED');
+  assert.equal(issued.wholeOfferVerified,false);
+  assert.equal(issued.badgeEligible,false);
+  assert.equal(issued.offer.gtin,undefined);
+  assert.equal(issued.offer.specs.barcode,undefined);
+  assert.equal(prior.specs.barcode,'0123456789012','historic catalog stays immutable');
+  assert.equal(await session.accepts(issued),true);
+});
+test('v21.64 RED: explicit indexed GTIN absent from selected PDP remains missing, cannot earn whole-offer badge',async()=>{
+  const prior={...offer(),gtin:'0012345678905'};
+  const session=setup();
+  const issued=await session.verifySelectedRevision(prior);
+  assert.equal(issued.state,'VERIFIED',issued.reason);
+  assert.equal(issued.historicalClaims.gtin,'MISSING_EVIDENCE');
+  assert.equal(issued.decision.predicates.gtin,'NOT_CLAIMED');
+  assert.equal(issued.wholeOfferVerified,false);
+  assert.equal(issued.badgeEligible,false);
+  assert.equal(issued.offer.gtin,undefined);
+});
+test('v21.64 RED: real source-owned GTIN is verified only for selected PDP and matching catalog claim',async()=>{
+  const observed={...page(),gtin:'0012345678905',specs:{...page().specs,barcode:'0012345678905'}};
+  const session=setup(async()=>observed);
+  const issued=await session.verifySelectedRevision({...offer(),gtin:'0012345678905'});
+  assert.equal(issued.state,'VERIFIED',issued.reason);
+  assert.equal(issued.offer.gtin,'0012345678905');
+  assert.equal(issued.decision.predicates.gtin,'VERIFIED');
+  assert.equal(issued.historicalClaims.gtin,'VERIFIED');
+  assert.equal(await session.accepts(issued),true);
+  const conflicting=await session.verifySelectedRevision({...offer(),gtin:'9999999999999'});
+  assert.equal(conflicting.eligible,false);
+  assert.equal(conflicting.reason,'listing_pdp_gtin_conflict');
+});
+test('v21.64 RED: contradictory catalog barcode with selected PDP GTIN cannot be silently downgraded to missing',async()=>{
+  const observed={...page(),gtin:'0012345678905',specs:{...page().specs,barcode:'0012345678905'}};
+  const indexed={...offer(),specs:{...offer().specs,barcode:'9999999999999'}};
+  const result=await setup(async()=>observed).verifySelectedRevision(indexed);
+  assert.equal(result.state,'CONFLICTING_EVIDENCE');
+  assert.equal(result.reason,'listing_pdp_barcode_conflict');
+});
+test('v21.64 RED: GTIN with leading zero must retain its own product identity namespace',async()=>{
+  const observed={...page(),gtin:'0012345678905',specs:{...page().specs,barcode:'0012345678905'}};
+  const session=setup(async()=>observed);
+  const mismatched=await session.verifySelectedRevision({...offer(),gtin:'12345678905'});
+  assert.equal(mismatched.state,'CONFLICTING_EVIDENCE');
+  const matching=await session.verifySelectedRevision({...offer(),gtin:'0012345678905'});
+  assert.equal(matching.state,'VERIFIED');
 });
