@@ -105,6 +105,15 @@ jobs:
           MEILI_HOST: ""
           MEILI_MASTER_KEY: ""
         run: node --test tests/postgres-provenance.test.mjs
+      - name: Three independent Node processes replay signed PDP receipt and revocation on real PostgreSQL
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ""
+          NAWAA_TEST_DATABASE_URL: postgresql://nawaa_ci:test_only_not_a_secret@127.0.0.1:5432/nawaa_temporal_ci
+        run: |
+          node scripts/certify-trusted-journal-replay.mjs write
+          node scripts/certify-trusted-journal-replay.mjs read
+          node scripts/certify-trusted-journal-replay.mjs revoked
 
   disposable-meilisearch-restart:
     # Real Meilisearch process in a temporary CI Docker service; no production writes.
