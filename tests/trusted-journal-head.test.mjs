@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash,createHmac} from 'node:crypto';
 import fc from 'fast-check';
 import {createPdpObservationSession} from '../server/trusted-pdp-observation.mjs';
 import {createTrustedObservationJournal} from '../server/trusted-observation-journal.mjs';
@@ -397,4 +398,48 @@ test('v21.77 source receipt carries versioned identity authority, not just an ol
   assert.equal(payload.sourceKeyPolicy,'selected-merchant-offer-v2');
   assert.equal(typeof payload.sourceKey,'string');
   assert.equal(payload.sourceKey.length,64);
+});
+
+test('v21.77 signed source receipt rejects internally contradictory full-field lineage on read',async()=>{
+  const st=memory(),j=build(st);
+  const archived=await j.archive(await issue());
+  assert.equal(archived.state,'ARCHIVED',archived.reason);
+  const event=st.rows.find(e=>e.ref===archived.receiptRef);
+  const unmodified=structuredClone(event);
+  // Simulate an incorrectly signed writer payload that preserves a valid
+  // HMAC and self-consistent recordDigest but misattributes the *price*
+  // to different selected source facts. This is a semantic negative, not
+  // merely a signature-corruption test.
+  const payload=JSON.parse(event.payload);
+  payload.sourceEvidence.record.productPrice=199;
+  payload.sourceEvidence.recordDigest=createHash('sha256')
+    .update(JSON.stringify(payload.sourceEvidence.record)).digest('hex');
+  event.payload=JSON.stringify(payload);
+  event.signature=createHmac('sha256',K1).update(
+    ['trusted-pdp-journal-v1',event.keyId,event.kind,event.ref,event.payload]
+      .join('\\n')).digest('hex');
+  const verdict=await j.inspect(archived.receiptRef);
+  assert.equal(verdict.state,'CONFLICTING_EVIDENCE');
+  assert.equal(verdict.reason,'signed_source_offer_lineage_mismatch');
+  assert.equal(verdict.badgeEligible,false);
+  Object.assign(event,unmodified);
+  assert.equal((await j.inspect(archived.receiptRef)).state,'REVALIDATED');
+});
+test('v21.77 signed diagnostic lineage cannot reassign SKU image or source ownership',async()=>{
+  const st=memory(),j=build(st),archived=await j.archive(await issue());
+  const event=st.rows.find(e=>e.ref===archived.receiptRef);
+  const original=structuredClone(event);
+  for(const path of ['image','sku','name']){
+    const p=JSON.parse(original.payload);
+    p.sourceEvidence.ownership[path]={strategy:'jsonld',recordId:'f'.repeat(64)};
+    event.payload=JSON.stringify(p);
+    event.signature=createHmac('sha256',K1).update(
+      ['trusted-pdp-journal-v1',event.keyId,event.kind,event.ref,event.payload]
+        .join('\\n')).digest('hex');
+    const result=await j.inspect(archived.receiptRef);
+    assert.equal(result.state,'CONFLICTING_EVIDENCE',path);
+    assert.equal(result.reason,'signed_source_offer_lineage_mismatch',path);
+  }
+  Object.assign(event,original);
+  assert.equal((await j.inspect(archived.receiptRef)).state,'REVALIDATED');
 });

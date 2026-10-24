@@ -64,6 +64,57 @@ function boundedSourceEvidence(evidence){
   return {schema:'selected-source-record-evidence-v1',record,
     ownership,recordDigest:hash(record)};
 }
+// Signed audit fields must also be mutually coherent. HMAC only proves the
+// journal writer's payload was unchanged; it does not prove a copied value
+// came from the selected sellable record. Never turn this diagnostic into a
+// whole-offer or customer-visible certificate.
+const FIELD_OWNERSHIP={
+  title:'name',productPrice:'offers',currency:'offers',image:'image',sku:'sku',
+  mpn:'mpn',gtin:'gtin',modelNumber:'mpn',brand:'brand',
+  condition:'condition',availability:'availability',color:'color',
+  storage:'storage',capacity:'capacity',ram:'ram',region:'region',sim:'sim',
+  edition:'edition',bundleContents:'bundleContents'
+};
+function coherentCapturedSourceOffer(capture){
+  const evidence=capture.sourceEvidence;
+  if(!safeObject(evidence)||!safeObject(evidence.record)||
+     !safeObject(evidence.ownership))return false;
+  const {record,ownership}=evidence,offer=capture.offer,sourceRecordId=capture.sourceRecord.recordId;
+  const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  const checked=(field,value,requiredOwner=FIELD_OWNERSHIP[field])=>{
+    if(value===undefined)return true;
+    if(!Object.hasOwn(record,field)||!equal(value,record[field]))return false;
+    if(!requiredOwner)return true;
+    return ownership[requiredOwner]?.recordId===sourceRecordId&&
+      ownership[requiredOwner]?.strategy==='jsonld';
+  };
+  for(const [key,owner] of Object.entries(FIELD_OWNERSHIP)){
+    if(Object.hasOwn(offer,key)&&!checked(key,offer[key],owner))return false;
+  }
+  for(const [key,owner] of [
+    ['brand','brand'],['modelNumber','mpn'],['color','color'],
+    ['storage','storage'],['capacity','capacity'],['ram','ram'],
+    ['region','region'],['sim','sim'],['condition','condition'],
+    ['gtin','gtin'],['mpn','mpn']
+  ]){
+    if(Object.hasOwn(offer.specs||{},key)){
+      if(!equal(offer.specs[key],record.specs?.[key])||
+         ownership[owner]?.recordId!==sourceRecordId||
+         ownership[owner]?.strategy!=='jsonld')return false;
+    }
+  }
+  for(const key of ['storage','capacity','ram','region','sim','color',
+    'edition','condition','bundleContents']){
+    if(Object.hasOwn(offer.variant||{},key)){
+      if(!equal(offer.variant[key],record.variant?.[key])||
+         ownership[key]?.recordId!==sourceRecordId||
+         ownership[key]?.strategy!=='jsonld')return false;
+    }
+  }
+  return offer.merchant===record.merchant&&
+    offer.sourceUrl===record.sourceUrl&&
+    offer.observedAt===record.observedAt;
+}
 function state(status,reason,additional={}){
   return Object.freeze({state:status,eligible:false,wholeOfferVerified:false,
     badgeEligible:false,reason,...additional});
@@ -157,6 +208,11 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
          !/^https:\/\//.test(captured.sourceRecord.selectedProductUrl))
         return state('CONFLICTING_EVIDENCE','selected_product_destination_invalid');
     }
+    if(requireCurrentHead&&
+       (!captured.sourceEvidence||
+        !captured.sourceRecord.selectedOfferUrl||
+        !captured.sourceRecord.selectedProductUrl))
+      return state('MISSING_EVIDENCE','durable_selected_source_lineage_missing');
     if(captured.sourceEvidence!==undefined){
       let evidence;
       try{evidence=boundedSourceEvidence({
@@ -168,6 +224,8 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
          captured.sourceEvidence.recordDigest!==evidence.recordDigest||
          JSON.stringify(captured.sourceEvidence)!==JSON.stringify(evidence))
         return state('CONFLICTING_EVIDENCE','source_evidence_integrity_failure');
+      if(requireCurrentHead&&!coherentCapturedSourceOffer(captured))
+        return state('CONFLICTING_EVIDENCE','signed_source_offer_lineage_mismatch');
     }
     const observed=parsedTime(captured.observedAt),issued=parsedTime(captured.issuedAt);
     const present=now();
