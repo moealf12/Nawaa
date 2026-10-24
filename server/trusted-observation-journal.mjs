@@ -131,6 +131,8 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
         !HEX.test(latest.recordId||'')||
         !Number.isFinite(parsedTime(latest.observedAt)))
         return state('SOURCE_BLOCKED','source_head_missing_or_invalid');
+      if(latest.conflicted===true)
+        return state('CONFLICTING_EVIDENCE','source_head_conflict');
       if(latest.revision!==captured.sourceRevision||
         latest.recordId!==captured.sourceRecord.recordId||
         parsedTime(latest.observedAt)!==observed)
