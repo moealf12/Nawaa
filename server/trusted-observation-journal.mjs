@@ -2,6 +2,7 @@
 // scoped selected-PDP decisions. This is NOT a generic attestation endpoint.
 // Possession of JSON, a hash, or a copied verifier decision cannot mint trust.
 import {createHash,createHmac,randomUUID,timingSafeEqual} from 'node:crypto';
+import {inspectIssuedPdpReceipt} from './trusted-pdp-observation.mjs';
 
 const MAX_AGE_MS=5*60_000;
 const MAX_BYTES=24_000;
@@ -121,15 +122,16 @@ export function createTrustedObservationJournal({store,signingKey,now=()=>Date.n
       scope:captured.scope,offer:captured.offer
     });
   }
-  async function archive(session,result){
-    if(typeof session?.accepts!=='function'||typeof session?.evidence!=='function'||
-      result?.state!=='VERIFIED'||result?.certificateScope!=='selected_pdp_revision_predicates'||
-      result?.wholeOfferVerified!==false||result?.badgeEligible!==false||
-      result?.decision?.state!=='VERIFIED')
+  async function archive(result){
+    // Private WeakMap registration in the original selected-PDP module is
+    // mandatory. Duck-typed acceptors and copied JSON are not authority.
+    const issued=await inspectIssuedPdpReceipt(result);
+    if(!issued||result.state!=='VERIFIED'||
+      result.certificateScope!=='selected_pdp_revision_predicates'||
+      result.wholeOfferVerified!==false||result.badgeEligible!==false||
+      result.decision?.state!=='VERIFIED')
       return state('MISSING_EVIDENCE','untrusted_issue_request');
-    // Only a live issued decision in this server session can be archived.
-    if(!await session.accepts(result))return state('MISSING_EVIDENCE','unaccepted_source_decision');
-    const ev=session.evidence(result.observationRef);
+    const ev=issued.evidence;
     if(!ev||!ev.sourceRecord||!HEX.test(ev.sourceRecord.recordId||'')||
       !HEX.test(ev.sourceRecord.documentDigest||'')||
       !HEX.test(ev.revision||'')||ev.sourceId!=='jarir-sa'||
