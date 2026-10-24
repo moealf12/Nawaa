@@ -25,7 +25,7 @@ test("Crawlee fallback-shaped offers map into NAWAA product schema",()=>{
 // A coherent source record is required; valid scalar fields cannot be combined
 // across unrelated sellable products to mint a new price or SKU.
 import fc from 'fast-check';
-import {reconcile} from '../server/universal-acquisition.mjs';
+import {reconcile,extractDiscoveredProductUrls} from '../server/universal-acquisition.mjs';
 const fallbackChecks={seed:2146,numRuns:64};
 const fallbackUrl='https://merchant.example/p/laptop';
 
@@ -175,4 +175,66 @@ test('v21.72 fallback positive: matching explicit GTIN supports a limited enrich
   ],fallbackUrl);
   assert.equal(extracted.productPrice,1999);
   assert.equal(extracted.image,'https://merchant.example/source-owned.jpg');
+});
+
+test('v21.74 discovery: distinct selected-SKU links are not deduplicated',()=>{
+  const html='<a href="/p.html?sku=123">a</a><a href="/p.html?sku=456">b</a>';
+  assert.deepEqual(extractDiscoveredProductUrls(html,'https://shop.example/catalog.html'),[
+    'https://shop.example/p.html?sku=123',
+    'https://shop.example/p.html?sku=456'
+  ]);
+});
+
+test('v21.74 discovery: tracking-only duplicates do not starve other products',()=>{
+  const html='<a href="/p.html?sku=123&utm_source=one">a</a>'+
+    '<a href="/p.html?sku=123&utm_source=two">duplicate</a>'+
+    '<a href="/p.html?sku=456">b</a>';
+  assert.deepEqual(extractDiscoveredProductUrls(html,'https://shop.example/list.html',{limit:2}),[
+    'https://shop.example/p.html?sku=123&utm_source=one',
+    'https://shop.example/p.html?sku=456'
+  ]);
+});
+
+test('v21.74 discovery: repeated source selector order is identity-relevant',()=>{
+  const html='<a href="/p.html?option=a&option=b">a</a>'+
+    '<a href="/p.html?option=b&option=a">b</a>'+
+    '<a href="/p.html?option=a&option=b#reviews">duplicate fragment</a>';
+  assert.deepEqual(extractDiscoveredProductUrls(html,'https://shop.example/list.html'),[
+    'https://shop.example/p.html?option=a&option=b',
+    'https://shop.example/p.html?option=b&option=a'
+  ]);
+});
+
+test('v21.74 discovery: reject invalid transport links and out-of-host results',()=>{
+  const html=[
+    '<a href="/valid.html">good</a>',
+    '<a href="http://shop.example/no.html">http</a>',
+    '<a href="https://user:pass@shop.example/no.html">creds</a>',
+    '<a href="https://shop.example:8443/no.html">port</a>',
+    '<a href="https://evil.example/no.html">cross-host</a>',
+    '<a href="javascript:alert(1)">script</a>',
+    '<a href="https://shop.example/not-a-product.pdf">not html</a>'
+  ].join('');
+  assert.deepEqual(extractDiscoveredProductUrls(html,'https://shop.example/list.html',{
+    allowedHost:'shop.example'}),['https://shop.example/valid.html']);
+});
+
+test('v21.74 discovery: selected-host redirect mismatch fails closed',()=>{
+  assert.throws(()=>extractDiscoveredProductUrls(
+    '<a href="/p.html">x</a>','https://elsewhere.example/list.html',
+    {allowedHost:'shop.example'}),/redirected beyond/);
+});
+
+test('v21.74 discovery: final resolved base and bounded cap remain correct',()=>{
+  const html='<a href="./first.html">first</a><a href="./second.html">second</a>';
+  assert.deepEqual(extractDiscoveredProductUrls(html,
+    'https://shop.example/catalog/index.html',{limit:1}),[
+      'https://shop.example/catalog/first.html'
+    ]);
+});
+
+test('v21.74 discovery: malformed or over-budget HTML fails closed',()=>{
+  assert.throws(()=>extractDiscoveredProductUrls(null,'https://shop.example/list.html'),/body budget/);
+  assert.throws(()=>extractDiscoveredProductUrls('x'.repeat(8_000_001),
+    'https://shop.example/list.html'),/body budget/);
 });
