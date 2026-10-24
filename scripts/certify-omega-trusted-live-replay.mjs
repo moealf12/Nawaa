@@ -19,7 +19,7 @@ try{
   }
   if(saved){
     const journal=createTrustedObservationJournal({store:db.store,
-      signingKey:CI_SIGNING_KEY});
+      signingKey:CI_SIGNING_KEY,requireCurrentHead:true});
     const accepted=await journal.inspect(saved.ref,{expectedOffer:saved.offer});
     assert.equal(accepted.state,'REVALIDATED',accepted.reason);
     assert.equal(accepted.sourceId,saved.sourceId);
