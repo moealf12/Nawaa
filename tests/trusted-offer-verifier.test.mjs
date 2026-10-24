@@ -6,7 +6,7 @@ const NOW=Date.parse('2026-10-24T12:00:00.000Z');
 const observedAt=new Date(NOW-60_000).toISOString();
 const base={
   title:'Apple iPhone 17 256GB Black',productPrice:3499,currency:'SAR',
-  merchant:'Jarir',sku:'666784',modelNumber:'MG674AHA',
+  merchant:'Jarir',providerMarket:'jarir-sa',sku:'666784',modelNumber:'MG674AHA',
   condition:'new',storage:'256GB',color:'Black',
   sourceUrl:'https://www.jarir.com/sa-en/apple-iphone-17.html?sku=666784&utm_source=search',
   image:'https://images.jarir.com/666784.jpg',observedAt
@@ -133,4 +133,39 @@ test('verifier rejects arbitrary loader-free construction and excess freshness w
   assert.throws(()=>createTrustedOfferVerifier(),/trusted_resolver_required/);
   assert.throws(()=>createTrustedOfferVerifier({resolveObservation:async()=>null,
     maxAgeMs:30*86_400_000}),/invalid_verification_freshness/);
+});
+
+test('a source registered under a different provider cannot certify another merchant',async()=>{
+  const {verifier,records}=setup();
+  records.set(reference,makeEvidence({sourceId:'extra-sa'}));
+  const attempt=await verifier.verify({offer:base,observationRef:reference});
+  assert.equal(attempt.eligible,false);
+  assert.equal(attempt.reason,'merchant_source_mismatch');
+});
+test('source observation time is part of the selected offer, not a caller-receipt timestamp',async()=>{
+  const {verifier}=setup();
+  const changed={...base,observedAt:new Date(NOW).toISOString()};
+  const decision=await verifier.verify({offer:changed,observationRef:reference});
+  assert.equal(decision.eligible,false);
+  assert.equal(decision.reason,'observation_time_mismatch');
+});
+test('accepted authority is revoked when freshness expires without a revision change',async()=>{
+  let clock=NOW;
+  const evidence=makeEvidence();
+  const verifier=createTrustedOfferVerifier({resolveObservation:async()=>evidence,
+    now:()=>clock,maxAgeMs:90_000});
+  const decision=await verifier.verify({offer:base,observationRef:reference});
+  assert.equal(decision.state,'VERIFIED');
+  assert.equal(await verifier.accepts(decision,base,reference),true);
+  clock+=31_000;
+  assert.equal(await verifier.accepts(decision,base,reference),false);
+});
+test('malformed replay inputs cannot crash authoritative acceptance',async()=>{
+  const {verifier}=setup();
+  const issued=await verifier.verify({offer:base,observationRef:reference});
+  const cyclic={};cyclic.self=cyclic;
+  for(const candidate of [null,undefined,cyclic,
+    {...base,title:cyclic},{...base,image:cyclic},{...base,productPrice:BigInt(3499)}]){
+    assert.equal(await verifier.accepts(issued,candidate,reference),false);
+  }
 });
