@@ -3,6 +3,7 @@
 // Exercises actual browser DOM, event listeners, card expansion, pagination
 // gestures, filters, customer navigation and error/empty displays.
 import {chromium} from 'playwright';
+import fc from 'fast-check';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {existsSync,mkdirSync,writeFileSync,readFileSync} from 'node:fs';
@@ -1138,13 +1139,16 @@ try{
     '                  __criticalSpan("render.total",()=>renderProduct(liveProduct,query));\n'+
     '                  lastRenderedPayload=event.data;\n'+
     '                }else window.__renderOnlySkips=(window.__renderOnlySkips||0)+1;', 'render_only');
-  const sourceForCase=async({candidate,variant,interaction})=>{
+  const sourceForCase=async({candidate,variant,interaction,offsetSeconds=null})=>{
     const q=variant==='perf48'?'HP laptop fixture-performance-48-single':
       'HP laptop fixture-performance-6-single';
     const payload=searchPayload(q,null);
     const makeOffer=x=>variant==='missingObservedAt'?(({observedAt,...others})=>others)(x):x;
     const full={...payload,offers:payload.offers.map(makeOffer)};
     const changed={...full,offers:full.offers.map((o,i)=>i===0?{...o,productPrice:o.productPrice+91}:o)};
+    const chronological={...full,offers:full.offers.map(o=>({
+      ...o,observedAt:new Date(Date.parse(o.observedAt)+offsetSeconds*1000).toISOString()
+    }))};
     const tab=await context.newPage();
     tab.setDefaultTimeout(10000);
     await tab.addInitScript(()=>{
@@ -1212,7 +1216,7 @@ try{
         const started=performance.now();
         window.__controlledStream.sendSnapshot(p);
         return performance.now()-started;
-      },variant==='priceMutation'?changed:full);
+      },variant==='priceMutation'?changed:offsetSeconds!==null?chronological:full);
       const second=await measure();
       await tab.evaluate(()=>window.__controlledStream.done());
       await tab.waitForFunction(()=>document.querySelector('#searchStatus')?.textContent?.startsWith('بحث حي:'),
@@ -1232,15 +1236,19 @@ try{
     ['perf48_1','perf48','none',1],
     ['perf48_2','perf48','none',1],
     ['perf48_3','perf48','none',1],
+    ['v2156_older_timestamp','chronology','none',0,-3600],
+    ['v2156_newer_timestamp','chronology','none',0,3600],
+    ...fc.sample(fc.integer({min:-7200,max:7200}).filter(n=>n!==0),
+      {seed:2146,numRuns:8}).map((seconds,i)=>['property_chronology_'+i,'chronology','none',0,seconds]),
   ];
   const renderOnlyReport={kind:'test_only_render_only_snapshot_counterfactual',
     source:'unchanged production module instrumented at Chromium request interception',
     independentMerchantProvenanceCertified:false,p95Certified:false,samples:[]};
-  for(const [name,variant,interaction,expectedSkip] of renderOnlyCases){
+  for(const [name,variant,interaction,expectedSkip,offsetSeconds=null] of renderOnlyCases){
     const results={};
     const runOrder=name==='perf48_2'?[true,false]:[false,true];
     for(const candidate of runOrder)
-      results[candidate?'candidate':'original']=await sourceForCase({candidate,variant,interaction});
+      results[candidate?'candidate':'original']=await sourceForCase({candidate,variant,interaction,offsetSeconds});
     const a=results.original,b=results.candidate;
     const same=(x,y)=>JSON.stringify(x)===JSON.stringify(y);
     const parity=['before','first','second','final'].every(stage=>{
@@ -1256,15 +1264,26 @@ try{
       a.before.history.length>0&&
       a.before.history.some((row,i)=>row.lastSeenAt!==a.second.history[i]?.lastSeenAt):
       true;
+    const chronologicallySafe=offsetSeconds===null||[a,b].every(result=>
+      result.before.history.every(before=>{
+        const matching=result.second.history.find(point=>
+          point.variantKey===before.variantKey&&point.merchant===before.merchant&&
+          point.value===before.value&&point.priceBasis===before.priceBasis);
+        if(!matching)return false;
+        const prior=Date.parse(before.lastSeenAt),after=Date.parse(matching.lastSeenAt);
+        if(after<prior)return false;
+        const expected=offsetSeconds>0?prior+offsetSeconds*1000:prior;
+        return after===expected;
+      }));
     const skipped=b.second.skips;
-    const item={name,parity,historyPreserved,lastSeenAdvances,skipped,expectedSkip,
+    const item={name,parity,historyPreserved,lastSeenAdvances,chronologicallySafe,offsetSeconds,skipped,expectedSkip,
       renderCallsAtSecond:[a.second.renderCalls,b.second.renderCalls],
       historyCallsAtSecond:[a.second.historyCalls,b.second.historyCalls],
       finalRenderCalls:[a.final.renderCalls,b.final.renderCalls],
       duplicateHandlerMs:[a.duplicateHandlerMs,b.duplicateHandlerMs]};
     renderOnlyReport.samples.push(item);
     assertCheck('v2155_render_only_'+name,
-      parity&&historyPreserved&&lastSeenAdvances&&skipped===expectedSkip&&
+      parity&&historyPreserved&&lastSeenAdvances&&chronologicallySafe&&skipped===expectedSkip&&
       a.second.renderCalls===b.second.renderCalls+expectedSkip&&
       a.final.renderCalls===b.final.renderCalls+expectedSkip,item);
   }
