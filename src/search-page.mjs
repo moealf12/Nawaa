@@ -104,7 +104,9 @@ function observeFirstOfferCandidates(requestId,offers){
 }
 function observeFirstRenderedCard(displayedSections){
   const d=firstOfferDiagnostic;
-  if(!d||d.requestId!==state.requestId||d.firstCard)return;
+  // A streamed snapshot may replace the first DOM card before the next frame.
+  // Only freeze the observation after a connected candidate survived two frames.
+  if(!d||d.requestId!==state.requestId||d.firstCard?.secondFrameMs!=null)return;
   const card=els.results.querySelector('.match-result-card');
   if(!card)return;
   const groups=displayedSections.flatMap(section=>section.groups);
@@ -125,6 +127,10 @@ function observeFirstRenderedCard(displayedSections){
   const imageMatchesOwnOffer=domImage===expectedImage;
   const ownership=assessFirstOfferOwnership(offer);
   const match=domTitle===expectedTitle&&domPrice===expectedPrice&&imageMatchesOwnOffer;
+  const committedAtMs=performance.now()-d.timeline.snapshot().milestones.T0;
+  d.firstDomAttemptMs??=committedAtMs;
+  const renderGeneration=(d.renderGeneration||0)+1;
+  d.renderGeneration=renderGeneration;
   d.firstCard={
     groupKey:group.key,sourceUrl:offer.sourceUrl||null,
     modelNumber:offer.specs?.modelNumber||offer.modelNumber||null,
@@ -132,17 +138,19 @@ function observeFirstRenderedCard(displayedSections){
     productPrice:offer.productPrice??null,currency:offer.currency||null,
     domTitle,domPrice,domImage,expectedTitle,expectedPrice,expectedImage,
     imageMatchesOwnOffer,domMatchesSelectedOffer:match,structurallyValid:Boolean(structurallyValidOffer(offer)),
-    ownership,domCommitMs:performance.now()-d.timeline.snapshot().milestones.T0,
+    ownership,firstDomAttemptMs:d.firstDomAttemptMs,domCommitMs:committedAtMs,
     frameMs:null,secondFrameMs:null,visuallyPresentable:false,
     screenshotPaintEvidence:false
   };
   publishFirstOfferDiagnostic();
   const requestId=d.requestId,firstElement=card;
   requestAnimationFrame(()=>{
-    if(firstOfferDiagnostic!==d||state.requestId!==requestId||!firstElement.isConnected)return;
+    if(firstOfferDiagnostic!==d||state.requestId!==requestId||
+       d.renderGeneration!==renderGeneration||!firstElement.isConnected)return;
     d.firstCard.frameMs=performance.now()-d.timeline.snapshot().milestones.T0;
     requestAnimationFrame(()=>{
-      if(firstOfferDiagnostic!==d||state.requestId!==requestId||!firstElement.isConnected)return;
+      if(firstOfferDiagnostic!==d||state.requestId!==requestId||
+         d.renderGeneration!==renderGeneration||!firstElement.isConnected)return;
       const bounds=firstElement.getBoundingClientRect();
       const style=getComputedStyle(firstElement);
       const x=Math.max(0,Math.min(innerWidth-1,bounds.left+bounds.width/2));
