@@ -350,3 +350,10 @@ test('v21.63 fresh revision rejects unverifiable missing SKU rather than falling
   assert.equal(claim.eligible,false);
   assert.equal(claim.reason,'missing_listing_pdp_sku');
 });
+
+test('v21.63 listing cannot hide conflicting internal merchant SKU behind a matching exposed SKU',async()=>{
+  const indexed={...offer(),sourceMeta:{productId:'644723'}};
+  const result=await setup().verifySelectedRevision(indexed);
+  assert.equal(result.eligible,false);
+  assert.equal(result.reason,'conflicting_catalog_sku_sources');
+});
