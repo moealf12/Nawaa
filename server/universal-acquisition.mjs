@@ -86,7 +86,7 @@ function score(candidate){
   if(candidate.method==="json_ld") s+=0.08;
   return Math.min(1,Number(s.toFixed(3)));
 }
-function reconcile(candidates, finalUrl){
+export function reconcile(candidates, finalUrl){
   const ranked=candidates.filter(Boolean).map(c=>({...c,confidence:score(c)})).sort((a,b)=>b.confidence-a.confidence);
   const best=ranked[0];
   if(!best || !best.title || best.price===null) throw new Error("No structured product evidence found");
