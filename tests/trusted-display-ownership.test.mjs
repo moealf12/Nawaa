@@ -229,3 +229,21 @@ test('v21.69 asynchronous accepts fails closed when epoch changes during source 
   assert.equal(await h.display.accepts(h.bound,context()),true,
     'independent original verifier remains unaffected');
 });
+
+test('v21.69 conflicting bundle membership aliases cannot borrow same-offer trust',async()=>{
+  const h=await valid();
+  for(const attrs of [
+    {bundleContents:['console'],variant:{bundleContents:['disc drive']}},
+    {bundleContents:['console'],variant:{bundleContents:['console','controller']}},
+    {bundleContents:['console'],variant:{bundleContents:[123]}},
+    {bundleContents:'console',variant:{bundleContents:['console']}},
+    {bundleContents:['console'],variant:{bundleContents:'console'}}
+  ]){
+    const disputed={...offer,...attrs};
+    const bound=await h.display.bind({
+      decision:h.decision,offer:disputed,displayOffer:disputed,
+      observationRef:ref,streamGeneration:generation,snapshotRevision:1,renderEpoch:1
+    });
+    assert.equal(bound.state,'DENIED',JSON.stringify(attrs));
+  }
+});

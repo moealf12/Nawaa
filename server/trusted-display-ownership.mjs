@@ -54,6 +54,20 @@ function admissionFields(offer){
       if(!check([offer[field],offer.variant?.[field],offer.specs?.[field]]))
         return false;
     }
+    // Bundle memberships are multi-valued identity, not a scalar alias.
+    // A verified top-level bundle must not lend authority to a conflicting
+    // nested variant bundle (and vice versa).
+    const bundle=value=>{
+      if(value==null)return null;
+      if(!Array.isArray(value)||value.length>32)return undefined;
+      const parts=value.map(scalar);
+      if(parts.some(v=>!v))return undefined;
+      return JSON.stringify(parts.sort());
+    };
+    const outer=bundle(offer.bundleContents);
+    const nested=bundle(offer.variant?.bundleContents);
+    if(outer===undefined||nested===undefined||
+       (outer!==null&&nested!==null&&outer!==nested))return false;
     return true;
   }catch{return false;}
 }
