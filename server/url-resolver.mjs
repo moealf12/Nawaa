@@ -711,3 +711,95 @@ export async function resolveProductUrl(url, options = {}) {
     }
   };
 }
+
+
+// v21.63: strictly selected Product/Offer observation, without cross-strategy
+// reconciliation. Reuses pinned-DNS, redirect validation and bounded fetch.
+// Does not certify a merchant: only the controlled server verifier may do so.
+export async function resolveSelectedJsonLdOffer(url, options = {}) {
+  const fetched=await fetchHtmlSafe(url,0,options);
+  const finalUrl=fetched.finalUrl;
+  const requested=new URL(url),page=new URL(finalUrl);
+  const samePage=(candidate)=>{
+    if(typeof candidate!=='string'||!candidate.trim())return false;
+    try{
+      const u=new URL(candidate,page);
+      if(u.protocol!=='https:'||u.username||u.password||u.port&&u.port!=='443')return false;
+      if(u.hostname!==page.hostname||u.pathname.replace(/\/+$/,'')!==page.pathname.replace(/\/+$/,''))return false;
+      const selectors=new Set(['sku','variant','variantid','productid','optionid','model','storage','capacity','color','size']);
+      const collect=v=>{
+        const fields=new Map();
+        for(const [k,val] of v.searchParams){
+          const key=k.toLowerCase().replace(/[^a-z0-9]/g,'');
+          if(!selectors.has(key))continue;
+          if(!val||fields.has(key))return null;
+          fields.set(key,val.toLowerCase());
+        }
+        return fields;
+      };
+      const a=collect(requested),b=collect(u);
+      if(!a||!b||a.size!==b.size)return false;
+      for(const [k,v] of a)if(b.get(k)!==v)return false;
+      return true;
+    }catch{return false;}
+  };
+  if(!samePage(finalUrl))throw Error('selected_pdp_redirect_mismatch');
+  const nodes=extractJsonLd(fetched.html,finalUrl);
+  if(nodes.length>512)throw Error('selected_pdp_schema_budget_exceeded');
+  const products=nodes.filter(n=>typeIncludesProduct(n?.['@type']));
+  // Explicit node.url is mandatory: @id alone identifies a graph record,
+  // not necessarily the purchasable subject of the requested destination.
+  const declared=products.filter(n=>typeof n.url==='string'&&samePage(n.url));
+  if(declared.length!==1)throw Error('selected_pdp_subject_missing_or_ambiguous');
+  const product=declared[0];
+  const priced=chooseOffer(product);
+  if(!priced||priced.currency!=='SAR'||priced.raw?.['@type']==='AggregateOffer')
+    throw Error('selected_pdp_unique_priced_offer_required');
+  if(priced.url&&!samePage(priced.url))throw Error('selected_pdp_offer_destination_conflict');
+  // A merchant-scoped SKU or GTIN anchors the chosen subject. Shared MPN or
+  // plausible title alone cannot make the source page into a sellable SKU.
+  const sku=typeof product.sku==='string'||typeof product.sku==='number'
+    ?String(product.sku).trim():null;
+  const gtin=product.gtin14||product.gtin13||product.gtin12||product.gtin||null;
+  if(!sku&&!gtin)throw Error('selected_pdp_hard_identity_missing');
+  const brand=typeof product.brand==='string'?product.brand:product.brand?.name||null;
+  const imageRaw=product.image;
+  const image=typeof imageRaw==='string'?imageRaw:
+    Array.isArray(imageRaw)&&imageRaw.length===1?
+      (typeof imageRaw[0]==='string'?imageRaw[0]:imageRaw[0]?.url):null;
+  const recordUrl=priced.url||product.url;
+  const sourceUrl=new URL(recordUrl,page).href;
+  const observedAt=new Date().toISOString();
+  const digest=(await import('node:crypto')).createHash('sha256')
+    .update(fetched.html).digest('hex');
+  const recordId=(await import('node:crypto')).createHash('sha256')
+    .update(JSON.stringify([digest,sourceUrl,sku,gtin,priced.price,priced.currency]))
+    .digest('hex');
+  return {
+    provider:'url-resolver',providerMarket:page.hostname,merchant:merchantName(finalUrl),
+    dataKind:'live',resolvedPageUrl:finalUrl,sourceUrl,observedAt,
+    title:product.name,sku,image:image?new URL(image,page).href:null,
+    condition:normalizeCondition(product.itemCondition||''),
+    availability:normalizeAvailability(priced.availability),
+    productPrice:priced.price,originalProductPrice:priced.price,
+    currency:'SAR',originalCurrency:'SAR',
+    specs:{brand,modelNumber:product.mpn||null,
+      color:product.color||null,storage:product.storage||null,
+      ram:product.ram||null,region:product.region||null,sim:product.sim||null,
+      barcode:gtin},
+    extraction:{
+      selectedProductRecord:{
+        recordId,documentDigest:digest,source:'jsonld_product_offer',
+        productCount:products.length,selectedCount:declared.length,
+        selectedProductUrl:product.url,selectedOfferUrl:sourceUrl
+      },
+      // This is a non-reconciled observation: every represented field comes
+      // from the exact selected Product node and its single associated Offer.
+      reconciled:false,conflictSummary:{hasConflicts:false},
+      identity:{summary:{accepted:1,rejected:0}},
+      availableStrategies:['jsonld'],
+      fieldSources:Object.fromEntries(['name','offers','image','sku','mpn','gtin',
+        'brand','color'].map(key=>[key,{strategy:'jsonld',recordId}]))
+    }
+  };
+}
