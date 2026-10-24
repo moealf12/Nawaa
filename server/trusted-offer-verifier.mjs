@@ -48,9 +48,9 @@ function claimValue(offer,key){
   return scalar(value);
 }
 
-function subject(record){
+function subject(record,observedAt){
   return {
-    title:record?.title,productPrice:record?.productPrice,currency:record?.currency,
+    observedAt,title:record?.title,productPrice:record?.productPrice,currency:record?.currency,
     merchant:record?.merchant,sourceUrl:record?.sourceUrl,image:record?.image,
     sku:record?.sku,modelNumber:record?.modelNumber,
     gtin:record?.gtin,specs:record?.specs,
@@ -118,7 +118,7 @@ export function createTrustedOfferVerifier({resolveObservation,now=()=>Date.now(
     const present=now();
     if(!Number.isFinite(present)||!Number.isFinite(time)||time>present+60_000||
        present-time>maxAgeMs)return null;
-    return {evidence,time,present,record:subject(evidence.selectedRecord)};
+    return {evidence,time,present,record:subject(evidence.selectedRecord,evidence.observedAt)};
   }
   async function verify({offer,observationRef}={}){
     if(!structurallyValidOffer(offer))return fail('MISSING_EVIDENCE','invalid_offer');
