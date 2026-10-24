@@ -135,6 +135,8 @@ function bridgeCatalogIdentity(catalog,page){
     [catalog.gtin??catalog.specs?.barcode,page.specs?.barcode,'gtin'],
   ];
   for(const [left,right,label] of pairs){
+    if(hardIdentity(left)&&!hardIdentity(right))
+      return 'listing_pdp_'+label+'_missing_evidence';
     if(hardIdentity(left)&&hardIdentity(right)&&hardIdentity(left)!==hardIdentity(right))
       return 'listing_pdp_'+label+'_conflict';
   }
