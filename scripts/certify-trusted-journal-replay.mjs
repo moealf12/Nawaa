@@ -77,20 +77,49 @@ async function read(){
   })).reason,'offer_revision_mismatch');
   assert.equal((await journal.revoke(saved.ref,'source_updated')).state,'REVOKED');
   assert.equal((await journal.inspect(saved.alternateRef)).state,'REVALIDATED');
+  // A new genuine trusted verifier decision from a CONTROLLED synthetic PDP
+  // source must advance the head; incoming search JSON cannot update it.
   const latest=(await store.events(saved.alternateRef)).find(x=>x.kind==='capture');
   const payload=JSON.parse(latest.payload);
-  const newer={sourceKey:payload.sourceKey,
-    observedAt:new Date(Date.parse(saved.observedAt)+1000).toISOString(),
-    revision:'c'.repeat(64),recordId:'d'.repeat(64)};
-  assert.equal(await store.advanceHead(newer),true);
+  const ownedId='d'.repeat(64),original=saved.offer;
+  const observedAt=new Date(Date.now()).toISOString();
+  const ownership=Object.fromEntries(
+    ['name','offers','sku','mpn','image','brand','color']
+      .map(k=>[k,{strategy:'jsonld',recordId:ownedId}]));
+  const selected={
+    provider:'url-resolver',dataKind:'live',merchant:'Jarir',
+    resolvedPageUrl:original.sourceUrl,sourceUrl:original.sourceUrl,
+    observedAt,title:original.title,sku:original.sku,
+    productPrice:original.productPrice+40,
+    originalProductPrice:original.productPrice+40,
+    currency:'SAR',originalCurrency:'SAR',
+    image:original.image,condition:original.condition,availability:original.availability,
+    specs:original.specs,
+    extraction:{
+      selectedProductRecord:{recordId:ownedId,documentDigest:'e'.repeat(64),
+        source:'jsonld_product_offer',selectedCount:1,productCount:1,
+        selectedProductUrl:original.sourceUrl,selectedOfferUrl:original.sourceUrl},
+      reconciled:false,availableStrategies:['jsonld'],
+      identity:{summary:{accepted:1,rejected:0}},
+      conflictSummary:{hasConflicts:false},fieldSources:ownership
+    }
+  };
+  const session=createPdpObservationSession({readSelectedPage:async()=>selected});
+  const updated=await session.verifySelectedRevision(original);
+  assert.equal(updated.state,'VERIFIED',updated.reason);
+  const incoming=await journal.recordFreshSource(updated);
+  assert.equal(incoming.state,'RECORDED',incoming.reason);
+  assert.equal(incoming.eligible,false);
   assert.equal((await journal.inspect(saved.alternateRef)).state,'SUPERSEDED');
   assert.equal(await store.advanceHead({
-    ...newer,observedAt:new Date(Date.parse(saved.observedAt)-1000).toISOString(),
+    sourceKey:payload.sourceKey,
+    observedAt:new Date(Date.parse(saved.observedAt)-1000).toISOString(),
     revision:saved.sourceRevision,recordId:'a'.repeat(64)
   }),false,'older out-of-order observations cannot roll back latest head');
   console.log('TRUSTED_JOURNAL_PG_READ '+JSON.stringify({
     separateNodeProcess:true,realPostgres:true,signedReceiptValidated:true,
     alteredOfferRejected:true,revocationCommitted:true,
+    controlledSelectedPdpRefresh:true,fixtureMerchantEvidence:true,
     sourceHeadAdvanced:true,olderReceiptSuperseded:true,
     outOfOrderRollbackRejected:true,badgeEligible:false
   }));
