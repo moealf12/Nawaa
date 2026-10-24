@@ -300,6 +300,29 @@ try{
     if(u.searchParams.has('cursor'))cursorRequests++;
     const q=testQuery(requestUrl),payload=searchPayload(q,u.searchParams.get('cursor'));
     if(u.pathname.endsWith('/stream')) {
+      if(q.includes('fixture-predicate-telemetry')){
+        const id='12345678-1234-4abc-8123-123456789abc';
+        const event={policy:'pdp-predicate-shadow-v1',
+          scope:'selected_pdp_revision_predicates',streamGeneration:id,
+          snapshotRevision:1,offerIndex:0,sourceId:'jarir-sa',
+          sourceRevision:'a'.repeat(64),sourceRecordId:'b'.repeat(64),
+          sourcePredicatesRevalidated:true,wholeOfferVerified:false,
+          badgeEligible:false,customerVerified:false,t5Eligible:false,
+          paintCertified:false,durableProof:false};
+        const jarirOffer={...offer(1),sourceUrl:'https://www.jarir.com/sa-en/fixture-sku-668751.html'};
+        const valid={...payload,offers:[jarirOffer],
+          streamGeneration:id,displayTrustContext:{policy:'display-snapshot-v1',
+            scope:'stream_snapshot_not_sellable_offer',streamGeneration:id,
+            snapshotRevision:1,customerVerified:false,badgeEligible:false}};
+        const frame=(name,data)=>'event: '+name+'\n'+'data: '+JSON.stringify(data)+'\n\n';
+        const body=frame('meta',{streamGeneration:id,displayTrustPolicy:'display-snapshot-v1'})+
+          frame('snapshot',valid)+frame('source-predicate',event)+
+          frame('source-predicate',{...event,badgeEligible:true,wholeOfferVerified:true})+
+          frame('done',{});
+        await route.fulfill({status:200,contentType:'text/event-stream; charset=utf-8',
+          headers:corsHeaders,body});
+        return;
+      }
       const mode=q.match(/fixture-performance-\d+-(single|progress|duplicate|price|currency|condition|availability|source|coverage|remove|merchant|variant|cursor|image)/)?.[1]||'single';
       const mutations=new Set(['price','currency','condition','availability','source',
         'coverage','remove','merchant','variant','cursor','image']);
@@ -370,6 +393,33 @@ try{
   // browser rendering evidence, NOT real-merchant provenance or compositor proof.
   // Progressive SSE replaces the first DOM card before paint; our observer
   // must follow the surviving connected card rather than an orphaned element.
+  // Real Chromium SSE event lifecycle: server-shaped predicate telemetry
+  // stays diagnostic even when the attacker supplies a forged follow-up event.
+  const predicateTab=await context.newPage();
+  predicateTab.setDefaultTimeout(10000);
+  await predicateTab.addInitScript(()=>{window.NAWAA_DIAGNOSTICS=true;});
+  try{
+    await predicateTab.goto(base+'/search.html?q='+encodeURIComponent(
+      'HP laptop fixture-predicate-telemetry'),{waitUntil:'domcontentloaded'});
+    await predicateTab.waitForFunction(()=>
+      Array.isArray(window.__nawaaSourcePredicateDiagnostics)&&
+      window.__nawaaSourcePredicateDiagnostics.length>=1,null,{timeout:12000});
+    const predicateState=await predicateTab.evaluate(()=>{
+      const root=document.querySelector('#results'),received=window.__nawaaSourcePredicateDiagnostics;
+      return {received,renderEpoch:Number(root?.dataset.presentationRenderEpoch||0),
+        cards:root?.querySelectorAll('.match-result-card').length||0,
+        badgeEligible:root?.dataset.trustBadgeEligible,
+        visibleVerifiedBadges:root?.querySelectorAll(
+          '[data-trust-verified="true"],.trust-badge-verified').length||0};
+    });
+    assertCheck('v2171_real_chromium_sse_predicate_observation_is_telemetry_only',
+      predicateState.received.length===1&&
+      predicateState.received[0].classification==='SOURCE_PREDICATE_TELEMETRY_ONLY'&&
+      predicateState.received[0].badgeEligible===false&&
+      predicateState.renderEpoch>0&&predicateState.cards>0&&
+      predicateState.badgeEligible!=='true'&&predicateState.visibleVerifiedBadges===0,
+      predicateState);
+  }finally{await predicateTab.close();}
   const firstCardQuery='HP laptop fixture-performance-6-progress';
   const firstCardPage=await context.newPage();
   firstCardPage.setDefaultTimeout(12000);
