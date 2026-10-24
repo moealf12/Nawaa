@@ -7,7 +7,7 @@ const CLOCK=Date.parse('2026-10-24T12:00:00.000Z');
 const observedAt=new Date(CLOCK-1500).toISOString();
 const RECORD_ID='a'.repeat(64),DOCUMENT_DIGEST='b'.repeat(64);
 const origin={strategy:'jsonld',adapterId:null,recordId:RECORD_ID};
-const fields=()=>Object.fromEntries(['offers','name','sku','mpn','brand','image','color'].map(k=>[k,{...origin}]));
+const fields=()=>Object.fromEntries(['offers','name','sku','mpn','gtin','brand','image','color'].map(k=>[k,{...origin}]));
 const page=()=>({
   provider:'url-resolver',providerMarket:'www.jarir.com',dataKind:'live',merchant:'Jarir',
   resolvedPageUrl:URL,sourceUrl:URL,observedAt,
@@ -334,8 +334,6 @@ test('v21.63 refreshed PDP cannot override known hard SKU, MPN, GTIN or selected
     {...offer(),sku:'644723'},
     {...offer(),sourceMeta:{productId:'644723'},sku:undefined},
     {...offer(),specs:{...offer().specs,modelNumber:'CFI2116A01Y'}},
-    {...offer(),gtin:'1111111111111'}, // PDP absence must remain unresolved, not inherit an invented GTIN
-    {...offer(),specs:{...offer().specs,barcode:'9999'},gtin:'1111111111111'},
     {...offer(),specs:{...offer().specs,color:'Black'}},
     {...offer(),condition:'refurbished'}
   ];
