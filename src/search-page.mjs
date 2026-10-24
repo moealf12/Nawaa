@@ -17,7 +17,7 @@ import {selectSearchStreamResult,acceptedStreamGeneration} from "./search-stream
 import {ownOfferImages} from "./product-image-ownership.mjs";
 import {createFirstOfferTimeline,structurallyValidOffer,assessFirstOfferOwnership} from "./search-first-offer-metrics.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
-import {arabicCount, visibleProductSpecifications, displayProductSpecification} from "./product-card-presentation.mjs";
+import {arabicCount, visibleProductSpecifications, displayProductSpecification,observedSourceDisplayLabel} from "./product-card-presentation.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -590,7 +590,7 @@ function offerCard(offer, index) {
           </div>
           <div class="offer-store">
             <strong><span class="country-flag" title="${escapeHtml(offer.merchantCountryNameAr || "دولة المصدر")}">${countryFlag(offer.merchantCountryCode)}</span> ${escapeHtml(offer.merchant)}</strong>
-            <span>${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${offer.dataKind === "verified_source" ? "بيانات مصدر" : offer.dataKind === "live" ? "بحث حي" : "بيانات اختبار"} · ${bucketLabel(offer.bucket)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
+            <span>${escapeHtml(offer.merchantCountryNameAr || "دولي")} · ${observedSourceDisplayLabel(offer)} · ${bucketLabel(offer.bucket)} · تطابق ${Math.round((offer.matchConfidence || 0) * 100)}%</span>
           </div>
         </div>
 
