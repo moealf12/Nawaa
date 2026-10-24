@@ -204,6 +204,46 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
     return Object.freeze({state:'ARCHIVED',receiptRef:ref,sourceRevision:ev.revision,
       wholeOfferVerified:false,badgeEligible:false});
   }
+  // v21.67: ingest a freshly controlled selected PDP decision as the next
+  // source revision WITHOUT issuing a new signed customer-visible receipt.
+  // Only an original in-process opaque verifier result can advance the head.
+  // Index/search/catalog offers and arbitrary evidence JSON cannot call this
+  // path successfully. The caller must use a session that just fetched PDP.
+  async function recordFreshSource(result){
+    if(!requireCurrentHead||typeof store.advanceHead!=='function')
+      return state('SOURCE_BLOCKED','source_head_ingestion_unavailable');
+    const issued=await inspectIssuedPdpReceipt(result);
+    if(!issued||result?.state!=='VERIFIED'||
+      result.certificateScope!=='selected_pdp_revision_predicates'||
+      result.wholeOfferVerified!==false||result.badgeEligible!==false||
+      result.decision?.state!=='VERIFIED')
+      return state('MISSING_EVIDENCE','untrusted_source_ingestion');
+    const ev=issued.evidence;
+    if(!ev||ev.sourceId!=='jarir-sa'||!HEX.test(ev.revision||'')||
+      !HEX.test(ev.sourceRecord?.recordId||'')||
+      !HEX.test(ev.sourceRecord?.documentDigest||'')||
+      ev.revision!==result.decision.evidenceRevision||
+      ev.ref!==result.decision.observationRef)
+      return state('MISSING_EVIDENCE','invalid_controlled_source_lineage');
+    const offer=result.offer;
+    if(typeof offer?.sku!=='string'||!offer.sku||
+      typeof offer.sourceUrl!=='string'||!offer.sourceUrl)
+      return state('MISSING_EVIDENCE','missing_selected_subject');
+    const present=now(),observed=parsedTime(ev.observedAt);
+    if(!Number.isFinite(present)||!Number.isFinite(observed)||
+      observed>present+60_000||present-observed>maxAgeMs)
+      return state('EXPIRED','stale_source_head_observation');
+    const sourceKey=hash([ev.sourceId,offer.sku,offer.sourceUrl]);
+    let accepted;
+    try{
+      accepted=await store.advanceHead({sourceKey,revision:ev.revision,
+        recordId:ev.sourceRecord.recordId,observedAt:ev.observedAt});
+    }catch{return state('SOURCE_BLOCKED','source_head_write_failed');}
+    if(accepted!==true)
+      return state('SUPERSEDED','source_head_rejected_or_conflicted');
+    return state('RECORDED','controlled_selected_pdp_head_updated',{
+      sourceKey,sourceRevision:ev.revision,observedAt:ev.observedAt});
+  }
   async function revoke(ref,reason='source_updated'){
     if(!['source_updated','identity_conflict','source_blocked','security_revoke']
       .includes(reason))return state('MISSING_EVIDENCE','invalid_revocation_reason');
@@ -215,5 +255,5 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
     catch{return state('SOURCE_BLOCKED','journal_revocation_write_failed');}
     return state('REVOKED',reason);
   }
-  return Object.freeze({archive,inspect,revoke,policyVersion:POLICY});
+  return Object.freeze({archive,inspect,revoke,recordFreshSource,policyVersion:POLICY});
 }
