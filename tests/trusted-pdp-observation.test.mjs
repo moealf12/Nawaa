@@ -5,7 +5,8 @@ import {createPdpObservationSession} from '../server/trusted-pdp-observation.mjs
 const URL='https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-668751.html';
 const CLOCK=Date.parse('2026-10-24T12:00:00.000Z');
 const observedAt=new Date(CLOCK-1500).toISOString();
-const origin={strategy:'jsonld',adapterId:null};
+const RECORD_ID='a'.repeat(64),DOCUMENT_DIGEST='b'.repeat(64);
+const origin={strategy:'jsonld',adapterId:null,recordId:RECORD_ID};
 const fields=()=>Object.fromEntries(['offers','name','sku','mpn','brand','image','color'].map(k=>[k,{...origin}]));
 const page=()=>({
   provider:'url-resolver',providerMarket:'www.jarir.com',dataKind:'live',merchant:'Jarir',
@@ -15,7 +16,10 @@ const page=()=>({
   image:'https://static.jarir.com/668751.jpg',
   specs:{brand:'Sony',modelNumber:'CFI2116B01Y',color:'White'},
   condition:'new',availability:'in_stock',
-  extraction:{fieldSources:fields(),conflictSummary:{hasConflicts:false},
+  extraction:{selectedProductRecord:{
+    recordId:RECORD_ID,documentDigest:DOCUMENT_DIGEST,source:'jsonld_product_offer',
+    productCount:1,selectedCount:1,selectedProductUrl:URL,selectedOfferUrl:URL
+  },fieldSources:fields(),conflictSummary:{hasConflicts:false},
     reconciled:false,availableStrategies:['jsonld'],
     identity:{summary:{accepted:1,rejected:0}}}
 });
@@ -144,9 +148,9 @@ test('v21.62: invalid budgets reject unsafe session settings',()=>{
   assert.throws(()=>setup(async()=>page(),{maxAgeMs:86400000}),/invalid_observation_budget/);
 });
 
-test('v21.62 end-to-end: existing URL resolver consumes selected Jarir JSON-LD record without extra verifier network privileges',async()=>{
+test('v21.62 end-to-end: direct source-record resolver consumes selected Jarir JSON-LD record without extra verifier network privileges',async()=>{
   const dns=(await import('node:dns/promises')).default;
-  const {resolveProductUrl}=await import('../server/url-resolver.mjs');
+  const {resolveSelectedJsonLdOffer}=await import('../server/url-resolver.mjs');
   const originalFetch=globalThis.fetch,originalLookup=dns.lookup;
   const jsonLd={
     '@type':'Product',name:offer().title,sku:'668751',mpn:'CFI2116B01Y',
@@ -163,7 +167,7 @@ test('v21.62 end-to-end: existing URL resolver consumes selected Jarir JSON-LD r
         '@context':'https://schema.org','@graph':[jsonLd]
       })+'</script>',{headers:{'content-type':'text/html'}}
     );
-    const session=createPdpObservationSession({readSelectedPage:resolveProductUrl,
+    const session=createPdpObservationSession({readSelectedPage:resolveSelectedJsonLdOffer,
       now:()=>Date.now()});
     const result=await session.verify(offer());
     assert.equal(result.state,'VERIFIED',result.reason);
@@ -212,4 +216,74 @@ test('v21.62: equal parser strategy does not prove identical record when two Pro
     assert.equal(attempt.eligible,false,JSON.stringify(extraction));
     assert.equal(attempt.reason,'ambiguous_product_reconciliation');
   }
+});
+
+test('v21.63 cross-record ID borrowing fails even when both fields report jsonld strategy',async()=>{
+  for(const field of ['offers','name','sku','mpn','image','brand','color']){
+    const p=page();
+    p.extraction.fieldSources[field]={strategy:'jsonld',recordId:'f'.repeat(64)};
+    const result=await setup(async()=>p).verify(offer());
+    assert.notEqual(result.state,'VERIFIED');
+  }
+  for(const injected of [
+    {...page(),extraction:{...page().extraction,selectedProductRecord:null}},
+    {...page(),extraction:{...page().extraction,selectedProductRecord:{
+      ...page().extraction.selectedProductRecord,selectedCount:2
+    }}},
+    {...page(),extraction:{...page().extraction,selectedProductRecord:{
+      ...page().extraction.selectedProductRecord,selectedOfferUrl:URL.replace('668751','644723')
+    }}}
+  ]){
+    assert.equal((await setup(async()=>injected).verify(offer())).eligible,false);
+  }
+});
+test('v21.63 direct graph rejects a priced adjacent sibling and preserves the selected record',async()=>{
+  const {resolveSelectedJsonLdOffer}=await import('../server/url-resolver.mjs');
+  const dns=(await import('node:dns/promises')).default;
+  const actualFetch=globalThis.fetch,actualLookup=dns.lookup;
+  const make=(url,sku,price,title)=>({
+    '@type':'Product',url,name:title,sku,
+    mpn:sku==='668751'?'CFI2116B01Y':'ACCESSORY-001',
+    brand:{'@type':'Brand',name:'Sony'},
+    image:sku==='668751'?'https://static.jarir.com/668751.jpg':'https://static.jarir.com/644723.jpg',
+    color:'White',itemCondition:'https://schema.org/NewCondition',
+    offers:{'@type':'Offer',url,price:String(price),priceCurrency:'SAR',
+      availability:'https://schema.org/InStock'}
+  });
+  try{
+    dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+    globalThis.fetch=async()=>new Response(
+      '<script type="application/ld+json">'+JSON.stringify({
+        '@context':'https://schema.org', '@graph':[
+          make(URL,'668751',2529,offer().title),
+          make('https://www.jarir.com/sa-en/sony-chroma-pearl-other-gaming-accessories-644723.html',
+            '644723',199,'PS5 Console Cover')
+        ]})+'</script>',{headers:{'content-type':'text/html'}}
+    );
+    const session=createPdpObservationSession({readSelectedPage:resolveSelectedJsonLdOffer,
+      now:()=>Date.now()});
+    const result=await session.verify(offer());
+    assert.equal(result.state,'VERIFIED',result.reason);
+    assert.equal(session.evidence(result.observationRef).sku,'668751');
+    const record=await resolveSelectedJsonLdOffer(URL);
+    assert.equal(record.extraction.selectedProductRecord.selectedCount,1);
+    assert.equal(record.extraction.selectedProductRecord.productCount,1,
+      'existing graph resolver must exclude foreign-page cross-sell');
+  }finally{dns.lookup=actualLookup;globalThis.fetch=actualFetch;}
+});
+test('v21.63 two locally URL-addressed priced Products fail as ambiguous even with a matching SKU',async()=>{
+  const {resolveSelectedJsonLdOffer}=await import('../server/url-resolver.mjs');
+  const dns=(await import('node:dns/promises')).default;
+  const originalFetch=globalThis.fetch,originalLookup=dns.lookup;
+  const single={ '@type':'Product',url:URL,sku:'668751',name:offer().title,
+    brand:'Sony',offers:{'@type':'Offer',url:URL,price:'2529',priceCurrency:'SAR'} };
+  try{
+    dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+    globalThis.fetch=async()=>new Response(
+      '<script type="application/ld+json">'+JSON.stringify({'@graph':[single,{
+        ...single,sku:'644723',name:'PS5 Disc Drive',offers:{...single.offers,price:'199'}
+      }]})+'</script>',{headers:{'content-type':'text/html'}}
+    );
+    await assert.rejects(resolveSelectedJsonLdOffer(URL),/subject_missing_or_ambiguous/);
+  }finally{dns.lookup=originalLookup;globalThis.fetch=originalFetch;}
 });
