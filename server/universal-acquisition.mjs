@@ -87,28 +87,53 @@ function score(candidate){
   return Math.min(1,Number(s.toFixed(3)));
 }
 export function reconcile(candidates, finalUrl){
-  const ranked=candidates.filter(Boolean).map(c=>({...c,confidence:score(c)})).sort((a,b)=>b.confidence-a.confidence);
-  const best=ranked[0];
-  if(!best || !best.title || best.price===null) throw new Error("No structured product evidence found");
-  const field=(key)=>first(...ranked.map(c=>c[key]));
+  const ranked=candidates.filter(Boolean).map(c=>({...c,confidence:score(c)}))
+    .sort((a,b)=>b.confidence-a.confidence);
+  // Price and currency are one inseparable, source-owned observation. Never
+  // combine two individually valid scalar fields into a fabricated offer.
+  const priced=ranked.find(c=>typeof c.title==="string"&&c.title.trim()&&
+    Number.isFinite(c.price)&&c.price>0&&
+    /^[A-Z]{3}$/.test(String(c.currency||"").trim().toUpperCase()));
+  if(!priced)throw new Error("No coherent structured product evidence found");
+
+  // Other extraction strategies may enrich only when they share an explicit
+  // product identifier with the chosen priced record, without contradiction.
+  // Same PDP or similar title alone cannot establish sellable-item ownership.
+  const identityFields=["sku","gtin","modelNumber"];
+  const canonical=v=>String(v??"").trim().toLowerCase().replace(/[^a-z0-9]/g,"");
+  const sameIdentity=other=>{
+    let matched=false;
+    for(const key of identityFields){
+      const own=canonical(priced[key]),alternate=canonical(other[key]);
+      if(own&&alternate){
+        if(own!==alternate)return false;
+        matched=true;
+      }
+    }
+    return matched;
+  };
+  const trusted=[priced,...ranked.filter(c=>c!==priced&&sameIdentity(c))];
+  const origin=key=>trusted.find(c=>c[key]!==null&&c[key]!==undefined&&c[key]!=="");
+  const field=key=>first(...trusted.map(c=>c[key]));
   return {
-    title:field("title"),
+    title:priced.title,
     brand:field("brand"),
     sku:field("sku"),
     gtin:field("gtin"),
     modelNumber:field("modelNumber"),
     image:absolute(finalUrl,field("image")),
-    productPrice:field("price"),
-    originalProductPrice:field("price"),
-    originalCurrency:String(field("currency")||"").toUpperCase()||null,
+    productPrice:priced.price,
+    originalProductPrice:priced.price,
+    originalCurrency:String(priced.currency).trim().toUpperCase(),
     availability:field("availability")||"unknown",
     sourceUrl:finalUrl,
     extraction:{
       crawlee:true,
-      strategy:best.method,
+      strategy:priced.method,
       attemptedStrategies:[...new Set(ranked.map(c=>c.method))],
-      fieldSources:Object.fromEntries(["title","brand","sku","gtin","modelNumber","image","price","currency","availability"].map(k=>[k,ranked.find(c=>c[k]!==null&&c[k]!==undefined&&c[k]!=="")?.method||null])),
-      confidence:best.confidence,
+      fieldSources:Object.fromEntries(["title","brand","sku","gtin","modelNumber","image","price","currency","availability"]
+        .map(k=>[k,k==="price"||k==="currency"||k==="title"?priced.method:origin(k)?.method||null])),
+      confidence:priced.confidence,
     },
   };
 }
