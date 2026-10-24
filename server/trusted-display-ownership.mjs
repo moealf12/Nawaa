@@ -32,6 +32,28 @@ function admissionFields(offer){
            !Object.keys(object).every(k=>VERIFIED_NESTED[key].has(k)))return false;
       }
     }
+    // The underlying verifier prioritizes one representation of a claimed
+    // field. Reject contradictory shadow attributes rather than letting
+    // unverified specs/variant aliases inherit a verified primary value.
+    const scalar=value=>{
+      if(value==null)return null;
+      if(typeof value!=='string'&&typeof value!=='number')return null;
+      return String(value).normalize('NFKC').trim().toLowerCase();
+    };
+    const check=values=>{
+      const normalized=values.filter(x=>x!=null).map(scalar);
+      return normalized.every(x=>x!==null)&&new Set(normalized).size<=1;
+    };
+    if(!check([offer.sku,offer.sourceMeta?.productId])||
+       !check([offer.brand,offer.manufacturer,offer.specs?.brand])||
+       !check([offer.modelNumber,offer.specs?.modelNumber])||
+       !check([offer.gtin,offer.specs?.gtin])||
+       !check([offer.mpn,offer.specs?.mpn]))return false;
+    for(const field of ['storage','capacity','ram','region','sim','color',
+      'edition','condition']){
+      if(!check([offer[field],offer.variant?.[field],offer.specs?.[field]]))
+        return false;
+    }
     return true;
   }catch{return false;}
 }

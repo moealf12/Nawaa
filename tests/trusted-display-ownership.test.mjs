@@ -137,3 +137,20 @@ test('v21.69 unverified merchant enrichment is not converted into display author
     assert.equal(await h.display.accepts(h.bound,context(enriched)),false);
   }
 });
+
+test('v21.69 shadow identity and variant conflicts are never promoted from covered primary fields',async()=>{
+  const h=await valid();
+  for(const extra of [
+    {sourceMeta:{productId:'668752'}},
+    {specs:{modelNumber:'different'},modelNumber:'MG674AHA'},
+    {brand:'Apple',specs:{brand:'Samsung'}},
+    {storage:'256GB',variant:{storage:'512GB'}},
+    {color:'Black',specs:{color:'Lavender'}},
+    {condition:'new',variant:{condition:'refurbished'}}
+  ]){
+    const enriched={...offer,...extra};
+    assert.equal((await h.display.bind({decision:h.decision,offer:enriched,
+      displayOffer:enriched,observationRef:ref,streamGeneration:generation,
+      snapshotRevision:1,renderEpoch:1})).state,'DENIED',JSON.stringify(extra));
+  }
+});
