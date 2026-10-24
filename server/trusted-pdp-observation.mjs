@@ -72,6 +72,29 @@ function sameRecordProvenance(page,offer){
     return 'missing_attributable_hard_identity';
   return null;
 }
+// Only explicitly compared claims may cross into a verified offer revision.
+// In particular, never copy inbound independentlyAttested/verified/issuer flags
+// or unrelated listing metadata into an attested customer-facing object.
+function claimedOffer(offer,observedAt){
+  const specs=offer?.specs||{};
+  const variant=offer?.variant||{};
+  const listed=keys=>Object.fromEntries(keys.filter(k=>
+    Object.prototype.hasOwnProperty.call(offer||{},k)).map(k=>[k,offer[k]]));
+  return {
+    ...listed(['title','productPrice','currency','merchant','providerMarket',
+      'sourceUrl','image','sku','mpn','gtin','modelNumber','brand','manufacturer',
+      'availability','condition','storage','capacity','ram','region','sim',
+      'color','edition','bundleContents']),
+    observedAt,
+    sourceMeta:offer?.sourceMeta?.productId!=null?{productId:offer.sourceMeta.productId}:{},
+    specs:Object.fromEntries(['brand','modelNumber','color','storage','capacity',
+      'ram','region','sim','condition','gtin','mpn'].filter(k=>
+        Object.prototype.hasOwnProperty.call(specs,k)).map(k=>[k,specs[k]])),
+    variant:Object.fromEntries(['storage','capacity','ram','region','sim','color',
+      'edition','condition','bundleContents'].filter(k=>
+        Object.prototype.hasOwnProperty.call(variant,k)).map(k=>[k,variant[k]]))
+  };
+}
 function selectedRecord(page){
   // Snapshot only documented selected-PDP fields; never enrich from a
   // neighboring listing or a caller-provided product record.
@@ -135,7 +158,7 @@ export function createPdpObservationSession({
     const record=selectedRecord(page);
     // A new receipt-time revision is not evidence the *old* listing was
     // verified earlier. Never mutate the incoming offer.
-    const updatedOffer={...offer,observedAt:page.observedAt};
+    const updatedOffer=claimedOffer(offer,page.observedAt);
     const ref='jarir-pdp:'+randomUUID();
     const revision=sha([page.resolvedPageUrl,page.observedAt,record,
       page.extraction.fieldSources,page.extraction.conflictSummary]);
