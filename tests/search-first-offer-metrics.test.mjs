@@ -93,3 +93,28 @@ test('v21.57: bounded property checks reject independent price, currency and SKU
 test('v21.57: source blocked cannot become certified even with coherent attestation',()=>{
   assert.equal(assessFirstOfferOwnership(candidate,{...attested,sourceBlocked:true}).state,'SOURCE_BLOCKED');
 });
+
+import {createFirstOfferTimeline} from '../src/search-first-offer-metrics.mjs';
+test('v21.57: per-request milestones reject stale requests and unsupported paint claims',()=>{
+  let now=100;
+  const timeline=createFirstOfferTimeline(7,()=>now);
+  now=110;
+  assert.equal(timeline.mark('T1',{requestId:6}),false);
+  assert.equal(timeline.mark('T1',{requestId:7}),true);
+  now=120;
+  assert.equal(timeline.mark('T5',{ownership:{eligible:false}}),false);
+  assert.equal(timeline.mark('T5',{ownership:{eligible:true}}),true);
+  now=130;
+  assert.equal(timeline.mark('T6'),true);
+  assert.equal(timeline.mark('T8'),false);
+  assert.equal(timeline.mark('T8',{evidence:{independentlyObserved:true}}),true);
+  assert.equal(timeline.finish('complete'),true);
+  assert.equal(timeline.mark('T7'),false);
+  assert.deepEqual(timeline.snapshot().elapsedMs,{T0:0,T1:10,T5:20,T6:30,T8:30});
+});
+test('v21.57: cancelled searches cannot accrue late measurements',()=>{
+  const timeline=createFirstOfferTimeline(2,()=>100);
+  assert.equal(timeline.finish('cancelled'),true);
+  assert.equal(timeline.mark('T1'),false);
+  assert.equal(timeline.snapshot().firstVisibleCertified,false);
+});
