@@ -206,3 +206,15 @@ test('certified manufacturer, MPN and availability claims require same captured 
     assert.equal(rejected.eligible,false,JSON.stringify(fields));
   }
 });
+
+test('extra source-only attributes are not borrowed or required in an unclaimed offer',async()=>{
+  const {verifier,records}=setup();
+  records.set(reference,makeEvidence({selectedRecord:{
+    ...base,brand:'Apple',ram:'8GB',mpn:'UNCLAIMED-MPN',
+    availability:'in_stock',region:'SA',sim:'eSIM'
+  }}));
+  const result=await verifier.verify({offer:base,observationRef:reference});
+  assert.equal(result.state,'VERIFIED');
+  assert.equal(result.predicates.manufacturer,'NOT_CLAIMED');
+  assert.equal(result.predicates.availability,'NOT_CLAIMED');
+});
