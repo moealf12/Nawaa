@@ -8,7 +8,7 @@ import {assessFirstOfferOwnership, structurallyValidOffer} from '../src/search-f
 
 const POLICY='same-offer-v1';
 const MAX_AGE_MS=24*60*60*1000;
-const ID_KEYS=['sku','modelNumber','gtin'];
+const ID_KEYS=['sku','modelNumber','gtin','mpn'];
 const VARIANT_KEYS=['storage','capacity','ram','region','sim','color','edition','condition','bundleContents'];
 const IGNORE_QUERY=/^(utm_.+|gclid|fbclid|msclkid|affiliate|aff)$/i;
 const SELECTOR_QUERY=new Set(['sku','variant','variantid','productid','optionid','model','storage','capacity','color','size']);
@@ -46,6 +46,7 @@ function destination(value){
 }
 
 function claimValue(offer,key){
+  if(key==='brand')return scalar(offer?.brand??offer?.manufacturer??offer?.specs?.brand);
   if(key==='condition')return scalar(offer?.condition??offer?.specs?.condition);
   const value=offer?.[key]??offer?.variant?.[key]??offer?.specs?.[key];
   if(key==='bundleContents'&&Array.isArray(value)){
@@ -61,8 +62,10 @@ function subject(record,observedAt){
   return {
     observedAt,title:record?.title,productPrice:record?.productPrice,currency:record?.currency,
     merchant:record?.merchant,sourceUrl:record?.sourceUrl,image:record?.image,
+    brand:record?.brand,manufacturer:record?.manufacturer,
+    availability:record?.availability,
     sku:record?.sku,modelNumber:record?.modelNumber,
-    gtin:record?.gtin,specs:record?.specs,
+    gtin:record?.gtin,mpn:record?.mpn,specs:record?.specs,
     sourceMeta:{productId:record?.sourceMeta?.productId},
     variant:record?.variant,condition:record?.condition,
     storage:record?.storage,capacity:record?.capacity,ram:record?.ram,
@@ -71,11 +74,16 @@ function subject(record,observedAt){
   };
 }
 
+function identityValue(o,key){
+  if(key==='sku')return o?.sku??o?.sourceMeta?.productId;
+  if(key==='modelNumber')return o?.modelNumber??o?.specs?.modelNumber;
+  return o?.[key]??o?.specs?.[key];
+}
 function offerKey(o){
-  const identity=ID_KEYS.map(k=>id(k==='modelNumber'?o?.modelNumber??o?.specs?.modelNumber:
-    k==='sku'?o?.sku??o?.sourceMeta?.productId:o?.gtin));
+  const identity=ID_KEYS.map(k=>id(identityValue(o,k)));
   return fingerprint([
     o?.title,o?.productPrice,o?.currency,o?.merchant,o?.observedAt,destination(o?.sourceUrl),
+    claimValue(o,'brand'),o?.availability??null,
     typeof o?.image==='string'?o.image:null,identity,VARIANT_KEYS.map(k=>claimValue(o,k))
   ]);
 }
@@ -95,12 +103,15 @@ function compare(offer,observed){
   if(offer.image!=null&&
     (typeof offer.image!=='string'||!destination(offer.image)||offer.image!==observed.image))
     return 'image_ownership_mismatch';
+  if(claimValue(offer,'brand')!==claimValue(observed,'brand'))
+    return 'manufacturer_mismatch_or_missing';
+  if(offer.availability!=null&&offer.availability!=='unknown'&&
+    offer.availability!==observed.availability)
+    return 'availability_mismatch_or_missing';
   let identityCount=0;
   for(const key of ID_KEYS){
-    const a=id(key==='sku'?offer.sku??offer.sourceMeta?.productId:
-      key==='modelNumber'?offer.modelNumber??offer.specs?.modelNumber:offer.gtin);
-    const b=id(key==='sku'?observed.sku??observed.sourceMeta?.productId:
-      key==='modelNumber'?observed.modelNumber??observed.specs?.modelNumber:observed.gtin);
+    const a=id(identityValue(offer,key));
+    const b=id(identityValue(observed,key));
     if(a&&b){if(a!==b)return 'identity_'+key+'_conflict';identityCount++;}
     else if(a||b)return 'identity_'+key+'_missing_evidence';
   }
@@ -157,6 +168,8 @@ export function createTrustedOfferVerifier({resolveObservation,now=()=>Date.now(
       predicates:Object.freeze({
         identity:'VERIFIED',variant:'VERIFIED',title:'VERIFIED',price:'VERIFIED',
         currency:'VERIFIED',merchant:'VERIFIED',destination:'VERIFIED',
+        manufacturer:claimValue(offer,'brand')?'VERIFIED':'NOT_CLAIMED',
+        availability:offer.availability&&offer.availability!=='unknown'?'VERIFIED':'NOT_CLAIMED',
         image:offer.image!=null?'VERIFIED':'NOT_CLAIMED'
       })
     });
