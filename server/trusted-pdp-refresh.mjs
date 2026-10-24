@@ -58,8 +58,15 @@ export function createControlledPdpRefresh({
           return fail(archived?.state||'SOURCE_BLOCKED',
             archived?.reason||'source_receipt_not_archived');
       }
+      const evidence=typeof session.evidence==='function'?
+        session.evidence(selected.observationRef):null;
       return Object.freeze({state:'RECORDED',reason:'controlled_selected_source_observed',
         sourceId:'jarir-sa',sourceRevision:recorded.sourceRevision,
+        sourceObservedAt:evidence?.observedAt??null,
+        selectedRecord:evidence?.sourceRecord??null,
+        selectedOffer:selected.offer,
+        verifiedPredicates:selected.decision.predicates,
+        historicalClaims:selected.historicalClaims,
         durationMs:Math.max(0,now()-started),
         receiptRef:archived?.receiptRef??null,
         eligible:false,wholeOfferVerified:false,badgeEligible:false,
