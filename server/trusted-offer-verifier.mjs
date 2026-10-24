@@ -11,7 +11,6 @@ const MAX_AGE_MS=24*60*60*1000;
 const ID_KEYS=['sku','modelNumber','gtin'];
 const VARIANT_KEYS=['storage','capacity','ram','region','sim','color','edition','condition','bundleContents'];
 const IGNORE_QUERY=/^(utm_.+|gclid|fbclid|msclkid|ref|affiliate|aff)$/i;
-const own=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
 const scalar=v=>(typeof v==='string'||typeof v==='number') && String(v).trim().length<=256
   ? String(v).trim().toLowerCase() : null;
 const id=v=>{const s=scalar(v);return s?s.replace(/[^a-z0-9]/g,''):null;};
@@ -66,7 +65,7 @@ function offerKey(o){
   const identity=ID_KEYS.map(k=>id(k==='modelNumber'?o?.modelNumber??o?.specs?.modelNumber:
     k==='sku'?o?.sku??o?.sourceMeta?.productId:o?.gtin));
   return fingerprint([
-    o?.title,o?.productPrice,o?.currency,o?.merchant,destination(o?.sourceUrl),
+    o?.title,o?.productPrice,o?.currency,o?.merchant,o?.observedAt,destination(o?.sourceUrl),
     o?.image||null,identity,VARIANT_KEYS.map(k=>claimValue(o,k))
   ]);
 }
@@ -76,12 +75,16 @@ function compare(offer,observed){
     return 'invalid_selected_record';
   const diagnostic=assessFirstOfferOwnership(offer,observed);
   if(diagnostic.state==='CONFLICTING_EVIDENCE')return diagnostic.reason;
+  if(Date.parse(offer.observedAt)!==Date.parse(observed.observedAt))
+    return 'observation_time_mismatch';
   if(offer.title!==observed.title||offer.productPrice!==observed.productPrice||
     offer.currency!==observed.currency||offer.merchant!==observed.merchant)
     return 'subject_field_mismatch';
   const left=destination(offer.sourceUrl),right=destination(observed.sourceUrl);
   if(!left||!right||left!==right)return 'destination_selection_mismatch';
-  if(offer.image!=null&&offer.image!==observed.image)return 'image_ownership_mismatch';
+  if(offer.image!=null&&
+    (typeof offer.image!=='string'||!destination(offer.image)||offer.image!==observed.image))
+    return 'image_ownership_mismatch';
   let identityCount=0;
   for(const key of ID_KEYS){
     const a=id(key==='sku'?offer.sku??offer.sourceMeta?.productId:
@@ -127,6 +130,8 @@ export function createTrustedOfferVerifier({resolveObservation,now=()=>Date.now(
     catch{return fail('SOURCE_BLOCKED','observation_load_failed');}
     if(!selected)return fail('MISSING_EVIDENCE','missing_or_stale_source_observation');
     const {evidence,record,time,present}=selected;
+    if(offer.providerMarket&&offer.providerMarket!==evidence.sourceId)
+      return fail('CONFLICTING_EVIDENCE','merchant_source_mismatch');
     const contradiction=compare(offer,record);
     if(contradiction)return fail(
       /conflict|mismatch/.test(contradiction)?'CONFLICTING_EVIDENCE':'MISSING_EVIDENCE',
@@ -151,7 +156,7 @@ export function createTrustedOfferVerifier({resolveObservation,now=()=>Date.now(
   // Recheck the authoritative source revision before accepting a decision.
   // A past valid decision cannot certify a newer/altered observation or offer.
   async function accepts(decision,offer,observationRef){
-    if(!decision||typeof decision!=='object')return false;
+    if(!decision||typeof decision!=='object'||!structurallyValidOffer(offer))return false;
     const saved=issued.get(decision);
     if(!saved||saved.observationRef!==observationRef||
       saved.offerDigest!==offerKey(offer)||decision.state!=='VERIFIED')return false;
@@ -159,6 +164,7 @@ export function createTrustedOfferVerifier({resolveObservation,now=()=>Date.now(
     try{selected=await load(observationRef);}catch{return false;}
     if(!selected)return false;
     const {evidence,record,time}=selected;
+    if(offer.providerMarket&&offer.providerMarket!==evidence.sourceId)return false;
     if(compare(offer,record)!==null)return false;
     return saved.evidenceDigest===fingerprint([
       observationRef,evidence.sourceId,evidence.revision,offerKey(record),time,POLICY]);
