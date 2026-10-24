@@ -4,7 +4,7 @@ import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import http from "node:http";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
@@ -971,6 +971,8 @@ const server = http.createServer(async (req, res) => {
     if (q.length < 2 || q.length > 180) return jsonResponse(res,400,{error:"invalid_query"},origin || "*");
 
     const normalized = normalizeSearchQuery(q);
+    // Per HTTP stream, server-owned correlation only; not a trust certificate.
+    const streamGeneration = randomUUID();
     const key = searchCacheKey(normalized,0);
     // Streamed searches must expose the same signed depth-1 cursor as /api/search.
     // Without it, the UI cannot request additional sources after an SSE result.
@@ -993,7 +995,7 @@ const server = http.createServer(async (req, res) => {
       const measuring=PROFILE_SEARCH_STREAM && event==="snapshot";
       res.write("event: "+event+"\n");
       const serializeStarted=measuring ? performance.now() : 0;
-      const serialized=JSON.stringify(data);
+      const serialized=JSON.stringify({...data,streamGeneration});
       const serializedAt=measuring ? performance.now() : 0;
       res.write("data: "+serialized+"\n\n");
       if (measuring) {
@@ -1019,7 +1021,8 @@ const server = http.createServer(async (req, res) => {
         serializeMs:serializedAt-serializeStarted,socketEnqueueMs:performance.now()-serializedAt,
       }));
     };
-    send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString()});
+    send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString(),
+      trustCertification:'not_enabled_no_badge_or_t5'});
 
     let closed=false;
     const streamController=new AbortController();
