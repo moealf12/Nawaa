@@ -171,7 +171,11 @@ export function createFirstOfferTimeline(requestId,clock=()=>performance.now()){
     mark(name,{requestId:incoming=requestId,ownership=null,evidence=null}={}){
       if(terminal||incoming!==requestId||!validNames.has(name)||milestones[name]!=null)
         return false;
-      if(name==='T5'&&ownership?.eligible!==true)return false;
+      // Client-side ownership objects and JSON flags are not server-issued
+      // capabilities. No customer T5 claim until an authenticated server
+      // verification lifecycle is explicitly wired and independently tested.
+      // Structural T4 and ordinary cards continue unchanged.
+      if(name==='T5')return false;
       if((name==='T6'||name==='T7'||name==='T8')&&milestones.T5==null)return false;
       if(name==='T8'&&evidence?.independentlyObserved!==true)return false;
       const now=clock();
