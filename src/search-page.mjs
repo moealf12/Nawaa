@@ -101,7 +101,7 @@ function observeFirstOfferCandidates(requestId,offers){
   }
   publishFirstOfferDiagnostic();
 }
-function observeFirstRenderedCard(product,displayedSections){
+function observeFirstRenderedCard(displayedSections){
   const d=firstOfferDiagnostic;
   if(!d||d.requestId!==state.requestId||d.firstCard)return;
   const card=els.results.querySelector('.match-result-card');
@@ -1259,7 +1259,7 @@ function renderProduct(product, query) {
       لا نخلط موديلًا أو سعة أو لونًا أو حالة مختلفة في المقارنة نفسها. والمواصفات الموحّدة تحتفظ بمصدر كل قيمة وتكشف التعارضات بين المصادر.
     </div>
   `;
-  observeFirstRenderedCard(product,displayedSections);
+  observeFirstRenderedCard(displayedSections);
 
   els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
     state.category=button.dataset.category; state.comparisonOpen=false; renderProduct(product,query);
