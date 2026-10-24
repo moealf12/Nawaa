@@ -10,10 +10,12 @@ const POLICY='same-offer-v1';
 const MAX_AGE_MS=24*60*60*1000;
 const ID_KEYS=['sku','modelNumber','gtin'];
 const VARIANT_KEYS=['storage','capacity','ram','region','sim','color','edition','condition','bundleContents'];
-const IGNORE_QUERY=/^(utm_.+|gclid|fbclid|msclkid|ref|affiliate|aff)$/i;
+const IGNORE_QUERY=/^(utm_.+|gclid|fbclid|msclkid|affiliate|aff)$/i;
+const SELECTOR_QUERY=new Set(['sku','variant','variantid','productid','optionid','model','storage','capacity','color','size']);
 const scalar=v=>(typeof v==='string'||typeof v==='number') && String(v).trim().length<=256
   ? String(v).trim().toLowerCase() : null;
-const id=v=>{const s=scalar(v);return s?s.replace(/[^a-z0-9]/g,''):null;};
+// Do not erase identity-bearing punctuation: X+1 and X1 may be different SKUs.
+const id=v=>scalar(v);
 const fingerprint=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 function destination(value){
@@ -22,10 +24,18 @@ function destination(value){
     const u=new URL(value);
     if(u.protocol!=='https:'||!u.hostname||u.username||u.password)return null;
     const query=[];
+    const selectors=new Map();
     for(const [key,val] of u.searchParams){
       if(IGNORE_QUERY.test(key))continue;
       if(key.length>128||val.length>512)return null;
-      query.push([key.toLowerCase(),val]);
+      const normalized=key.toLowerCase();
+      const selector=normalized.replace(/[^a-z0-9]/g,'');
+      if(SELECTOR_QUERY.has(selector)){
+        const previous=selectors.get(selector);
+        if(previous!==undefined&&previous!==val.toLowerCase())return null;
+        selectors.set(selector,val.toLowerCase());
+      }
+      query.push([normalized,val]);
     }
     query.sort((a,b)=>a[0].localeCompare(b[0])||a[1].localeCompare(b[1]));
     u.hash='';
