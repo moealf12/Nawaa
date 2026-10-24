@@ -40,13 +40,17 @@ if(selectedPdp){
         signingKey:CI_SIGNING_KEY,requireCurrentHead:true});
       const receipt=await journal.archive(claim);
       assert.equal(receipt.state,'ARCHIVED',receipt.reason);
+      const recorded=await journal.recordFreshSource(claim);
+      assert.equal(recorded.state,'RECORDED',recorded.reason);
       await writeFile('.trusted-journal-live.json',JSON.stringify({
         ref:receipt.receiptRef,offer:claim.offer,sourceId:evidence.sourceId,
         documentDigest:evidence.sourceRecord.documentDigest
       })+'\n');
       console.log('TRUSTED_PDP_LIVE_JOURNAL '+JSON.stringify({
         livePdpObservation:true,sourceId:evidence.sourceId,
-        archived:true,wholeOfferVerified:false,badgeEligible:false
+        archived:true,controlledSourceHeadRecorded:true,
+        additionalMerchantRequests:0,
+        wholeOfferVerified:false,badgeEligible:false
       }));
     }finally{await db.close();}
   }
