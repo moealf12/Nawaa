@@ -60,7 +60,7 @@ export function createControlledPdpRefresh({
       }
       return Object.freeze({state:'RECORDED',reason:'controlled_selected_source_observed',
         sourceId:'jarir-sa',sourceRevision:recorded.sourceRevision,
-        observationAgeMs:Math.max(0,now()-started),
+        durationMs:Math.max(0,now()-started),
         receiptRef:archived?.receiptRef??null,
         eligible:false,wholeOfferVerified:false,badgeEligible:false,
         firstTrustworthyOfferEligible:false});
