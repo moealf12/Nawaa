@@ -56,6 +56,7 @@ async function ready(){
   const h=setup();
   const prepared=await h.bridge.observe(candidate());
   assert.equal(prepared.state,'STAGED_SOURCE_PREDICATES',JSON.stringify(prepared));
+  assert.equal(h.bridge.beginRender(1),true);
   // Source-issued selected revision is the outbound candidate. The journal's
   // intentionally smaller predicate-only snapshot is NOT interchangeable.
   const offer=prepared.selectedOffer;
@@ -121,5 +122,11 @@ test('stream snapshot revision is single-use and replay cannot mint source owner
   assert.equal((await h.bridge.bind(h.prepared,binding(h.offer))).state,'DENIED');
   assert.equal((await h.bridge.bind(h.prepared,binding(h.offer,0))).state,'DENIED');
   assert.equal((await h.bridge.bind(h.prepared,binding(h.offer,2))).state,
+    'SOURCE_PREDICATES_BOUND');
+  assert.equal(h.bridge.beginRender(2),true);
+  assert.equal(h.bridge.beginRender(1),false);
+  assert.equal((await h.bridge.bind(h.prepared,binding(h.offer,3,1))).state,
+    'DENIED','an old DOM epoch cannot become valid again');
+  assert.equal((await h.bridge.bind(h.prepared,binding(h.offer,3,2))).state,
     'SOURCE_PREDICATES_BOUND');
 });

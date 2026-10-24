@@ -33,8 +33,17 @@ export function createTrustedPdpStreamBridge({
     throw TypeError('trusted_pdp_stream_dependencies_required');
   const issued=new WeakMap();
   let lastRevision=0;
+  let activeRenderEpoch=0;
   let revoked=false;
 
+  // An epoch is a server-owned presentation correlation. It is still NOT a
+  // browser paint certificate or customer source-attestation authority.
+  function beginRender(nextEpoch){
+    if(revoked||!Number.isSafeInteger(nextEpoch)||nextEpoch<=activeRenderEpoch)
+      return false;
+    activeRenderEpoch=nextEpoch;
+    return true;
+  }
   async function observe(candidate,{signal}={}){
     if(revoked||signal?.aborted)return fail('cancelled_or_revoked');
     const session=createSession();
@@ -87,6 +96,7 @@ export function createTrustedPdpStreamBridge({
     if(!record||incoming!==streamGeneration||
        !Number.isSafeInteger(snapshotRevision)||snapshotRevision<=lastRevision||
        !Number.isSafeInteger(renderEpoch)||renderEpoch<1||
+       renderEpoch!==activeRenderEpoch||
        !Array.isArray(offers)||offers.length<1||offers.length>MAX_OFFERS||
        !Number.isSafeInteger(offerIndex)||offerIndex<0||offerIndex>=offers.length)
       return fail('unowned_or_invalid_snapshot');
@@ -107,7 +117,8 @@ export function createTrustedPdpStreamBridge({
         inspectIssuedPdpReceipt(record.selected)
       ]);
     }catch{return fail('source_revalidation_unavailable');}
-    if(revoked||signal?.aborted||lastRevision!==snapshotRevision)
+    if(revoked||signal?.aborted||lastRevision!==snapshotRevision||
+       renderEpoch!==activeRenderEpoch)
       return fail('stream_superseded_during_revalidation');
     if(!accepted||!issuedSource||current?.state!=='REVALIDATED'||
        current.sourceRevision!==record.revision||
@@ -124,6 +135,7 @@ export function createTrustedPdpStreamBridge({
       sourcePredicatesRevalidated:true,wholeOfferVerified:false,
       badgeEligible:false,customerVerified:false,t5Eligible:false});
   }
-  function revoke(){revoked=true;lastRevision=Number.MAX_SAFE_INTEGER;}
-  return Object.freeze({observe,bind,revoke,streamGeneration});
+  function revoke(){revoked=true;lastRevision=Number.MAX_SAFE_INTEGER;
+    activeRenderEpoch=Number.MAX_SAFE_INTEGER;}
+  return Object.freeze({observe,bind,beginRender,revoke,streamGeneration});
 }
