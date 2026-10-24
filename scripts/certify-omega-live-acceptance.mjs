@@ -37,7 +37,7 @@ if(selectedPdp){
     try{
       await db.initialize();
       const journal=createTrustedObservationJournal({store:db.store,
-        signingKey:CI_SIGNING_KEY});
+        signingKey:CI_SIGNING_KEY,requireCurrentHead:true});
       const receipt=await journal.archive(claim);
       assert.equal(receipt.state,'ARCHIVED',receipt.reason);
       await writeFile('.trusted-journal-live.json',JSON.stringify({
