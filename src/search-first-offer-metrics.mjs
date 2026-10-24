@@ -6,7 +6,7 @@ export function structurallyValidOffer(offer) {
     offer.currency === 'SAR' &&
     typeof offer.merchant === 'string' && offer.merchant.trim().length > 0 &&
     offer.merchant !== 'App' &&
-    typeof offer.sourceUrl === 'string' && offer.sourceUrl.startsWith('https://') &&
+    Boolean(safeHttpsUrl(offer.sourceUrl)) &&
     typeof offer.observedAt === 'string' && Number.isFinite(Date.parse(offer.observedAt));
 }
 
@@ -40,6 +40,30 @@ function safeHttpsUrl(value){
     return u.protocol==='https:'&&u.hostname&&
       !u.username&&!u.password?u:null;
   }catch{return null;}
+}
+// Different selected variants may share a merchant pathname and differ only
+// by identity-bearing query parameters. Tracking parameters are not identity.
+function conflictingVariantQuery(a,b){
+  const keys=new Set(['sku','variant','variantid','productid','model','storage','capacity','color','size']);
+  const params=url=>{
+    const out=new Map();
+    for(const [key,value] of url.searchParams){
+      const normalizedKey=key.toLowerCase().replace(/[^a-z0-9]/g,'');
+      if(keys.has(normalizedKey)&&value.trim()){
+        if(!out.has(normalizedKey))out.set(normalizedKey,new Set());
+        out.get(normalizedKey).add(value.trim().toLowerCase());
+      }
+    }
+    return out;
+  };
+  const left=params(a),right=params(b);
+  for(const [key,values] of left){
+    if(right.has(key)){
+      const other=right.get(key);
+      if(values.size!==other.size||[...values].some(v=>!other.has(v)))return true;
+    }
+  }
+  return false;
 }
 function canonicalId(value){
   return typeof value==='string'||typeof value==='number'?
@@ -99,27 +123,31 @@ export function assessFirstOfferOwnership(offer,evidence=null){
      evidenceDestination.origin+evidenceDestination.pathname){
     return {...result,state:'CONFLICTING_EVIDENCE',reason:'destination_conflict'};
   }
+  if(destination&&evidenceDestination&&conflictingVariantQuery(destination,evidenceDestination)){
+    return {...result,state:'CONFLICTING_EVIDENCE',reason:'destination_variant_conflict'};
+  }
   if(evidence.productPrice!=null&&evidence.currency!=null&&!priced){
     return {...result,state:'CONFLICTING_EVIDENCE',reason:'price_currency_conflict'};
   }
   if(evidence.merchant!=null&&!merchant){
     return {...result,state:'CONFLICTING_EVIDENCE',reason:'merchant_conflict'};
   }
-  const independentlyAttested=evidence.independentlyAttested===true;
-  const coherent=shared&&priced&&merchant&&destination&&evidenceDestination&&
-    evidence.title===offer.title;
-  if(!coherent||!independentlyAttested){
-    return {...result,state:'CONSISTENT_BUT_UNVERIFIED',
-      reason:!coherent?'incomplete_same_offer_evidence':'independent_attestation_missing'};
-  }
-  const imageVerified=!offer.image||evidence.image===offer.image;
-  if(!imageVerified){
+  if(offer.image&&evidence.image!=null&&evidence.image!==offer.image){
     return {...result,state:'CONFLICTING_EVIDENCE',reason:'image_conflict'};
   }
-  const verified=Object.fromEntries(Object.entries(result.fields)
-    .map(([k,v])=>[k,k==='image'&&!offer.image?'MISSING_EVIDENCE':'VERIFIED']));
-  return {state:'VERIFIED',eligible:true,reason:'independently_attested_same_offer',
-    fields:verified};
+  const coherent=shared&&priced&&merchant&&destination&&evidenceDestination&&
+    evidence.title===offer.title;
+  if(!coherent){
+    return {...result,state:'CONSISTENT_BUT_UNVERIFIED',
+      reason:'incomplete_same_offer_evidence'};
+  }
+  // v21.60: evidence here is ordinary caller-supplied data, not a trusted
+  // verifier's issued proof. A self-asserted independentlyAttested flag (or a
+  // byte-for-byte clone of the offer) cannot grant VERIFIED or T5 eligibility.
+  // Fail closed until a controlled verifier with inspectable origin is wired.
+  return {...result,state:'CONSISTENT_BUT_UNVERIFIED',
+    reason:evidence.independentlyAttested===true?
+      'untrusted_attestation_claim':'trusted_attestation_unavailable'};
 }
 
 export function firstOwnershipEligibleOffer(offers,evidenceForOffer=()=>null){
