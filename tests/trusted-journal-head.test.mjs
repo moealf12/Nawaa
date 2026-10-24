@@ -417,7 +417,7 @@ test('v21.77 signed source receipt rejects internally contradictory full-field l
   event.payload=JSON.stringify(payload);
   event.signature=createHmac('sha256',K1).update(
     ['trusted-pdp-journal-v1',event.keyId,event.kind,event.ref,event.payload]
-      .join('\\n')).digest('hex');
+      .join('\n')).digest('hex');
   const verdict=await j.inspect(archived.receiptRef);
   assert.equal(verdict.state,'CONFLICTING_EVIDENCE');
   assert.equal(verdict.reason,'signed_source_offer_lineage_mismatch');
@@ -435,7 +435,7 @@ test('v21.77 signed diagnostic lineage cannot reassign SKU image or source owner
     event.payload=JSON.stringify(p);
     event.signature=createHmac('sha256',K1).update(
       ['trusted-pdp-journal-v1',event.keyId,event.kind,event.ref,event.payload]
-        .join('\\n')).digest('hex');
+        .join('\n')).digest('hex');
     const result=await j.inspect(archived.receiptRef);
     assert.equal(result.state,'CONFLICTING_EVIDENCE',path);
     assert.equal(result.reason,'signed_source_offer_lineage_mismatch',path);
