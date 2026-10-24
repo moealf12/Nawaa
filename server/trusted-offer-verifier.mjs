@@ -103,7 +103,7 @@ function compare(offer,observed){
   if(offer.image!=null&&
     (typeof offer.image!=='string'||!destination(offer.image)||offer.image!==observed.image))
     return 'image_ownership_mismatch';
-  if(claimValue(offer,'brand')!==claimValue(observed,'brand'))
+  if(claimValue(offer,'brand')&&claimValue(offer,'brand')!==claimValue(observed,'brand'))
     return 'manufacturer_mismatch_or_missing';
   if(offer.availability!=null&&offer.availability!=='unknown'&&
     offer.availability!==observed.availability)
@@ -113,12 +113,12 @@ function compare(offer,observed){
     const a=id(identityValue(offer,key));
     const b=id(identityValue(observed,key));
     if(a&&b){if(a!==b)return 'identity_'+key+'_conflict';identityCount++;}
-    else if(a||b)return 'identity_'+key+'_missing_evidence';
+    else if(a&&!b)return 'identity_'+key+'_missing_evidence';
   }
   if(!identityCount)return 'no_shared_hard_identity';
   for(const key of VARIANT_KEYS){
     const a=claimValue(offer,key),b=claimValue(observed,key);
-    if(a!==b)return 'variant_'+key+'_mismatch_or_missing';
+    if(a!==null&&a!==b)return 'variant_'+key+'_mismatch_or_missing';
   }
   return null;
 }
@@ -166,7 +166,9 @@ export function createTrustedOfferVerifier({resolveObservation,now=()=>Date.now(
       verifiedAt:new Date(present).toISOString(),
       expiresAt:new Date(time+maxAgeMs).toISOString(),
       predicates:Object.freeze({
-        identity:'VERIFIED',variant:'VERIFIED',title:'VERIFIED',price:'VERIFIED',
+        identity:'VERIFIED',
+        variant:VARIANT_KEYS.some(k=>claimValue(offer,k)!==null)?'VERIFIED':'NOT_CLAIMED',
+        title:'VERIFIED',price:'VERIFIED',
         currency:'VERIFIED',merchant:'VERIFIED',destination:'VERIFIED',
         manufacturer:claimValue(offer,'brand')?'VERIFIED':'NOT_CLAIMED',
         availability:offer.availability&&offer.availability!=='unknown'?'VERIFIED':'NOT_CLAIMED',
