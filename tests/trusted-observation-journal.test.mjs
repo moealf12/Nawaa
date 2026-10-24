@@ -54,7 +54,8 @@ test('v21.65 positive cross-instance signed receipt revalidates scoped predicate
   assert.equal(archived.state,'ARCHIVED');
   const verified=await second.inspect(archived.receiptRef,{expectedOffer:result.offer});
   assert.equal(verified.state,'REVALIDATED',verified.reason);
-  assert.equal(verified.eligible,true);
+  assert.equal(verified.eligible,false,'revalidated audit receipt is not a customer badge');
+  assert.equal(verified.sourcePredicatesRevalidated,true);
   assert.equal(verified.wholeOfferVerified,false);
   assert.equal(verified.badgeEligible,false);
   assert.equal(verified.predicates.gtin,'NOT_CLAIMED');
