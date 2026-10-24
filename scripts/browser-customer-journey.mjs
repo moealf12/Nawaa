@@ -484,12 +484,15 @@ try{
         '[data-trust-verified="true"],.trust-badge-verified').length};
   });
   report.renderEpochProbe=renderProbe;
-  // Missing product cards is NOT a successful lifecycle certification.
-  // Other customer-journey assertions independently assess empty results.
-  report.assertions.v2169ActualRenderEpochRevocation=
-    !renderProbe.tested || (renderProbe.before>0&&
-    renderProbe.after>renderProbe.before&&
-    renderProbe.badgeEligible==='false'&&renderProbe.verifiedBadges===0);
+  // No cards means NOT TESTED, never an implied lifecycle PASS.
+  // Merchant availability can leave an otherwise valid Chromium journey empty.
+  if(renderProbe.tested){
+    report.assertions.v2169ActualRenderEpochRevocation=
+      renderProbe.before>0&&renderProbe.after>renderProbe.before&&
+      renderProbe.badgeEligible==='false'&&renderProbe.verifiedBadges===0;
+  }else{
+    report.renderEpochProbe.certification='NOT_TESTED_NO_PRODUCT_CARDS';
+  }
   }
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(500);
