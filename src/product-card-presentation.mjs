@@ -1,3 +1,11 @@
+// Data-kind is an acquisition label, NEVER controlled offer certification.
+// Even "verified_source" is not authority for customer VERIFIED language.
+export function observedSourceDisplayLabel(offer={}){
+  if(offer?.dataKind==='live')return 'بحث حي';
+  if(offer?.dataKind==='verified_source')return 'بيانات مصدر';
+  return 'بيانات اختبار';
+}
+
 // Customer-facing product-card presentation only: no search or source transformations.
 const countForms = Object.freeze({
   offer: ["عرض", "عرضان", "عروض", "عرضًا", "عرض"],
