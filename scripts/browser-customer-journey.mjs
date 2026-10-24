@@ -45,6 +45,20 @@ let page=null;
 try{
   const base=mode==='candidate'?await startCandidate():'https://moealf12.github.io/Nawaa';
   report.requestUrlBase=mode==='candidate'?'localhost_canonical_pr':'https://moealf12.github.io/Nawaa';
+  // Fail with a precise cause instead of waiting 55s if the production page's
+  // ESM dependency graph is omitted from the explicit localhost allowlist.
+  if(mode==='candidate'){
+    const required=['/src/search-page.mjs','/src/search-first-offer-metrics.mjs',
+      '/src/product-image-ownership.mjs'];
+    const checks=await Promise.all(required.map(async asset=>{
+      const response=await fetch(base+asset,{signal:AbortSignal.timeout(5000)});
+      return {asset,status:response.status,js:(response.headers.get('content-type')||'').includes('text/javascript')};
+    }));
+    report.moduleReachability=checks;
+    report.assertions.customerModuleImportsReachable=checks.every(x=>x.status===200&&x.js);
+    if(!report.assertions.customerModuleImportsReachable)
+      throw Error('candidate_browser_module_graph_not_served');
+  }
   const binary=['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium'].find(existsSync);
   if(!binary)throw Error('chromium_not_available_on_runner');
   browser=await chromium.launch({executablePath:binary,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
