@@ -49,7 +49,7 @@ async function write(){
   assert.equal(result.state,'VERIFIED',result.reason);
   assert.equal(result.historicalClaims.barcode,'MISSING_EVIDENCE');
   assert.equal(result.badgeEligible,false);
-  const journal=createTrustedObservationJournal({store,signingKey:key});
+  const journal=createTrustedObservationJournal({store,signingKey:key,requireCurrentHead:true});
   const receipt=await journal.archive(result);
   assert.equal(receipt.state,'ARCHIVED');
   assert.equal((await journal.inspect(receipt.receiptRef)).state,'REVALIDATED');
@@ -62,7 +62,7 @@ async function write(){
 }
 async function read(){
   const saved=JSON.parse(await readFile(checkpoint,'utf8'));
-  const journal=createTrustedObservationJournal({store,signingKey:key});
+  const journal=createTrustedObservationJournal({store,signingKey:key,requireCurrentHead:true});
   const valid=await journal.inspect(saved.ref,{expectedOffer:saved.offer});
   assert.equal(valid.state,'REVALIDATED',valid.reason);
   assert.equal(valid.predicates.gtin,'NOT_CLAIMED');
@@ -78,7 +78,7 @@ async function read(){
 }
 async function revoked(){
   const saved=JSON.parse(await readFile(checkpoint,'utf8'));
-  const journal=createTrustedObservationJournal({store,signingKey:key});
+  const journal=createTrustedObservationJournal({store,signingKey:key,requireCurrentHead:true});
   const verdict=await journal.inspect(saved.ref);
   assert.equal(verdict.state,'REVOKED');
   assert.equal(verdict.badgeEligible,false);
