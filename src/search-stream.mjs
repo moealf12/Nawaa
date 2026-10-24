@@ -9,8 +9,13 @@ export function acceptedStreamGeneration(expected,incoming){
 export function selectSearchStreamResult(latestSnapshot,latestWithOffers){
   if(!latestWithOffers)return latestSnapshot||null;
   if(!latestSnapshot)return latestWithOffers;
-  if(latestSnapshot.streamGeneration&&latestWithOffers.streamGeneration&&
-     !acceptedStreamGeneration(latestSnapshot.streamGeneration,
-       latestWithOffers.streamGeneration))return latestSnapshot;
+  // Mixed legacy/new generations must not contaminate the final canonical
+  // snapshot. Legacy-only (both absent) remains backward compatible.
+  if(latestSnapshot.streamGeneration||latestWithOffers.streamGeneration){
+    if(!acceptedStreamGeneration(latestSnapshot.streamGeneration,
+      latestWithOffers.streamGeneration)||
+      !acceptedStreamGeneration(latestWithOffers.streamGeneration,
+        latestSnapshot.streamGeneration))return latestSnapshot;
+  }
   return {...latestSnapshot,offers:latestWithOffers.offers};
 }
