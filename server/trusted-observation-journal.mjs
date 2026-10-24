@@ -81,10 +81,14 @@ function coherentCapturedSourceOffer(capture){
      !safeObject(evidence.ownership))return false;
   const {record,ownership}=evidence,offer=capture.offer,sourceRecordId=capture.sourceRecord.recordId;
   const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  const unclaimed=value=>value===undefined||value===null||value===''||
+    value==='unknown';
   const checked=(field,value,requiredOwner=FIELD_OWNERSHIP[field])=>{
-    if(value===undefined)return true;
     if(!Object.hasOwn(record,field)||!equal(value,record[field]))return false;
-    if(!requiredOwner)return true;
+    // A missing/unknown GTIN or availability is NOT a sourced customer
+    // claim. Absence must match the recorded source fact, but cannot demand
+    // fabricated field evidence or inherit VERIFIED from a priced record.
+    if(unclaimed(value)||!requiredOwner)return true;
     return ownership[requiredOwner]?.recordId===sourceRecordId&&
       ownership[requiredOwner]?.strategy==='jsonld';
   };
@@ -98,17 +102,19 @@ function coherentCapturedSourceOffer(capture){
     ['gtin','gtin'],['mpn','mpn']
   ]){
     if(Object.hasOwn(offer.specs||{},key)){
-      if(!equal(offer.specs[key],record.specs?.[key])||
-         ownership[owner]?.recordId!==sourceRecordId||
-         ownership[owner]?.strategy!=='jsonld')return false;
+      if(!equal(offer.specs[key],record.specs?.[key]))return false;
+      if(!unclaimed(offer.specs[key])&&
+        (ownership[owner]?.recordId!==sourceRecordId||
+         ownership[owner]?.strategy!=='jsonld'))return false;
     }
   }
   for(const key of ['storage','capacity','ram','region','sim','color',
     'edition','condition','bundleContents']){
     if(Object.hasOwn(offer.variant||{},key)){
-      if(!equal(offer.variant[key],record.variant?.[key])||
-         ownership[key]?.recordId!==sourceRecordId||
-         ownership[key]?.strategy!=='jsonld')return false;
+      if(!equal(offer.variant[key],record.variant?.[key]))return false;
+      if(!unclaimed(offer.variant[key])&&
+        (ownership[key]?.recordId!==sourceRecordId||
+         ownership[key]?.strategy!=='jsonld'))return false;
     }
   }
   return offer.merchant===record.merchant&&
