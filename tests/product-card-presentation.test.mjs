@@ -54,3 +54,20 @@ test("spec presentation is capped to ten entries without mutating evidence", () 
   assert.equal(values.length,10);
   assert.deepEqual(specs,snapshot);
 });
+
+test('v21.68 verified_source is provenance data, not a verified-product badge',async()=>{
+  const {observedSourceDisplayLabel}=await import('../src/product-card-presentation.mjs');
+  const cases=[
+    [{dataKind:'verified_source',verified:true,independentlyAttested:true,
+      badgeEligible:true},'بيانات مصدر'],
+    [{dataKind:'live',verified:true},'بحث حي'],
+    [{dataKind:'test'},'بيانات اختبار'],
+    [{dataKind:'verified_source',issuer:'internal',eligible:true},'بيانات مصدر'],
+  ];
+  for(const [offer,expected] of cases){
+    const label=observedSourceDisplayLabel(offer);
+    assert.equal(label,expected);
+    assert.doesNotMatch(label,/موثق|معتمد|VERIFIED/i,
+      'a search dataKind or forged JSON flag must not claim source verification');
+  }
+});
