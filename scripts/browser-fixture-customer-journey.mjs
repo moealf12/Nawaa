@@ -1146,7 +1146,7 @@ try{
     const makeOffer=x=>variant==='missingObservedAt'?(({observedAt,...others})=>others)(x):x;
     const full={...payload,offers:payload.offers.map(makeOffer)};
     const changed={...full,offers:full.offers.map((o,i)=>i===0?{...o,productPrice:o.productPrice+91}:o)};
-    const chronological={...full,offers:full.offers.map(o=>({
+    const chronological=offsetSeconds===null?null:{...full,offers:full.offers.map(o=>({
       ...o,observedAt:new Date(Date.parse(o.observedAt)+offsetSeconds*1000).toISOString()
     }))};
     const tab=await context.newPage();
