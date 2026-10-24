@@ -52,8 +52,13 @@ async function write(){
   const journal=createTrustedObservationJournal({store,signingKey:key,requireCurrentHead:true});
   const receipt=await journal.archive(result);
   assert.equal(receipt.state,'ARCHIVED');
+  const second=await journal.archive(result);
+  assert.equal(second.state,'ARCHIVED');
   assert.equal((await journal.inspect(receipt.receiptRef)).state,'REVALIDATED');
-  await writeFile(checkpoint,JSON.stringify({ref:receipt.receiptRef,offer:result.offer})+'\n');
+  assert.equal((await journal.inspect(second.receiptRef)).state,'REVALIDATED');
+  await writeFile(checkpoint,JSON.stringify({ref:receipt.receiptRef,
+    alternateRef:second.receiptRef,offer:result.offer,
+    observedAt,sourceRevision:receipt.sourceRevision})+'\n');
   console.log('TRUSTED_JOURNAL_PG_WRITE '+JSON.stringify({
     testOnly:true,fixtureMerchantEvidence:true,
     sourceRecordVerifiedByOriginalSession:true,issued:true,
@@ -71,9 +76,23 @@ async function read(){
     expectedOffer:{...saved.offer,productPrice:saved.offer.productPrice+100}
   })).reason,'offer_revision_mismatch');
   assert.equal((await journal.revoke(saved.ref,'source_updated')).state,'REVOKED');
+  assert.equal((await journal.inspect(saved.alternateRef)).state,'REVALIDATED');
+  const latest=(await store.events(saved.alternateRef)).find(x=>x.kind==='capture');
+  const payload=JSON.parse(latest.payload);
+  const newer={sourceKey:payload.sourceKey,
+    observedAt:new Date(Date.parse(saved.observedAt)+1000).toISOString(),
+    revision:'c'.repeat(64),recordId:'d'.repeat(64)};
+  assert.equal(await store.advanceHead(newer),true);
+  assert.equal((await journal.inspect(saved.alternateRef)).state,'SUPERSEDED');
+  assert.equal(await store.advanceHead({
+    ...newer,observedAt:new Date(Date.parse(saved.observedAt)-1000).toISOString(),
+    revision:saved.sourceRevision,recordId:'a'.repeat(64)
+  }),false,'older out-of-order observations cannot roll back latest head');
   console.log('TRUSTED_JOURNAL_PG_READ '+JSON.stringify({
     separateNodeProcess:true,realPostgres:true,signedReceiptValidated:true,
-    alteredOfferRejected:true,revocationCommitted:true,badgeEligible:false
+    alteredOfferRejected:true,revocationCommitted:true,
+    sourceHeadAdvanced:true,olderReceiptSuperseded:true,
+    outOfOrderRollbackRejected:true,badgeEligible:false
   }));
 }
 async function revoked(){
@@ -82,13 +101,17 @@ async function revoked(){
   const verdict=await journal.inspect(saved.ref);
   assert.equal(verdict.state,'REVOKED');
   assert.equal(verdict.badgeEligible,false);
+  const superseded=await journal.inspect(saved.alternateRef);
+  assert.equal(superseded.state,'SUPERSEDED');
+  assert.equal(superseded.badgeEligible,false);
   const rows=await pool.query('SELECT kind FROM '+table+' WHERE receipt_ref=$1 ORDER BY id',[saved.ref]);
   assert.deepEqual(rows.rows.map(r=>r.kind),['capture','revoke']);
   await assert.rejects(pool.query('DELETE FROM '+table+' WHERE receipt_ref=$1',[saved.ref]),
     /append-only trusted journal/);
   console.log('TRUSTED_JOURNAL_PG_REVOKED '+JSON.stringify({
     thirdNodeProcess:true,realPostgres:true,
-    revocationSurvivesProcessRestart:true,deleteBlocked:true
+    revocationSurvivesProcessRestart:true,sourceSupersessionSurvivesRestart:true,
+    deleteBlocked:true
   }));
 }
 try{
