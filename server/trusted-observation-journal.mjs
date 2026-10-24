@@ -4,6 +4,7 @@
 import {createHash,createHmac,randomUUID,timingSafeEqual} from 'node:crypto';
 import {inspectIssuedPdpReceipt} from './trusted-pdp-observation.mjs';
 import {createTrustedJournalKeyring} from './trusted-journal-keyring.mjs';
+import {trustedSourceSubjectKey,SOURCE_SUBJECT_KEY_POLICY} from './trusted-source-subject-key.mjs';
 
 const MAX_AGE_MS=5*60_000;
 const MAX_BYTES=24_000;
@@ -138,8 +139,9 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
       !safeObject(captured.offer)||typeof captured.offerDigest!=='string'||
       captured.offerDigest!==hash(captured.offer)||
       requireCurrentHead&&(!HEX.test(captured.sourceKey||'')||
-        typeof captured.offer.sku!=='string'||
-        captured.sourceKey!==hash([captured.sourceId,captured.offer.sku,captured.offer.sourceUrl])))
+        captured.sourceKeyPolicy!==SOURCE_SUBJECT_KEY_POLICY||
+        captured.sourceKey!==trustedSourceSubjectKey(
+          captured.sourceId,captured.offer.sku,captured.offer.sourceUrl)))
       return state('CONFLICTING_EVIDENCE','invalid_capture_contract');
     // Legacy scoped receipts remain readable. New receipts carry signed
     // reconstructible selected-record facts, without a trust-scope upgrade.
@@ -232,9 +234,11 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
       sourceEvidence=boundedSourceEvidence(ev);
     }catch{return state('MISSING_EVIDENCE','unsupported_offer_or_source_payload');}
     const ref='pdp-audit:'+randomUUID();
-    const sourceKey=hash([ev.sourceId,offer.sku,offer.sourceUrl]);
+    const sourceKey=trustedSourceSubjectKey(ev.sourceId,offer.sku,offer.sourceUrl);
+    if(!sourceKey)return state('MISSING_EVIDENCE','invalid_selected_source_identity');
     const receipt={
-      policy:POLICY,sourceId:ev.sourceId,sourceKey,sourceObservationRef:ev.ref,
+      policy:POLICY,sourceId:ev.sourceId,sourceKey,
+      sourceKeyPolicy:SOURCE_SUBJECT_KEY_POLICY,sourceObservationRef:ev.ref,
       sourceRevision:ev.revision,sourceRecord:ev.sourceRecord,
       observedAt:ev.observedAt,issuedAt:new Date(at).toISOString(),
       offer,offerDigest:hash(offer),sourceEvidence,
@@ -285,7 +289,8 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
     if(!Number.isFinite(present)||!Number.isFinite(observed)||
       observed>present+60_000||present-observed>maxAgeMs)
       return state('EXPIRED','stale_source_head_observation');
-    const sourceKey=hash([ev.sourceId,offer.sku,offer.sourceUrl]);
+    const sourceKey=trustedSourceSubjectKey(ev.sourceId,offer.sku,offer.sourceUrl);
+    if(!sourceKey)return state('MISSING_EVIDENCE','invalid_selected_source_identity');
     let accepted;
     try{
       accepted=await store.advanceHead({sourceKey,revision:ev.revision,

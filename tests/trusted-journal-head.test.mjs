@@ -57,9 +57,9 @@ function page({price=2529,recordId='a'.repeat(64),stamp=CLOCK-1000}={}){
       conflictSummary:{hasConflicts:false},fieldSources:fields}
   };
 }
-async function issue(subject=page(),time=CLOCK){
+async function issue(subject=page(),time=CLOCK,catalog=historical()){
   const session=createPdpObservationSession({readSelectedPage:async()=>subject,now:()=>time});
-  const result=await session.verifySelectedRevision(historical());
+  const result=await session.verifySelectedRevision(catalog);
   assert.equal(result.state,'VERIFIED',result.reason);
   return result;
 }
@@ -361,4 +361,40 @@ test('v21.75 same document repeated later cannot refresh receipt age',async()=>{
   assert.equal((await journal.inspect(receipt.receiptRef)).state,'REVALIDATED');
   assert.equal((await build(st,'k1',undefined,CLOCK+301000)
     .inspect(receipt.receiptRef)).state,'EXPIRED');
+});
+
+test('v21.77 same merchant SKU cannot escape head conflicts through tracking aliases',async()=>{
+  const st=memory();
+  const alias=(chosen,url)=>{
+    const extraction={...chosen.extraction,selectedProductRecord:{
+      ...chosen.extraction.selectedProductRecord,
+      selectedProductUrl:url,selectedOfferUrl:url}};
+    return {...chosen,resolvedPageUrl:url,sourceUrl:url,extraction};
+  };
+  const firstUrl=URL+'?utm_source=search&gclid=old';
+  const laterUrl=URL+'?utm_source=pdp&gclid=new';
+  const old=await issue(alias(page({stamp:CLOCK-1000}),firstUrl),
+    CLOCK,{...historical(),sourceUrl:firstUrl});
+  const j=build(st),receipt=await j.archive(old);
+  assert.equal(receipt.state,'ARCHIVED',receipt.reason);
+  assert.equal((await j.inspect(receipt.receiptRef)).state,'REVALIDATED');
+  const changed=await issue(alias(page({
+    price:2399,recordId:'d'.repeat(64),stamp:CLOCK+1000
+  }),laterUrl),CLOCK+2000,{...historical(),sourceUrl:laterUrl});
+  const newer=build(st,'k1',undefined,CLOCK+2000);
+  assert.equal((await newer.recordFreshSource(changed)).state,'SUPERSEDED',
+    'different source records must conflict across tracking-only URL aliases');
+  assert.equal(st.heads.size,1,'tracking aliases cannot create independent source heads');
+  assert.equal([...st.heads.values()][0].conflicted,true);
+  assert.equal((await newer.inspect(receipt.receiptRef)).state,'CONFLICTING_EVIDENCE');
+  assert.equal((await newer.inspect(receipt.receiptRef)).badgeEligible,false);
+});
+test('v21.77 source receipt carries versioned identity authority, not just an old URL-derived hash',async()=>{
+  const st=memory(),j=build(st),receipt=await j.archive(await issue());
+  assert.equal(receipt.state,'ARCHIVED');
+  const event=st.rows.find(row=>row.ref===receipt.receiptRef);
+  const payload=JSON.parse(event.payload);
+  assert.equal(payload.sourceKeyPolicy,'selected-merchant-offer-v2');
+  assert.equal(typeof payload.sourceKey,'string');
+  assert.equal(payload.sourceKey.length,64);
 });
