@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fc from 'fast-check';
 import {createPdpObservationSession} from '../server/trusted-pdp-observation.mjs';
 import {createTrustedObservationJournal} from '../server/trusted-observation-journal.mjs';
 import {createTrustedJournalKeyring,trustedJournalKeyringFromEnv} from '../server/trusted-journal-keyring.mjs';
@@ -220,4 +221,106 @@ test('v21.72 signed scoped journal persists reconstructible selected source valu
   // A matching record digest is diagnostic; it is not independent authority.
   st.rows[0].payload=st.rows[0].payload.replace('"productPrice":2529','"productPrice":199');
   assert.equal((await build(st).inspect(archived.receiptRef)).state,'CONFLICTING_EVIDENCE');
+});
+
+
+// v21.72 tooling audit: bounded fast-check command model of the actual
+// selected-PDP journal lifecycle. The expected state is independent of the
+// journal implementation; in-memory source-head control is a UNIT fixture,
+// not a substitute for PostgreSQL transaction or distributed-race proof.
+// A failed fc.assert reports the replay seed, shrink path and commands.
+test('v21.72 tooling audit: model-based journal head, key, revocation and expiry invariants',async()=>{
+  const SEED=2172;
+  const readState=m=>{
+    // This is the expected deny-first policy, not a call to source helpers.
+    if(m.retired)return 'CONFLICTING_EVIDENCE';
+    if(m.revoked)return 'REVOKED';
+    if(m.expired)return 'EXPIRED';
+    if(m.blocked)return 'SOURCE_BLOCKED';
+    if(m.head==='conflicted')return 'CONFLICTING_EVIDENCE';
+    if(m.head==='advanced')return 'SUPERSEDED';
+    return 'REVALIDATED';
+  };
+  const command=(name,allowed,apply)=>fc.constant({
+    check:allowed,
+    async run(m,r){
+      await apply(m,r);
+      const actual=await r.reader().inspect(r.ref);
+      assert.equal(actual.state,readState(m),name+' / '+JSON.stringify(m));
+      assert.equal(actual.badgeEligible,false,name);
+      assert.equal(actual.wholeOfferVerified,false,name);
+      assert.equal(actual.eligible,false,name);
+      if(actual.state==='REVALIDATED'){
+        assert.equal(actual.sourceEvidence?.record?.sku,'668751');
+        assert.equal(actual.sourceEvidence?.record?.productPrice,2529);
+        assert.equal(actual.sourceEvidence?.ownership?.offers?.recordId,'a'.repeat(64));
+      }
+    },
+    toString(){return name;}
+  });
+  const commands=[
+    command('inspect',()=>true,async()=>{}),
+    command('idempotent original head',m=>m.head==='initial',async(m,r)=>{
+      assert.equal(await r.st.advanceHead(r.originalHead),true);
+    }),
+    command('advance controlled source head',m=>m.head==='initial',async(m,r)=>{
+      assert.equal(await r.st.advanceHead({
+        sourceKey:r.key,observedAt:new Date(CLOCK+1000).toISOString(),
+        revision:'c'.repeat(64),recordId:'d'.repeat(64)
+      }),true);
+      m.head='advanced';
+    }),
+    command('equal-timestamp incompatible source head',m=>m.head==='initial',async(m,r)=>{
+      assert.equal(await r.st.advanceHead({...r.originalHead,
+        revision:'f'.repeat(64)}),false);
+      m.head='conflicted';
+    }),
+    command('replay older source head',m=>m.head!=='initial',async(m,r)=>{
+      assert.equal(await r.st.advanceHead(r.originalHead),false);
+    }),
+    command('revoke receipt at current eligibility state',()=>true,async(m,r)=>{
+      const before=readState(m);
+      const attempted=await r.reader().revoke(r.ref,'security_revoke');
+      if(before==='REVALIDATED'){
+        assert.equal(attempted.state,'REVOKED');
+        m.revoked=true;
+      }else{
+        assert.equal(attempted.state,before,
+          'no new revoke authority when current evidence is invalid');
+      }
+    }),
+    command('retire original signing key',m=>!m.retired,async m=>{m.retired=true;}),
+    command('expire recorded observation',m=>!m.expired,async m=>{m.expired=true;}),
+    command('block current-head database reads',m=>!m.blocked,async m=>{m.blocked=true;}),
+    command('restore current-head database reads',m=>m.blocked,async m=>{m.blocked=false;}),
+    command('forged copied verifier decision',()=>true,async(m,r)=>{
+      const rejected=await r.reader().archive({...r.issued});
+      assert.equal(rejected.state,'MISSING_EVIDENCE');
+    })
+  ];
+  await fc.assert(fc.asyncProperty(
+    fc.commands(commands,{maxCommands:24}),
+    async cmds=>{
+      // Isolate every generated trace so a shrink/replay cannot carry state
+      // from an earlier case. This uses a controlled merchant-PDP fixture.
+      const st=memory(),issued=await issue();
+      const initial=build(st),archived=await initial.archive(issued);
+      assert.equal(archived.state,'ARCHIVED',archived.reason);
+      const key=[...st.heads.keys()][0];
+      const originalHead=structuredClone(st.heads.get(key));
+      const m={head:'initial',retired:false,revoked:false,
+        expired:false,blocked:false};
+      const baseRead=st.currentHead;
+      st.currentHead=async sourceKey=>{
+        if(m.blocked)throw Error('controlled simulated database outage');
+        return baseRead(sourceKey);
+      };
+      const r={st,issued,ref:archived.receiptRef,key,originalHead,
+        reader:()=>build(st,'k2',m.retired?{k2:K2}:undefined,
+          m.expired?CLOCK+301000:CLOCK)};
+      await fc.asyncModelRun(()=>({model:m,real:r}),cmds);
+      const final=await r.reader().inspect(r.ref);
+      assert.equal(final.state,readState(m));
+      assert.equal(final.badgeEligible,false);
+    }),{seed:SEED,numRuns:72,verbose:true});
 });
