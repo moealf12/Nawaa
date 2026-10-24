@@ -2,42 +2,18 @@
 // Strict disposable CI only: no production schema, credentials, or live claim.
 import assert from 'node:assert/strict';
 import {writeFile,readFile} from 'node:fs/promises';
-import pg from 'pg';
+import {createIsolatedTrustedJournalStore,CI_SIGNING_KEY} from './trusted-journal-ci-store.mjs';
 import {createPdpObservationSession} from '../server/trusted-pdp-observation.mjs';
 import {createTrustedObservationJournal} from '../server/trusted-observation-journal.mjs';
 
-if(process.env.NODE_ENV!=='test'||!process.env.NAWAA_TEST_DATABASE_URL||
-   process.env.DATABASE_URL&&process.env.NAWAA_TEST_DATABASE_URL===process.env.DATABASE_URL)
-  throw Error('trusted_journal_disposable_postgres_only');
 const stage=process.argv[2];
 if(!['write','read','revoked'].includes(stage))throw Error('journal_stage_required');
-const pool=new pg.Pool({connectionString:process.env.NAWAA_TEST_DATABASE_URL,ssl:false,max:2});
+const db=createIsolatedTrustedJournalStore();
+const {pool,store,initialize}=db;
 const table='nawaa_ci_trusted_journal';
-const key='ci-only-nawaa-v21-65-private-journal-secret-unsafe-for-production';
+const key=CI_SIGNING_KEY;
 const checkpoint='.trusted-journal-stage.json';
 const URL='https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-668751.html';
-const store={
-  append:async e=>{await pool.query('INSERT INTO '+table+
-    '(receipt_ref,kind,payload_text,signature) VALUES($1,$2,$3,$4)',
-    [e.ref,e.kind,e.payload,e.signature])},
-  events:async ref=>(await pool.query(
-    'SELECT receipt_ref AS ref,kind,payload_text AS payload,signature FROM '+
-    table+' WHERE receipt_ref=$1 ORDER BY id ASC',[ref])).rows
-};
-async function initialize(){
-  await pool.query('CREATE TABLE IF NOT EXISTS '+table+'('+
-    'id bigserial PRIMARY KEY,receipt_ref text NOT NULL,'+
-    "kind text NOT NULL CHECK(kind IN ('capture','revoke')),"+
-    'payload_text text NOT NULL,signature text NOT NULL,'+
-    'inserted_at timestamptz NOT NULL DEFAULT now())');
-  await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS nawaa_ci_journal_unique_capture ON '+
-    table+"(receipt_ref) WHERE kind='capture'");
-  await pool.query('CREATE OR REPLACE FUNCTION nawaa_ci_reject_journal_mutation() '+
-    "RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'append-only trusted journal'; END; $$");
-  await pool.query('DROP TRIGGER IF EXISTS nawaa_ci_journal_immutable ON '+table);
-  await pool.query('CREATE TRIGGER nawaa_ci_journal_immutable BEFORE UPDATE OR DELETE ON '+
-    table+' FOR EACH ROW EXECUTE FUNCTION nawaa_ci_reject_journal_mutation()');
-}
 async function write(){
   await initialize();
   const observedAt=new Date(Date.now()-800).toISOString();
@@ -120,5 +96,5 @@ try{
   else if(stage==='read')await read();
   else await revoked();
 }finally{
-  await pool.end();
+  await db.close();
 }
