@@ -14,6 +14,7 @@ import {
   offerVariantDimensions,
 } from "./search-core.mjs";
 import {selectSearchStreamResult} from "./search-stream.mjs";
+import {ownOfferImages} from "./product-image-ownership.mjs";
 import {createFirstOfferTimeline,structurallyValidOffer,assessFirstOfferOwnership} from "./search-first-offer-metrics.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
 import {arabicCount, visibleProductSpecifications, displayProductSpecification} from "./product-card-presentation.mjs";
@@ -929,8 +930,8 @@ function additionalResultsSection(label, groups) {
     }).join("")}</div></details>`;
 }
 
-function productImageMarkup(offer, group, title, fallbackClass) {
-  const images = [...new Set([offer, ...(group?.offers || [])].map(item => item?.image).filter(url => /^https?:\/\//i.test(url || "")))];
+function productImageMarkup(offer, title, fallbackClass) {
+  const images = ownOfferImages(offer);
   // Product tiles must remain informative while a lazy third-party image is pending.
   // Other layouts retain their sizing until separately verified in Chrome.
   const pendingFallback = fallbackClass === "match-card-fallback" || fallbackClass === "config-image-fallback";
@@ -960,7 +961,7 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDis
   const uniqueMerchants = new Set((group.offers || []).map(item => item.merchant).filter(Boolean)).size;
   const countries = [...new Map((group.offers || []).filter(item => item.merchantCountryCode).map(item => [item.merchantCountryCode,item.merchantCountryNameAr || item.merchantCountryCode])).entries()];
   const selected = selectedGroup?.key === group.key;
-  const image = productImageMarkup(offer, group, title, "match-card-fallback");
+  const image = productImageMarkup(offer, title, "match-card-fallback");
   const specs = specEntries(offer).filter(([label]) => !(describeProduct(offer).kind === "console" && label === "اللون")).slice(0,3);
   const confirmed = available.filter(item => item.bucket === "confirmed" && Number.isFinite(item.totalSAR)).sort((a,b)=>a.totalSAR-b.totalSAR)[0];
   const price = priced[0]?.productPrice ?? null;
@@ -988,7 +989,7 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDis
 
 function selectedProductMedia(offer, group = null) {
   const title = offer?.sourceMeta?.nameAr || offer?.title || "المنتج";
-  return productImageMarkup(offer, group, title, "config-image-fallback");
+  return productImageMarkup(offer, title, "config-image-fallback");
 }
 
 function openProductDetails(product, offer, query) {
