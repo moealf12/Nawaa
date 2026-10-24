@@ -92,12 +92,18 @@ function sameRecordProvenance(page,offer){
   if(!anchor||anchor=== 'meta:')return 'missing_priced_record_origin';
   const required=['name'];
   // Only claims present in the candidate require field-level ownership.
-  if(offer.image!=null)required.push('image');
-  if(offer.sku!=null||offer.sourceMeta?.productId!=null)required.push('sku');
-  if(offer.modelNumber!=null||offer.specs?.modelNumber!=null||offer.mpn!=null)required.push('mpn');
-  if(offer.gtin!=null)required.push('gtin');
-  if(offer.brand!=null||offer.specs?.brand!=null)required.push('brand');
-  if(offer.color!=null||offer.specs?.color!=null)required.push('color');
+  // The selected source revision, not the historical listing, determines
+  // which fields enter the re-issued product. Missing listing claims must not
+  // exempt newly displayed PDP image/brand/color from record ownership.
+  if(page.image!=null||offer.image!=null)required.push('image');
+  if(page.sku!=null||offer.sku!=null||offer.sourceMeta?.productId!=null)required.push('sku');
+  if(page.mpn!=null||page.specs?.modelNumber!=null||
+     offer.modelNumber!=null||offer.specs?.modelNumber!=null||offer.mpn!=null)required.push('mpn');
+  if(page.gtin!=null||offer.gtin!=null)required.push('gtin');
+  if(page.brand!=null||page.specs?.brand!=null||
+     offer.brand!=null||offer.specs?.brand!=null)required.push('brand');
+  if(page.color!=null||page.specs?.color!=null||
+     offer.color!=null||offer.specs?.color!=null)required.push('color');
   for(const field of required){
     if(originKey(fields[field])!==anchor||
        fields[field]?.recordId!==selected.recordId||

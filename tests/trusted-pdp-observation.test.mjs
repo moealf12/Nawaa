@@ -481,3 +481,21 @@ test('v21.64 selected Product rejects contradictory GTINs without borrowing a va
     }
   }finally{dns.lookup=oldLookup;globalThis.fetch=oldFetch;}
 });
+
+
+test('v21.72 newly emitted PDP fields require same-record ownership even when absent from historic listing',async()=>{
+  const historical=offer();
+  delete historical.image;
+  historical.specs={modelNumber:'CFI2116B01Y'};
+  for(const field of ['image','brand','color']){
+    const p=page();
+    p.extraction.fieldSources[field]={strategy:'jsonld',recordId:'f'.repeat(64)};
+    const selected=await setup(async()=>p).verifySelectedRevision(historical);
+    assert.equal(selected.eligible,false,field);
+    assert.equal(selected.reason,'cross_record_field_'+field,field);
+  }
+  const accepted=await setup().verifySelectedRevision(historical);
+  assert.equal(accepted.state,'VERIFIED',accepted.reason);
+  assert.equal(accepted.offer.image,page().image);
+  assert.equal(accepted.badgeEligible,false,'predicate-only verification cannot mint a badge');
+});
