@@ -56,3 +56,23 @@ test('property: a late empty diagnostic preserves the latest sellable offers and
     }
   ),{seed:2156,numRuns:64});
 });
+
+test('v21.68 cross-generation stale offers cannot pollute a new final SSE snapshot',()=>{
+  const current='11111111-2222-4333-8444-555555555555';
+  const old='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const final={streamGeneration:current,offers:[],nextCursor:'signed-depth1'};
+  const stale={streamGeneration:old,offers:[{title:'old product',productPrice:1}]};
+  assert.deepEqual(selectSearchStreamResult(final,stale),final);
+  const matching={...stale,streamGeneration:current};
+  assert.deepEqual(selectSearchStreamResult(final,matching).offers,matching.offers);
+});
+test('v21.68 SSE correlation rejects missing, malformed or mismatched generations and tolerates legacy',async()=>{
+  const {acceptedStreamGeneration}=await import('../src/search-stream.mjs');
+  const generation='12345678-1234-4abc-8123-123456789abc';
+  assert.equal(acceptedStreamGeneration(generation,generation),true);
+  for(const incoming of [null,undefined,'',{},'another','12345678-1234-4abc-8123-123456789abd']){
+    assert.equal(acceptedStreamGeneration(generation,incoming),false);
+  }
+  assert.equal(acceptedStreamGeneration(null,undefined),true,
+    'old API snapshots still show normal products, never trust badges');
+});
