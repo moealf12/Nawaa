@@ -411,3 +411,44 @@ test('v21.64 RED: GTIN with leading zero must retain its own product identity na
   const matching=await session.verifySelectedRevision({...offer(),gtin:'0012345678905'});
   assert.equal(matching.state,'VERIFIED');
 });
+
+test('v21.64 selected JSON-LD owns GTIN independently of foreign sibling identifier',async()=>{
+  const {resolveSelectedJsonLdOffer}=await import('../server/url-resolver.mjs');
+  const dns=(await import('node:dns/promises')).default;
+  const beforeFetch=globalThis.fetch,beforeLookup=dns.lookup;
+  const selected={'@type':'Product',url:URL,sku:'668751',
+    name:offer().title,mpn:'CFI2116B01Y',gtin13:'0012345678905',
+    brand:{'@type':'Brand',name:'Sony'},color:'White',
+    image:'https://static.jarir.com/668751.jpg',
+    itemCondition:'https://schema.org/NewCondition',
+    offers:{'@type':'Offer',url:URL,price:2529,priceCurrency:'SAR',
+      availability:'https://schema.org/InStock'}};
+  const adjacent={...selected,
+    url:'https://www.jarir.com/sa-en/accessory-644723.html',
+    sku:'644723',gtin13:'9999999999999',
+    name:'PS5 Disc Drive Accessory',offers:{...selected.offers,
+      url:'https://www.jarir.com/sa-en/accessory-644723.html',price:199}};
+  try{
+    dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+    globalThis.fetch=async()=>new Response(
+      '<script type="application/ld+json">'+JSON.stringify({
+        '@context':'https://schema.org','@graph':[selected,adjacent]
+      })+'</script>',{headers:{'content-type':'text/html'}}
+    );
+    const session=createPdpObservationSession({
+      readSelectedPage:resolveSelectedJsonLdOffer,now:()=>Date.now()});
+    const source={...offer(),gtin:'0012345678905'};
+    const certified=await session.verifySelectedRevision(source);
+    assert.equal(certified.state,'VERIFIED',certified.reason);
+    assert.equal(certified.offer.gtin,'0012345678905');
+    assert.equal(certified.decision.predicates.gtin,'VERIFIED');
+    const evidence=session.evidence(certified.observationRef);
+    assert.equal(evidence.gtin,'0012345678905');
+    assert.match(evidence.sourceRecord.recordId,/^[a-f0-9]{64}$/);
+    assert.match(evidence.sourceRecord.documentDigest,/^[a-f0-9]{64}$/);
+    assert.equal(await session.accepts(certified),true);
+    const rejected=await session.verifySelectedRevision({...offer(),
+      gtin:'9999999999999'});
+    assert.equal(rejected.state,'CONFLICTING_EVIDENCE');
+  }finally{dns.lookup=beforeLookup;globalThis.fetch=beforeFetch;}
+});
