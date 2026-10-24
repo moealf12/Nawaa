@@ -248,9 +248,14 @@ export function createPdpObservationSession({
     const revision=sha([page.resolvedPageUrl,page.observedAt,record,
       page.extraction.fieldSources,page.extraction.conflictSummary,
       page.extraction.selectedProductRecord]);
+    const sourceRecord=Object.freeze({
+      recordId:page.extraction.selectedProductRecord.recordId,
+      documentDigest:page.extraction.selectedProductRecord.documentDigest,
+      source:'jsonld_product_offer'
+    });
     const observation=Object.freeze({
       ref,revision,sourceId:SOURCE_ID,observedAt:page.observedAt,
-      selectedRecord:Object.freeze(record)
+      sourceRecord,selectedRecord:Object.freeze(record)
     });
     if(observations.size>=maxRecords)observations.delete(observations.keys().next().value);
     observations.set(ref,observation);
@@ -280,8 +285,10 @@ export function createPdpObservationSession({
     const r=observations.get(ref);
     if(!r)return null;
     return Object.freeze({ref:r.ref,revision:r.revision,sourceId:r.sourceId,
+      sourceRecord:r.sourceRecord,
       observedAt:r.observedAt,sourceUrl:r.selectedRecord.sourceUrl,
       title:r.selectedRecord.title,sku:r.selectedRecord.sku,
+      gtin:r.selectedRecord.gtin??null,
       price:r.selectedRecord.productPrice,currency:r.selectedRecord.currency});
   }
   return Object.freeze({verify,verifySelectedRevision,accepts,evidence});
