@@ -225,6 +225,16 @@ function searchPayload(q,cursor) {
     offers:[{...offer(5),image:'https://nawaa-pending.invalid/delayed-product.jpg'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
+  if(q.includes('fixture-spoofed-source-verification'))return {
+    // Hostile caller-supplied trust flags, NOT an issued PDP receipt or badge.
+    offers:[{...offer(1),badgeEligible:true,customerVerified:true,
+      wholeOfferVerified:true,sourcePredicatesRevalidated:true,
+      trustCertification:'VERIFIED',verificationStatus:'VERIFIED',
+      certificateScope:'selected_sellable_offer'}],
+    errors:[],providers:[],
+    coverage:{partial:false,deadlineExceeded:false,providersPending:0},
+    nextCursor:null
+  };
   if(q.includes('fixture-no-results')) return {
     offers:[],errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
@@ -521,6 +531,25 @@ try{
   assertCheck('partial_search_not_falsely_out_of_stock',partialText.includes('لا يعني أن المنتج غير متوفر'));
   assertCheck('partial_search_no_automatic_cursor',cursorRequests===0,{cursorRequests});
   await partial.screenshot({path:'browser-artifacts/fixture-partial-desktop.png',fullPage:true});
+  // A real Chromium run of the production module must NEVER promote
+  // self-asserted source/verifier flags into a customer-visible trust badge.
+  const spoof=await navigate('HP laptop fixture-spoofed-source-verification');
+  await spoof.locator('#results .match-result-card').first().waitFor();
+  const spoofState=await spoof.evaluate(()=>{
+    const root=document.querySelector('#results');
+    return {cards:root.querySelectorAll('.match-result-card').length,
+      badgeEligible:root.dataset.trustBadgeEligible,
+      verifiedMarkers:root.querySelectorAll(
+        '[data-trust-verified="true"],.trust-badge-verified').length,
+      displayText:root.textContent||''};
+  });
+  assertCheck('v2170_caller_flags_never_mint_customer_verified_badge',
+    spoofState.cards>0&&spoofState.badgeEligible!=='true'&&
+    spoofState.verifiedMarkers===0&&
+    !/شهادة موثقة من نواة|عرض موثق بالكامل/.test(spoofState.displayText),
+    {cards:spoofState.cards,badgeEligible:spoofState.badgeEligible,
+      verifiedMarkers:spoofState.verifiedMarkers});
+  await spoof.close();
   const clean=await navigate('fixture-no-results');
   await clean.locator('#results .no-match').waitFor();
   const cleanText=await clean.locator('#results').innerText();
