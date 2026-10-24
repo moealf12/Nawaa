@@ -47,8 +47,17 @@ function originKey(v){
 }
 function sameRecordProvenance(page,offer){
   const e=page?.extraction;
+  // A field strategy is not a unique product record identifier: two
+  // adjacent JSON-LD Product nodes can BOTH have strategy="jsonld".
+  // Certify only one unambiguous selected Product+Offer until the extractor
+  // exports immutable per-record ownership identifiers.
   if(!e||e.conflictSummary?.hasConflicts!==false||
-     (e.identity?.summary?.rejected??Infinity)>0)
+     e.reconciled!==false||
+     e.identity?.summary?.accepted!==1||
+     e.identity?.summary?.rejected!==0||
+     !Array.isArray(e.availableStrategies)||
+     e.availableStrategies.length!==1||
+     e.availableStrategies[0]!=='jsonld')
     return 'ambiguous_product_reconciliation';
   if(page.originalCurrency!=='SAR'||page.currency!=='SAR'||
     page.originalProductPrice!==page.productPrice)
