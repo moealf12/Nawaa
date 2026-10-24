@@ -4,6 +4,9 @@ import pg from 'pg';
 import {MeiliSearch} from 'meilisearch';
 import {searchJarir} from '../server/providers/jarir.mjs';
 import {createPdpObservationSession} from '../server/trusted-pdp-observation.mjs';
+import {createTrustedObservationJournal} from '../server/trusted-observation-journal.mjs';
+import {createIsolatedTrustedJournalStore,CI_SIGNING_KEY} from './trusted-journal-ci-store.mjs';
+import {writeFile} from 'node:fs/promises';
 import {canonicalOfferPayload} from '../server/canonical-offer-identity.mjs';
 import {commitCanonicalObservation,canonicalReadBoundary,initializeCanonicalIndex,publishCanonicalOutbox} from '../server/omega-canonical-index.mjs';
 await initializeCanonicalIndex(); // Enforces disposable-only environment before reset.
@@ -26,6 +29,27 @@ if(selectedPdp){
   const claim=await verifier.verifySelectedRevision(selectedPdp,{signal:AbortSignal.timeout(12000)});
   const accepted=claim.state==='VERIFIED'&&await verifier.accepts(claim);
   const evidence=accepted?verifier.evidence(claim.observationRef):null;
+  // Separately archive the ACTUAL merchant-derived scoped decision in an
+  // isolated PostgreSQL test table. The next CI step must revalidate it from
+  // a different Node process. No source HTML is invented or overwritten.
+  if(accepted){
+    const db=createIsolatedTrustedJournalStore();
+    try{
+      await db.initialize();
+      const journal=createTrustedObservationJournal({store:db.store,
+        signingKey:CI_SIGNING_KEY});
+      const receipt=await journal.archive(claim);
+      assert.equal(receipt.state,'ARCHIVED',receipt.reason);
+      await writeFile('.trusted-journal-live.json',JSON.stringify({
+        ref:receipt.receiptRef,offer:claim.offer,sourceId:evidence.sourceId,
+        documentDigest:evidence.sourceRecord.documentDigest
+      })+'\n');
+      console.log('TRUSTED_PDP_LIVE_JOURNAL '+JSON.stringify({
+        livePdpObservation:true,sourceId:evidence.sourceId,
+        archived:true,wholeOfferVerified:false,badgeEligible:false
+      }));
+    }finally{await db.close();}
+  }
   console.log('TRUSTED_PDP_LIVE_PROBE '+JSON.stringify({
     observationType:'independently_fetched_same_merchant_PDP',
     sameOriginEvidenceIsNotIndependentRetailer:true,
