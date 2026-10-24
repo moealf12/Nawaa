@@ -86,3 +86,35 @@ test('positive control: a complete JSON-LD offer keeps its own price currency SK
   assert.equal(extracted.sku,'LAP-14');
   assert.equal(extracted.image,'https://merchant.example/laptop.jpg');
 });
+
+test('positive control: matching explicit SKU can enrich a missing image without changing the owned price',()=>{
+  const extracted=reconcile([
+    {method:'json_ld',title:'Laptop A',price:2499,currency:'SAR',sku:'LAP-14'},
+    {method:'structured_meta',title:'Laptop A',price:null,currency:null,sku:'LAP-14',
+      image:'/laptop-a.jpg'},
+  ],fallbackUrl);
+  assert.equal(extracted.productPrice,2499);
+  assert.equal(extracted.originalCurrency,'SAR');
+  assert.equal(extracted.image,'https://merchant.example/laptop-a.jpg');
+  assert.equal(extracted.extraction.fieldSources.image,'structured_meta');
+  assert.equal(extracted.extraction.fieldSources.price,'json_ld');
+});
+
+test('adversarial: even matching SKU cannot override a contradictory model number',()=>{
+  const extracted=reconcile([
+    {method:'json_ld',title:'Laptop A',price:2499,currency:'SAR',sku:'SKU-14',
+      modelNumber:'MODEL-14',image:null},
+    {method:'structured_meta',title:'Unrelated Accessory',price:null,currency:null,
+      sku:'SKU-14',modelNumber:'MODEL-OTHER',image:'/foreign.jpg'},
+  ],fallbackUrl);
+  assert.equal(extracted.productPrice,2499);
+  assert.equal(extracted.modelNumber,'MODEL-14');
+  assert.equal(extracted.image,null);
+});
+
+test('adversarial: malformed or missing currency is not a sellable priced offer',()=>{
+  for(const currency of [null,'', 'SAR USD', 'SAR!', '1234']){
+    assert.throws(()=>reconcile([{method:'json_ld',title:'Laptop A',
+      price:2499,currency}],fallbackUrl),/coherent structured product evidence/);
+  }
+});
