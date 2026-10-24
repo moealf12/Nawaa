@@ -51,7 +51,40 @@ const state = {
   remoteLoading: false,
   remoteExhausted: false,
   requestId: 0,
+  renderEpoch: 0,
+  displaySnapshot: null, // correlation only; never evidence or badge authority
 };
+
+// A DOM epoch changes on every render, including filter/variant navigation.
+// It cannot mint trust. Unbound JSON and legacy streams have no source owner.
+function clearDisplayBinding(){
+  state.displaySnapshot=null;
+  if(els.results){
+    delete els.results.dataset.presentationStreamGeneration;
+    delete els.results.dataset.presentationSnapshotRevision;
+    els.results.dataset.trustBadgeEligible='false';
+  }
+}
+function stampDisplayRender(product){
+  const epoch=++state.renderEpoch;
+  const claimed=state.displaySnapshot;
+  const owned=claimed?.requestId===state.requestId &&
+    claimed?.product===product ? claimed : null;
+  els.results.dataset.presentationRenderEpoch=String(epoch);
+  els.results.dataset.presentationRequestId=String(state.requestId);
+  if(owned){
+    els.results.dataset.presentationStreamGeneration=owned.streamGeneration;
+    els.results.dataset.presentationSnapshotRevision=String(owned.snapshotRevision);
+  }else{
+    delete els.results.dataset.presentationStreamGeneration;
+    delete els.results.dataset.presentationSnapshotRevision;
+  }
+  els.results.dataset.trustBadgeEligible='false';
+  // Display ownership is not a source-revision-backed trust decision.
+  return Object.freeze({renderEpoch:epoch,requestId:state.requestId,
+    streamGeneration:owned?.streamGeneration??null,
+    snapshotRevision:owned?.snapshotRevision??null,badgeEligible:false});
+}
 
 
 // v21.57 opt-in, browser-test-readable observability. Never changes product
@@ -1272,6 +1305,7 @@ function renderProduct(product, query) {
       لا نخلط موديلًا أو سعة أو لونًا أو حالة مختلفة في المقارنة نفسها. والمواصفات الموحّدة تحتفظ بمصدر كل قيمة وتكشف التعارضات بين المصادر.
     </div>
   `;
+  stampDisplayRender(product);
   observeFirstRenderedCard(displayedSections);
 
   els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
@@ -1399,6 +1433,7 @@ async function loadMoreRemote(query) {
   if (!apiBase) return;
   const requestId = state.requestId;
   state.remoteLoading = true;
+  clearDisplayBinding(); // A depth-expanded JSON list has no SSE snapshot owner.
   renderProduct(state.product, query);
   els.status.textContent = "نوسّع البحث إلى مصادر ونتائج إضافية…";
 
@@ -1454,6 +1489,7 @@ async function runSearch(rawQuery) {
   state.eventSource?.close?.();
   state.eventSource = null;
   const requestId = ++state.requestId;
+  clearDisplayBinding(); // Superseded search may no longer own visible DOM.
   beginFirstOfferDiagnostic(requestId,query);
   if (state.query !== query) {
     state.availability = "all"; state.merchant = "all";
@@ -1546,6 +1582,8 @@ async function runSearch(rawQuery) {
               // A modern but stale/forged snapshot envelope is wholly rejected.
               if((displayContextRequired||payload.displayTrustContext!=null)&&!displayContext)return;
               if(displayContext)acceptedDisplayRevision=displayContext.snapshotRevision;
+              // Even a terminal empty snapshot revokes older DOM correlation.
+              clearDisplayBinding();
               // Always retain the newest snapshot, including the final empty/non-empty
               // canonical result. Partial snapshots are for rendering speed only; the
               // final snapshot owns cursors, provider diagnostics and completion state.
@@ -1559,6 +1597,11 @@ async function runSearch(rawQuery) {
                   nameAr:query,nameEn:query,aliases:[],identifiers:[],offers:payload.offers,
                 };
                 state.product=liveProduct;
+                if(displayContext)state.displaySnapshot={
+                  requestId,product:liveProduct,
+                  streamGeneration:displayContext.streamGeneration,
+                  snapshotRevision:displayContext.snapshotRevision
+                };
                 renderProduct(liveProduct,query);
                 const countries=new Set(payload.offers.map(o=>o.merchantCountryCode).filter(Boolean)).size;
                 els.status.textContent=`نتائج فورية: ${arabicCount(payload.offers.length, "offer")} · ${arabicCount(countries, "country")}` + (payload.cache?.stale ? " · جاري التحديث…" : "");

@@ -454,13 +454,21 @@ try{
       forged:acceptDisplayTrustContext(id,{...envelope,
         displayTrustContext:{...envelope.displayTrustContext,badgeEligible:true}})===null,
       visibleVerifiedElements:document.querySelectorAll(
-        '[data-trust-verified="true"],.trust-badge-verified').length
+        '[data-trust-verified="true"],.trust-badge-verified').length,
+      domBadgeEligible:document.querySelector('#results')?.dataset.trustBadgeEligible,
+      currentEpoch:document.querySelector('#results')?.dataset.presentationRenderEpoch,
+      currentGeneration:document.querySelector('#results')?.dataset.presentationStreamGeneration,
+      currentSnapshotRevision:document.querySelector('#results')?.dataset.presentationSnapshotRevision
     };
   });
   report.trustBrowser=trustBrowser;
   report.assertions.v2169DisplayTrustFailClosed=
     trustBrowser.normal&&trustBrowser.replay&&trustBrowser.forged&&
-    trustBrowser.visibleVerifiedElements===0;
+    trustBrowser.visibleVerifiedElements===0&&
+    trustBrowser.domBadgeEligible!=='true'&&
+    (!trustBrowser.currentGeneration||
+      (Number.isSafeInteger(Number(trustBrowser.currentSnapshotRevision))&&
+      Number(trustBrowser.currentSnapshotRevision)>0));
   }
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(500);
