@@ -248,6 +248,8 @@ jobs:
         run: node scripts/certify-omega-scale.mjs
       - name: Independently acquired Jarir observation versus simulated predecessor
         run: node scripts/certify-omega-live-acceptance.mjs
+      - name: Revalidate real merchant PDP signed source receipt in a fresh Node process
+        run: node scripts/certify-omega-trusted-live-replay.mjs
       - name: Seventeen live customer SSE queries including all ten PS5 intents with canonical guard
         run: node scripts/measure-representative-first-offer.mjs
 
