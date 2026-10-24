@@ -9,6 +9,20 @@ const SOURCE_ID='jarir-sa';
 const HOST='jarir.com';
 const MAX_CAPTURE_AGE_MS=5*60*1000;
 const MAX_RECORDS=32;
+// Authority exists only for opaque result objects issued by this module.
+// Request JSON and lookalike session adapters cannot mint archive receipts.
+const issuedPdpReceipts=new WeakMap();
+export async function inspectIssuedPdpReceipt(receipt){
+  if(!receipt||typeof receipt!=='object')return null;
+  const value=issuedPdpReceipts.get(receipt);
+  if(!value)return null;
+  try{
+    if(!await value.accepts())return null;
+  }catch{return null;}
+  const evidence=value.evidence();
+  if(!evidence)return null;
+  return {result:receipt,evidence};
+}
 const sha=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 function target(value){
@@ -267,12 +281,17 @@ export function createPdpObservationSession({
     }
     // Source-owned predicate attestation != verification of every historic
     // catalog attribute or authorization to show a customer trust badge.
-    return Object.freeze({state:'VERIFIED',eligible:true,decision,
+    const issued=Object.freeze({state:'VERIFIED',eligible:true,decision,
       certificateScope:'selected_pdp_revision_predicates',
       historicalClaims:bridge?.historicalClaims??Object.freeze({}),
       wholeOfferVerified:false,badgeEligible:false,
       originalListingSuperseded:mode==='selected-revision',
       observationRef:ref,offer:updatedOffer});
+    issuedPdpReceipts.set(issued,{
+      accepts:()=>verifier.accepts(decision,updatedOffer,ref),
+      evidence:()=>observations.get(ref)
+    });
+    return issued;
   }
   const verify=(offer,options)=>runVerification(offer,options,'strict');
   const verifySelectedRevision=(offer,options)=>
