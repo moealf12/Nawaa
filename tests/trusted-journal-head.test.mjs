@@ -16,13 +16,12 @@ function memory(){
   const bind=b=>{
     const previous=heads.get(b.sourceKey);
     if(previous){
-      if(Date.parse(b.observedAt)<Date.parse(previous.observedAt))return false;
-      if(Date.parse(b.observedAt)===Date.parse(previous.observedAt)){
-        if(previous.revision===b.revision&&previous.recordId===b.recordId&&!previous.conflicted)
-          return true;
-        heads.set(b.sourceKey,{...previous,conflicted:true});
-        return false;
-      }
+      if(previous.conflicted)return false;
+      if(previous.recordId===b.recordId)
+        return previous.revision===b.revision&&
+          Date.parse(previous.observedAt)===Date.parse(b.observedAt);
+      heads.set(b.sourceKey,{...previous,conflicted:true});
+      return false;
     }
     heads.set(b.sourceKey,{...b,conflicted:false});return true;
   };
@@ -76,12 +75,12 @@ test('v21.66 strict source head rejects signed replay after later source revisio
   const key=[...st.heads.keys()][0],initial=st.heads.get(key);
   assert.equal(await st.advanceHead({sourceKey:key,
     observedAt:new Date(CLOCK+1000).toISOString(),
-    revision:'c'.repeat(64),recordId:'d'.repeat(64)}),true);
+    revision:'c'.repeat(64),recordId:'d'.repeat(64)}),false);
   const invalid=await build(st,'k2',undefined,CLOCK+2000).inspect(archived.receiptRef);
-  assert.equal(invalid.state,'SUPERSEDED');
+  assert.equal(invalid.state,'CONFLICTING_EVIDENCE');
   assert.equal(invalid.eligible,false);
   assert.equal(await st.advanceHead(initial),false,'late old source cannot restore old head');
-  assert.equal((await build(st).inspect(archived.receiptRef)).state,'SUPERSEDED');
+  assert.equal((await build(st).inspect(archived.receiptRef)).state,'CONFLICTING_EVIDENCE');
 });
 test('v21.66 equal-clock conflicting source observations quarantine every prior receipt',async()=>{
   const st=memory(),journal=build(st),issued=await issue();
@@ -163,18 +162,16 @@ test('v21.67 controlled selected PDP refresh supersedes archived predecessor wit
     recordId:'d'.repeat(64)}),CLOCK+5000);
   const second=build(st,'k1',undefined,CLOCK+5000);
   const advance=await second.recordFreshSource(refreshed);
-  assert.equal(advance.state,'RECORDED',advance.reason);
+  assert.equal(advance.state,'SUPERSEDED',advance.reason);
   assert.equal(advance.badgeEligible,false);
-  assert.equal(st.rows.length,retained,'source update must not mint a receipt');
-  assert.equal((await second.inspect(archived.receiptRef)).state,'SUPERSEDED');
+  assert.equal(st.rows.length,retained,'ambiguous refresh must not mint a receipt');
+  assert.equal((await second.inspect(archived.receiptRef)).state,'CONFLICTING_EVIDENCE');
   assert.equal((await second.inspect(archived.receiptRef)).eligible,false);
   const other=await second.archive(refreshed);
-  assert.equal(other.state,'ARCHIVED');
-  assert.equal((await second.inspect(other.receiptRef)).state,'REVALIDATED');
-  assert.equal((await second.inspect(other.receiptRef)).badgeEligible,false);
+  assert.equal(other.state,'SUPERSEDED','incomparable source cannot issue receipts');
   const older=await second.recordFreshSource(initial);
-  assert.equal(older.state,'SUPERSEDED','replay of old genuine receipt cannot roll back source head');
-  assert.equal((await second.inspect(other.receiptRef)).state,'REVALIDATED');
+  assert.equal(older.state,'SUPERSEDED','old genuine receipt cannot clear conflict');
+  assert.equal((await second.inspect(archived.receiptRef)).state,'CONFLICTING_EVIDENCE');
 });
 test('v21.67 arbitrary listings, copied receipts and fake new-source decisions cannot advance source head',async()=>{
   const st=memory(),j=build(st),original=await issue(),archived=await j.archive(original);
@@ -267,8 +264,8 @@ test('v21.72 tooling audit: model-based journal head, key, revocation and expiry
       assert.equal(await r.st.advanceHead({
         sourceKey:r.key,observedAt:new Date(CLOCK+1000).toISOString(),
         revision:'c'.repeat(64),recordId:'d'.repeat(64)
-      }),true);
-      m.head='advanced';
+      }),false);
+      m.head='conflicted';
     }),
     command('equal-timestamp incompatible source head',m=>m.head==='initial',async(m,r)=>{
       assert.equal(await r.st.advanceHead({...r.originalHead,
@@ -323,4 +320,40 @@ test('v21.72 tooling audit: model-based journal head, key, revocation and expiry
       assert.equal(final.state,readState(m));
       assert.equal(final.badgeEligible,false);
     }),{seed:SEED,numRuns:72,verbose:true});
+});
+
+test('v21.75 acquisition timestamp cannot silently select a changed merchant document',async()=>{
+  const st=memory(),first=await issue(),journal=build(st);
+  const receipt=await journal.archive(first);
+  assert.equal(receipt.state,'ARCHIVED');
+  const key=[...st.heads.keys()][0],head=structuredClone(st.heads.get(key));
+  const candidate={sourceKey:key,revision:'c'.repeat(64),recordId:'d'.repeat(64)};
+  // Contradictory content remains incomparable whether observed before or
+  // after the stored observation. Neither outcome grants newer truth.
+  for(const offset of [-5000,5000]){
+    const isolated=memory();
+    assert.equal(await isolated.advanceHead(head),true);
+    assert.equal(await isolated.advanceHead({...candidate,
+      observedAt:new Date(CLOCK+offset).toISOString()}),false);
+    const current=isolated.heads.get(key);
+    assert.equal(current.conflicted,true);
+    assert.equal(current.revision,head.revision);
+    assert.equal(await isolated.advanceHead({...candidate,
+      observedAt:new Date(CLOCK+offset+10000).toISOString()}),false);
+  }
+  assert.equal((await journal.inspect(receipt.receiptRef)).state,'REVALIDATED',
+    'independent harnesses must not mutate existing subject');
+});
+
+test('v21.75 same document repeated later cannot refresh receipt age',async()=>{
+  const st=memory(),initial=await issue(),journal=build(st);
+  const receipt=await journal.archive(initial);
+  assert.equal(receipt.state,'ARCHIVED');
+  const key=[...st.heads.keys()][0],head=structuredClone(st.heads.get(key));
+  assert.equal(await st.advanceHead({...head,
+    observedAt:new Date(CLOCK+10_000).toISOString()}),false);
+  assert.deepEqual(st.heads.get(key),head);
+  assert.equal((await journal.inspect(receipt.receiptRef)).state,'REVALIDATED');
+  assert.equal((await build(st,'k1',undefined,CLOCK+301000)
+    .inspect(receipt.receiptRef)).state,'EXPIRED');
 });

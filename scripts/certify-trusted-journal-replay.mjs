@@ -144,9 +144,13 @@ async function read(){
   const updated=await session.verifySelectedRevision(original);
   assert.equal(updated.state,'VERIFIED',updated.reason);
   const incoming=await journal.recordFreshSource(updated);
-  assert.equal(incoming.state,'RECORDED',incoming.reason);
+  // Wall-clock observation order is not a merchant-issued revision sequence.
+  // A new source document, even with a later timestamp, must quarantine
+  // dependent source-predicate receipts pending external reconciliation.
+  assert.equal(incoming.state,'SUPERSEDED',incoming.reason);
   assert.equal(incoming.eligible,false);
-  assert.equal((await journal.inspect(saved.alternateRef)).state,'SUPERSEDED');
+  assert.equal((await store.currentHead(payload.sourceKey)).conflicted,true);
+  assert.equal((await journal.inspect(saved.alternateRef)).state,'CONFLICTING_EVIDENCE');
   assert.equal(await store.advanceHead({
     sourceKey:payload.sourceKey,
     observedAt:new Date(Date.parse(saved.observedAt)-1000).toISOString(),
@@ -157,7 +161,7 @@ async function read(){
     concurrentHeadQuarantine:true,independentSourceIsolation:true,
     alteredOfferRejected:true,revocationCommitted:true,
     controlledSelectedPdpRefresh:true,fixtureMerchantEvidence:true,
-    sourceHeadAdvanced:true,olderReceiptSuperseded:true,
+    incompatibleContentQuarantined:true,oldReceiptIneligible:true,
     outOfOrderRollbackRejected:true,badgeEligible:false
   }));
 }
@@ -167,9 +171,9 @@ async function revoked(){
   const verdict=await journal.inspect(saved.ref);
   assert.equal(verdict.state,'REVOKED');
   assert.equal(verdict.badgeEligible,false);
-  const superseded=await journal.inspect(saved.alternateRef);
-  assert.equal(superseded.state,'SUPERSEDED');
-  assert.equal(superseded.badgeEligible,false);
+  const quarantined=await journal.inspect(saved.alternateRef);
+  assert.equal(quarantined.state,'CONFLICTING_EVIDENCE');
+  assert.equal(quarantined.badgeEligible,false);
   const rows=await pool.query('SELECT kind FROM '+table+' WHERE receipt_ref=$1 ORDER BY id',[saved.ref]);
   assert.deepEqual(rows.rows.map(r=>r.kind),['capture','revoke']);
   await assert.rejects(pool.query('DELETE FROM '+table+' WHERE receipt_ref=$1',[saved.ref]),

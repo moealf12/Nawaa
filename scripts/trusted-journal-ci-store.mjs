@@ -23,23 +23,25 @@ export function createIsolatedTrustedJournalStore(){
       H+' WHERE source_key=$1 FOR UPDATE',[b.sourceKey])).rows;
     const old=rows[0],next=Date.parse(b.observedAt);
     if(old){
+      if(old.is_conflicted)return false;
       const previous=new Date(old.observed_at).getTime();
-      if(next<previous)return false;
-      if(next===previous){
-        if(!old.is_conflicted&&old.revision===b.revision&&old.record_id===b.recordId)
-          return true;
-        // Even an equal-timestamp contradictory source must invalidate all
-        // preceding receipts rather than silently preserve the old head.
-        await tx.query('UPDATE '+H+' SET is_conflicted=true WHERE source_key=$1',
-          [b.sourceKey]);
-        await tx.query('INSERT INTO '+HISTORY+
-          '(source_key,observed_at,revision,record_id,is_conflicted) VALUES($1,$2,$3,$4,true)',
-          [b.sourceKey,b.observedAt,b.revision,b.recordId]);
-        return false;
+      // observedAt measures acquisition, NOT the merchant's revision order.
+      // A replay of the *same document* cannot renew an older source head or
+      // extend receipt TTL merely by attaching a newer wall-clock timestamp.
+      if(old.record_id===b.recordId){
+        return old.revision===b.revision&&previous===next;
       }
-      await tx.query('UPDATE '+H+
-        ' SET observed_at=$2,revision=$3,record_id=$4,is_conflicted=false WHERE source_key=$1',
+      // Different source document for one sellable subject, at ANY observed
+      // timestamp, is incomparable without a merchant-issued revision order.
+      // Do not nominate either observation as the latest. Preserve the old
+      // row as a tombstoned historical anchor and append the contradictory
+      // observation, inside the existing per-subject PostgreSQL transaction.
+      await tx.query('UPDATE '+H+' SET is_conflicted=true WHERE source_key=$1',
+        [b.sourceKey]);
+      await tx.query('INSERT INTO '+HISTORY+
+        '(source_key,observed_at,revision,record_id,is_conflicted) VALUES($1,$2,$3,$4,true)',
         [b.sourceKey,b.observedAt,b.revision,b.recordId]);
+      return false;
     }else{
       await tx.query('INSERT INTO '+H+
         '(source_key,observed_at,revision,record_id) VALUES($1,$2,$3,$4)',
