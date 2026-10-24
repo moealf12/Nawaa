@@ -130,3 +130,43 @@ export function firstOwnershipEligibleOffer(offers,evidenceForOffer=()=>null){
   }
   return null;
 }
+
+
+// Per-search, monotonic diagnostic clock. DOM commitment is not a paint event;
+// a browser observation may report visibility without claiming compositor proof.
+export function createFirstOfferTimeline(requestId,clock=()=>performance.now()){
+  const startedAt=clock();
+  const milestones={T0:startedAt};
+  let terminal=null;
+  const validNames=new Set(['T1','T2','T3','T4','T5','T6','T7','T8']);
+  return {
+    mark(name,{requestId:incoming=requestId,ownership=null,evidence=null}={}){
+      if(terminal||incoming!==requestId||!validNames.has(name)||milestones[name]!=null)
+        return false;
+      if(name==='T5'&&ownership?.eligible!==true)return false;
+      if((name==='T6'||name==='T7'||name==='T8')&&milestones.T5==null)return false;
+      if(name==='T8'&&evidence?.independentlyObserved!==true)return false;
+      const now=clock();
+      if(!Number.isFinite(now)||now<startedAt||
+         now<Math.max(...Object.values(milestones)))return false;
+      milestones[name]=now;
+      return true;
+    },
+    finish(status){
+      if(terminal)return false;
+      if(!['complete','cancelled','failed','empty','partial','timed_out'].includes(status))
+        return false;
+      terminal=status;
+      return true;
+    },
+    snapshot(){
+      return {requestId,status:terminal||'pending',
+        milestones:{...milestones},
+        elapsedMs:Object.fromEntries(Object.entries(milestones)
+          .map(([name,value])=>[name,value-startedAt])),
+        firstVisibleCertified:milestones.T8!=null,
+        limitations:['DOM_commit_is_not_paint',
+          'independent_browser_observation_requires_external_evidence']};
+    }
+  };
+}
