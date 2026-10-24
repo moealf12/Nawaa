@@ -101,8 +101,16 @@ function recordPriceHistory(offers = []) {
       const basis = Number.isFinite(offer.totalSAR) ? "comparable_total" : "advertised_price";
 
       if (latest && latest.value === value && latest.priceBasis === basis) {
-        latest.lastSeenAt = observedAt;
-        latest.sourceUrl = offer.sourceUrl || latest.sourceUrl || null;
+        // A delayed merchant observation must not make an already seen offer
+        // appear older or replace its newer attributable destination.
+        // Missing observedAt retains the existing receipt-time fallback.
+        const previousSeenMs = Date.parse(latest.lastSeenAt || latest.observedAt);
+        const incomingMs = Date.parse(observedAt);
+        if (Number.isFinite(incomingMs) &&
+            (!Number.isFinite(previousSeenMs) || incomingMs >= previousSeenMs)) {
+          latest.lastSeenAt = observedAt;
+          latest.sourceUrl = offer.sourceUrl || latest.sourceUrl || null;
+        }
         continue;
       }
 
