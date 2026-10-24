@@ -346,6 +346,78 @@ try{
     await tab.goto(base+'/search.html?q='+encodeURIComponent(q),{waitUntil:'domcontentloaded'});
     return tab;
   }
+  // v21.57: exercise the unpatched production search module, not a simulated
+  // standalone metrics calculation. A captured fixture screenshot is independent
+  // browser rendering evidence, NOT real-merchant provenance or compositor proof.
+  const firstCardQuery='HP laptop fixture-performance-6-single';
+  const firstCardPage=await context.newPage();
+  firstCardPage.setDefaultTimeout(12000);
+  await firstCardPage.addInitScript(()=>{window.NAWAA_DIAGNOSTICS=true;});
+  try{
+    await firstCardPage.goto(base+'/search.html?q='+encodeURIComponent(firstCardQuery),
+      {waitUntil:'domcontentloaded',timeout:20000});
+    await firstCardPage.waitForFunction(()=>Boolean(
+      window.__nawaaFirstOfferDiagnostics?.firstCard?.secondFrameMs),null,{timeout:14000});
+    const observed=await firstCardPage.evaluate(()=>window.__nawaaFirstOfferDiagnostics);
+    const sourceRecord=searchPayload(firstCardQuery,null).offers.find(
+      o=>o.sourceUrl===observed.firstCard.sourceUrl);
+    assertCheck('v2157_first_card_real_dom_matches_selected_fixture_offer',
+      Boolean(sourceRecord)&&observed.firstCard.domMatchesSelectedOffer&&
+      observed.firstCard.structurallyValid&&
+      observed.firstCard.productPrice===sourceRecord.productPrice&&
+      observed.firstCard.merchant===sourceRecord.merchant&&
+      observed.firstCard.modelNumber===sourceRecord.specs.modelNumber&&
+      observed.firstCard.currency===sourceRecord.currency,observed.firstCard);
+    assertCheck('v2157_timeline_request_scoping_and_monotonic_observability',
+      observed.requestId>0&&observed.milestones.T0<=observed.milestones.T1&&
+      observed.milestones.T1<=observed.milestones.T3&&
+      observed.milestones.T3<=observed.milestones.T4&&
+      observed.firstCard.domCommitMs>=observed.elapsedMs.T4&&
+      observed.firstCard.frameMs>=observed.firstCard.domCommitMs&&
+      observed.firstCard.secondFrameMs>=observed.firstCard.frameMs,observed);
+    assertCheck('v2157_fixture_does_not_falsely_certify_merchant_or_compositor',
+      observed.firstCard.ownership.state==='CONSISTENT_BUT_UNVERIFIED'&&
+      observed.firstCard.ownership.eligible===false&&
+      observed.milestones.T5===undefined&&observed.milestones.T8===undefined&&
+      observed.productionPaintCertified===false&&
+      observed.firstCard.screenshotPaintEvidence===false,observed);
+    const firstCardLocator=firstCardPage.locator('#results .match-result-card').first();
+    await firstCardLocator.scrollIntoViewIfNeeded();
+    const visible=await firstCardLocator.evaluate(node=>{
+      const r=node.getBoundingClientRect();
+      const p=document.elementFromPoint(
+        Math.max(0,Math.min(innerWidth-1,r.left+r.width/2)),
+        Math.max(0,Math.min(innerHeight-1,r.top+r.height/2)));
+      return {w:r.width,h:r.height,inViewport:r.top<innerHeight&&r.bottom>0,
+        hit:Boolean(p&&node.contains(p)),text:node.querySelector('strong')?.textContent};
+    });
+    const cdp=await context.newCDPSession(firstCardPage);
+    let png;
+    try{
+      const capture=await cdp.send('Page.captureScreenshot',
+        {format:'png',fromSurface:true,captureBeyondViewport:false});
+      png=Buffer.from(capture.data,'base64');
+    }finally{await cdp.detach();}
+    const screenshotFile='browser-artifacts/fixture-first-card-v2157.png';
+    writeFileSync(screenshotFile,png);
+    summary.screenshotPaths.push(screenshotFile);
+    const captureOk=png.length>2000&&png.subarray(1,4).toString()==='PNG';
+    assertCheck('v2157_independently_captured_first_card_fixture_frame',
+      visible.w>0&&visible.h>0&&visible.inViewport&&visible.hit&&
+      captureOk&&visible.text===observed.firstCard.domTitle,
+      {visible,pngBytes:png.length});
+    const report={scope:'intercepted_sse_real_browser_unmodified_customer_module',
+      query:firstCardQuery,requestId:observed.requestId,
+      firstCard:observed.firstCard,timeline:observed.elapsedMs,
+      independentBrowserScreenshot:captureOk,
+      merchantSourceOwnershipCertified:false,
+      compositorPaintCertified:false,productionP95Certified:false,
+      screenshotFile};
+    writeFileSync('browser-artifacts/fixture-first-card-v2157.json',
+      JSON.stringify(report,null,2));
+    console.log('NAWAA_V2157_FIRST_CARD '+JSON.stringify(report));
+  }finally{await firstCardPage.close();}
+
   page=await navigate('HP');
   await page.locator('#results .match-result-card').first().waitFor({timeout:15000});
   const count=()=>page.locator('#results .match-result-card').count();
