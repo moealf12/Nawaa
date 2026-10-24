@@ -48,3 +48,48 @@ test('Arabic, broad and accessory offers respect exact flag, not title guesses',
   assert.equal(result.firstValid.title,'ايفون 17 كفر حماية');
   assert.equal(result.firstExact.merchant,'eXtra');
 });
+
+import fc from 'fast-check';
+import {assessFirstOfferOwnership,firstOwnershipEligibleOffer} from '../src/search-first-offer-metrics.mjs';
+const attested={...base,sku:'IPH17-256',independentlyAttested:true};
+const candidate={...base,sku:'IPH17-256'};
+test('v21.57: structural validity alone never certifies sellable-item ownership',()=>{
+  const result=assessFirstOfferOwnership(candidate);
+  assert.equal(result.eligible,false);
+  assert.equal(result.state,'CONSISTENT_BUT_UNVERIFIED');
+  assert.equal(firstOwnershipEligibleOffer([candidate]),null);
+});
+test('v21.57: independent same-offer attestation can certify coherent identity',()=>{
+  const result=assessFirstOfferOwnership(candidate,attested);
+  assert.equal(result.state,'VERIFIED');
+  assert.equal(result.eligible,true);
+  assert.equal(firstOwnershipEligibleOffer([candidate],()=>attested).offer,candidate);
+});
+test('v21.57: conflicting image, SKU, URL, currency or merchant never certifies',()=>{
+  for(const e of [
+    {...attested,sku:'IPH17PRO-512'},
+    {...attested,sourceUrl:'https://www.jarir.com/sa-en/other-product.html'},
+    {...attested,currency:'USD'},
+    {...attested,merchant:'eXtra'},
+    {...attested,image:'https://merchant.example/foreign.jpg'},
+  ]){
+    const offer=e.image?{...candidate,image:'https://merchant.example/phone.jpg'}:candidate;
+    const evidence=e.image?{...e,image:'https://merchant.example/foreign.jpg'}:e;
+    const result=assessFirstOfferOwnership(offer,evidence);
+    assert.equal(result.eligible,false);
+    assert.equal(result.state,'CONFLICTING_EVIDENCE');
+  }
+});
+test('v21.57: bounded property checks reject independent price, currency and SKU mutations',()=>{
+  fc.assert(fc.property(fc.integer({min:1,max:999999}),fc.constantFrom('USD','AED','EUR'),
+    fc.string({minLength:1,maxLength:16}).filter(s=>s!=='IPH17-256'),
+    (price,currency,sku)=>{
+      const baseEvidence={...attested,productPrice:price,currency,sku};
+      const result=assessFirstOfferOwnership(candidate,baseEvidence);
+      assert.equal(result.eligible,false);
+      assert.equal(result.state,'CONFLICTING_EVIDENCE');
+    }),{seed:2157,numRuns:64});
+});
+test('v21.57: source blocked cannot become certified even with coherent attestation',()=>{
+  assert.equal(assessFirstOfferOwnership(candidate,{...attested,sourceBlocked:true}).state,'SOURCE_BLOCKED');
+});
