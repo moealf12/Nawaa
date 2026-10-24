@@ -358,7 +358,9 @@ try{
   // v21.57: exercise the unpatched production search module, not a simulated
   // standalone metrics calculation. A captured fixture screenshot is independent
   // browser rendering evidence, NOT real-merchant provenance or compositor proof.
-  const firstCardQuery='HP laptop fixture-performance-6-single';
+  // Progressive SSE replaces the first DOM card before paint; our observer
+  // must follow the surviving connected card rather than an orphaned element.
+  const firstCardQuery='HP laptop fixture-performance-6-progress';
   const firstCardPage=await context.newPage();
   firstCardPage.setDefaultTimeout(12000);
   await firstCardPage.addInitScript(()=>{window.NAWAA_DIAGNOSTICS=true;});
@@ -383,6 +385,7 @@ try{
       observed.requestId>0&&observed.milestones.T0<=observed.milestones.T1&&
       observed.milestones.T1<=observed.milestones.T3&&
       observed.milestones.T3<=observed.milestones.T4&&
+      observed.firstCard.firstDomAttemptMs<=observed.firstCard.domCommitMs&&
       observed.firstCard.domCommitMs>=observed.elapsedMs.T4&&
       observed.firstCard.frameMs>=observed.firstCard.domCommitMs&&
       observed.firstCard.secondFrameMs>=observed.firstCard.frameMs,observed);
