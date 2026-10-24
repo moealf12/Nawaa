@@ -167,6 +167,12 @@ export function createTrustedOfferVerifier({resolveObservation,now=()=>Date.now(
       expiresAt:new Date(time+maxAgeMs).toISOString(),
       predicates:Object.freeze({
         identity:'VERIFIED',
+        // A generic hard-identity success never means all identifier namespaces
+        // passed. Unclaimed SKU/MPN/GTIN must not inherit identity VERIFIED.
+        sku:id(identityValue(offer,'sku'))?'VERIFIED':'NOT_CLAIMED',
+        mpn:id(identityValue(offer,'mpn'))?'VERIFIED':'NOT_CLAIMED',
+        gtin:id(identityValue(offer,'gtin'))?'VERIFIED':'NOT_CLAIMED',
+        modelNumber:id(identityValue(offer,'modelNumber'))?'VERIFIED':'NOT_CLAIMED',
         variant:VARIANT_KEYS.some(k=>claimValue(offer,k)!==null)?'VERIFIED':'NOT_CLAIMED',
         title:'VERIFIED',price:'VERIFIED',
         currency:'VERIFIED',merchant:'VERIFIED',destination:'VERIFIED',
