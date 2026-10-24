@@ -7,6 +7,34 @@ import {createHash,randomUUID} from 'node:crypto';
 const GENERATION=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const MAX_OFFERS=500;
 const MAX_BYTES=64*1024;
+// A source verification is NOT a blanket attestation of arbitrary enrichment.
+// No aliases, ratings, shipping promises or sourceMeta display names are
+// admitted unless explicitly covered by a future predicate-specific verifier.
+const VERIFIED_TOP=new Set(['title','productPrice','currency','merchant','providerMarket',
+  'sku','mpn','gtin','modelNumber','brand','manufacturer','availability','condition',
+  'storage','capacity','ram','region','sim','color','edition','bundleContents',
+  'sourceUrl','image','observedAt','variant','specs','sourceMeta']);
+const VERIFIED_NESTED={
+  variant:new Set(['storage','capacity','ram','region','sim','color','edition',
+    'condition','bundleContents']),
+  specs:new Set(['brand','modelNumber','color','storage','capacity','ram',
+    'region','sim','condition','gtin','mpn']),
+  sourceMeta:new Set(['productId'])
+};
+function admissionFields(offer){
+  if(!offer||typeof offer!=='object'||Array.isArray(offer))return false;
+  try{
+    for(const key of Object.keys(offer)){
+      if(!VERIFIED_TOP.has(key))return false;
+      if(Object.hasOwn(VERIFIED_NESTED,key)){
+        const object=offer[key];
+        if(!object||typeof object!=='object'||Array.isArray(object)||
+           !Object.keys(object).every(k=>VERIFIED_NESTED[key].has(k)))return false;
+      }
+    }
+    return true;
+  }catch{return false;}
+}
 function strictDigest(offer){
   if(!offer||typeof offer!=='object'||Array.isArray(offer))return null;
   // Canonicalize complete display-relevant offer graph, not just SKU or URL.
@@ -87,6 +115,8 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
        !Number.isSafeInteger(snapshotRevision)||snapshotRevision!==revision||
        !Number.isSafeInteger(renderEpoch)||renderEpoch<=0)
       return denied('stale_or_invalid_display_context');
+    if(!admissionFields(offer)||!admissionFields(displayOffer))
+      return denied('unverified_presentation_field');
     const sourceDigest=strictDigest(offer);
     const displayDigest=strictDigest(displayOffer);
     if(!sourceDigest||sourceDigest!==displayDigest||
@@ -118,6 +148,7 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
     const original=issued.get(bound);
     if(!original||original.snapshotRevision!==snapshotRevision||
        original.renderEpoch!==renderEpoch||
+       !admissionFields(displayOffer)||
        original.displayDigest!==strictDigest(displayOffer)||
        !activeDigests.has(original.displayDigest))return false;
     try{return await verifier.accepts(original.decision,original.offer,original.observationRef);}

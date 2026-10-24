@@ -120,3 +120,20 @@ test('malformed and boundary inputs fail closed without modifying prior valid sn
   assert.equal(h.display.currentSnapshotRevision,1);
   assert.throws(()=>createTrustedDisplayOwnership(),/required/);
 });
+
+test('v21.69 unverified merchant enrichment is not converted into display authority',async()=>{
+  const h=await valid();
+  for(const extra of [
+    {merchantRating:5}, {shippingPromise:'delivers today'}, {verified:true},
+    {sourceMeta:{nameAr:'unverified adjacent title'}},
+    {specs:{battery:'unverified battery'}},
+    {variant:{carrierPlan:'locked'}}
+  ]){
+    const enriched={...offer,...extra};
+    assert.equal((await h.display.bind({
+      decision:h.decision,offer:enriched,displayOffer:enriched,
+      observationRef:ref,streamGeneration:generation,
+      snapshotRevision:1,renderEpoch:1})).state,'DENIED');
+    assert.equal(await h.display.accepts(h.bound,context(enriched)),false);
+  }
+});
