@@ -120,15 +120,18 @@ function observeFirstRenderedCard(displayedSections){
   const domPrice=card.querySelector('.match-card-price b')?.textContent?.trim()||'';
   const expectedTitle=productDisplayTitle(offer);
   const expectedPrice=fmt(priced[0]?.productPrice??null);
+  const expectedImage=ownOfferImages(offer)[0]||null;
+  const domImage=card.querySelector('.match-card-image img')?.getAttribute('src')||null;
+  const imageMatchesOwnOffer=domImage===expectedImage;
   const ownership=assessFirstOfferOwnership(offer);
-  const match=domTitle===expectedTitle&&domPrice===expectedPrice;
+  const match=domTitle===expectedTitle&&domPrice===expectedPrice&&imageMatchesOwnOffer;
   d.firstCard={
     groupKey:group.key,sourceUrl:offer.sourceUrl||null,
     modelNumber:offer.specs?.modelNumber||offer.modelNumber||null,
     merchant:offer.merchant||null,offerTitle:offer.title||null,
     productPrice:offer.productPrice??null,currency:offer.currency||null,
-    domTitle,domPrice,expectedTitle,expectedPrice,
-    domMatchesSelectedOffer:match,structurallyValid:Boolean(structurallyValidOffer(offer)),
+    domTitle,domPrice,domImage,expectedTitle,expectedPrice,expectedImage,
+    imageMatchesOwnOffer,domMatchesSelectedOffer:match,structurallyValid:Boolean(structurallyValidOffer(offer)),
     ownership,domCommitMs:performance.now()-d.timeline.snapshot().milestones.T0,
     frameMs:null,secondFrameMs:null,visuallyPresentable:false,
     screenshotPaintEvidence:false
@@ -1586,6 +1589,8 @@ async function runSearch(rawQuery) {
         const coverageNotice=coverageStatusText(data.coverage,data.errors);
         if (coverageNotice) els.status.textContent += " · " + coverageNotice;
         else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";
+        firstOfferDiagnostic?.requestId===requestId&&firstOfferDiagnostic.timeline.finish('complete');
+        publishFirstOfferDiagnostic();
         return;
       }
 
@@ -1612,11 +1617,15 @@ async function runSearch(rawQuery) {
         </div>
       `;
       $("#retryLiveSearch")?.addEventListener("click", () => runSearch(query));
+      firstOfferDiagnostic?.requestId===requestId&&firstOfferDiagnostic.timeline.finish(incomplete?"partial":"empty");
+      publishFirstOfferDiagnostic();
       return;
     } catch (error) {
       if (requestId !== state.requestId) return;
       console.warn("NAWAA live search unavailable", error);
       renderLiveSearchError(query, error);
+      firstOfferDiagnostic?.requestId===requestId&&firstOfferDiagnostic.timeline.finish("failed");
+      publishFirstOfferDiagnostic();
       return;
     }
   }
