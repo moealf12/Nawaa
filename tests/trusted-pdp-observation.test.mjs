@@ -287,3 +287,22 @@ test('v21.63 two locally URL-addressed priced Products fail as ambiguous even wi
     await assert.rejects(resolveSelectedJsonLdOffer(URL),/subject_missing_or_ambiguous/);
   }finally{dns.lookup=originalLookup;globalThis.fetch=originalFetch;}
 });
+
+test('v21.63 oversized graph cannot hide a second sellable item beyond parser node cap',async()=>{
+  const {resolveSelectedJsonLdOffer}=await import('../server/url-resolver.mjs');
+  const dns=(await import('node:dns/promises')).default;
+  const oldFetch=globalThis.fetch,oldLookup=dns.lookup;
+  const selected={'@type':'Product',url:URL,sku:'668751',name:offer().title,
+    offers:{'@type':'Offer',url:URL,price:'2529',priceCurrency:'SAR'}};
+  const nodes=[selected,...Array.from({length:512},(_,i)=>({
+    '@type':'Thing',name:'padding '+i
+  })),{...selected,sku:'different-sku'}];
+  try{
+    dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+    globalThis.fetch=async()=>new Response(
+      '<script type="application/ld+json">'+JSON.stringify({'@graph':nodes})+'</script>',
+      {headers:{'content-type':'text/html'}}
+    );
+    await assert.rejects(resolveSelectedJsonLdOffer(URL),/schema_budget_exceeded/);
+  }finally{dns.lookup=oldLookup;globalThis.fetch=oldFetch;}
+});
