@@ -150,3 +150,53 @@ test('v21.66 production mode never permits a legacy signer or headless journal',
     else process.env.NODE_ENV=original;
   }
 });
+
+test('v21.67 controlled selected PDP refresh supersedes archived predecessor without minting a badge',async()=>{
+  const st=memory(),initial=await issue(page({price:2529,stamp:CLOCK-1000}),CLOCK);
+  const journal=build(st);
+  const archived=await journal.archive(initial);
+  assert.equal(archived.state,'ARCHIVED');
+  const retained=st.rows.length;
+  assert.equal((await journal.inspect(archived.receiptRef)).state,'REVALIDATED');
+  const refreshed=await issue(page({price:2349,stamp:CLOCK+4000,
+    recordId:'d'.repeat(64)}),CLOCK+5000);
+  const second=build(st,'k1',undefined,CLOCK+5000);
+  const advance=await second.recordFreshSource(refreshed);
+  assert.equal(advance.state,'RECORDED',advance.reason);
+  assert.equal(advance.badgeEligible,false);
+  assert.equal(st.rows.length,retained,'source update must not mint a receipt');
+  assert.equal((await second.inspect(archived.receiptRef)).state,'SUPERSEDED');
+  assert.equal((await second.inspect(archived.receiptRef)).eligible,false);
+  const other=await second.archive(refreshed);
+  assert.equal(other.state,'ARCHIVED');
+  assert.equal((await second.inspect(other.receiptRef)).state,'REVALIDATED');
+  assert.equal((await second.inspect(other.receiptRef)).badgeEligible,false);
+  const older=await second.recordFreshSource(initial);
+  assert.equal(older.state,'SUPERSEDED','replay of old genuine receipt cannot roll back source head');
+  assert.equal((await second.inspect(other.receiptRef)).state,'REVALIDATED');
+});
+test('v21.67 arbitrary listings, copied receipts and fake new-source decisions cannot advance source head',async()=>{
+  const st=memory(),j=build(st),original=await issue(),archived=await j.archive(original);
+  const prior=structuredClone([...st.heads.values()][0]);
+  for(const input of [
+    historical(),structuredClone(original),{...original},
+    {...original,offer:{...original.offer,productPrice:1}},
+    {state:'VERIFIED',badgeEligible:false,decision:{state:'VERIFIED'},offer:historical()}
+  ]){
+    const ret=await j.recordFreshSource(input);
+    assert.equal(ret.state,'MISSING_EVIDENCE');
+  }
+  assert.deepEqual([...st.heads.values()][0],prior);
+  assert.equal((await j.inspect(archived.receiptRef)).state,'REVALIDATED');
+});
+test('v21.67 source refresh fails closed on missing store method and source head outage',async()=>{
+  const st=memory(),issued=await issue();
+  const headless=createTrustedObservationJournal({store:st,signingKey:K1,
+    requireCurrentHead:false,now:()=>CLOCK});
+  assert.equal((await headless.recordFreshSource(issued)).state,'SOURCE_BLOCKED');
+  const broken=build(st),original=st.advanceHead;
+  st.advanceHead=async()=>{throw new Error('postgres down')};
+  assert.equal((await broken.recordFreshSource(issued)).reason,'source_head_write_failed');
+  st.advanceHead=original;
+  assert.equal((await broken.recordFreshSource(issued)).state,'RECORDED');
+});
