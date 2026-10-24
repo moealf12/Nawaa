@@ -780,7 +780,7 @@ export async function resolveSelectedJsonLdOffer(url, options = {}) {
   return {
     provider:'url-resolver',providerMarket:page.hostname,merchant:merchantName(finalUrl),
     dataKind:'live',resolvedPageUrl:finalUrl,sourceUrl,observedAt,
-    title:product.name,sku,image:image?new URL(image,page).href:null,
+    title:product.name,sku,gtin:gtin||null,image:image?new URL(image,page).href:null,
     condition:normalizeCondition(product.itemCondition||''),
     availability:normalizeAvailability(priced.availability),
     productPrice:priced.price,originalProductPrice:priced.price,
