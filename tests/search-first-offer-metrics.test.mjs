@@ -117,18 +117,45 @@ test('v21.57: per-request milestones reject stale requests and unsupported paint
   assert.equal(timeline.mark('T1',{requestId:7}),true);
   now=120;
   assert.equal(timeline.mark('T5',{ownership:{eligible:false}}),false);
-  assert.equal(timeline.mark('T5',{ownership:{eligible:true}}),true);
+  assert.equal(timeline.mark('T5',{ownership:{eligible:true}}),false);
+  assert.equal(timeline.mark('T5',{ownership:{eligible:true,verified:true,
+    badgeEligible:true,sourcePredicatesRevalidated:true},
+    evidence:{independentlyObserved:true}}),false,
+    'client-owned trust claims must never become T5 authority');
   now=130;
-  assert.equal(timeline.mark('T6'),true);
-  assert.equal(timeline.mark('T8'),false);
-  assert.equal(timeline.mark('T8',{evidence:{independentlyObserved:true}}),true);
-  assert.equal(timeline.finish('complete'),true);
+  assert.equal(timeline.mark('T6'),false);
   assert.equal(timeline.mark('T7'),false);
-  assert.deepEqual(timeline.snapshot().elapsedMs,{T0:0,T1:10,T5:20,T6:30,T8:30});
+  assert.equal(timeline.mark('T8',{evidence:{independentlyObserved:true}}),false);
+  assert.equal(timeline.finish('complete'),true);
+  assert.deepEqual(timeline.snapshot().elapsedMs,{T0:0,T1:10});
+  assert.equal(timeline.snapshot().firstVisibleCertified,false);
 });
 test('v21.57: cancelled searches cannot accrue late measurements',()=>{
   const timeline=createFirstOfferTimeline(2,()=>100);
   assert.equal(timeline.finish('cancelled'),true);
   assert.equal(timeline.mark('T1'),false);
+  assert.equal(timeline.snapshot().firstVisibleCertified,false);
+});
+
+test('v21.67 T5 is not inferred from cloned signed-receipt JSON or forged browser flags',()=>{
+  let now=1000;
+  const timeline=createFirstOfferTimeline('generation-41',()=>now);
+  assert.equal(timeline.mark('T4',{requestId:'generation-41'}),true);
+  now+=25;
+  for(const proof of [
+    {state:'VERIFIED',eligible:true,wholeOfferVerified:true,badgeEligible:true},
+    {state:'REVALIDATED',sourcePredicatesRevalidated:true,
+      scope:'selected_pdp_revision_predicates',eligible:true},
+    {verified:true,independentlyAttested:true,issuer:'internal',
+      evidenceDigest:'f'.repeat(64),eligible:true},
+  ]){
+    assert.equal(timeline.mark('T5',{
+      requestId:'generation-41',ownership:proof,evidence:proof
+    }),false);
+  }
+  assert.equal(timeline.mark('T5',{requestId:'old-generation',
+    ownership:{eligible:true}}),false);
+  assert.equal(timeline.mark('T8',{requestId:'generation-41',
+    evidence:{independentlyObserved:true}}),false);
   assert.equal(timeline.snapshot().firstVisibleCertified,false);
 });
