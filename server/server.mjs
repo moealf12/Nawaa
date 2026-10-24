@@ -67,6 +67,8 @@ const STATIC_FILES = new Map([
   ["/src/quote-admin.mjs", "src/quote-admin.mjs"],
   ["/config.js", "config.js"],
   ["/src/search-page.mjs", "src/search-page.mjs"],
+  ["/src/search-first-offer-metrics.mjs", "src/search-first-offer-metrics.mjs"],
+  ["/src/product-image-ownership.mjs", "src/product-image-ownership.mjs"],
   ["/src/product-card-presentation.mjs", "src/product-card-presentation.mjs"],
   ["/src/search-core.mjs", "src/search-core.mjs"],
   ["/src/search-query.mjs", "src/search-query.mjs"],

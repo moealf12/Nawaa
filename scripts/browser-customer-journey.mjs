@@ -45,6 +45,20 @@ let page=null;
 try{
   const base=mode==='candidate'?await startCandidate():'https://moealf12.github.io/Nawaa';
   report.requestUrlBase=mode==='candidate'?'localhost_canonical_pr':'https://moealf12.github.io/Nawaa';
+  // Fail with a precise cause instead of waiting 55s if the production page's
+  // ESM dependency graph is omitted from the explicit localhost allowlist.
+  if(mode==='candidate'){
+    const required=['/src/search-page.mjs','/src/search-first-offer-metrics.mjs',
+      '/src/product-image-ownership.mjs'];
+    const checks=await Promise.all(required.map(async asset=>{
+      const response=await fetch(base+asset,{signal:AbortSignal.timeout(5000)});
+      return {asset,status:response.status,js:(response.headers.get('content-type')||'').includes('text/javascript')};
+    }));
+    report.moduleReachability=checks;
+    report.assertions.customerModuleImportsReachable=checks.every(x=>x.status===200&&x.js);
+    if(!report.assertions.customerModuleImportsReachable)
+      throw Error('candidate_browser_module_graph_not_served');
+  }
   const binary=['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium'].find(existsSync);
   if(!binary)throw Error('chromium_not_available_on_runner');
   browser=await chromium.launch({executablePath:binary,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -70,16 +84,49 @@ try{
         providerMarket: String(o.providerMarket || "").slice(0,70)
       };
     };
+    // Browser-only, no merchant requests or production instrumentation.
+    // These are observation boundaries, NOT proof of source-owned price/SKU
+    // and NOT a guarantee that a card was painted to physical pixels.
     window.__nawaaObserved = {first:[],suspicious:[],done:false,snapshots:0,
-      latestOfferCount:0,latestMerchantNames:[],latestMarkets:[]};
+      latestOfferCount:0,latestMerchantNames:[],latestMarkets:[],
+      sseOpenedAtMs:null,firstOfferSnapshotAtMs:null,firstExactCandidateSnapshotAtMs:null,
+      firstCardDomAtMs:null,firstCardFrameAtMs:null};
+    const watchFirstCard = () => {
+      const root=document.querySelector('#results');
+      if(!root)return;
+      const inspect=()=>{
+        const record=window.__nawaaObserved;
+        if(record.firstCardDomAtMs!==null || !root.querySelector('.match-result-card'))return;
+        record.firstCardDomAtMs=performance.now();
+        requestAnimationFrame(()=>{
+          if(record.firstCardFrameAtMs===null && root.querySelector('.match-result-card'))
+            record.firstCardFrameAtMs=performance.now();
+        });
+      };
+      new MutationObserver(inspect).observe(root,{childList:true,subtree:true});
+      inspect();
+    };
+    if(document.readyState==='loading')
+      document.addEventListener('DOMContentLoaded',watchFirstCard,{once:true});
+    else watchFirstCard();
     window.EventSource = class extends Native {
       constructor(...args) {
         super(...args);
+        window.__nawaaObserved.sseOpenedAtMs ??= performance.now();
         this.addEventListener("snapshot", event => {
           try {
             const offers = JSON.parse(event.data)?.offers || [];
             const record = window.__nawaaObserved;
             record.snapshots++;
+            const receivedAt=performance.now();
+            if(record.firstOfferSnapshotAtMs===null && offers.length)
+              record.firstOfferSnapshotAtMs=receivedAt;
+            // Matches the UI's initial exact-group selection preconditions;
+            // does not independently validate price, identity or provenance.
+            if(record.firstExactCandidateSnapshotAtMs===null &&
+              offers.some(o=>o?.exactMatch===true && Number(o.matchConfidence)>=0.9 &&
+                o.condition==='new'))
+              record.firstExactCandidateSnapshotAtMs=receivedAt;
             record.latestOfferCount=offers.length;
             record.latestMerchantNames=[...new Set(offers.map(o => String(o.merchant||'').slice(0,65)).filter(Boolean))];
             record.latestMarkets=[...new Set(offers.map(o => String(o.providerMarket||'').slice(0,70)).filter(Boolean))];
@@ -133,6 +180,34 @@ try{
       categoryExpand:result?.querySelectorAll('.show-category').length||0};
   });
   report.firstVisibleResultsMs=Math.round(performance.now()-began);
+  if(report.results.cards>0){
+    // DOM insertion and rAF are distinct; neither proves actual display
+    // compositor paint or attribution to a specific owned merchant Offer.
+    await page.waitForFunction(
+      ()=>Number.isFinite(window.__nawaaObserved?.firstCardFrameAtMs),
+      null,{timeout:3500});
+  }
+  report.browserLatencyPhases=await page.evaluate(()=>{
+    const record=window.__nawaaObserved||{};
+    const elapsed=(end,start)=>Number.isFinite(end)&&Number.isFinite(start)&&end>=start
+      ? Math.round(end-start) : null;
+    return {
+      firstOfferSnapshotFromSseOpenMs:elapsed(record.firstOfferSnapshotAtMs,record.sseOpenedAtMs),
+      firstExactCandidateSnapshotFromSseOpenMs:elapsed(record.firstExactCandidateSnapshotAtMs,record.sseOpenedAtMs),
+      firstCardDomFromNavigationMs:Number.isFinite(record.firstCardDomAtMs)?Math.round(record.firstCardDomAtMs):null,
+      firstCardFrameFromNavigationMs:Number.isFinite(record.firstCardFrameAtMs)?Math.round(record.firstCardFrameAtMs):null,
+      firstCardDomFromSseOpenMs:elapsed(record.firstCardDomAtMs,record.sseOpenedAtMs),
+      firstCardFrameFromSseOpenMs:elapsed(record.firstCardFrameAtMs,record.sseOpenedAtMs),
+      domToFrameOpportunityMs:elapsed(record.firstCardFrameAtMs,record.firstCardDomAtMs),
+      milestoneScope:'browser_DOM_and_animation_frame_opportunity_only',
+      sameSellableOfferOwnershipCertified:false,firstCardPaintCertified:false,
+      p95Certified:false
+    };
+  });
+  if(mode==='candidate'&&report.results.cards>0)
+    report.assertions.firstCardFrameTimingRecorded=
+      Number.isFinite(report.browserLatencyPhases.firstCardFrameFromNavigationMs)&&
+      Number.isFinite(report.browserLatencyPhases.domToFrameOpportunityMs);
   // Inspect the same actual SSE search: no extra merchant acquisition or fixture data.
   // The initial render and the completed stream are separate customer experiences.
   if(mode==='candidate'||/ps5/i.test(query)){

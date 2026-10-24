@@ -14,8 +14,10 @@ import {
   offerVariantDimensions,
 } from "./search-core.mjs";
 import {selectSearchStreamResult} from "./search-stream.mjs";
+import {ownOfferImages} from "./product-image-ownership.mjs";
+import {createFirstOfferTimeline,structurallyValidOffer,assessFirstOfferOwnership} from "./search-first-offer-metrics.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
-import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
+import {arabicCount, visibleProductSpecifications, displayProductSpecification} from "./product-card-presentation.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -45,10 +47,124 @@ const state = {
   selectedGroupKey: null,
   nextCursor: null,
   eventSource: null,
+  cancelActiveStream: null,
   remoteLoading: false,
   remoteExhausted: false,
   requestId: 0,
 };
+
+
+// v21.57 opt-in, browser-test-readable observability. Never changes product
+// selection, ranking, price history, SSE reconciliation or DOM contents.
+// 'presentable' and rAF are deliberately NOT compositor-paint certificates.
+let firstOfferDiagnostic=null;
+function publishFirstOfferDiagnostic(){
+  if(!firstOfferDiagnostic)return;
+  const d=firstOfferDiagnostic;
+  window.__nawaaFirstOfferDiagnostics={
+    requestId:d.requestId,query:d.query,...d.timeline.snapshot(),
+    firstStructuralOffer:d.firstStructuralOffer,firstCard:d.firstCard,
+    firstSnapshotMs:d.firstSnapshotMs,
+    scope:"client_diagnostic_only_no_independent_merchant_attestation",
+    productionPaintCertified:false
+  };
+}
+function beginFirstOfferDiagnostic(requestId,query){
+  firstOfferDiagnostic?.timeline.finish('cancelled');
+  if(window.NAWAA_DIAGNOSTICS!==true){
+    firstOfferDiagnostic=null;
+    return;
+  }
+  firstOfferDiagnostic={
+    requestId,query,timeline:createFirstOfferTimeline(requestId),
+    firstStructuralOffer:null,firstCard:null,firstSnapshotMs:null
+  };
+  publishFirstOfferDiagnostic();
+}
+function markFirstOfferDiagnostic(requestId,milestone){
+  if(firstOfferDiagnostic?.requestId!==requestId)return;
+  firstOfferDiagnostic.timeline.mark(milestone,{requestId});
+  publishFirstOfferDiagnostic();
+}
+function observeFirstOfferCandidates(requestId,offers){
+  const d=firstOfferDiagnostic;
+  if(!d||d.requestId!==requestId||!Array.isArray(offers)||!offers.length)return;
+  d.timeline.mark('T3',{requestId});
+  if(d.firstSnapshotMs===null)d.firstSnapshotMs=performance.now();
+  const first=offers.find(structurallyValidOffer);
+  if(first&&!d.firstStructuralOffer){
+    d.timeline.mark('T4',{requestId});
+    d.firstStructuralOffer={
+      title:first.title,merchant:first.merchant,price:first.productPrice,
+      currency:first.currency,sourceUrl:first.sourceUrl,
+      ownership:assessFirstOfferOwnership(first)
+    };
+  }
+  publishFirstOfferDiagnostic();
+}
+function observeFirstRenderedCard(displayedSections){
+  const d=firstOfferDiagnostic;
+  // A streamed snapshot may replace the first DOM card before the next frame.
+  // Only freeze the observation after a connected candidate survived two frames.
+  if(!d||d.requestId!==state.requestId||d.firstCard?.secondFrameMs!=null)return;
+  const card=els.results.querySelector('.match-result-card');
+  if(!card)return;
+  const groups=displayedSections.flatMap(section=>section.groups);
+  const group=groups.find(item=>item.key===card.dataset.groupKey);
+  if(!group)return;
+  const available=(group.offers||[]).filter(item=>
+    item.availability!=='out_of_stock'&&item.canShipToSaudi!==false);
+  const priced=available.filter(item=>Number.isFinite(item.productPrice))
+    .sort((a,b)=>a.productPrice-b.productPrice);
+  const offer=priced[0]||group.bestOffer||group.offers?.[0];
+  if(!offer)return;
+  const domTitle=card.querySelector('.match-card-copy strong')?.textContent?.trim()||'';
+  const domPrice=card.querySelector('.match-card-price b')?.textContent?.trim()||'';
+  const expectedTitle=productDisplayTitle(offer);
+  const expectedPrice=fmt(priced[0]?.productPrice??null);
+  const expectedImage=ownOfferImages(offer)[0]||null;
+  const domImage=card.querySelector('.match-card-image img')?.getAttribute('src')||null;
+  const imageMatchesOwnOffer=domImage===expectedImage;
+  const ownership=assessFirstOfferOwnership(offer);
+  const match=domTitle===expectedTitle&&domPrice===expectedPrice&&imageMatchesOwnOffer;
+  const committedAtMs=performance.now()-d.timeline.snapshot().milestones.T0;
+  d.firstDomAttemptMs??=committedAtMs;
+  const renderGeneration=(d.renderGeneration||0)+1;
+  d.renderGeneration=renderGeneration;
+  d.firstCard={
+    groupKey:group.key,sourceUrl:offer.sourceUrl||null,
+    modelNumber:offer.specs?.modelNumber||offer.modelNumber||null,
+    merchant:offer.merchant||null,offerTitle:offer.title||null,
+    productPrice:offer.productPrice??null,currency:offer.currency||null,
+    domTitle,domPrice,domImage,expectedTitle,expectedPrice,expectedImage,
+    imageMatchesOwnOffer,domMatchesSelectedOffer:match,structurallyValid:Boolean(structurallyValidOffer(offer)),
+    ownership,firstDomAttemptMs:d.firstDomAttemptMs,domCommitMs:committedAtMs,
+    frameMs:null,secondFrameMs:null,visuallyPresentable:false,
+    screenshotPaintEvidence:false
+  };
+  publishFirstOfferDiagnostic();
+  const requestId=d.requestId,firstElement=card;
+  requestAnimationFrame(()=>{
+    if(firstOfferDiagnostic!==d||state.requestId!==requestId||
+       d.renderGeneration!==renderGeneration||!firstElement.isConnected)return;
+    d.firstCard.frameMs=performance.now()-d.timeline.snapshot().milestones.T0;
+    requestAnimationFrame(()=>{
+      if(firstOfferDiagnostic!==d||state.requestId!==requestId||
+         d.renderGeneration!==renderGeneration||!firstElement.isConnected)return;
+      const bounds=firstElement.getBoundingClientRect();
+      const style=getComputedStyle(firstElement);
+      const x=Math.max(0,Math.min(innerWidth-1,bounds.left+bounds.width/2));
+      const y=Math.max(0,Math.min(innerHeight-1,bounds.top+bounds.height/2));
+      const hit=document.elementFromPoint(x,y);
+      d.firstCard.secondFrameMs=performance.now()-d.timeline.snapshot().milestones.T0;
+      d.firstCard.visuallyPresentable=Boolean(bounds.width>0&&bounds.height>0&&
+        bounds.right>0&&bounds.bottom>0&&bounds.left<innerWidth&&
+        bounds.top<innerHeight&&style.display!=='none'&&style.visibility!=='hidden'&&
+        hit&&firstElement.contains(hit));
+      publishFirstOfferDiagnostic();
+    });
+  });
+}
 
 const nf = new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 2 });
 const fmt = (v) => Number.isFinite(v) ? nf.format(v) + " ر.س" : "غير مؤكد";
@@ -100,8 +216,16 @@ function recordPriceHistory(offers = []) {
       const basis = Number.isFinite(offer.totalSAR) ? "comparable_total" : "advertised_price";
 
       if (latest && latest.value === value && latest.priceBasis === basis) {
-        latest.lastSeenAt = observedAt;
-        latest.sourceUrl = offer.sourceUrl || latest.sourceUrl || null;
+        // A delayed merchant observation must not make an already seen offer
+        // appear older or replace its newer attributable destination.
+        // Missing observedAt retains the existing receipt-time fallback.
+        const previousSeenMs = Date.parse(latest.lastSeenAt || latest.observedAt);
+        const incomingMs = Date.parse(observedAt);
+        if (Number.isFinite(incomingMs) &&
+            (!Number.isFinite(previousSeenMs) || incomingMs >= previousSeenMs)) {
+          latest.lastSeenAt = observedAt;
+          latest.sourceUrl = offer.sourceUrl || latest.sourceUrl || null;
+        }
         continue;
       }
 
@@ -743,20 +867,24 @@ function canonicalProfileMarkup(profile = {}) {
   };
   const order = Object.keys(labels);
   const rows = order
-    .filter((field) => profile[field]?.value)
+    .filter((field) => displayProductSpecification(field, profile[field]?.value) !== null)
     .slice(0, 12)
     .map((field) => {
       const item = profile[field];
+      const value = displayProductSpecification(field, item.value);
       const sources = item.sources?.length ? item.sources.join(" + ") : "مصدر واحد";
-      const alternatives = item.alternatives?.length
-        ? '<span class="spec-conflict">اختلاف: ' + item.alternatives.map((alt) =>
-            escapeHtml(alt.value) + (alt.sources?.length ? ' (' + escapeHtml(alt.sources.join(" + ")) + ')' : '')
+      const differentValues = (item.alternatives || [])
+        .map(alt => ({...alt, visibleValue: displayProductSpecification(field, alt.value)}))
+        .filter(alt => alt.visibleValue !== null && alt.visibleValue !== value);
+      const alternatives = differentValues.length
+        ? '<span class="spec-conflict">اختلاف: ' + differentValues.map(alt =>
+            escapeHtml(alt.visibleValue) + (alt.sources?.length ? ' (' + escapeHtml(alt.sources.join(" + ")) + ')' : '')
           ).join(" · ") + '</span>'
         : "";
       return `
         <div class="canonical-spec">
           <small>${escapeHtml(labels[field])}</small>
-          <b>${escapeHtml(item.value)}</b>
+          <b>${escapeHtml(value)}</b>
           <span>المصدر: ${escapeHtml(sources)}</span>
           ${alternatives}
         </div>
@@ -791,7 +919,11 @@ function productDisplayTitle(offer) {
       description.storage?.toUpperCase(),bundleLabel].filter(Boolean).join(" · ");
   }
   if (productCategory(offer) !== "phone") return offer.title || specs.series || specs.deviceType || "المنتج";
-  return [specs.deviceType || specs.series || offer.title, specs.storage, specs.color].filter(Boolean).join(" · ");
+  const device = displayProductSpecification("deviceType", specs.deviceType)
+    || displayProductSpecification("series", specs.series) || offer.title;
+  const storage = displayProductSpecification("storage", specs.storage);
+  const color = displayProductSpecification("color", specs.color);
+  return [device, storage, color].filter(Boolean).join(" · ");
 }
 
 function additionalResultsSection(label, groups) {
@@ -809,8 +941,8 @@ function additionalResultsSection(label, groups) {
     }).join("")}</div></details>`;
 }
 
-function productImageMarkup(offer, group, title, fallbackClass) {
-  const images = [...new Set([offer, ...(group?.offers || [])].map(item => item?.image).filter(url => /^https?:\/\//i.test(url || "")))];
+function productImageMarkup(offer, title, fallbackClass) {
+  const images = ownOfferImages(offer);
   // Product tiles must remain informative while a lazy third-party image is pending.
   // Other layouts retain their sizing until separately verified in Chrome.
   const pendingFallback = fallbackClass === "match-card-fallback" || fallbackClass === "config-image-fallback";
@@ -834,13 +966,13 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDis
   const phoneOffer = productCategory(offer) === "phone";
   const variantClarifier = repeatedDisplayNames.has(normalizedCardDisplayName(offer))
     ? phoneOffer
-      ? `<small class="card-model-identifier">نسخة المنطقة: ${escapeHtml(offer.specs?.regionVersion || "غير محددة")} · الشريحة: ${escapeHtml(offer.specs?.sim || "غير محددة")}</small>`
-      : `<small class="card-model-identifier">رقم الموديل: ${escapeHtml(String(offer.specs?.modelNumber || "غير مذكور"))} · ${escapeHtml(offer.merchant || "المتجر غير محدد")} (بحسب المتجر)</small>`
+      ? `<small class="card-model-identifier">نسخة المنطقة: ${escapeHtml(displayProductSpecification("regionVersion", offer.specs?.regionVersion) || "غير محددة")} · الشريحة: ${escapeHtml(displayProductSpecification("sim", offer.specs?.sim) || "غير محددة")}</small>`
+      : `<small class="card-model-identifier">رقم الموديل: ${escapeHtml(displayProductSpecification("modelNumber", offer.specs?.modelNumber) || "غير مذكور")} · ${escapeHtml(offer.merchant || "المتجر غير محدد")} (بحسب المتجر)</small>`
     : "";
   const uniqueMerchants = new Set((group.offers || []).map(item => item.merchant).filter(Boolean)).size;
   const countries = [...new Map((group.offers || []).filter(item => item.merchantCountryCode).map(item => [item.merchantCountryCode,item.merchantCountryNameAr || item.merchantCountryCode])).entries()];
   const selected = selectedGroup?.key === group.key;
-  const image = productImageMarkup(offer, group, title, "match-card-fallback");
+  const image = productImageMarkup(offer, title, "match-card-fallback");
   const specs = specEntries(offer).filter(([label]) => !(describeProduct(offer).kind === "console" && label === "اللون")).slice(0,3);
   const confirmed = available.filter(item => item.bucket === "confirmed" && Number.isFinite(item.totalSAR)).sort((a,b)=>a.totalSAR-b.totalSAR)[0];
   const price = priced[0]?.productPrice ?? null;
@@ -866,9 +998,9 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDis
   `;
 }
 
-function selectedProductMedia(offer, group = null) {
+function selectedProductMedia(offer) {
   const title = offer?.sourceMeta?.nameAr || offer?.title || "المنتج";
-  return productImageMarkup(offer, group, title, "config-image-fallback");
+  return productImageMarkup(offer, title, "config-image-fallback");
 }
 
 function openProductDetails(product, offer, query) {
@@ -985,6 +1117,8 @@ function renderProduct(product, query) {
   els.urlHint.hidden = true;
 
   const selectedSpecs = featuredOffer?.specs || {};
+  const selectedRegion = displayProductSpecification("regionVersion", selectedSpecs.regionVersion);
+  const selectedSim = displayProductSpecification("sim", selectedSpecs.sim);
   const selectedTitle = featuredOffer ? productDisplayTitle(featuredOffer) : product.model;
 
   const comparisonMarkup = `
@@ -1002,8 +1136,8 @@ function renderProduct(product, query) {
                 <div class="config-summary">
                   <span>${selectedGroup.merchantCount} ${selectedGroup.merchantCount === 1 ? "متجر" : "متاجر"}</span>
                   <span>${conditionDisplay(featuredOffer.condition || "unknown")}</span>
-                  ${selectedSpecs.regionVersion ? '<span>' + escapeHtml(selectedSpecs.regionVersion) + '</span>' : ""}
-                  ${selectedSpecs.sim ? '<span>' + escapeHtml(selectedSpecs.sim) + '</span>' : ""}
+                  ${selectedRegion !== null ? '<span>' + escapeHtml(selectedRegion) + '</span>' : ""}
+                  ${selectedSim !== null ? '<span>' + escapeHtml(selectedSim) + '</span>' : ""}
                   <span>صلة بالبحث: ${Math.round((featuredOffer.matchConfidence || 0) * 100)}% (تقديرية)</span>
                   <small class="match-confidence-note">${productCategory(featuredOffer) === "phone"
                     ? "المقارنة تعتمد على إصدار الهاتف والسعة واللون والحالة؛ رقم SKU غير مطلوب. راجع الفروق الإقليمية ومواصفات كل عرض."
@@ -1137,6 +1271,7 @@ function renderProduct(product, query) {
       لا نخلط موديلًا أو سعة أو لونًا أو حالة مختلفة في المقارنة نفسها. والمواصفات الموحّدة تحتفظ بمصدر كل قيمة وتكشف التعارضات بين المصادر.
     </div>
   `;
+  observeFirstRenderedCard(displayedSections);
 
   els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
     state.category=button.dataset.category; state.comparisonOpen=false; renderProduct(product,query);
@@ -1312,9 +1447,13 @@ async function runSearch(rawQuery) {
     return;
   }
 
+  // Settling the superseded stream also clears its timeout; merely closing
+  // EventSource leaves its Promise pending and can launch obsolete JSON fallback.
+  state.cancelActiveStream?.();
   state.eventSource?.close?.();
   state.eventSource = null;
   const requestId = ++state.requestId;
+  beginFirstOfferDiagnostic(requestId,query);
   if (state.query !== query) {
     state.availability = "all"; state.merchant = "all";
     state.variantSelections = {};
@@ -1346,22 +1485,39 @@ async function runSearch(rawQuery) {
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
       let data = null;
+      markFirstOfferDiagnostic(requestId,"T1");
       if (typeof EventSource !== "undefined") {
         data = await new Promise((resolve,reject)=>{
           state.eventSource?.close?.();
           const source=new EventSource(apiBase + "/api/search/stream?q=" + encodeURIComponent(query));
           state.eventSource=source;
+          source.addEventListener("open",()=>markFirstOfferDiagnostic(requestId,"T2"));
           let best=null;
           let bestWithOffers=null;
-          const finish=(value)=>{ source.close(); if(state.eventSource===source) state.eventSource=null; resolve(value); };
+          let finished=false;
+          let timeoutId=null;
+          // A stream is settled once: cancellation, completion, error and timeout
+          // all release its timer and connection. Replayed events are inert.
+          const finish=(value,error=null)=>{
+            if(finished) return;
+            finished=true;
+            if(timeoutId!==null) clearTimeout(timeoutId);
+            source.close();
+            if(state.eventSource===source) state.eventSource=null;
+            if(state.cancelActiveStream===cancelStream) state.cancelActiveStream=null;
+            if(error) reject(error); else resolve(value);
+          };
+          const cancelStream=()=>finish(null);
+          state.cancelActiveStream=cancelStream;
           source.addEventListener("snapshot",(event)=>{
-            if(requestId !== state.requestId) return finish(best || {});
+            if(finished || requestId !== state.requestId) return;
             try {
               const payload=JSON.parse(event.data);
               // Always retain the newest snapshot, including the final empty/non-empty
               // canonical result. Partial snapshots are for rendering speed only; the
               // final snapshot owns cursors, provider diagnostics and completion state.
               best=payload;
+              observeFirstOfferCandidates(requestId,payload.offers);
               if(Array.isArray(payload.offers) && payload.offers.length){
                 bestWithOffers=payload;
                 recordPriceHistory(payload.offers);
@@ -1379,17 +1535,26 @@ async function runSearch(rawQuery) {
           // A late empty diagnostic snapshot must never erase offers already
           // rendered from an earlier live snapshot. Keep its final cursor and
           // diagnostics while carrying forward the newest verified offers.
-          source.addEventListener("done",()=>finish(selectSearchStreamResult(best,bestWithOffers)));
-          source.addEventListener("error",()=>{
-            source.close();
-            if(state.eventSource===source) state.eventSource=null;
-            const result=selectSearchStreamResult(best,bestWithOffers);
-            if(result) resolve(result); else reject(new Error("stream_failed"));
+          source.addEventListener("done",()=>{
+            if(requestId!==state.requestId) return cancelStream();
+            finish(selectSearchStreamResult(best,bestWithOffers));
           });
-          const timeoutId=setTimeout(()=>{ const result=selectSearchStreamResult(best,bestWithOffers); if(result) finish(result); else { source.close(); reject(new Error("stream_timeout")); } },30000);
-          source.addEventListener("done",()=>clearTimeout(timeoutId),{once:true});
+          source.addEventListener("error",()=>{
+            if(requestId!==state.requestId) return cancelStream();
+            const result=selectSearchStreamResult(best,bestWithOffers);
+            if(result) finish(result);
+            else finish(null,new Error("stream_failed"));
+          });
+          timeoutId=setTimeout(()=>{
+            if(requestId!==state.requestId) return cancelStream();
+            const result=selectSearchStreamResult(best,bestWithOffers);
+            if(result) finish(result);
+            else finish(null,new Error("stream_timeout"));
+          },30000);
         }).catch(()=>null);
       }
+      // Superseded streams must not initiate a redundant JSON fallback.
+      if (requestId !== state.requestId) return;
       if (!data) {
         data = await fetchJsonWithRetry(
           apiBase + "/api/search?q=" + encodeURIComponent(query),
@@ -1411,6 +1576,7 @@ async function runSearch(rawQuery) {
       state.nextCursor = data.nextCursor || null;
       state.remoteExhausted = !state.nextCursor;
       if (Array.isArray(data.offers) && data.offers.length) {
+        observeFirstOfferCandidates(requestId,data.offers);
         recordPriceHistory(data.offers);
         const liveProduct = {
           id: null,
@@ -1431,6 +1597,8 @@ async function runSearch(rawQuery) {
         const coverageNotice=coverageStatusText(data.coverage,data.errors);
         if (coverageNotice) els.status.textContent += " · " + coverageNotice;
         else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";
+        if(firstOfferDiagnostic?.requestId===requestId)firstOfferDiagnostic.timeline.finish('complete');
+        publishFirstOfferDiagnostic();
         return;
       }
 
@@ -1457,11 +1625,15 @@ async function runSearch(rawQuery) {
         </div>
       `;
       $("#retryLiveSearch")?.addEventListener("click", () => runSearch(query));
+      if(firstOfferDiagnostic?.requestId===requestId)firstOfferDiagnostic.timeline.finish(incomplete?"partial":"empty");
+      publishFirstOfferDiagnostic();
       return;
     } catch (error) {
       if (requestId !== state.requestId) return;
       console.warn("NAWAA live search unavailable", error);
       renderLiveSearchError(query, error);
+      if(firstOfferDiagnostic?.requestId===requestId)firstOfferDiagnostic.timeline.finish("failed");
+      publishFirstOfferDiagnostic();
       return;
     }
   }
@@ -1555,7 +1727,8 @@ async function openQuote(product, offer, sourceQuery) {
   if (window.NAWAA_QUOTE_URL && window.NAWAA_QUOTE_API_ENABLED !== true) {
     const destination = new URL(window.NAWAA_QUOTE_URL, location.href);
     destination.searchParams.set("request", [offer?.title || product.nameAr || sourceQuery,
-      offer?.specs?.modelNumber ? "SKU: " + offer.specs.modelNumber : "", offer?.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
+      displayProductSpecification("modelNumber", offer?.specs?.modelNumber)
+        ? "SKU: " + displayProductSpecification("modelNumber", offer.specs.modelNumber) : "", offer?.sourceUrl || ""].filter(Boolean).join(" — ").slice(0, 2000));
     location.href = destination.href;
     return;
   }
@@ -1565,7 +1738,7 @@ async function openQuote(product, offer, sourceQuery) {
     const apiBase=String(window.NAWAA_API_BASE||"").replace(/\/$/,"");
     const name=offer?.title||product.nameAr||product.nameEn||sourceQuery;
     if(!apiBase){quoteModalMessage("لم يُرسل الطلب","واجهة التسعير التجريبية غير متصلة بالخادم.");return}
-    const payload={productName:name,model:offer?.specs?.modelNumber||product.model||null,
+    const payload={productName:name,model:displayProductSpecification("modelNumber", offer?.specs?.modelNumber)||product.model||null,
       sourceUrl:offer?.sourceUrl||null};
     const requestKey=quoteRetryKey(payload);
     if(!requestKey){
@@ -1624,6 +1797,14 @@ async function openQuote(product, offer, sourceQuery) {
   els.quoteModal.classList.add("open");
   els.quoteModal.setAttribute("aria-hidden", "false");
 }
+
+// Release the stream when the document is disposed (including page navigation).
+addEventListener("pagehide",()=>{
+  // A disposed page must not start JSON fallback after stream cancellation.
+  state.requestId += 1;
+  firstOfferDiagnostic?.timeline.finish("cancelled");
+  state.cancelActiveStream?.();
+});
 
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();

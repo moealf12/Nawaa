@@ -1,4 +1,4 @@
-import { parseMoney } from "./provider-utils.mjs";
+import { parseMoney, firstPositivePriceField } from "./provider-utils.mjs";
 
 const MAX_DEPTH = 14;
 const MAX_ARRAY_ITEMS = 600;
@@ -112,11 +112,21 @@ function normalizeCurrency(value) {
 function buildCandidate(node, config) {
   if (!node || typeof node !== "object" || Array.isArray(node)) return null;
   const title = firstValue(node, config.titleKeys);
-  const rawPrice = firstValue(node, config.priceKeys);
-  const priceObject = rawPrice && typeof rawPrice === "object" ? rawPrice : null;
-  const price = parseMoney(priceObject ? firstValue(priceObject, ["amount","value","price","salePrice","formattedValue"]) : rawPrice);
-  const currency = firstValue(node, config.currencyKeys) ||
-    (priceObject && firstValue(priceObject, ["currency","currencyCode","priceCurrency","currencyIso"]));
+  // An explicit current/selling price outranks the generic price field,
+  // which storefronts also use for the crossed-out prior amount. Preserve
+  // merchant-specific sale/final ordering and fall back to generic only
+  // when no explicit purchase-price field exists on THIS product node.
+  const prioritizedPriceKeys = config.priceKeys.filter((key) => key !== "price");
+  if (config.priceKeys.includes("price")) prioritizedPriceKeys.push("price");
+  const selectedPrice = firstPositivePriceField(node, prioritizedPriceKeys,
+    ["amount","value","price","salePrice","formattedValue"]);
+  const priceObject = selectedPrice?.raw && typeof selectedPrice.raw === "object" ? selectedPrice.raw : null;
+  const price = selectedPrice?.amount ?? null;
+  // A declared currency on the selected price field is stronger than a
+  // generic catalog-level fallback (which may belong to another market).
+  const currency = (priceObject && firstValue(priceObject,
+    ["currency","currencyCode","priceCurrency","currencyIso"])) ||
+    firstValue(node, config.currencyKeys);
   if (typeof title !== "string" || title.trim().length < 3 || price === null || !currency) return null;
 
   const brandRaw = firstValue(node, config.brandKeys);
@@ -361,18 +371,58 @@ function extractVirginMegastoreHtmlProduct(html, url) {
   const image =
     source.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     source.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] || null;
-  const pricePatterns = [
-    /(?:AED|د\.?إ\.?|Dhs?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
-    /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:AED|د\.?إ\.?|Dhs?)/i,
-    /["'](?:formattedValue|formattedPrice)["']\s*:\s*["'][^"'0-9]*(?:AED\s*)?([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
-    /["'](?:value|priceValue|salePrice|sellingPrice|finalPrice|currentPrice)["']\s*:\s*["']?([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
+  // The full HTML contains header offers, loyalty/instalment prices and
+  // recommendation prices unrelated to the currently sold item. A page-global
+  // "first AED" regex used to certify those as the product's full price.
+  // Require the principal retail <h1> and read only its immediate PDP price
+  // vicinity. If the price cannot be tied to the sold subject, return NO
+  // domain-adapter price and let independent structured candidates decide.
+  const heading = /<h1\b[^>]*>[\s\S]{0,3000}?<\/h1>/i.exec(source);
+  if (!heading || !decodeHtmlText(heading[0])) return null;
+  const headingEnd = heading.index + heading[0].length;
+  const vicinity = source.slice(headingEnd, headingEnd + 6000)
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+  // Purchasable offer evidence ends BEFORE financing qualifications,
+  // cash-back/loyalty math and cross-sells. Never promote a payment-plan
+  // minimum (e.g. AED 1,000) into a PS5 add-on's full purchase price.
+  // HTML can split "AED" and "339" across siblings / &nbsp; markup, so
+  // identify the first amount in the VISIBLE principal-product text.
+  // Crossed-out and explicitly "old/list/was" prices are historical evidence,
+  // not the amount a customer can purchase for. Remove that marked evidence
+  // before considering numeric strings; do not rely on DOM/HTML order.
+  // Stop at a separate cross-sell/related-product HTML subtree before
+  // removing tags, because its CSS boundary would otherwise be lost.
+  const nearProduct = vicinity.split(/<(?:div|section|aside)\b[^>]*\bclass\s*=\s*["'][^"']*(?:similar-products|related-products|recommended-products|cross-sell|upsell|you-may-like)[^"']*["'][^>]*>/i, 1)[0];
+  const purchaseHtml = nearProduct
+    .replace(/<([a-z][\w:-]*)\b[^>]*\bclass\s*=\s*["'][^"']*(?:original-price|old-price|price-old|price-original|was-price|price-was|regular-price|list-price|compare-at-price|price__value--original|gtm-price-value-original|price__number--strike-through)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<(del|s|strike)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  const visible = decodeHtmlText(purchaseHtml)
+    .replace(/&(?:nbsp|#160|#x0*a0);/gi," ")
+    .replace(/[\u00a0\u202f]/g," ")
+    .replace(/\s+/g," ").trim();
+  const boundary = /\b(?:easy payment plans?|starting from|installments?|instalments?|loyalty dots?|tickit cashback|product availability|similar products|you might also like|related products|browsing history)\b/i.exec(visible);
+  const preFinanceText = boundary ? visible.slice(0,boundary.index) : visible.slice(0,900);
+  // Text-only sale presentations ("Was AED 599 Now AED 399") can lack
+  // semantic HTML, but "Was" always refers to an obsolete price.
+  const scoped = preFinanceText
+    .replace(/\b(?:was|previous(?:ly)?|regular price|original price|list price)\s*:?\s*(?:AED|د\.?إ\.?|Dhs?)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?/gi, " ")
+    .replace(/\b(?:earn|save|get|receive|redeem)\s+(?:(?:up to|as much as)\s+)?(?:AED|د\.?إ\.?|Dhs?)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?(?:\s+(?:cashback|rewards?|points?|coupons?|voucher))?/gi, " ")
+    .replace(/\b(?:cashback|rewards?|voucher|coupon)\s*:?\s*(?:AED|د\.?إ\.?|Dhs?)\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?/gi, " ");
+  const moneyPatterns = [
+    /(?:AED|د\.?إ\.?|Dhs?)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi,
+    /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:AED|د\.?إ\.?|Dhs?)/gi,
   ];
-  let price = null;
-  for (const pattern of pricePatterns) {
-    const match = source.match(pattern);
-    const parsed = parseMoney(match?.[1]);
-    if (parsed !== null && parsed > 0) { price = parsed; break; }
+  const amounts = new Set();
+  for (const pattern of moneyPatterns) {
+    for (const match of scoped.matchAll(pattern)) {
+      const amount = parseMoney(match[1]);
+      if (amount !== null && amount > 0) amounts.add(amount);
+    }
   }
+  // One attributable price or repeated copies of the SAME price are safe.
+  // Two unexplained different amounts cannot establish the checkout price.
+  const price = amounts.size === 1 ? amounts.values().next().value : null;
   if (!title || price === null) return null;
   return {
     name: decodeHtmlText(title),

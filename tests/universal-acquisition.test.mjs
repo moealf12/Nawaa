@@ -20,3 +20,101 @@ test("Crawlee fallback-shaped offers map into NAWAA product schema",()=>{
   assert.equal(product.source.canonicalUrl,offer.sourceUrl);
   assert.ok(product.quality.confidence>=0.6);
 });
+
+// v21.56 tooling audit: deterministic RED-first tests for cross-field ownership.
+// A coherent source record is required; valid scalar fields cannot be combined
+// across unrelated sellable products to mint a new price or SKU.
+import fc from 'fast-check';
+import {reconcile} from '../server/universal-acquisition.mjs';
+const fallbackChecks={seed:2146,numRuns:64};
+const fallbackUrl='https://merchant.example/p/laptop';
+
+test('property: a price may never borrow currency from a different source record',()=>{
+  fc.assert(fc.property(
+    fc.integer({min:100,max:100000}),
+    fc.integer({min:100,max:100000}),
+    fc.constantFrom('SAR','USD','AED'),
+    (orphanPrice,completePrice,currency)=>{
+      const extracted=reconcile([
+        {method:'json_ld',title:'Laptop A',price:orphanPrice,currency:null,
+          sku:'SKU-A',image:'https://merchant.example/a.jpg',brand:'A',availability:'in_stock'},
+        {method:'structured_meta',title:'Laptop B',price:completePrice,currency,
+          sku:'SKU-B',availability:'unknown'},
+      ],fallbackUrl);
+      assert.equal(extracted.productPrice,completePrice);
+      assert.equal(extracted.originalCurrency,currency);
+      assert.equal(extracted.title,'Laptop B');
+      assert.equal(extracted.sku,'SKU-B');
+      assert.equal(extracted.extraction.fieldSources.price,extracted.extraction.fieldSources.currency);
+    }),fallbackChecks);
+});
+
+test('property: evidence split between price-only and currency-only cannot create an offer',()=>{
+  fc.assert(fc.property(fc.integer({min:1,max:100000}),
+    fc.constantFrom('SAR','USD','AED'),(price,currency)=>{
+      assert.throws(()=>reconcile([
+        {method:'json_ld',title:'Laptop A',price,currency:null,sku:'SKU-A'},
+        {method:'structured_meta',title:'Laptop B',price:null,currency,sku:'SKU-B'},
+      ],fallbackUrl),/coherent|structured product evidence/i);
+    }),fallbackChecks);
+});
+
+test('property: an unrelated product cannot supply missing SKU or image to a priced offer',()=>{
+  fc.assert(fc.property(fc.integer({min:1,max:100000}),fc.integer({min:1,max:99999}),
+    (price,otherSku)=>{
+      const extracted=reconcile([
+        {method:'json_ld',title:'Laptop A',price,currency:'SAR',sku:null,image:null},
+        {method:'structured_meta',title:'Accessory B',price:null,currency:null,
+          sku:'FOREIGN-'+otherSku,image:'https://merchant.example/accessory.jpg'},
+      ],fallbackUrl);
+      assert.equal(extracted.productPrice,price);
+      assert.equal(extracted.sku,null);
+      assert.equal(extracted.image,null);
+    }),fallbackChecks);
+});
+
+test('positive control: a complete JSON-LD offer keeps its own price currency SKU and image',()=>{
+  const extracted=reconcile([
+    {method:'json_ld',title:'Laptop A',price:2499,currency:'SAR',sku:'LAP-14',
+      image:'https://merchant.example/laptop.jpg',availability:'in_stock'},
+    {method:'structured_meta',title:'Laptop A',price:null,currency:null,
+      sku:'LAP-14'},
+  ],fallbackUrl);
+  assert.equal(extracted.title,'Laptop A');
+  assert.equal(extracted.productPrice,2499);
+  assert.equal(extracted.originalCurrency,'SAR');
+  assert.equal(extracted.sku,'LAP-14');
+  assert.equal(extracted.image,'https://merchant.example/laptop.jpg');
+});
+
+test('positive control: matching explicit SKU can enrich a missing image without changing the owned price',()=>{
+  const extracted=reconcile([
+    {method:'json_ld',title:'Laptop A',price:2499,currency:'SAR',sku:'LAP-14'},
+    {method:'structured_meta',title:'Laptop A',price:null,currency:null,sku:'LAP-14',
+      image:'/laptop-a.jpg'},
+  ],fallbackUrl);
+  assert.equal(extracted.productPrice,2499);
+  assert.equal(extracted.originalCurrency,'SAR');
+  assert.equal(extracted.image,'https://merchant.example/laptop-a.jpg');
+  assert.equal(extracted.extraction.fieldSources.image,'structured_meta');
+  assert.equal(extracted.extraction.fieldSources.price,'json_ld');
+});
+
+test('adversarial: even matching SKU cannot override a contradictory model number',()=>{
+  const extracted=reconcile([
+    {method:'json_ld',title:'Laptop A',price:2499,currency:'SAR',sku:'SKU-14',
+      modelNumber:'MODEL-14',image:null},
+    {method:'structured_meta',title:'Unrelated Accessory',price:null,currency:null,
+      sku:'SKU-14',modelNumber:'MODEL-OTHER',image:'/foreign.jpg'},
+  ],fallbackUrl);
+  assert.equal(extracted.productPrice,2499);
+  assert.equal(extracted.modelNumber,'MODEL-14');
+  assert.equal(extracted.image,null);
+});
+
+test('adversarial: malformed or missing currency is not a sellable priced offer',()=>{
+  for(const currency of [null,'', 'SAR USD', 'SAR!', '1234']){
+    assert.throws(()=>reconcile([{method:'json_ld',title:'Laptop A',
+      price:2499,currency}],fallbackUrl),/coherent structured product evidence/);
+  }
+});

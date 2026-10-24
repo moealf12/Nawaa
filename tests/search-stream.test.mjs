@@ -27,3 +27,32 @@ test('stream completion returns the final snapshot when no offers were observed'
   const finalSnapshot={offers:[],nextCursor:'depth-1'};
   assert.equal(selectSearchStreamResult(finalSnapshot,null),finalSnapshot);
 });
+
+import fc from 'fast-check';
+
+test('property: a late empty diagnostic preserves the latest sellable offers and authoritative completion data',()=>{
+  fc.assert(fc.property(
+    fc.array(fc.integer({min:100,max:300000}),{minLength:1,maxLength:12}),
+    fc.string({minLength:1,maxLength:24}),
+    fc.boolean(),
+    (prices,cursor,partial)=>{
+      const snapshots=prices.map((price,i)=>({
+        offers:[{sourceUrl:'https://merchant.example/product/'+i,productPrice:price,
+          currency:'SAR',merchant:'Fixture Merchant'}],
+        coverage:{partial:true,complete:false},
+      }));
+      const lastWithOffers=snapshots.at(-1);
+      const terminal={offers:[],nextCursor:cursor,
+        coverage:{partial,complete:!partial,providersPending:0},
+        errors:partial?[{sourceId:'fixture',error:'partial'}]:[]};
+      const before=structuredClone({lastWithOffers,terminal});
+      const result=selectSearchStreamResult(terminal,lastWithOffers);
+      assert.deepEqual(result.offers,lastWithOffers.offers);
+      assert.equal(result.nextCursor,cursor);
+      assert.deepEqual(result.coverage,terminal.coverage);
+      assert.deepEqual(result.errors,terminal.errors);
+      assert.deepEqual({lastWithOffers,terminal},before,
+        'final SSE reconciliation must not mutate the underlying records');
+    }
+  ),{seed:2156,numRuns:64});
+});

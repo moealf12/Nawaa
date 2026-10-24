@@ -1,5 +1,5 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
-import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
+import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES, describeProduct } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 
@@ -878,6 +878,79 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
   return offers;
 }
 
+// CI-only, bounded structural check for source-observed link-only Best Buy SKU.
+// The nearest *parseable* JSON object with its own skuId is inspected; prices
+// in sibling/parent objects cannot establish SKU ownership. Even a direct
+// price field is merely a candidate for independent offer verification.
+function classifyBestBuyLinkOnlySkuRecord(html, sku) {
+  const source=String(html||"");
+  if(!/^\d{4,12}$/.test(String(sku))) return {status:"SKU_TOKEN_UNSCOPED",fields:[]};
+  const marker=new RegExp('"skuId"\\s*:\\s*"' + sku + '"',"g");
+  let found=false, match, occurrences=0;
+  while((match=marker.exec(source)) && occurrences++<3) {
+    found=true;
+    const markerEnd=marker.lastIndex;
+    const leftLimit=Math.max(0,match.index-16000);
+    let cursor=match.index, attempts=0;
+    while(attempts++<64) {
+      const start=source.lastIndexOf("{",cursor-1);
+      if(start<leftLimit) break;
+      cursor=start;
+      let depth=0, quoted=false, escaped=false, stop=-1;
+      const limit=Math.min(source.length,start+23000);
+      for(let i=start;i<limit;i++) {
+        const ch=source[i];
+        if(quoted) {
+          if(escaped) escaped=false;
+          else if(ch==="\\") escaped=true;
+          else if(ch==='"') quoted=false;
+        } else if(ch==='"') quoted=true;
+        else if(ch==="{") depth++;
+        else if(ch==="}" && --depth===0) {stop=i+1;break;}
+      }
+      if(stop<markerEnd) continue;
+      let object;
+      try {object=JSON.parse(source.slice(start,stop));} catch {continue;}
+      if(!object || typeof object!=="object" || Array.isArray(object) ||
+         !Object.hasOwn(object,"skuId") || String(object.skuId)!==String(sku)) continue;
+      const ownPrice=Object.hasOwn(object,"price")?object.price:null;
+      const salePrice=ownPrice && typeof ownPrice==="object" && !Array.isArray(ownPrice)
+        ? Number(ownPrice.customerPrice) : NaN;
+      // Audit only: inspect the field names/types of the same parsed SKU
+      // object. Never return prices, arbitrary merchant keys or sibling fields.
+      // These paths are hints for a later independent price-owner verification.
+      const rootKeys=[
+        "currentPrice","discountedPrice","finalPrice","listPrice","offer",
+        "offers","price","prices","pricing","regularPrice","retailPrice","salePrice",
+      ];
+      const nestedKeys=new Set([
+        "amount","customerPrice","currentPrice","discountedPrice","finalPrice",
+        "listPrice","price","regularPrice","retailPrice","salePrice","value",
+      ]);
+      const fields=[];
+      const type=value=>value===null ? "null" :
+        Array.isArray(value) ? "array" : typeof value;
+      for(const key of rootKeys) {
+        if(!Object.hasOwn(object,key) || fields.length>=12) continue;
+        const value=object[key];
+        fields.push({path:key,type:type(value)});
+        if(!value || typeof value!=="object" || Array.isArray(value)) continue;
+        for(const child of Object.keys(value).sort()) {
+          if(fields.length>=12) break;
+          if(nestedKeys.has(child))
+            fields.push({path:key+"."+child,type:type(value[child])});
+        }
+      }
+      return {
+        status:Number.isFinite(salePrice) && salePrice>0
+          ? "OWN_SKU_RECORD_PRICE_CANDIDATE" : "OWN_SKU_RECORD_MISSING_PRICE",
+        fields,
+      };
+    }
+  }
+  return {status:found ? "SKU_TOKEN_UNSCOPED" : "LINK_ONLY",fields:[]};
+}
+
 export function extractBestBuySearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
@@ -890,7 +963,81 @@ export function extractBestBuySearchOffers(html, query) {
     try { return JSON.parse('"' + value + '"'); } catch { return decodeHtml(value).replace(/\\"/g, '"').replace(/\\u0026/gi, "&").replace(/\\\//g, "/"); }
   };
 
+  // v21.29: Prefer the smallest complete JSON object that owns the matched
+  // price/SKU, matching PDP, title and image. A wide text neighborhood is NOT
+  // evidence that the last name/image belongs to this SKU. This bounded,
+  // opt-in structural path preserves the historical fallback for hydration
+  // formats that cannot be parsed as an independently attributable record.
+  const scopedRecordFor = (anchor, requiredEnd, sku) => {
+    const begin = Math.max(0, anchor - 16000);
+    const end = Math.min(source.length, anchor + 7000);
+    const stack = [];
+    let quoted = false;
+    let escaped = false;
+    for (let i = begin; i < end; i++) {
+      const char = source[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') { quoted = true; continue; }
+      if (char === "{") { stack.push(i); continue; }
+      if (char !== "}") continue;
+      const open = stack.pop();
+      if (open === undefined || open > anchor || i + 1 < requiredEnd) continue;
+      const recordText = source.slice(open, i + 1);
+      if (recordText.length > 23000) continue;
+      try { JSON.parse(recordText); } catch { continue; }
+      const skuIds = new Set([...recordText.matchAll(/"skuId":"(\d+)"/g)].map((entry) => entry[1]));
+      // A wrapper containing multiple distinct SKUs cannot establish field
+      // ownership. It must never be treated as one independently owned item.
+      if (skuIds.size !== 1 || !skuIds.has(sku)) continue;
+      const urls = [...recordText.matchAll(/"pdpUrl":"((?:\\.|[^"\\])+)"/g)]
+        .map((entry) => decodeJsonString(entry[1]))
+        .filter((url) => !/\/openbox(?:[/?#]|$)/i.test(url) &&
+          new RegExp("/sku/" + sku + "(?:[/?#]|$)", "i").test(url));
+      const titles = [...new Set([...recordText.matchAll(/"name":\{"short":"((?:\\.|[^"\\])*)"/g)]
+        .map((entry) => decodeJsonString(entry[1])).filter(Boolean))];
+      // A parseable, SKU-unique record with its own PDP is authoritative even
+      // if its title is missing or ambiguous. Never use a neighboring text
+      // fallback to invent the record's absent identity.
+      if (!urls.length) continue;
+      const images = [...new Set([...recordText.matchAll(/"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g)]
+        .map((entry) => decodeJsonString(entry[1])).filter(Boolean))];
+      return { sourceUrl:urls.at(-1), title:titles.length === 1 ? titles[0] : null, image:images.length === 1 ? images[0] : null };
+    }
+    return null;
+  };
+
+  // A textual price→SKU match must not close the containing product object
+  // before reaching its SKU. Allow nested price objects, but never bridge to a
+  // sibling record. Bounded to the pre-existing regex's 2,200-character span.
+  const priceSkuWithinRecord = (candidate) => {
+    let depth = 0, quoted = false, escaped = false;
+    for (const char of candidate) {
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') { quoted = true; continue; }
+      if (char === "{") depth++;
+      else if (char === "}" && --depth < 0) return false;
+    }
+    return !quoted;
+  };
+
   while ((match = priceRe.exec(source))) {
+    if (!priceSkuWithinRecord(match[0])) {
+      // A rejected match may have consumed another valid product's price.
+      // Resume at the next price anchor INSIDE the consumed span, if any.
+      const next = source.indexOf('"price":{"customerPrice":', match.index + 1);
+      if (next >= 0 && next < priceRe.lastIndex) priceRe.lastIndex = next;
+      continue;
+    }
     const price = Number(match[1]);
     const sku = match[2];
     if (!Number.isFinite(price) || price <= 0 || seen.has(sku)) continue;
@@ -902,15 +1049,109 @@ export function extractBestBuySearchOffers(html, query) {
     const pdpMatches = [...block.matchAll(/"pdpUrl":"((?:\\.|[^"\\])+)"/g)]
       .map((item) => decodeJsonString(item[1]))
       .filter((url) => !/\/openbox(?:[/?#]|$)/i.test(url) && new RegExp("/sku/" + sku + "(?:[/?#]|$)", "i").test(url));
-    const sourceUrl = pdpMatches.at(-1) || null;
+    const owned = scopedRecordFor(match.index, priceRe.lastIndex, sku);
+    // A trustworthy parsed per-SKU object that lacks a unique title is not a
+    // license to borrow one from adjacent products in the hydration blob.
+    if (owned && !owned.title) continue;
+    const sourceUrl = owned?.sourceUrl || pdpMatches.at(-1) || null;
 
-    const nameMatches = [...block.matchAll(/"name":\{"short":"((?:\\.|[^"\\])*)"/g)];
-    const title = nameMatches.length ? decodeJsonString(nameMatches.at(-1)[1]) : null;
+    // v21.31: Missing structured scope must not borrow the last name/image
+    // from an entire hydration neighborhood. Prefer fields before the next
+    // price anchor; permit leading fields only when a preceding SKU explicitly
+    // equals the currently selected SKU (legacy Best Buy nested product card).
+    const nextPriceAnchor = source.indexOf('"price":{"customerPrice":', priceRe.lastIndex);
+    const fallbackEnd = Math.min(end, nextPriceAnchor < 0 ? end : nextPriceAnchor);
+    const trailing = source.slice(match.index, fallbackEnd);
+    const priorSku = source.lastIndexOf('"skuId":"', match.index - 1);
+    const priorSkuBelongsHere = priorSku >= start &&
+      source.startsWith('"skuId":"' + sku + '"', priorSku) &&
+      match.index - priorSku <= 3000 &&
+      source.indexOf('"price":{"customerPrice":', priorSku) === match.index;
+    // A previous sibling's fields can appear AFTER that sibling's SKU.
+    // Do not carry those fields into a new object's leading title/image.
+    // Scan only the bounded 3K prefix and ignore delimiters inside strings.
+    const leadStart = Math.max(start, priorSku - 3000);
+    let priorBoundary = leadStart;
+    if (priorSkuBelongsHere) {
+      let quoted = false, escaped = false;
+      for (let i = leadStart; i < priorSku; i++) {
+        const char = source[i];
+        if (quoted) {
+          if (escaped) escaped = false;
+          else if (char === "\\") escaped = true;
+          else if (char === '"') quoted = false;
+          continue;
+        }
+        if (char === '"') { quoted = true; continue; }
+        if (char !== "}") continue;
+        let next = i + 1;
+        while (/\s/.test(source[next] || "")) next++;
+        if (source[next] !== ",") continue;
+        next++;
+        while (/\s/.test(source[next] || "")) next++;
+        if (source[next] === "{" && next < priorSku) priorBoundary = next;
+      }
+    }
+    // Include fields both before and after a same-SKU prefix, up to price.
+    // Valid Best Buy nested cards sometimes place title/image after skuId.
+    const leading = priorSkuBelongsHere ? source.slice(priorBoundary, match.index) : "";
+    const uniqueFields = (input, regex) => [...new Set([...input.matchAll(regex)]
+      .map((item) => decodeJsonString(item[1])).filter(Boolean))];
+    const trailingNames = uniqueFields(trailing, /"name":\{"short":"((?:\\.|[^"\\])*)"/g);
+    const leadingNames = uniqueFields(leading, /"name":\{"short":"((?:\\.|[^"\\])*)"/g);
+    const title = owned?.title ?? (trailingNames.length === 1 ? trailingNames[0]
+      : trailingNames.length === 0 && leadingNames.length === 1 ? leadingNames[0] : null);
 
-    const imageMatches = [...block.matchAll(/"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g)];
-    const image = imageMatches.length ? decodeJsonString(imageMatches.at(-1)[1]) : null;
+    const trailingImages = uniqueFields(trailing, /"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g);
+    const leadingImages = uniqueFields(leading, /"primaryImage":\{"piscesHref":"((?:\\.|[^"\\])*)"/g);
+    const image = owned ? owned.image : trailingImages.length === 1 ? trailingImages[0]
+      : trailingImages.length === 0 && leadingImages.length === 1 ? leadingImages[0] : null;
 
     if (!sourceUrl || !title) continue;
+    // Best Buy's search page interleaves product cards inside one large JSON
+    // hydration blob. The broad title neighborhood can borrow a neighboring
+    // product's name even if the SKU-specific PDP URL was selected correctly.
+    // Compare the actual RETAIL SUBJECT advertised by the descriptive PDP
+    // path with the scraped title. If both strongly identify incompatible
+    // gaming item types, never publish this name/URL/price combination.
+    // Ambiguous/non-descriptive slugs remain eligible for existing matching.
+    let pdpSlug = "";
+    try {
+      const parts = new URL(sourceUrl,"https://www.bestbuy.com").pathname.split("/").filter(Boolean);
+      if (parts[0] === "product" || parts[0] === "site")
+        pdpSlug = decodeURIComponent(parts[1] || "").replace(/[-_]+/g," ");
+    } catch {}
+    if (pdpSlug) {
+      const linkType = describeProduct({title:pdpSlug});
+      const nameType = describeProduct({title});
+      const known = new Set(["console","accessory","game"]);
+      if (linkType.platform && nameType.platform &&
+          known.has(linkType.kind) && known.has(nameType.kind) &&
+          linkType.kind !== nameType.kind) continue;
+      // v21.35: Live Best Buy source validation exposed AirPods 5 title on an
+      // AirPods 4 ANC SKU/PDP. Never publish an explicit cross-generation or
+      // Pro/non-Pro disagreement between the retailer PDP slug and title.
+      // Do NOT infer a replacement title or claim the unverified price belongs
+      // to either model. Exact separately owned AirPods 4 and 5 remain eligible.
+      const airpodsModel = value => {
+        const match = String(value).normalize("NFKC")
+          .match(/\bair\s*pods\s*(pro\s*)?([1-9]\d?)\b/i);
+        return match ? { pro:Boolean(match[1]), generation:Number(match[2]) } : null;
+      };
+      const linkAirpods = airpodsModel(pdpSlug);
+      const titleAirpods = airpodsModel(title);
+      if (linkAirpods && titleAirpods &&
+          (linkAirpods.pro !== titleAirpods.pro ||
+           linkAirpods.generation !== titleAirpods.generation)) continue;
+      // v21.36: A standalone AirPods SKU/PDP was actually assigned a nearby
+      // "Bundle ... Accessory Kit" title. Reject only when the title explicitly
+      // advertises an accessory-kit bundle but the descriptive PDP slug does
+      // not identify that kit. A genuine kit PDP remains eligible.
+      if (linkAirpods && titleAirpods &&
+          /^bundle\s*[-–:]?\s*/i.test(title) &&
+          /\baccessory\s+kit\b/i.test(title) &&
+          !/\b(?:bundle|accessory\s+kit)\b/i.test(pdpSlug)) continue;
+    }
     const haystack = normalizeSearchQuery(title);
     const hits = tokens.filter((token) => haystack.includes(token)).length;
     if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
@@ -1213,6 +1454,12 @@ function routeScore(store, intent, normalizedQuery) {
   }
 
   return { score, reasons, exactCategory, explicitBrand, broad };
+}
+
+// Read-only registry view for source-validation preflight. Reuse the actual
+// production storefront definitions instead of maintaining a second CI list.
+export function configuredFreeStorefrontIds() {
+  return STORES.map(({id}) => id);
 }
 
 export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
@@ -1531,6 +1778,49 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       : filteredOffers.slice(0, perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
+    // v21.38: Optional and bounded source-discovery gap evidence. A discovered
+    // SKU link without a SAME-SKU priced hydration offer is a diagnostic
+    // candidate, not proof of inventory, price, or a recoverable false negative.
+    // Never trigger extra PDP fetches or change storefront offer selection here.
+    const bestBuyDiscoveryGap = store.id === "bestbuy-us" && options.identityAudit === true
+      ? (() => {
+          const pricedSkus = new Set(htmlFirstOffers
+            .map(item => String(item.productId || "").trim()).filter(Boolean));
+          const linkOnly = [];
+          const seenSkus = new Set();
+          for (const link of links) {
+            try {
+              const parsed = new URL(String(link.url || ""));
+              const sku = /\/sku\/(\d+)(?:\/|$)/i.exec(parsed.pathname)?.[1];
+              if (!sku || pricedSkus.has(sku) || seenSkus.has(sku)) continue;
+              seenSkus.add(sku);
+              // Strip queries and hashes from the audit artifact.
+              linkOnly.push({sku,url:parsed.origin + parsed.pathname});
+            } catch {}
+          }
+          const recordInspections=linkOnly.slice(0,5).map(({sku})=>({
+            sku,...classifyBestBuyLinkOnlySkuRecord(html,sku),
+          }));
+          return {
+            discoveredLinkWithoutPricedOfferCount:linkOnly.length,
+            discoveredLinkWithoutPricedOfferSamples:linkOnly.slice(0,5),
+            // Lexical hint only, not a product record, price or ownership claim.
+            // These signals are sampled in the opt-in CI audit; no extra
+            // network traffic and no customer-facing extraction changes.
+            discoveredLinkSkuMarkerSamples:linkOnly.slice(0,5).map(({sku})=>({
+              sku,
+              literalSkuIdMarkerInHtml:new RegExp('"skuId"\\s*:\\s*"' + sku + '"').test(html || ""),
+            })),
+            discoveredLinkRecordSamples:recordInspections.map(({sku,status})=>({
+              sku,structuralStatus:status,
+            })),
+            discoveredLinkPriceShapeSamples:recordInspections.map(({sku,fields})=>({
+              sku,fields,
+            })),
+            linkSampleLimited:Number.isFinite(candidateLimit),
+          };
+        })()
+      : null;
     sourceReliability.record(store.id, {
       transportOk: !verificationBlocked,
       offers: offers.length,
@@ -1546,6 +1836,33 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       diagnostics:{
         queryFilter,
         queryFilterSamples,
+        // CI validation opt-in: identify the acquisition path and which
+        // strategies supplied the candidate's name and price. No raw merchant
+        // HTML, cookies, credentials, or user-specific search inputs are stored.
+        // This does not change candidate selection or customer-facing fields.
+        identityAudit: store.id === "bestbuy-us" && options.identityAudit === true ? {
+          stage: htmlFirstOffers.length ? "search_hydration" :
+            primarySearchOffers.length ? "direct_provider" :
+            resolutionLinks.length ? "pdp_resolution" : "no_candidates",
+          htmlPriceOfferCount:htmlFirstOffers.length,
+          productLinksDiscovered:links.length,
+          pdpResolvedOfferCount:resolvedOffers.length,
+          candidateOfferCount:allOffers.length,
+          acceptedOfferCount:offers.length,
+          ...bestBuyDiscoveryGap,
+          samples:allOffers.slice(0,6).map(offer => ({
+            urlSku:/\/sku\/(\d+)(?:[/?#]|$)/i.exec(String(offer.resolvedPageUrl || offer.sourceUrl || ""))?.[1] || null,
+            extractedSku:offer.sku || offer.specs?.modelNumber || null,
+            title:typeof offer.title === "string" ? offer.title.slice(0,140) : null,
+            originalPrice:offer.originalProductPrice ?? null,
+            originalCurrency:offer.originalCurrency || null,
+            extractionStrategy:offer.extraction?.strategy || (htmlFirstOffers.length ? "search_hydration" : "none"),
+            nameSource:offer.extraction?.fieldSources?.name?.strategy || null,
+            priceSource:offer.extraction?.fieldSources?.offers?.strategy || null,
+            identityRejectedCandidates:offer.extraction?.identity?.summary?.rejected ?? null,
+            acceptedByQueryFilter:filteredOffers.includes(offer),
+          })),
+        } : null,
         // Keep bounded rejection reasons without replaying user-specific URL
         // query strings, credentials or merchant cookies into CI artifacts.
         productLinkTrust:store.id === "aliexpress-cn" ? aliexpressProductLinkTrust : null,

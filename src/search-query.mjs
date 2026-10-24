@@ -1,3 +1,4 @@
+import {displayProductSpecification} from "./product-card-presentation.mjs";
 // Shared by the API and browser: aliases affect matching and provider queries alike.
 const ALIASES = [
   ["قهوه", "coffee"], ["بن", "coffee"], ["قميص", "shirt"], ["ملابس", "clothing"],
@@ -32,7 +33,8 @@ const ALIASES = [
   ["جيجابايت", "gb"], ["جيجا بايت", "gb"], ["جيجا", "gb"], ["تيرابايت", "tb"],
   ["اسود", "black"], ["ابيض", "white"], ["لافندر", "lavender"], ["ازرق", "blue"],
   ["اخضر", "green"], ["ذهبي", "gold"], ["فضي", "silver"],
-  ["كفر", "case"], ["حافظه", "case"], ["شاحن", "charger"], ["كيبل", "cable"],
+  ["كفر", "case"], ["حافظه", "case"], ["شاحن", "charger"],
+  ["capinha", "case"], ["capinhas", "case"], ["كيبل", "cable"],
   ["مجدد", "refurbished"], ["مستعمل", "used"], ["جديد", "new"],
   ["اشرطه", "games"], ["العاب", "games"], ["لعبه", "game"],
   ["جهاز", "console"], ["رقمي", "digital"], ["ديجيتال", "digital"], ["اقراص", "disc"], ["سليم", "slim"],
@@ -40,6 +42,9 @@ const ALIASES = [
   ["اتش بي", "hp"], ["ديل", "dell"], ["لينوفو", "lenovo"], ["اسوس", "asus"],
   ["لابتوب", "laptop"], ["لابتوبات", "laptop"], ["لاب توب", "laptop"], ["حاسوب محمول", "laptop"],
   ["طابعه", "printer"], ["طابعات", "printer"], ["جوال", "phone"], ["جوالات", "phone"],
+  // Source-backed German cartridge terms for both shopper queries and offers.
+  ["druckerpatronen", "cartridge"], ["druckerpatrone", "cartridge"],
+  ["tintenpatronen", "cartridge"], ["tintenpatrone", "cartridge"],
   ["تلفزيون", "tv"], ["تلفزيونات", "tv"], ["شاشه", "monitor"], ["شاشات", "monitor"],
   ["سماعات", "headphones"], ["سماعه", "headphones"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
@@ -116,7 +121,7 @@ export const BRAND_CATEGORY_PRIORITIES = {
   niceone: ['beauty','perfume','grocery'],
 };
 export const PRODUCT_CATEGORIES = [
-  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|briefcases?|rucksacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with|(?:laptop|notebook) batter(?:y|ies)|(?:replacement|compatible|spare) batter(?:y|ies)|batter(?:y|ies) (?:replacement|compatible|for)|power suppl(?:y|ies)|stylus|stylus pen|photo paper|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
+  ['accessory','ملحقات وإكسسوارات', /\b(?:mouse|keyboard|charger|cable|adapter|adaptor|cases?|covers?|protector|cartridge|toner|ink|controller|dualsense|charging station|stick module|remote|gift card|hubs?|docking stations?|port expanders?|atomizer|perfume bottle|empty bottle|laptop screen|replacement screen|replacement display|display panel|lcd panel|lcd screen|backpacks?|briefcases?|rucksacks?|(?:laptop|notebook) (?:sleeves?|slings?|bags?|cases?|pouches?)|(?:cpu |laptop |notebook )?(?:cooling|replacement) fans?|cpu fans?|protective shells?|privacy screens?|active pens?|(?:lcd|led lcd|screen) replacements?|only compatible with|(?:laptop|notebook) batter(?:y|ies)|(?:replacement|compatible|spare) batter(?:y|ies)|batter(?:y|ies) (?:replacement|compatible|for)|power suppl(?:y|ies)|stylus|stylus pen|photo paper|printer paper|printing paper|drum unit|heatsinks?|heat sinks?|thermal pads?|printhead|print head|ssds?|nvme|solid state drives?|storage expansion(?: drives?)?)\b/],
   ['laptop','لابتوبات', /\b(?:laptops?|notebooks?|macbook|chromebook|zenbook|vivobook|thinkpad|ideapad|elitebook|probook|omnibook|spectre|envy|pavilion|inspiron|latitude|loq)\b/],
   ['printer','طابعات', /\b(?:printers?|laserjet|deskjet|officejet|ecotank|smart tank)\b/],
   ['desktop','كمبيوتر مكتبي', /\b(?:desktop|imac|mac mini|all in one|tower pc|optiplex|prodesk)\b/],
@@ -152,6 +157,26 @@ export const PRODUCT_CATEGORIES = [
   ['office','مكتبية', /\b(?:office supplies|stationery|notebook|pens?|pencils?|paper shredder)\b/],
   ['tool','أدوات', /\b(?:drill|saw|screwdriver|power tool)\b/],
 ];
+// v21.22 EART-minimal: resolve the sold retail subject BEFORE the target of a
+// compatibility relation. This protects unrelated device families without an
+// SKU blacklist or a hosted ontology. An included accessory after 'with' does
+// not turn a complete device into a spare part. Raw merchant data stays intact.
+const RETAIL_COMPONENT_NOUN = /\b(?:lens(?:es)?|straps?|bands?|filters?|capsules?|docks?|skins?|vinyl wraps?|decals?|heatsinks?|heat sinks?|cartridges?|toners?|replacement batteries|replacement battery)\b/;
+const RETAIL_COMPATIBILITY_RELATION = /\b(?:compatible with|designed for|fits|for)\b/;
+const RETAIL_INCLUDED_COMPONENT = /\b(?:with|including|includes|bundled with)\b/;
+function isCompatibilityComponentSubject(normalizedTitle) {
+  const relation = RETAIL_COMPATIBILITY_RELATION.exec(normalizedTitle);
+  if (!relation) return false;
+  const soldSubject = normalizedTitle.slice(0, relation.index).trim();
+  if (!soldSubject) return false;
+  // Resolve the PRIMARY sold item before its optional included accessories:
+  // "lens with pouch for camera" sells a lens; "camera with lens for travel"
+  // sells a camera. A secondary 'with' must not erase the actual first subject.
+  const primarySubject = soldSubject.split(RETAIL_INCLUDED_COMPONENT,1)[0].trim();
+  // Restrict the signal to the first retail phrase, not device compatibility.
+  return RETAIL_COMPONENT_NOUN.test(primarySubject.split(' ').slice(0,6).join(' '));
+}
+
 export function productCategory(offer = {}) {
   return productCategoryWithDescription(offer, describeProduct(offer));
 }
@@ -214,6 +239,41 @@ function productCategoryWithDescription(offer, gaming) {
   // Preserve titles which actually START with the Apple iPhone device.
   const primaryRetailTitle=String(offer?.title || '');
 
+  const soldTitle = normalizeSearchQuery(primaryRetailTitle);
+  if (isCompatibilityComponentSubject(soldTitle)) return 'accessory';
+  // An ink multipack that lists compatible DeskJet/OfficeJet/Envy models after
+  // "including" is a consumable, not a printer. Only the seller's subject before
+  // the compatibility list may establish a complete printing device.
+  const compatiblePrinterList = soldTitle.match(/\b(?:including|compatible with|for|fits)\b/);
+  if (compatiblePrinterList) {
+    const retailSubjectBeforeList = soldTitle.slice(0, compatiblePrinterList.index);
+    const isInkPackSubject = /\b(?:multi\s?pack|twin\s?pack|cartridges?|toners?|ink(?:jet)?(?:\s+(?:pack|set|refill))?)\b/.test(retailSubjectBeforeList);
+    const hasPrinterDeviceSubject = /\b(?:printers?|deskjet|laserjet|officejet|smart tank|ecotank)\b/.test(retailSubjectBeforeList);
+    const mentionsCompatiblePrinters = /\b(?:printers?|deskjet|laserjet|officejet|envy)\b/.test(soldTitle.slice(compatiblePrinterList.index));
+    if (isInkPackSubject && !hasPrinterDeviceSubject && mentionsCompatiblePrinters) return 'accessory';
+  }
+  // A complete printer sold WITH supplies must remain a printer; HP-branded
+  // cartridges mentioning printer compatibility are not complete printers.
+  if (/\b(?:cartridges?|ink|toners?)\b/.test(soldTitle)) {
+    const included=soldTitle.match(/\b(?:with|including|includes)\b/);
+    if(included) {
+      const primary=soldTitle.slice(0,included.index);
+      if (/\b(?:printers?|deskjet|laserjet|officejet)\b/.test(primary) &&
+          !/\b(?:for|compatible|fits|cases?|covers?|cartridges?|toners?|ink|paper|replacement|repair)\b/.test(primary))
+        return 'printer';
+    }
+  }
+  // Source-backed first-ten: PanzerGlass CARE Explorer is a protection bundle,
+  // not the iPhone named solely as the compatible model. Do not misclassify
+  // a genuine Apple iPhone bundle whose handset is the retail title's subject.
+  if (/\biphone\s+\d+\b/.test(soldTitle) &&
+      !/^(?:apple\s+)?iphone\s+\d+\b/.test(soldTitle) &&
+      /\b(?:panzerglass|protection (?:package|bundle)|protective (?:case|kit))\b/.test(soldTitle)) return 'accessory';
+  // Printer paper, guides, drum units and repair kits are consumables/parts,
+  // even if the compatibility text says HP Printer or LaserJet.
+  if (/\b(?:printer paper|printing paper|paper trays? replacement|paper jam|feed repair kit|repair kit|user guide|drum unit|ink bottles?|ink cartridg(?:e|es)|printer cartridg(?:e|es))\b/.test(soldTitle))
+    return 'accessory';
+
   // A title beginning "Capa ... iPhone" sells a Portuguese phone cover.
   // The compatible iPhone model does not establish a complete handset.
   if (/^\s*capas?\b/i.test(primaryRetailTitle) &&
@@ -262,7 +322,14 @@ function explicitModels(value) {
 export function parseSearchIntent(value = "") {
   const normalizedQuery = normalizeSearchQuery(value);
   const brand = Object.keys(BRAND_CATEGORY_PRIORITIES).find(name => (' '+normalizedQuery+' ').includes(' '+name+' ')) || null;
-  const categoryDefinition = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
+  // An explicit component search (camera lens, watch strap, vacuum filter)
+  // is accessory intent even when it names the compatible device category.
+  // An explicitly included accessory ('camera with lens') keeps device intent.
+  const componentRequested = RETAIL_COMPONENT_NOUN.test(normalizedQuery) &&
+    !RETAIL_INCLUDED_COMPONENT.test(normalizedQuery);
+  const categoryDefinition = componentRequested
+    ? ['accessory','ملحقات وإكسسوارات',RETAIL_COMPONENT_NOUN]
+    : PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const kind = queryProductKind(normalizedQuery);
   const category = kind === 'console' || kind === 'game' ? kind : categoryDefinition?.[0] || (kind === 'accessory' ? 'accessory' : null);
   // Remove structural category phrases globally before deciding whether a query
@@ -328,7 +395,7 @@ const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)
 const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
 // Console accessories may mention a complete PS5 console in compatibility text.
 // Reject peripheral product nouns before trusting 'Console / Digital Edition'.
-const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
+const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|skins?|vinyl wraps?|decals?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|heatsinks?|heat sinks?|thermal pads?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
 // Storage-media nouns identify a sold component, not the PS5 it fits.
 // A title-leading real console subject remains a console when its SSD is included.
 const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
@@ -419,8 +486,20 @@ export function describeProduct(offer = {}) {
   const isBundle = /\bbundle\b/.test(title) ||
     explicitlyIncludedConsoleAccessory(title, offer.title) || identifiedConsoleBundle;
   let kind = "product";
+  // Recorded PS5 Slim Amazon faceplates are protective parts rather than a
+  // complete console, even when their compatibility line says Digital Edition.
+  const protectiveConsolePart = /\b(?:faceplates?|face plates?|protective dissipation|replacement ventilation|replacement shells?|replacement panels?|replacement (?:side |cover |console |cooling |ventilation ){0,4}(?:shells?|plates?|panels?|covers?|vents?)|cover plates?|scratch resistant installation)\b/.test(title);
   if (platform) {
-    if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
+    // Merchant inclusion evidence is negative: a gaming monitor explicitly
+    // stating "console not included" is NOT a complete PS5 console. Resolve
+    // the actual monitor item through the shared product category classifier.
+    // This applies by retail relationship, not a merchant/ASIN blacklist.
+    if (/\bconsole not included\b/.test(title) &&
+        /\b(?:monitors?|screens?|displays?)\b/.test(title) &&
+        !evidencedConsoleChassis) kind = "product";
+    else if (protectiveConsolePart && !evidencedConsoleChassis &&
+        !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
+    else if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
     else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       GENUINE_CONSOLE_BUNDLE(title) ||
       identifiedConsoleBundle ||
@@ -515,6 +594,31 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       !/\b(?:controller (?:holders?|stands?|chargers?|charging stations?)|dualsense (?:charging|dock))\b/.test(retailPackageTitle));
   }
   const offerCategory = productCategoryWithDescription(offer, description);
+  // Match the actual retail item, not only the broad accessory category:
+  // HP ink is not an HP mouse, and a power cable/housing is not a disc drive.
+  const retailSubject = normalizeSearchQuery(offer?.title || "");
+  const mouseRequested = /\bmouse\b/.test(normalizedQuery) && !/\bmouse (?:pad|mat)\b/.test(normalizedQuery);
+  const wrongMouseSubject = mouseRequested &&
+    (!/\b(?:mouse|mice)\b/.test(retailSubject) ||
+     /\bmouse (?:pad|mat)\b/.test(retailSubject) ||
+     (intent.brand === "hp" && !/^hp\b/.test(retailSubject) &&
+      normalizeSearchQuery(offer?.specs?.brand || offer?.brand || "") !== "hp"));
+  // HP printer requests must identify an HP-manufactured sellable device.
+  // Third-party toner kits may mention every compatible LaserJet family but
+  // cannot become a low-priced HP printer merely by category/keyword matching.
+  const hpPrinterRequested = intent.brand === "hp" && effectiveCategory === "printer";
+  const merchantMaker = normalizeSearchQuery(offer?.specs?.brand || offer?.brand || "");
+  const wrongHpPrinterMaker = hpPrinterRequested &&
+    !/^(?:hp|hewlett packard)\b/.test(retailSubject) &&
+    !["hp","hewlett packard"].includes(merchantMaker);
+
+  const requestedInternalRepair = /\b(?:connector module|drive module|replacement module|internal optical|kem 497aaa)\b/.test(normalizedQuery);
+  const driveRequested = /\b(?:disc|disk|optical|blu ray) drive\b/.test(normalizedQuery) &&
+    !/\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\b/.test(normalizedQuery);
+  const wrongDriveSubject = driveRequested &&
+    (!/\b(?:disc|disk|optical|blu ray) drive\b/.test(retailSubject) ||
+      /\b(?:power cable|replacement cable|housing|empty shell|travel case|carrying case|repair kit|protective case)\b/.test(retailSubject) ||
+      (!requestedInternalRepair && /\b(?:connector module|disc drive module|optical drive module|replacement module|kem 497aaa)\b/.test(retailSubject)));
   // Product-type words (mouse, laptop, perfume...) are structural intent rather
   // than free-text tokens: reward the matching category without polluting model/
   // variant token matching.
@@ -533,6 +637,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
+  if (wrongMouseSubject || wrongDriveSubject || wrongHpPrinterMaker) confidence *= 0.1;
 
   // Brand-only searches still reject accessories that merely carry the name.
   // Query-only accessory intent was prepared outside the per-offer loop.
@@ -688,8 +793,8 @@ export function mergeComparisonOffers(source, candidates = []) {
     const conflictingCondition = source.condition !== offer.condition;
     const incompatiblePhoneVersion = bothPhones && (
       ["regionVersion","sim"].some(key => {
-        const left = normalizeSearchQuery(source.specs?.[key] || "");
-        const right = normalizeSearchQuery(offer.specs?.[key] || "");
+        const left = normalizeSearchQuery(displayProductSpecification(key, source.specs?.[key]) || "");
+        const right = normalizeSearchQuery(displayProductSpecification(key, offer.specs?.[key]) || "");
         return left && right && left !== right;
       }) ||
       // A carrier-tied contract is not known to be equivalent to an unlocked offer.

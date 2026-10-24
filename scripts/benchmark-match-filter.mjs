@@ -50,7 +50,14 @@ for (const offer of offers) {
   assert.deepStrictEqual(candidate.describeProduct(offer),baseline.describeProduct(offer),'description parity: '+offer.title);
   assert.deepStrictEqual(candidate.productCategory(offer),baseline.productCategory(offer),'category parity: '+offer.title);
 }
+// The v21.20 retail-subject fixes deliberately change matching for disc-drive
+// parts and mouse-subtype searches. Historical full-value parity would reject
+// the customer-trust corrections; their exact RED/GREEN behavior is enforced in
+// search-multilingual-accessory-identity.test.mjs and real Chromium acceptance.
+// All remaining semantic paths retain strict main-vs-candidate parity.
+const correctedIntentQueries = new Set(['PS5 disc drive','Logitech mouse']);
 for (const q of queries) {
+  if (correctedIntentQueries.has(q)) continue;
   assert.deepStrictEqual(candidate.filterQueryOffers(q,unaffected),baseline.filterQueryOffers(q,unaffected),'unaffected filter parity: '+q);
   for (const offer of unaffected) {
     assert.deepStrictEqual(candidate.assessOfferMatch(q,offer),baseline.assessOfferMatch(q,offer),'unaffected match parity: '+q+' '+offer.title);
@@ -92,7 +99,8 @@ console.log('MATCH_FILTER_BENCHMARK '+JSON.stringify({
   parityQueries:queries.length,parityOffers:historicalFalsePositive?unaffected.length:offers.length,rounds:6,
   baselineMedianMs:baseMs,candidateMedianMs:candidateMs,
   relativeSpeedup:Number((baseMs/candidateMs).toFixed(3)),
-  semanticallyEquivalent:!historicalFalsePositive,unaffectedOfferParity:true,
+  semanticallyEquivalent:!historicalFalsePositive && correctedIntentQueries.size===0,
+  unaffectedOfferParity:true,correctedIntentQueries:[...correctedIntentQueries],
   intentionalChange:historicalFalsePositive?{
     reason:'Arabic covers no longer falsely match iPhone 17 handsets',
     excludedOfferCount:iphoneBefore.length-iphoneAfter.length,

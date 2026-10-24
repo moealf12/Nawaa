@@ -131,16 +131,48 @@ export function resolveStructuredProductNodes(nodes = [], pageUrl = null) {
       }
       const associated = resolvedOffers(variant);
       if (!associated?.length) return [{ "@type":"UnverifiedOffer" }];
-      return associated.map(offer => ({
-        ...offer,
-        // Identity metadata belongs to THIS declared variant, never a sibling.
-        sku:offer.sku || variant.sku || null,
-        mpn:offer.mpn || variant.mpn || null,
-        name:offer.name || variant.name || null,
-        url:offer.url || variant.url || null,
-        image:offer.image || variant.image || null,
-        color:offer.color || variant.color || null,
-      }));
+      return associated.map(offer => {
+        // A directly stated Offer SKU/MPN must not contradict the owning Product
+        // variant's own identifier. Do not combine its price with a different
+        // variant's identity, even if both are in the same trusted graph.
+        const identifierConflict = ["sku", "mpn"].some(field => {
+          const productId = variant[field];
+          const offerId = offer[field];
+          return productId != null && offerId != null &&
+            String(productId).trim() !== "" && String(offerId).trim() !== "" &&
+            String(productId).trim() !== String(offerId).trim();
+        });
+        // An explicit Product variant selector and its priced Offer destination
+        // must not select different variants of the SAME product detail page.
+        // A shared Product.url without a selector may legitimately describe
+        // several Offer URLs; do not reject that common merchant pattern.
+        // Different URL paths/hosts require separate alias evidence, so this
+        // narrow guard does not invent global merchant redirect rules.
+        const variantDestinationConflict = (() => {
+          if (!page || typeof variant.url !== "string" || typeof offer.url !== "string") return false;
+          try {
+            const declared = new URL(variant.url, page);
+            const destination = new URL(offer.url, page);
+            const samePage = declared.origin === destination.origin &&
+              declared.pathname.replace(/\/+$/, "") === destination.pathname.replace(/\/+$/, "");
+            const declaredVariant = declared.searchParams.get("variant");
+            const offeredVariant = destination.searchParams.get("variant");
+            return samePage && declaredVariant !== null && offeredVariant !== null &&
+              declaredVariant !== offeredVariant;
+          } catch { return false; }
+        })();
+        if (identifierConflict || variantDestinationConflict) return { "@type":"UnverifiedOffer" };
+        return {
+          ...offer,
+          // Identity metadata belongs to THIS declared variant, never a sibling.
+          sku:offer.sku || variant.sku || null,
+          mpn:offer.mpn || variant.mpn || null,
+          name:offer.name || variant.name || null,
+          url:offer.url || variant.url || null,
+          image:offer.image || variant.image || null,
+          color:offer.color || variant.color || null,
+        };
+      });
     });
     groups.push({
       "@type":"Product",
