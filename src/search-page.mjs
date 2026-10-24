@@ -59,10 +59,11 @@ const state = {
 // It cannot mint trust. Unbound JSON and legacy streams have no source owner.
 function clearDisplayBinding(){
   state.displaySnapshot=null;
-  if(els.results){
-    delete els.results.dataset.presentationStreamGeneration;
-    delete els.results.dataset.presentationSnapshotRevision;
-    els.results.dataset.trustBadgeEligible='false';
+  const dataset=els.results?.dataset;
+  if(dataset){
+    delete dataset.presentationStreamGeneration;
+    delete dataset.presentationSnapshotRevision;
+    dataset.trustBadgeEligible='false';
   }
 }
 function stampDisplayRender(product){
@@ -70,16 +71,21 @@ function stampDisplayRender(product){
   const claimed=state.displaySnapshot;
   const owned=claimed?.requestId===state.requestId &&
     claimed?.product===product ? claimed : null;
-  els.results.dataset.presentationRenderEpoch=String(epoch);
-  els.results.dataset.presentationRequestId=String(state.requestId);
-  if(owned){
-    els.results.dataset.presentationStreamGeneration=owned.streamGeneration;
-    els.results.dataset.presentationSnapshotRevision=String(owned.snapshotRevision);
-  }else{
-    delete els.results.dataset.presentationStreamGeneration;
-    delete els.results.dataset.presentationSnapshotRevision;
+  // Minimal server/Node DOM mocks may omit HTMLElement.dataset. In real
+  // Chromium this is always present; no fake attribute can mint trust.
+  const dataset=els.results?.dataset;
+  if(dataset){
+    dataset.presentationRenderEpoch=String(epoch);
+    dataset.presentationRequestId=String(state.requestId);
+    if(owned){
+      dataset.presentationStreamGeneration=owned.streamGeneration;
+      dataset.presentationSnapshotRevision=String(owned.snapshotRevision);
+    }else{
+      delete dataset.presentationStreamGeneration;
+      delete dataset.presentationSnapshotRevision;
+    }
+    dataset.trustBadgeEligible='false';
   }
-  els.results.dataset.trustBadgeEligible='false';
   // Display ownership is not a source-revision-backed trust decision.
   return Object.freeze({renderEpoch:epoch,requestId:state.requestId,
     streamGeneration:owned?.streamGeneration??null,
