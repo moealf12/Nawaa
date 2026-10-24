@@ -19,15 +19,26 @@ export function createIsolatedTrustedJournalStore(){
   async function bind(tx,b){
     if(!bindingOk(b))throw Error('invalid_source_head_binding');
     await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',[b.sourceKey]);
-    const rows=(await tx.query('SELECT source_key,observed_at,revision,record_id FROM '+
+    const rows=(await tx.query('SELECT source_key,observed_at,revision,record_id,is_conflicted FROM '+
       H+' WHERE source_key=$1 FOR UPDATE',[b.sourceKey])).rows;
     const old=rows[0],next=Date.parse(b.observedAt);
     if(old){
       const previous=new Date(old.observed_at).getTime();
       if(next<previous)return false;
-      if(next===previous)return old.revision===b.revision&&old.record_id===b.recordId;
+      if(next===previous){
+        if(!old.is_conflicted&&old.revision===b.revision&&old.record_id===b.recordId)
+          return true;
+        // Even an equal-timestamp contradictory source must invalidate all
+        // preceding receipts rather than silently preserve the old head.
+        await tx.query('UPDATE '+H+' SET is_conflicted=true WHERE source_key=$1',
+          [b.sourceKey]);
+        await tx.query('INSERT INTO '+HISTORY+
+          '(source_key,observed_at,revision,record_id,is_conflicted) VALUES($1,$2,$3,$4,true)',
+          [b.sourceKey,b.observedAt,b.revision,b.recordId]);
+        return false;
+      }
       await tx.query('UPDATE '+H+
-        ' SET observed_at=$2,revision=$3,record_id=$4 WHERE source_key=$1',
+        ' SET observed_at=$2,revision=$3,record_id=$4,is_conflicted=false WHERE source_key=$1',
         [b.sourceKey,b.observedAt,b.revision,b.recordId]);
     }else{
       await tx.query('INSERT INTO '+H+
@@ -58,7 +69,7 @@ export function createIsolatedTrustedJournalStore(){
       T+' WHERE receipt_ref=$1 ORDER BY id ASC',[ref])).rows,
     currentHead:async sourceKey=>{
       if(!HEX.test(sourceKey||''))throw Error('invalid_source_head_key');
-      const rows=(await pool.query('SELECT observed_at AS "observedAt",revision,'+
+      const rows=(await pool.query('SELECT observed_at AS "observedAt",revision,is_conflicted AS conflicted,'+
         'record_id AS "recordId" FROM '+H+' WHERE source_key=$1',[sourceKey])).rows;
       return rows[0]?{...rows[0],observedAt:new Date(rows[0].observedAt).toISOString()}:null;
     },
@@ -80,10 +91,11 @@ export function createIsolatedTrustedJournalStore(){
       'inserted_at timestamptz NOT NULL DEFAULT now())');
     await pool.query('CREATE TABLE IF NOT EXISTS '+H+'('+
       'source_key text PRIMARY KEY,observed_at timestamptz NOT NULL,'+
-      'revision text NOT NULL,record_id text NOT NULL)');
+      'revision text NOT NULL,record_id text NOT NULL,is_conflicted boolean NOT NULL DEFAULT false)');
     await pool.query('CREATE TABLE IF NOT EXISTS '+HISTORY+'('+
       'id bigserial PRIMARY KEY,source_key text NOT NULL,'+
-      'observed_at timestamptz NOT NULL,revision text NOT NULL,record_id text NOT NULL)');
+      'observed_at timestamptz NOT NULL,revision text NOT NULL,record_id text NOT NULL,'+
+      'is_conflicted boolean NOT NULL DEFAULT false)');
     await pool.query('CREATE OR REPLACE FUNCTION nawaa_ci_reject_source_history_mutation() '+
       "RETURNS trigger LANGUAGE plpgsql AS $ BEGIN RAISE EXCEPTION 'append-only source head history'; END; $");
     await pool.query('DROP TRIGGER IF EXISTS nawaa_ci_head_history_immutable ON '+HISTORY);
