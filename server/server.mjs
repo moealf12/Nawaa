@@ -38,6 +38,7 @@ import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
 import {stripUntrustedCustomerTrustClaims} from "./trusted-sse-egress.mjs";
+import {configuredPdpStreamShadow} from "./trusted-pdp-stream-shadow.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 // Isolated canonical HTTP proof: synthetic canonical prices must not be mixed
@@ -984,6 +985,7 @@ const server = http.createServer(async (req, res) => {
     const cached = cachedSearch.peek(key,{allowStale:false});
     const requestStarted = PROFILE_SEARCH_STREAM ? performance.now() : 0;
     let firstValidPublished=false,firstExactPublished=false;
+    let pdpShadow=null; // No source fetch unless explicit server-only opt-in.
     res.writeHead(200,{
       "content-type":"text/event-stream; charset=utf-8",
       "cache-control":"no-cache, no-transform",
@@ -1014,6 +1016,8 @@ const server = http.createServer(async (req, res) => {
         ...(displayTrustContext ? {displayTrustContext} : {})});
       const serializedAt=measuring ? performance.now() : 0;
       res.write("data: "+serialized+"\n\n");
+      if(event==="snapshot")pdpShadow?.consider(outgoing,displayTrustContext.snapshotRevision);
+      if(event==="done"||event==="error")pdpShadow?.close();
       if (measuring) {
         const milestone=firstOfferMilestones(data?.offers);
         // One per milestone per request, bounded diagnostic labels only.
@@ -1049,8 +1053,13 @@ const server = http.createServer(async (req, res) => {
       if(!res.writableEnded) {
         closed=true;
         streamController.abort(new Error("search_client_disconnected"));
+        pdpShadow?.close();
       }
     });
+    // Fail closed when signing keys are absent, disabled or source throttled.
+    // This diagnostic remains entirely outside the critical first-SSE path.
+    pdpShadow=configuredPdpStreamShadow({streamGeneration,
+      signal:streamController.signal,sendEvent:send});
     try {
       if (cached) {
         send("snapshot",{...await canonicalResponse(cached,normalized),nextCursor});
