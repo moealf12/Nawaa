@@ -973,6 +973,7 @@ const server = http.createServer(async (req, res) => {
     const normalized = normalizeSearchQuery(q);
     // Per HTTP stream, server-owned correlation only; not a trust certificate.
     const streamGeneration = randomUUID();
+    let snapshotRevision = 0;
     const key = searchCacheKey(normalized,0);
     // Streamed searches must expose the same signed depth-1 cursor as /api/search.
     // Without it, the UI cannot request additional sources after an SSE result.
@@ -995,7 +996,16 @@ const server = http.createServer(async (req, res) => {
       const measuring=PROFILE_SEARCH_STREAM && event==="snapshot";
       res.write("event: "+event+"\n");
       const serializeStarted=measuring ? performance.now() : 0;
-      const serialized=JSON.stringify({...data,streamGeneration});
+      // An SSE frame version belongs to this HTTP stream and THIS snapshot.
+      // This correlation envelope deliberately never attests to any sellable
+      // offer, and it cannot authorize customer badges or T5-T8 milestones.
+      const displayTrustContext=event==="snapshot" ? {
+        policy:"display-snapshot-v1",scope:"stream_snapshot_not_sellable_offer",
+        streamGeneration,snapshotRevision:++snapshotRevision,
+        customerVerified:false,badgeEligible:false
+      } : undefined;
+      const serialized=JSON.stringify({...data,streamGeneration,
+        ...(displayTrustContext ? {displayTrustContext} : {})});
       const serializedAt=measuring ? performance.now() : 0;
       res.write("data: "+serialized+"\n\n");
       if (measuring) {

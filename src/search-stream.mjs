@@ -6,6 +6,23 @@ export function acceptedStreamGeneration(expected,incoming){
   return typeof expected==='string'&&GENERATION.test(expected)&&
     incoming===expected;
 }
+// A snapshot-level correlation marker is not a sellable-offer credential.
+// Reject duplicated, reordered, cross-generation and user-supplied "verified"
+// envelopes. Older backends can still show products, but without badge trust.
+export function acceptDisplayTrustContext(expectedGeneration,snapshot,previousRevision=0){
+  const frame=snapshot?.displayTrustContext;
+  if(!frame||!acceptedStreamGeneration(expectedGeneration,snapshot?.streamGeneration)||
+     typeof expectedGeneration!=='string'||!GENERATION.test(expectedGeneration)||
+     frame.policy!=='display-snapshot-v1'||
+     frame.scope!=='stream_snapshot_not_sellable_offer'||
+     frame.streamGeneration!==expectedGeneration||
+     !Number.isSafeInteger(frame.snapshotRevision)||frame.snapshotRevision<=0||
+     !Number.isSafeInteger(previousRevision)||previousRevision<0||
+     frame.snapshotRevision<=previousRevision||
+     frame.customerVerified!==false||frame.badgeEligible!==false)return null;
+  return Object.freeze({streamGeneration:expectedGeneration,
+    snapshotRevision:frame.snapshotRevision,badgeEligible:false});
+}
 export function selectSearchStreamResult(latestSnapshot,latestWithOffers){
   if(!latestWithOffers)return latestSnapshot||null;
   if(!latestSnapshot)return latestWithOffers;
@@ -17,5 +34,8 @@ export function selectSearchStreamResult(latestSnapshot,latestWithOffers){
       !acceptedStreamGeneration(latestWithOffers.streamGeneration,
         latestSnapshot.streamGeneration))return latestSnapshot;
   }
-  return {...latestSnapshot,offers:latestWithOffers.offers};
+  // The terminal snapshot did not own these earlier offers. Retaining
+  // product visibility must NEVER retain terminal snapshot trust context.
+  const {displayTrustContext:_unboundContext,...safeLatest}=latestSnapshot;
+  return {...safeLatest,offers:latestWithOffers.offers};
 }

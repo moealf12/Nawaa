@@ -437,6 +437,29 @@ try{
   report.assertions.imageFallbackSafe=imageQA.brokenWithoutFallback===0&&
     imageQA.pendingWithoutFallback===0&&imageQA.loadedWithFallback===0&&
     imageQA.noImageWithoutFallback===0;
+  // Run the production browser module itself against a simulated replay and
+  // a forged badge grant. The currently issued server context is intentionally
+  // WITHHELD: no positive customer VERIFIED UI is authorized by this test.
+  const trustBrowser=await page.evaluate(async()=>{
+    const {acceptDisplayTrustContext}=await import('/src/search-stream.mjs');
+    const id='12345678-1234-4abc-8123-123456789abc';
+    const envelope={streamGeneration:id,displayTrustContext:{
+      policy:'display-snapshot-v1',scope:'stream_snapshot_not_sellable_offer',
+      streamGeneration:id,snapshotRevision:1,customerVerified:false,badgeEligible:false
+    }};
+    return {
+      normal:acceptDisplayTrustContext(id,envelope)?.badgeEligible===false,
+      replay:acceptDisplayTrustContext(id,envelope,1)===null,
+      forged:acceptDisplayTrustContext(id,{...envelope,
+        displayTrustContext:{...envelope.displayTrustContext,badgeEligible:true}})===null,
+      visibleVerifiedElements:document.querySelectorAll(
+        '[data-trust-verified="true"],.trust-badge-verified').length
+    };
+  });
+  report.trustBrowser=trustBrowser;
+  report.assertions.v2169DisplayTrustFailClosed=
+    trustBrowser.normal&&trustBrowser.replay&&trustBrowser.forged&&
+    trustBrowser.visibleVerifiedElements===0;
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(500);
   const mobile=await page.evaluate(()=>({viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,

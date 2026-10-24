@@ -13,7 +13,7 @@ import {
   buildOfferIntelligence,
   offerVariantDimensions,
 } from "./search-core.mjs";
-import {selectSearchStreamResult,acceptedStreamGeneration} from "./search-stream.mjs";
+import {selectSearchStreamResult,acceptedStreamGeneration,acceptDisplayTrustContext} from "./search-stream.mjs";
 import {ownOfferImages} from "./product-image-ownership.mjs";
 import {createFirstOfferTimeline,structurallyValidOffer,assessFirstOfferOwnership} from "./search-first-offer-metrics.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
@@ -1496,6 +1496,7 @@ async function runSearch(rawQuery) {
           let best=null;
           let bestWithOffers=null;
           let serverStreamGeneration=null;
+          let acceptedDisplayRevision=0;
           let finished=false;
           let timeoutId=null;
           // A stream is settled once: cancellation, completion, error and timeout
@@ -1533,6 +1534,12 @@ async function runSearch(rawQuery) {
               const payload=JSON.parse(event.data);
               if(!acceptedStreamGeneration(serverStreamGeneration,payload.streamGeneration))
                 return; // Mixed/replayed server generations cannot change this card.
+              const displayContext=acceptDisplayTrustContext(
+                serverStreamGeneration,payload,acceptedDisplayRevision);
+              // Existing legacy sources may show offers, NEVER customer trust.
+              // A modern but stale/forged snapshot envelope is wholly rejected.
+              if(payload.displayTrustContext!=null&&!displayContext)return;
+              if(displayContext)acceptedDisplayRevision=displayContext.snapshotRevision;
               // Always retain the newest snapshot, including the final empty/non-empty
               // canonical result. Partial snapshots are for rendering speed only; the
               // final snapshot owns cursors, provider diagnostics and completion state.

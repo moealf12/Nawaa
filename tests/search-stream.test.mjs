@@ -82,3 +82,46 @@ test('v21.68 SSE correlation rejects missing, malformed or mismatched generation
   assert.equal(acceptedStreamGeneration(null,undefined),true,
     'old API snapshots still show normal products, never trust badges');
 });
+
+test('v21.69 snapshot-bound display trust refuses replay, later-generation reuse and badge escalation',async()=>{
+  const {acceptDisplayTrustContext}=await import('../src/search-stream.mjs');
+  const generation='12345678-1234-4abc-8123-123456789abc';
+  const previous='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const frame=(revision,extra={})=>({
+    streamGeneration:generation,
+    displayTrustContext:{
+      policy:'display-snapshot-v1',scope:'stream_snapshot_not_sellable_offer',
+      streamGeneration:generation,snapshotRevision:revision,
+      customerVerified:false,badgeEligible:false,...extra
+    }
+  });
+  const accepted=acceptDisplayTrustContext(generation,frame(1));
+  assert.deepEqual(accepted,{streamGeneration:generation,snapshotRevision:1,badgeEligible:false});
+  assert.equal(acceptDisplayTrustContext(generation,frame(1),1),null);
+  assert.equal(acceptDisplayTrustContext(generation,frame(0)),null);
+  assert.equal(acceptDisplayTrustContext(generation,frame(-1)),null);
+  assert.equal(acceptDisplayTrustContext(generation,frame(1.1)),null);
+  assert.equal(acceptDisplayTrustContext(generation,frame(2),1).snapshotRevision,2);
+  assert.equal(acceptDisplayTrustContext(previous,frame(2)),null);
+  assert.equal(acceptDisplayTrustContext(generation,frame(2,{streamGeneration:previous})),null);
+  assert.equal(acceptDisplayTrustContext(generation,frame(2,{badgeEligible:true})),null);
+  assert.equal(acceptDisplayTrustContext(generation,frame(2,{customerVerified:true})),null);
+  assert.equal(acceptDisplayTrustContext(generation,frame(2,{scope:'selected_sellable_offer'})),null);
+  assert.equal(acceptDisplayTrustContext(generation,{...frame(2),streamGeneration:previous}),null);
+  assert.equal(acceptDisplayTrustContext(generation,{streamGeneration:generation}),null);
+  assert.equal(acceptDisplayTrustContext(null,frame(2)),null);
+});
+test('v21.69 carrying older offers through empty terminal snapshot drops snapshot trust context',()=>{
+  const generation='12345678-1234-4abc-8123-123456789abc';
+  const trust={policy:'display-snapshot-v1',scope:'stream_snapshot_not_sellable_offer',
+    streamGeneration:generation,snapshotRevision:3,customerVerified:false,badgeEligible:false};
+  const final={streamGeneration:generation,offers:[],nextCursor:'next',
+    displayTrustContext:trust};
+  const earlier={streamGeneration:generation,
+    offers:[{title:'live',productPrice:500}],displayTrustContext:{...trust,snapshotRevision:2}};
+  const reconciled=selectSearchStreamResult(final,earlier);
+  assert.deepEqual(reconciled.offers,earlier.offers);
+  assert.equal(reconciled.nextCursor,'next');
+  assert.equal(Object.hasOwn(reconciled,'displayTrustContext'),false);
+  assert.equal(final.displayTrustContext,trust,'source envelope must not mutate');
+});
