@@ -37,6 +37,7 @@ import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
+import {stripUntrustedCustomerTrustClaims} from "./trusted-sse-egress.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 // Isolated canonical HTTP proof: synthetic canonical prices must not be mixed
@@ -1004,7 +1005,12 @@ const server = http.createServer(async (req, res) => {
         streamGeneration,snapshotRevision:++snapshotRevision,
         customerVerified:false,badgeEligible:false
       } : undefined;
-      const serialized=JSON.stringify({...data,streamGeneration,
+      // Source providers and indexed offers are untrusted inputs. Their
+      // self-described VERIFIED/badge flags cannot enter the customer SSE.
+      // This shallow, bounded egress step does not perform source IO.
+      const outgoing=event==="snapshot"
+        ? stripUntrustedCustomerTrustClaims(data) : data;
+      const serialized=JSON.stringify({...outgoing,streamGeneration,
         ...(displayTrustContext ? {displayTrustContext} : {})});
       const serializedAt=measuring ? performance.now() : 0;
       res.write("data: "+serialized+"\n\n");
