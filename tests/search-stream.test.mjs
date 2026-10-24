@@ -125,3 +125,15 @@ test('v21.69 carrying older offers through empty terminal snapshot drops snapsho
   assert.equal(Object.hasOwn(reconciled,'displayTrustContext'),false);
   assert.equal(final.displayTrustContext,trust,'source envelope must not mutate');
 });
+
+test('v21.69 meta cannot rotate stream identity after first pinned generation',async()=>{
+  const {pinStreamGeneration}=await import('../src/search-stream.mjs');
+  const a='12345678-1234-4abc-8123-123456789abc';
+  const b='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  assert.equal(pinStreamGeneration(null,a),a);
+  assert.equal(pinStreamGeneration(a,a),a);
+  assert.equal(pinStreamGeneration(a,b),null);
+  for(const invalid of ['',null,undefined,{},'spoofed']){
+    assert.equal(pinStreamGeneration(a,invalid),null);
+  }
+});

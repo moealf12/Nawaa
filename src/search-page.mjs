@@ -13,7 +13,7 @@ import {
   buildOfferIntelligence,
   offerVariantDimensions,
 } from "./search-core.mjs";
-import {selectSearchStreamResult,acceptedStreamGeneration,acceptDisplayTrustContext} from "./search-stream.mjs";
+import {selectSearchStreamResult,acceptedStreamGeneration,acceptDisplayTrustContext,pinStreamGeneration} from "./search-stream.mjs";
 import {ownOfferImages} from "./product-image-ownership.mjs";
 import {createFirstOfferTimeline,structurallyValidOffer,assessFirstOfferOwnership} from "./search-first-offer-metrics.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
@@ -1518,9 +1518,9 @@ async function runSearch(rawQuery) {
               const meta=JSON.parse(event.data);
               // A generation ID is correlation only, not a certified offer.
               // Old Render backends without the field continue normally.
-              if(acceptedStreamGeneration(meta.streamGeneration,
-                  meta.streamGeneration)&&typeof meta.streamGeneration==='string'){
-                serverStreamGeneration=meta.streamGeneration;
+              const pinned=pinStreamGeneration(serverStreamGeneration,meta.streamGeneration);
+              if(pinned){
+                serverStreamGeneration=pinned;
                 if(firstOfferDiagnostic?.requestId===requestId){
                   firstOfferDiagnostic.serverStreamGeneration=serverStreamGeneration;
                   publishFirstOfferDiagnostic();

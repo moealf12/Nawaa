@@ -1,6 +1,12 @@
 // v21.68: generation IDs correlate SSE messages; they are NOT signed product
 // evidence, attestation authority, customer badge eligibility or T5 proof.
 const GENERATION=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+// Once an EventSource receives its first valid meta, its identity is immutable.
+export function pinStreamGeneration(pinned,incoming){
+  if(typeof incoming!=='string'||!GENERATION.test(incoming))return null;
+  if(pinned==null)return incoming;
+  return pinned===incoming ? pinned : null;
+}
 export function acceptedStreamGeneration(expected,incoming){
   if(expected==null)return true; // Backward compatible with earlier API.
   return typeof expected==='string'&&GENERATION.test(expected)&&
