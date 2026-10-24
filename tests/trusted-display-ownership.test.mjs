@@ -265,3 +265,42 @@ test('v21.75 occurrence: exact idempotent snapshot replay does not falsely revok
   h.display.revoke();
   assert.equal(await h.display.accepts(h.bound,context()),false);
 });
+
+test('v21.77 same-revision reorder cannot borrow a different displayed card occurrence',async()=>{
+  const h=harness();
+  const neighbor={...offer,title:'Jarir iPhone Lavender 512GB',sku:'668752',
+    storage:'512GB',color:'Lavender',
+    sourceUrl:'https://www.jarir.com/iphone-17.html?sku=668752'};
+  const decision=await h.verifier.verify({offer,observationRef:ref});
+  assert.equal(decision.state,'VERIFIED',decision.reason);
+  assert.equal(h.display.advance(1,[offer,neighbor]),true);
+  assert.equal(h.display.beginRender(1),true);
+  const bound=await h.display.bind({decision,offer,observationRef:ref,
+    displayOffer:offer,streamGeneration:generation,snapshotRevision:1,renderEpoch:1});
+  assert.equal(bound.state,'BOUND_INTERNAL');
+  assert.equal(await h.display.accepts(bound,context()),true);
+  // This change preserves the Set of product digests but swaps the card
+  // occurrences while claiming the SAME revision. It is not idempotent.
+  assert.equal(h.display.advance(1,[neighbor,offer]),false);
+  assert.equal(await h.display.accepts(bound,context()),false,
+    'previous card occurrence must immediately lose authority');
+  assert.equal(h.display.advance(1,[offer,neighbor]),false,
+    'replaying the original frame cannot undo an equal-revision collision');
+  assert.equal(await h.display.accepts(bound,context()),false);
+  assert.equal(bound.badgeEligible,false);
+});
+test('v21.77 identical two-card snapshot replay is harmless but not a new certification',async()=>{
+  const h=harness();
+  const other={...offer,title:'Another sellable item',sku:'668752',
+    sourceUrl:'https://www.jarir.com/iphone-17.html?sku=668752'};
+  const decision=await h.verifier.verify({offer,observationRef:ref});
+  assert.equal(h.display.advance(1,[offer,other]),true);
+  assert.equal(h.display.beginRender(1),true);
+  const bound=await h.display.bind({decision,offer,observationRef:ref,
+    displayOffer:offer,streamGeneration:generation,snapshotRevision:1,renderEpoch:1});
+  assert.equal(bound.state,'BOUND_INTERNAL');
+  assert.equal(h.display.advance(1,[{...offer},{...other}]),false);
+  assert.equal(await h.display.accepts(bound,context()),true);
+  assert.equal(bound.customerVerified,false);
+  assert.equal(bound.t5Eligible,false);
+});

@@ -129,6 +129,7 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
   let revision=0;
   let activeRenderEpoch=0;
   let activeDigests=new Set();
+  let activeOrder=[];
   let disabled=false;
   // Trusted server caller must supply actual outbound snapshot offers. A
   // rejected newer frame is consumed as untrusted: it must revoke the last
@@ -141,32 +142,34 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
       // Equal-revision replay is not permission to change visible claims.
       // A conflicting snapshot with the same ID must revoke previous
       // internal binding even if its old digest is still in memory.
-      let same=Array.isArray(offers)&&offers.length===activeDigests.size;
+      let same=Array.isArray(offers)&&offers.length===activeOrder.length;
       if(same){
-        const seen=new Set();
-        for(const offer of offers){
-          const digest=strictDigest(offer);
-          if(!digest||seen.has(digest)||!activeDigests.has(digest)){
+        // Same products with a changed ORDER are different card occurrences
+        // even when their unordered content-hash set is identical.
+        for(let index=0;index<offers.length;index++){
+          if(strictDigest(offers[index])!==activeOrder[index]){
             same=false;break;
           }
-          seen.add(digest);
         }
       }
-      if(!same)activeDigests=new Set();
+      if(!same){activeDigests=new Set();activeOrder=[];}
       return false;
     }
-    const reject=()=>{revision=snapshotRevision;activeDigests=new Set();return false;};
+    const reject=()=>{revision=snapshotRevision;activeDigests=new Set();
+      activeOrder=[];return false;};
     if(!Array.isArray(offers)||offers.length>MAX_OFFERS)return reject();
-    const next=new Set();
+    const next=new Set(),nextOrder=[];
     for(const offer of offers){
       const digest=strictDigest(offer);
       // A content hash is not an occurrence identity. A duplicated identical
       // record cannot own a uniquely identified displayed card.
       if(!digest||next.has(digest))return reject();
       next.add(digest);
+      nextOrder.push(digest);
     }
     revision=snapshotRevision;
     activeDigests=next;
+    activeOrder=nextOrder;
     return true;
   }
   // Trusted caller advances this on each visible presentation commit. Merely
@@ -232,7 +235,8 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
       renderEpoch===currentRenderEpoch()&&activeDigests.has(original.displayDigest));
   }
   function currentRenderEpoch(){return activeRenderEpoch;}
-  function revoke(){disabled=true;activeDigests=new Set();revision=0;activeRenderEpoch=0;}
+  function revoke(){disabled=true;activeDigests=new Set();activeOrder=[];
+    revision=0;activeRenderEpoch=0;}
   return Object.freeze({streamGeneration,advance,beginRender,bind,accepts,revoke,
     get currentSnapshotRevision(){return revision;},
     get currentRenderEpoch(){return activeRenderEpoch;}});
