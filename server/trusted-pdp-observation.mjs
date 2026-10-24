@@ -126,7 +126,11 @@ function hardIdentity(value){
 // authoritative refreshed offer are copied exclusively from the selected
 // merchant PDP; a disagreement with a shared hard identifier blocks it.
 function bridgeCatalogIdentity(catalog,page){
-  const sku=hardIdentity(catalog.sku??catalog.sourceMeta?.productId);
+  const explicitSku=hardIdentity(catalog.sku);
+  const merchantRecordSku=hardIdentity(catalog.sourceMeta?.productId);
+  if(explicitSku&&merchantRecordSku&&explicitSku!==merchantRecordSku)
+    return 'conflicting_catalog_sku_sources';
+  const sku=explicitSku||merchantRecordSku;
   const pdpSku=hardIdentity(page.sku);
   if(!sku||!pdpSku)return 'missing_listing_pdp_sku';
   if(sku!==pdpSku)return 'listing_pdp_sku_conflict';
