@@ -13,7 +13,7 @@ import {
   buildOfferIntelligence,
   offerVariantDimensions,
 } from "./search-core.mjs";
-import {selectSearchStreamResult,acceptedStreamGeneration,acceptDisplayTrustContext,pinStreamGeneration} from "./search-stream.mjs";
+import {selectSearchStreamResult,acceptedStreamGeneration,acceptDisplayTrustContext,pinStreamGeneration,acceptSourcePredicateDiagnostic} from "./search-stream.mjs";
 import {ownOfferImages} from "./product-image-ownership.mjs";
 import {createFirstOfferTimeline,structurallyValidOffer,assessFirstOfferOwnership} from "./search-first-offer-metrics.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
@@ -1539,6 +1539,7 @@ async function runSearch(rawQuery) {
           let bestWithOffers=null;
           let serverStreamGeneration=null;
           let acceptedDisplayRevision=0;
+          let lastPredicateDiagnosticRevision=0;
           let displayContextRequired=false;
           let finished=false;
           let timeoutId=null;
@@ -1613,6 +1614,24 @@ async function runSearch(rawQuery) {
                 els.status.textContent=`نتائج فورية: ${arabicCount(payload.offers.length, "offer")} · ${arabicCount(countries, "country")}` + (payload.cache?.stale ? " · جاري التحديث…" : "");
               }
             } catch {}
+          });
+          // Predicate-only source observations are diagnostic and never
+          // customer VERIFIED evidence. Do not attach them to offer objects,
+          // DOM badge attributes, ranking or first-trust milestones.
+          source.addEventListener("source-predicate",(event)=>{
+            if(finished||requestId!==state.requestId||
+               !window.NAWAA_DIAGNOSTICS)return;
+            try{
+              const frame=JSON.parse(event.data);
+              const accepted=acceptSourcePredicateDiagnostic(
+                serverStreamGeneration,acceptedDisplayRevision,frame,
+                best?.offers||[],lastPredicateDiagnosticRevision);
+              if(!accepted)return;
+              lastPredicateDiagnosticRevision=accepted.snapshotRevision;
+              const records=Array.isArray(window.__nawaaSourcePredicateDiagnostics)
+                ? window.__nawaaSourcePredicateDiagnostics : [];
+              window.__nawaaSourcePredicateDiagnostics=[...records.slice(-7),accepted];
+            }catch{}
           });
           // A late empty diagnostic snapshot must never erase offers already
           // rendered from an earlier live snapshot. Keep its final cursor and

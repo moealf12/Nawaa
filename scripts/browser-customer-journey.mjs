@@ -442,7 +442,8 @@ try{
   // WITHHELD: no positive customer VERIFIED UI is authorized by this test.
   if(mode==='candidate'){
   const trustBrowser=await page.evaluate(async()=>{
-    const {acceptDisplayTrustContext}=await import('/src/search-stream.mjs');
+    const {acceptDisplayTrustContext,acceptSourcePredicateDiagnostic}=
+      await import('/src/search-stream.mjs');
     const id='12345678-1234-4abc-8123-123456789abc';
     const envelope={streamGeneration:id,displayTrustContext:{
       policy:'display-snapshot-v1',scope:'stream_snapshot_not_sellable_offer',
@@ -453,6 +454,19 @@ try{
       replay:acceptDisplayTrustContext(id,envelope,1)===null,
       forged:acceptDisplayTrustContext(id,{...envelope,
         displayTrustContext:{...envelope.displayTrustContext,badgeEligible:true}})===null,
+      predicateSpoofRejected:(()=>{
+        const event={policy:'pdp-predicate-shadow-v1',
+          scope:'selected_pdp_revision_predicates',streamGeneration:id,
+          snapshotRevision:1,offerIndex:0,sourceId:'jarir-sa',
+          sourceRevision:'a'.repeat(64),sourceRecordId:'b'.repeat(64),
+          sourcePredicatesRevalidated:true,wholeOfferVerified:false,
+          badgeEligible:false,customerVerified:false,t5Eligible:false,
+          paintCertified:false,durableProof:false};
+        const offers=[{providerMarket:'jarir-sa'}];
+        return acceptSourcePredicateDiagnostic(id,1,event,offers)?.badgeEligible===false&&
+          acceptSourcePredicateDiagnostic(id,1,{...event,badgeEligible:true},offers)===null&&
+          acceptSourcePredicateDiagnostic(id,1,event,offers,1)===null;
+      })(),
       visibleVerifiedElements:document.querySelectorAll(
         '[data-trust-verified="true"],.trust-badge-verified').length,
       domBadgeEligible:document.querySelector('#results')?.dataset.trustBadgeEligible,
@@ -464,7 +478,7 @@ try{
   report.trustBrowser=trustBrowser;
   report.assertions.v2169DisplayTrustFailClosed=
     trustBrowser.normal&&trustBrowser.replay&&trustBrowser.forged&&
-    trustBrowser.visibleVerifiedElements===0&&
+    trustBrowser.predicateSpoofRejected&&trustBrowser.visibleVerifiedElements===0&&
     trustBrowser.domBadgeEligible!=='true'&&
     (!trustBrowser.currentGeneration||
       (Number.isSafeInteger(Number(trustBrowser.currentSnapshotRevision))&&

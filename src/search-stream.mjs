@@ -45,3 +45,36 @@ export function selectSearchStreamResult(latestSnapshot,latestWithOffers){
   const {displayTrustContext:_unboundContext,...safeLatest}=latestSnapshot;
   return {...safeLatest,offers:latestWithOffers.offers};
 }
+
+// v21.71: a source-predicate SSE event is NON-AUTHORITATIVE browser telemetry.
+// It never signs, validates, grants or transfers a customer-facing credential.
+// Require current server generation and same delivered snapshot occurrence.
+const HEX64=/^[a-f0-9]{64}$/;
+export function acceptSourcePredicateDiagnostic(
+  expectedGeneration,expectedRevision,frame,offers,previousDiagnosticRevision=0
+){
+  if(typeof expectedGeneration!=='string'||!GENERATION.test(expectedGeneration)||
+     !Number.isSafeInteger(expectedRevision)||expectedRevision<=0||
+     !Number.isSafeInteger(previousDiagnosticRevision)||previousDiagnosticRevision<0||
+     !frame||typeof frame!=='object'||Array.isArray(frame)||
+     frame.policy!=='pdp-predicate-shadow-v1'||
+     frame.scope!=='selected_pdp_revision_predicates'||
+     frame.streamGeneration!==expectedGeneration||
+     frame.snapshotRevision!==expectedRevision||
+     frame.snapshotRevision<=previousDiagnosticRevision||
+     frame.sourceId!=='jarir-sa'||!HEX64.test(frame.sourceRevision||'')||
+     !HEX64.test(frame.sourceRecordId||'')||
+     !Number.isSafeInteger(frame.offerIndex)||frame.offerIndex<0||
+     !Array.isArray(offers)||frame.offerIndex>=offers.length||
+     offers[frame.offerIndex]?.providerMarket!==frame.sourceId||
+     frame.sourcePredicatesRevalidated!==true||
+     frame.wholeOfferVerified!==false||
+     frame.badgeEligible!==false||frame.customerVerified!==false||
+     frame.t5Eligible!==false||frame.paintCertified!==false||
+     frame.durableProof!==false)return null;
+  return Object.freeze({classification:'SOURCE_PREDICATE_TELEMETRY_ONLY',
+    streamGeneration:expectedGeneration,snapshotRevision:expectedRevision,
+    offerIndex:frame.offerIndex,sourceId:frame.sourceId,
+    sourceRevision:frame.sourceRevision,
+    badgeEligible:false,customerVerified:false,t5Eligible:false});
+}

@@ -137,3 +137,37 @@ test('v21.69 meta cannot rotate stream identity after first pinned generation',a
     assert.equal(pinStreamGeneration(a,invalid),null);
   }
 });
+
+test('v21.71 predicate-only SSE diagnostics cannot become customer trust or replay across generations',async()=>{
+  const {acceptSourcePredicateDiagnostic:accept}=await import('../src/search-stream.mjs');
+  const id='12345678-1234-4abc-8123-123456789abc';
+  const base={policy:'pdp-predicate-shadow-v1',
+    scope:'selected_pdp_revision_predicates',streamGeneration:id,
+    snapshotRevision:3,offerIndex:0,sourceId:'jarir-sa',
+    sourceRevision:'a'.repeat(64),sourceRecordId:'b'.repeat(64),
+    sourcePredicatesRevalidated:true,wholeOfferVerified:false,
+    badgeEligible:false,customerVerified:false,t5Eligible:false,
+    paintCertified:false,durableProof:false};
+  const offers=[{merchant:'Jarir',providerMarket:'jarir-sa',
+    title:'PS5 Slim',productPrice:2529}];
+  const diagnostic=accept(id,3,base,offers);
+  assert.equal(diagnostic.classification,'SOURCE_PREDICATE_TELEMETRY_ONLY');
+  assert.equal(diagnostic.badgeEligible,false);
+  assert.equal(diagnostic.customerVerified,false);
+  assert.equal(diagnostic.t5Eligible,false);
+  for(const payload of [
+    {...base,streamGeneration:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'},
+    {...base,snapshotRevision:2},{...base,offerIndex:1},
+    {...base,sourceRevision:'not-a-source-sha'},
+    {...base,scope:'whole_sellable_offer'},
+    {...base,badgeEligible:true},{...base,customerVerified:true},
+    {...base,wholeOfferVerified:true},{...base,t5Eligible:true},
+    {...base,paintCertified:true},{...base,durableProof:true},
+    {...base,sourceId:'extra-sa'}
+  ]){
+    assert.equal(accept(id,3,payload,offers),null,JSON.stringify(payload));
+  }
+  assert.equal(accept(id,3,base,offers,3),null,'one frame diagnostic cannot replay');
+  assert.equal(accept(id,3,base,[{...offers[0],providerMarket:'extra-sa'}]),null);
+  assert.equal(accept(null,3,base,offers),null);
+});
