@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import dns from "node:dns/promises";
 import { toNawaaProduct } from "../server/nawaa-extractor.mjs";
 
 test("Crawlee fallback-shaped offers map into NAWAA product schema",()=>{
@@ -25,7 +26,7 @@ test("Crawlee fallback-shaped offers map into NAWAA product schema",()=>{
 // A coherent source record is required; valid scalar fields cannot be combined
 // across unrelated sellable products to mint a new price or SKU.
 import fc from 'fast-check';
-import {reconcile,extractDiscoveredProductUrls} from '../server/universal-acquisition.mjs';
+import {reconcile,extractDiscoveredProductUrls,discoverProductUrlsWithCrawlee} from '../server/universal-acquisition.mjs';
 const fallbackChecks={seed:2146,numRuns:64};
 const fallbackUrl='https://merchant.example/p/laptop';
 
@@ -237,4 +238,58 @@ test('v21.74 discovery: malformed or over-budget HTML fails closed',()=>{
   assert.throws(()=>extractDiscoveredProductUrls(null,'https://shop.example/list.html'),/body budget/);
   assert.throws(()=>extractDiscoveredProductUrls('x'.repeat(8_000_001),
     'https://shop.example/list.html'),/body budget/);
+});
+
+test('v21.74 discovery transport: controlled HTTPS redirect preserves selected variants',async()=>{
+  const originalLookup=dns.lookup,originalFetch=globalThis.fetch;
+  const accessed=[],resolved=[];
+  dns.lookup=async host=>{
+    resolved.push(host);
+    return [{address:'93.184.216.34',family:4}];
+  };
+  globalThis.fetch=async url=>{
+    const target=String(url);accessed.push(target);
+    if(target==='https://shop.example/list.html')
+      return new Response(null,{status:302,headers:{location:'/catalog/index.html'}});
+    if(target==='https://shop.example/catalog/index.html')
+      return new Response(
+        '<a href="../p.html?sku=123">one</a><a href="../p.html?sku=456">two</a>',
+        {status:200,headers:{'content-type':'text/html; charset=utf-8'}});
+    throw Error('unexpected controlled transport '+target);
+  };
+  try{
+    assert.deepEqual(await discoverProductUrlsWithCrawlee(
+      'https://shop.example/list.html',{allowedHost:'shop.example',limit:2}),[
+        'https://shop.example/p.html?sku=123',
+        'https://shop.example/p.html?sku=456'
+      ]);
+    assert.deepEqual(accessed,[
+      'https://shop.example/list.html','https://shop.example/catalog/index.html']);
+    assert.deepEqual(resolved,['shop.example','shop.example'],
+      'each HTTPS redirect hop must be revalidated by shared resolver');
+  }finally{dns.lookup=originalLookup;globalThis.fetch=originalFetch;}
+});
+
+test('v21.74 discovery transport: internal redirected destination rejected before fetch',async()=>{
+  const originalLookup=dns.lookup,originalFetch=globalThis.fetch;
+  const accessed=[],resolved=[];
+  dns.lookup=async host=>{
+    resolved.push(host);
+    return [{address:host==='private.example'?'10.1.2.3':'93.184.216.34',family:4}];
+  };
+  globalThis.fetch=async url=>{
+    const target=String(url);accessed.push(target);
+    if(target==='https://shop.example/list.html')
+      return new Response(null,{status:302,
+        headers:{location:'https://private.example/admin.html'}});
+    throw Error('SECURITY_FAILURE_PRIVATE_DESTINATION_FETCHED');
+  };
+  try{
+    await assert.rejects(()=>discoverProductUrlsWithCrawlee(
+      'https://shop.example/list.html'),/Private\/internal addresses are not allowed/);
+    assert.deepEqual(accessed,['https://shop.example/list.html'],
+      'private destination must not receive a request');
+    assert.deepEqual(resolved,['shop.example','private.example'],
+      'redirect destination must be revalidated before any second fetch');
+  }finally{dns.lookup=originalLookup;globalThis.fetch=originalFetch;}
 });
