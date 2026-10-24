@@ -33,6 +33,8 @@ test('malformed prices timestamps and source URLs cannot become exact winners',(
     {...base,currency:'USD'},
     {...base,observedAt:'not-a-date'},
     {...base,sourceUrl:'javascript:alert(1)'},
+    {...base,sourceUrl:'https://user:pass@www.jarir.com/sa-en/iphone-17.html'},
+    {...base,sourceUrl:'https://'},
     {...base,merchant:''},
     {...base,title:''},
   ]) {
@@ -59,11 +61,23 @@ test('v21.57: structural validity alone never certifies sellable-item ownership'
   assert.equal(result.state,'CONSISTENT_BUT_UNVERIFIED');
   assert.equal(firstOwnershipEligibleOffer([candidate]),null);
 });
-test('v21.57: independent same-offer attestation can certify coherent identity',()=>{
-  const result=assessFirstOfferOwnership(candidate,attested);
-  assert.equal(result.state,'VERIFIED');
-  assert.equal(result.eligible,true);
-  assert.equal(firstOwnershipEligibleOffer([candidate],()=>attested).offer,candidate);
+test('v21.60: merchant-like and caller-supplied attestation cannot certify coherent identity',()=>{
+  const mirror={...candidate,independentlyAttested:true};
+  for(const evidence of [attested,mirror,{...candidate}]){
+    const result=assessFirstOfferOwnership(candidate,evidence);
+    assert.equal(result.state,'CONSISTENT_BUT_UNVERIFIED');
+    assert.equal(result.eligible,false);
+    assert.equal(firstOwnershipEligibleOffer([candidate],()=>evidence),null);
+  }
+  assert.equal(assessFirstOfferOwnership(candidate,attested).reason,'untrusted_attestation_claim');
+});
+test('v21.60: same-path URL variants cannot impersonate the selected sellable item',()=>{
+  const offer={...candidate,sourceUrl:'https://www.jarir.com/sa-en/iphone-17.html?sku=IPH17-256&utm_id=first'};
+  const contradictory={...attested,sourceUrl:'https://www.jarir.com/sa-en/iphone-17.html?sku=IPH17-512&utm_id=other'};
+  assert.equal(assessFirstOfferOwnership(offer,contradictory).reason,'destination_variant_conflict');
+  assert.equal(assessFirstOfferOwnership(offer,contradictory).eligible,false);
+  const onlyTrackingChanged={...attested,sourceUrl:'https://www.jarir.com/sa-en/iphone-17.html?sku=IPH17-256&utm_id=other'};
+  assert.equal(assessFirstOfferOwnership(offer,onlyTrackingChanged).state,'CONSISTENT_BUT_UNVERIFIED');
 });
 test('v21.57: conflicting image, SKU, URL, currency or merchant never certifies',()=>{
   for(const e of [
