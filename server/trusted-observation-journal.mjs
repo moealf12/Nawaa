@@ -42,6 +42,27 @@ function snapshotOffer(offer){
   if(!json||Buffer.byteLength(json)>MAX_BYTES)throw Error('observation_payload_budget');
   return JSON.parse(json);
 }
+// Preserve bounded source-owned values and extraction lineage for future
+// independent audit. A source digest alone cannot reconstruct those values.
+// This additional signed evidence remains PREDICATE-SCOPED, not a certificate.
+function boundedSourceEvidence(evidence){
+  const record=snapshotOffer({...evidence.selectedRecord,
+    observedAt:evidence.observedAt});
+  const raw=evidence.fieldOwnership;
+  if(!safeObject(raw)||Object.keys(raw).length>32)
+    throw Error('missing_bounded_source_lineage');
+  const ownership={};
+  for(const name of Object.keys(raw).sort()){
+    if(!/^[a-zA-Z]{2,32}$/.test(name)||!safeObject(raw[name]))throw Error('invalid_field_lineage');
+    const item=raw[name];
+    if(typeof item.strategy!=='string'||item.strategy.length>64||
+       item.recordId!==null&&typeof item.recordId!=='string')
+      throw Error('invalid_field_lineage');
+    ownership[name]={strategy:item.strategy,recordId:item.recordId};
+  }
+  return {schema:'selected-source-record-evidence-v1',record,
+    ownership,recordDigest:hash(record)};
+}
 function state(status,reason,additional={}){
   return Object.freeze({state:status,eligible:false,wholeOfferVerified:false,
     badgeEligible:false,reason,...additional});
@@ -120,6 +141,20 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
         typeof captured.offer.sku!=='string'||
         captured.sourceKey!==hash([captured.sourceId,captured.offer.sku,captured.offer.sourceUrl])))
       return state('CONFLICTING_EVIDENCE','invalid_capture_contract');
+    // Legacy scoped receipts remain readable. New receipts carry signed
+    // reconstructible selected-record facts, without a trust-scope upgrade.
+    if(captured.sourceEvidence!==undefined){
+      let evidence;
+      try{evidence=boundedSourceEvidence({
+        selectedRecord:captured.sourceEvidence.record,
+        observedAt:captured.observedAt,
+        fieldOwnership:captured.sourceEvidence.ownership
+      });}catch{return state('CONFLICTING_EVIDENCE','invalid_source_evidence_payload');}
+      if(captured.sourceEvidence.schema!==evidence.schema||
+         captured.sourceEvidence.recordDigest!==evidence.recordDigest||
+         JSON.stringify(captured.sourceEvidence)!==JSON.stringify(evidence))
+        return state('CONFLICTING_EVIDENCE','source_evidence_integrity_failure');
+    }
     const observed=parsedTime(captured.observedAt),issued=parsedTime(captured.issuedAt);
     const present=now();
     if(!Number.isFinite(present)||!Number.isFinite(observed)||!Number.isFinite(issued)||
@@ -155,7 +190,8 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
       sourceRevision:captured.sourceRevision,sourceRecord:captured.sourceRecord,
       observedAt:captured.observedAt,issuedAt:captured.issuedAt,
       policy:captured.policy,predicates:Object.freeze({...captured.predicates}),
-      scope:captured.scope,offer:captured.offer
+      scope:captured.scope,offer:captured.offer,
+      sourceEvidence:captured.sourceEvidence??null
     });
   }
   async function archive(result){
@@ -178,15 +214,19 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
     const at=now(),observed=parsedTime(ev.observedAt);
     if(!Number.isFinite(at)||!Number.isFinite(observed)||observed>at+60_000||
       at-observed>maxAgeMs)return state('EXPIRED','stale_capture');
-    let offer;
-    try{offer=snapshotOffer(result.offer);}catch{return state('MISSING_EVIDENCE','unsupported_offer_payload');}
+    let offer,sourceEvidence;
+    try{
+      offer=snapshotOffer(result.offer);
+      sourceEvidence=boundedSourceEvidence(ev);
+    }catch{return state('MISSING_EVIDENCE','unsupported_offer_or_source_payload');}
     const ref='pdp-audit:'+randomUUID();
     const sourceKey=hash([ev.sourceId,offer.sku,offer.sourceUrl]);
     const receipt={
       policy:POLICY,sourceId:ev.sourceId,sourceKey,sourceObservationRef:ev.ref,
       sourceRevision:ev.revision,sourceRecord:ev.sourceRecord,
       observedAt:ev.observedAt,issuedAt:new Date(at).toISOString(),
-      offer,offerDigest:hash(offer),predicates:result.decision.predicates,
+      offer,offerDigest:hash(offer),sourceEvidence,
+      predicates:result.decision.predicates,
       scope:result.certificateScope,wholeOfferVerified:false,badgeEligible:false
     };
     const event=seal('capture',ref,receipt);

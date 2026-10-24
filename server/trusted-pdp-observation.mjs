@@ -273,9 +273,26 @@ export function createPdpObservationSession({
       documentDigest:page.extraction.selectedProductRecord.documentDigest,
       source:'jsonld_product_offer'
     });
+    // Diagnostic extraction lineage for durable cross-process audit. This
+    // metadata never independently increases the selected-PDP predicate scope.
+    const fieldOwnership=Object.fromEntries(
+      ['offers','name','image','sku','mpn','gtin','brand','color','condition',
+       'availability','storage','capacity','ram','region','sim','edition']
+        .filter(key=>Object.hasOwn(page.extraction.fieldSources,key))
+        .map(key=>{
+          const origin=page.extraction.fieldSources[key];
+          return [key,Object.freeze({
+            strategy:typeof origin?.strategy==='string'?
+              origin.strategy.slice(0,64):'unknown',
+            recordId:typeof origin?.recordId==='string'?
+              origin.recordId.slice(0,64):null
+          })];
+        })
+    );
     const observation=Object.freeze({
       ref,revision,sourceId:SOURCE_ID,observedAt:page.observedAt,
-      sourceRecord,selectedRecord:Object.freeze(record)
+      sourceRecord,selectedRecord:Object.freeze(record),
+      fieldOwnership:Object.freeze(fieldOwnership)
     });
     if(observations.size>=maxRecords)observations.delete(observations.keys().next().value);
     observations.set(ref,observation);
