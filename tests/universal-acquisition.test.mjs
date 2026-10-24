@@ -118,3 +118,61 @@ test('adversarial: malformed or missing currency is not a sellable priced offer'
       price:2499,currency}],fallbackUrl),/coherent structured product evidence/);
   }
 });
+
+
+test('v21.72 fallback: a shared model number cannot donate sibling variant image without SKU or GTIN',()=>{
+  fc.assert(fc.property(
+    fc.integer({min:100,max:99000}),
+    fc.constantFrom('8GB','16GB','32GB'),
+    (price,siblingRam)=>{
+      const extracted=reconcile([
+        {method:'json_ld',title:'HP Laptop 8GB',price,currency:'SAR',
+          sku:'LAPTOP-8GB',modelNumber:'SHARED-FAMILY',image:null},
+        {method:'structured_meta',title:'HP Laptop '+siblingRam,price:null,
+          currency:null,sku:null,modelNumber:'SHARED-FAMILY',
+          image:'/sibling-'+siblingRam+'.jpg'},
+      ],fallbackUrl);
+      assert.equal(extracted.title,'HP Laptop 8GB');
+      assert.equal(extracted.productPrice,price);
+      assert.equal(extracted.sku,'LAPTOP-8GB');
+      assert.equal(extracted.image,null,
+        'model-only sibling cannot contribute product media');
+    }),{seed:2172,numRuns:64});
+});
+
+test('v21.72 fallback: hard-SKU punctuation remains identity-bearing during enrichment',()=>{
+  fc.assert(fc.property(
+    fc.constantFrom('+','-','_','.'),
+    fc.integer({min:1,max:9999}),
+    (separator,n)=>{
+      const sku='MODEL'+separator+n,collidingSku='MODEL'+n;
+      const extracted=reconcile([
+        {method:'json_ld',title:'Selected Sellable Product',price:2499,
+          currency:'SAR',sku,modelNumber:'MODEL-FAMILY',image:null},
+        {method:'structured_meta',title:'Nearby Accessory',price:null,
+          currency:null,sku:collidingSku,modelNumber:'MODEL-FAMILY',
+          image:'/foreign-accessory.jpg'},
+      ],fallbackUrl);
+      assert.equal(extracted.sku,sku);
+      assert.equal(extracted.image,null,'punctuation loss must not create source authority');
+      const genuine=reconcile([
+        {method:'json_ld',title:'Selected Sellable Product',price:2499,
+          currency:'SAR',sku,modelNumber:'MODEL-FAMILY',image:null},
+        {method:'structured_meta',title:'Same Product',price:null,
+          currency:null,sku,modelNumber:'MODEL-FAMILY',image:'/owned.jpg'}
+      ],fallbackUrl);
+      assert.equal(genuine.image,'https://merchant.example/owned.jpg',
+        'genuine exact SKU must preserve useful enrichment');
+    }),{seed:2173,numRuns:64});
+});
+
+test('v21.72 fallback positive: matching explicit GTIN supports a limited enrichment when SKU is unavailable',()=>{
+  const extracted=reconcile([
+    {method:'json_ld',title:'Source-owned Product',price:1999,
+      currency:'SAR',sku:null,gtin:'0123456789012',image:null},
+    {method:'structured_meta',title:'Source-owned Product',price:null,
+      currency:null,sku:null,gtin:'0123456789012',image:'/source-owned.jpg'},
+  ],fallbackUrl);
+  assert.equal(extracted.productPrice,1999);
+  assert.equal(extracted.image,'https://merchant.example/source-owned.jpg');
+});

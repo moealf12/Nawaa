@@ -100,17 +100,20 @@ export function reconcile(candidates, finalUrl){
   // product identifier with the chosen priced record, without contradiction.
   // Same PDP or similar title alone cannot establish sellable-item ownership.
   const identityFields=["sku","gtin","modelNumber"];
-  const canonical=v=>String(v??"").trim().toLowerCase().replace(/[^a-z0-9]/g,"");
+  // A model/MPN alone may identify a family of sellable variants. An
+  // enrichment donor needs a matching merchant SKU or GTIN; hard identifier
+  // punctuation is identity-bearing (X+1 and X1 are not interchangeable).
+  const canonical=v=>String(v??"").normalize("NFKC").trim().toLowerCase();
   const sameIdentity=other=>{
-    let matched=false;
+    let strongMatch=false;
     for(const key of identityFields){
       const own=canonical(priced[key]),alternate=canonical(other[key]);
       if(own&&alternate){
         if(own!==alternate)return false;
-        matched=true;
+        if(key==="sku"||key==="gtin")strongMatch=true;
       }
     }
-    return matched;
+    return strongMatch;
   };
   const trusted=[priced,...ranked.filter(c=>c!==priced&&sameIdentity(c))];
   const origin=key=>trusted.find(c=>c[key]!==null&&c[key]!==undefined&&c[key]!=="");
