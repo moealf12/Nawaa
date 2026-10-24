@@ -186,3 +186,23 @@ test('identically ambiguous duplicated URL selectors do not establish destinatio
   const decision=await verifier.verify({offer:ambiguous,observationRef:reference});
   assert.equal(decision.eligible,false);
 });
+
+test('certified manufacturer, MPN and availability claims require same captured record',async()=>{
+  const offered={...base,brand:'Apple',mpn:'MG674AHA',availability:'in_stock'};
+  const {verifier,records}=setup();
+  records.set(reference,makeEvidence({selectedRecord:{...offered}}));
+  const good=await verifier.verify({offer:offered,observationRef:reference});
+  assert.equal(good.state,'VERIFIED');
+  assert.equal(good.predicates.manufacturer,'VERIFIED');
+  assert.equal(good.predicates.availability,'VERIFIED');
+  for(const fields of [
+    {brand:'Another Manufacturer'},
+    {mpn:'DIFFERENT-MPN'},
+    {availability:'out_of_stock'},
+    {availability:undefined}
+  ]){
+    records.set(reference,makeEvidence({selectedRecord:{...offered,...fields}}));
+    const rejected=await verifier.verify({offer:offered,observationRef:reference});
+    assert.equal(rejected.eligible,false,JSON.stringify(fields));
+  }
+});
