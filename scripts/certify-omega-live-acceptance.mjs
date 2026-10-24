@@ -23,7 +23,7 @@ const selectedPdp=offers.find(o=>o.providerMarket==='jarir-sa'&&o.merchant==='Ja
 if(selectedPdp){
   const verifier=createPdpObservationSession();
   const started=Date.now();
-  const claim=await verifier.verify(selectedPdp,{signal:AbortSignal.timeout(12000)});
+  const claim=await verifier.verifySelectedRevision(selectedPdp,{signal:AbortSignal.timeout(12000)});
   const accepted=claim.state==='VERIFIED'&&await verifier.accepts(claim);
   const evidence=accepted?verifier.evidence(claim.observationRef):null;
   console.log('TRUSTED_PDP_LIVE_PROBE '+JSON.stringify({
@@ -32,6 +32,8 @@ if(selectedPdp){
     sourceUrl:selectedPdp.sourceUrl,sourceId:'jarir-sa',
     status:accepted?'VERIFIED':'UNVERIFIED',
     reason:accepted?null:claim.reason,
+    originalListingSuperseded:accepted?claim.originalListingSuperseded:false,
+    selectedPdpSku:accepted?claim.offer.sku:null,
     revision:accepted?evidence?.revision:null,
     sourceObservedAt:accepted?evidence?.observedAt:null,
     durationMs:Date.now()-started,
