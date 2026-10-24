@@ -71,6 +71,14 @@ async function read(){
   const valid=await journal.inspect(saved.ref,{expectedOffer:saved.offer});
   assert.equal(valid.state,'REVALIDATED',valid.reason);
   assert.equal(valid.predicates.gtin,'NOT_CLAIMED');
+  // Independent Node process reconstructs source facts and field ownership
+  // from the signed PostgreSQL receipt, NOT from the original WeakMap.
+  assert.equal(valid.sourceEvidence.schema,'selected-source-record-evidence-v1');
+  assert.equal(valid.sourceEvidence.record.sku,saved.offer.sku);
+  assert.equal(valid.sourceEvidence.record.productPrice,saved.offer.productPrice);
+  assert.equal(valid.sourceEvidence.record.currency,saved.offer.currency);
+  assert.equal(valid.sourceEvidence.ownership.offers.recordId,'a'.repeat(64));
+  assert.equal(valid.sourceEvidence.ownership.image.recordId,'a'.repeat(64));
   assert.equal(valid.badgeEligible,false);
   assert.equal((await journal.inspect(saved.ref,{
     expectedOffer:{...saved.offer,productPrice:saved.offer.productPrice+100}

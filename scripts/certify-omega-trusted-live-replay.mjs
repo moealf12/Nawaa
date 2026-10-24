@@ -25,6 +25,11 @@ try{
     assert.equal(accepted.sourceId,saved.sourceId);
     assert.equal(accepted.sourceRecord.documentDigest,saved.documentDigest);
     assert.equal(accepted.sourcePredicatesRevalidated,true);
+    assert.equal(accepted.sourceEvidence?.schema,'selected-source-record-evidence-v1');
+    assert.equal(accepted.sourceEvidence?.record?.sku,saved.offer.sku);
+    assert.equal(accepted.sourceEvidence?.record?.productPrice,saved.offer.productPrice);
+    assert.equal(accepted.sourceEvidence?.ownership?.offers?.recordId,
+      accepted.sourceRecord.recordId);
     assert.equal(accepted.badgeEligible,false);
     assert.equal(accepted.wholeOfferVerified,false);
     assert.equal((await journal.inspect(saved.ref,{expectedOffer:{
