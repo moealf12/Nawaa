@@ -135,8 +135,26 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
   // frame rather than accidentally preserving a prior customer trust grant.
   function advance(snapshotRevision,offers){
     if(disabled)return false;
-    if(!Number.isSafeInteger(snapshotRevision)||snapshotRevision<=revision)
+    if(!Number.isSafeInteger(snapshotRevision)||snapshotRevision<revision)
       return false;
+    if(snapshotRevision===revision){
+      // Equal-revision replay is not permission to change visible claims.
+      // A conflicting snapshot with the same ID must revoke previous
+      // internal binding even if its old digest is still in memory.
+      let same=Array.isArray(offers)&&offers.length===activeDigests.size;
+      if(same){
+        const seen=new Set();
+        for(const offer of offers){
+          const digest=strictDigest(offer);
+          if(!digest||seen.has(digest)||!activeDigests.has(digest)){
+            same=false;break;
+          }
+          seen.add(digest);
+        }
+      }
+      if(!same)activeDigests=new Set();
+      return false;
+    }
     const reject=()=>{revision=snapshotRevision;activeDigests=new Set();return false;};
     if(!Array.isArray(offers)||offers.length>MAX_OFFERS)return reject();
     const next=new Set();

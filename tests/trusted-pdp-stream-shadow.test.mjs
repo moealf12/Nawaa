@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createPdpStreamShadow,configuredPdpStreamShadow} from '../server/trusted-pdp-stream-shadow.mjs';
+import {createPdpStreamShadow,configuredPdpStreamShadow,createTransientPdpSourceHeadStore} from '../server/trusted-pdp-stream-shadow.mjs';
 import {createPdpObservationSession} from '../server/trusted-pdp-observation.mjs';
 import {createTrustedObservationJournal} from '../server/trusted-observation-journal.mjs';
 const now=Date.parse('2026-10-24T17:00:00Z');
@@ -90,4 +90,17 @@ test('v21.71 same-frame shadow positive is scoped to source predicates and never
   for(const key of ['badgeEligible','customerVerified','wholeOfferVerified',
     't5Eligible','paintCertified','durableProof'])assert.equal(event[key],false,key);
   h.shadow.close();
+});
+
+test('v21.75 passive shadow never upgrades later conflicting source to authority',async()=>{
+  const store=createTransientPdpSourceHeadStore();
+  const first={sourceKey:'a'.repeat(64),revision:'b'.repeat(64),
+    recordId:'c'.repeat(64),observedAt:new Date(now-2000).toISOString()};
+  assert.equal(await store.advanceHead(first),true);
+  const second={...first,revision:'d'.repeat(64),recordId:'e'.repeat(64),
+    observedAt:new Date(now+2000).toISOString()};
+  assert.equal(await store.advanceHead(second),false);
+  assert.equal((await store.currentHead(first.sourceKey)).conflicted,true);
+  assert.equal(await store.advanceHead(first),false,
+    'stale source replay cannot clear a known conflict');
 });

@@ -37,7 +37,9 @@ function destination(value){
       }
       query.push([normalized,val]);
     }
-    query.sort((a,b)=>a[0].localeCompare(b[0])||a[1].localeCompare(b[1]));
+    // Query order and repeated parameters may select different sellable
+    // variants. Never sort them for trust-critical purchase destinations.
+    // Only known tracking parameters are discardable.
     u.hash='';
     u.search='';
     for(const [key,val] of query)u.searchParams.append(key,val);

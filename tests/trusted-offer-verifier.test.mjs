@@ -254,3 +254,18 @@ test('v21.72 consistent aliases remain admissible while unrelated unclaimed evid
   assert.equal(await verifier.accepts(issued,consistent,reference),true);
   assert.equal(await verifier.accepts(issued,{...consistent,variant:{storage:'512GB'}},reference),false);
 });
+
+test('v21.75 whole-offer destination: duplicate nontracking selector order cannot certify another item',async()=>{
+  const own={...base,sourceUrl:'https://www.jarir.com/p.html?option=a&option=b'};
+  const {verifier,records}=setup();
+  records.set(reference,makeEvidence({selectedRecord:{...own,
+    sourceUrl:'https://www.jarir.com/p.html?option=b&option=a'}}));
+  const verdict=await verifier.verify({offer:own,observationRef:reference});
+  assert.notEqual(verdict.state,'VERIFIED',
+    'a sorted-query verifier would certify a differently selected product');
+  assert.equal(verdict.reason,'destination_selection_mismatch');
+  // Legitimate tracking-only differences remain equivalent.
+  records.set(reference,makeEvidence({selectedRecord:{...own,
+    sourceUrl:'https://www.jarir.com/p.html?option=a&option=b&utm_source=pdp'}}));
+  assert.equal((await verifier.verify({offer:own,observationRef:reference})).state,'VERIFIED');
+});

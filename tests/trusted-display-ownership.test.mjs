@@ -247,3 +247,21 @@ test('v21.69 conflicting bundle membership aliases cannot borrow same-offer trus
     assert.equal(bound.state,'DENIED',JSON.stringify(attrs));
   }
 });
+
+test('v21.75 occurrence: conflicting snapshot replay with same revision invalidates old internal authority',async()=>{
+  const h=await valid();
+  assert.equal(await h.display.accepts(h.bound,context()),true);
+  assert.equal(h.display.advance(1,[{...offer,productPrice:3498}]),false);
+  assert.equal(await h.display.accepts(h.bound,context()),false);
+  assert.equal(h.display.advance(1,[offer]),false,
+    'replaying old content cannot resurrect a previously conflicted frame');
+  assert.equal(await h.display.accepts(h.bound,context()),false);
+  assert.equal(h.bound.badgeEligible,false);
+});
+test('v21.75 occurrence: exact idempotent snapshot replay does not falsely revoke correct ownership',async()=>{
+  const h=await valid();
+  assert.equal(h.display.advance(1,[{...offer}]),false);
+  assert.equal(await h.display.accepts(h.bound,context()),true);
+  h.display.revoke();
+  assert.equal(await h.display.accepts(h.bound,context()),false);
+});

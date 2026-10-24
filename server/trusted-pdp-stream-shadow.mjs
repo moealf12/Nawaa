@@ -12,20 +12,22 @@ let activeProbe=false,lastAllowedAt=0;
 const nonTrust='selected_pdp_revision_predicates';
 const isJarir=o=>o&&o.merchant==='Jarir'&&o.providerMarket==='jarir-sa'&&
   typeof o.sourceUrl==='string'&&o.sourceUrl.startsWith('https://');
-function transientStore(){
-  // One stream, one controlled PDP candidate, no persistence or third-party
-  // secrets in the receipt. Equal-time conflicts invalidate head evidence.
+export function createTransientPdpSourceHeadStore(){
+  // One stream, one controlled PDP candidate. Ephemeral shadow diagnostics
+  // must obey the same temporal non-authority as disposable PostgreSQL.
+  // This store is NEVER a durable issuance or customer trust backend.
   const rows=[],heads=new Map();
   function advance(b){
     const prev=heads.get(b.sourceKey);
     if(prev){
-      if(Date.parse(b.observedAt)<Date.parse(prev.observedAt))return false;
-      if(Date.parse(b.observedAt)===Date.parse(prev.observedAt)){
-        if(prev.conflicted||prev.revision!==b.revision||prev.recordId!==b.recordId){
-          heads.set(b.sourceKey,{...prev,conflicted:true});return false;
-        }
-        return true;
+      if(prev.conflicted)return false;
+      if(prev.recordId===b.recordId){
+        if(Date.parse(b.observedAt)!==Date.parse(prev.observedAt))return false;
+        if(prev.revision===b.revision)return true;
       }
+      // Contradictory content is incomparable regardless of acquisition
+      // timestamp. Never convert a later clock reading to merchant freshness.
+      heads.set(b.sourceKey,{...prev,conflicted:true});return false;
     }
     heads.set(b.sourceKey,{...b,conflicted:false});return true;
   }
@@ -115,7 +117,7 @@ export function configuredPdpStreamShadow({streamGeneration,signal,sendEvent,env
   catch{return null;} // no keys => absolutely no PDP source fetch.
   // Never use synthetic keys, a public API flag, or a DB-less local receipt
   // as cross-process authority. This is only an opt-in diagnostic.
-  const journal=createTrustedObservationJournal({store:transientStore(),keyring,
+  const journal=createTrustedObservationJournal({store:createTransientPdpSourceHeadStore(),keyring,
     requireCurrentHead:true});
   let acquired=false,released=false;
   const tryAcquire=()=>{
