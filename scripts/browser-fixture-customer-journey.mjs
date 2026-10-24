@@ -266,6 +266,15 @@ try{
     await new Promise(resolve=>setTimeout(resolve,100));
   }
   if(!ready)throw Error('fixture_candidate_health_timeout');
+  // Browser module graph must be reachable from the same HTTP static allowlist
+  // used by real shoppers; direct node imports do not exercise that boundary.
+  for(const asset of ['/src/search-first-offer-metrics.mjs','/src/product-image-ownership.mjs']){
+    const response=await fetch(base+asset,{signal:AbortSignal.timeout(3500)});
+    assertCheck('v2157_static_module_'+asset.split('/').at(-1),
+      response.status===200&&
+      (response.headers.get('content-type')||'').includes('text/javascript'),
+      {asset,status:response.status,contentType:response.headers.get('content-type')});
+  }
   browser=await chromium.launch({executablePath:binary,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
   const context=await browser.newContext({viewport:{width:1280,height:820},locale:'ar-SA',serviceWorkers:'block'});
   const browserErrors=[];
