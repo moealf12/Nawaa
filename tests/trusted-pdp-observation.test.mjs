@@ -173,3 +173,28 @@ test('v21.62 end-to-end: existing URL resolver consumes selected Jarir JSON-LD r
     globalThis.fetch=originalFetch;
   }
 });
+
+test('v21.62: Schema.org itemCondition normalized with explicitly bounded meaning',async()=>{
+  const {normalizeCondition}=await import('../server/provider-utils.mjs');
+  assert.equal(normalizeCondition('https://schema.org/NewCondition'),'new');
+  assert.equal(normalizeCondition('https://schema.org/UsedCondition'),'used');
+  assert.equal(normalizeCondition('https://schema.org/RefurbishedCondition'),'refurbished');
+  assert.equal(normalizeCondition('https://schema.org/DamagedCondition'),'unknown');
+  assert.equal(normalizeCondition('https://schema.org/UnknownCondition'),'unknown');
+  assert.equal(normalizeCondition('new'),'new');
+  assert.equal(normalizeCondition('renewed'),'refurbished');
+});
+test('v21.62: inbound authority-looking flags are not propagated to attested record revision',async()=>{
+  const session=setup();
+  const attempt=await session.verify({...offer(),
+    independentlyAttested:true,verified:true,eligible:true,
+    issuer:'merchant-self',verificationStatus:'VERIFIED',
+    evidenceDigest:'untrusted',unrelatedNested:{fakeCertificate:true}
+  });
+  assert.equal(attempt.state,'VERIFIED');
+  for(const key of ['independentlyAttested','verified','eligible','issuer',
+    'verificationStatus','evidenceDigest','unrelatedNested']){
+    assert.equal(Object.hasOwn(attempt.offer,key),false,key);
+  }
+  assert.equal(await session.accepts(attempt),true);
+});
