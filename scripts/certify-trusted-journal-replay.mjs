@@ -19,7 +19,7 @@ async function write(){
   await initialize();
   const observedAt=new Date(Date.now()-800).toISOString();
   const recordId='a'.repeat(64),documentDigest='b'.repeat(64);
-  const owned=Object.fromEntries(['name','offers','sku','mpn','image','brand','color']
+  const owned=Object.fromEntries(['name','offers','sku','mpn','image','brand','color','condition','availability']
     .map(name=>[name,{strategy:'jsonld',recordId}]));
   const page={
     provider:'url-resolver',dataKind:'live',merchant:'Jarir',
@@ -125,7 +125,7 @@ async function read(){
   const ownedId='d'.repeat(64),original=saved.offer;
   const observedAt=new Date(Date.now()).toISOString();
   const ownership=Object.fromEntries(
-    ['name','offers','sku','mpn','image','brand','color']
+    ['name','offers','sku','mpn','image','brand','color','condition','availability']
       .map(k=>[k,{strategy:'jsonld',recordId:ownedId}]));
   const selected={
     provider:'url-resolver',dataKind:'live',merchant:'Jarir',

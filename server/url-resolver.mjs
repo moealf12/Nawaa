@@ -822,8 +822,15 @@ export async function resolveSelectedJsonLdOffer(url, options = {}) {
       reconciled:false,conflictSummary:{hasConflicts:false},
       identity:{summary:{accepted:1,rejected:0}},
       availableStrategies:['jsonld'],
-      fieldSources:Object.fromEntries(['name','offers','image','sku','mpn','gtin',
-        'brand','color'].map(key=>[key,{strategy:'jsonld',recordId}]))
+      // Source locations are restricted to this one selected JSON-LD
+      // Product and its selected Offer, never hydrated siblings or meta tags.
+      fieldSources:Object.fromEntries([
+        'name','offers','image','sku','mpn','gtin','brand','color',
+        ...(product.itemCondition?['condition']:[]),
+        ...(priced.availability?['availability']:[]),
+        ...(['storage','capacity','ram','region','sim','edition','bundleContents']
+          .filter(k=>product[k]!=null&&product[k]!=='')) 
+      ].map(key=>[key,{strategy:'jsonld',recordId}]))
     }
   };
 }

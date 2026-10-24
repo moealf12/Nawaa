@@ -6,7 +6,7 @@ import {createTrustedObservationJournal} from '../server/trusted-observation-jou
 const URL='https://www.jarir.com/sa-en/sony-playstation-5-slim-gaming-consoles-and-handheld-668751.html';
 const CLOCK=Date.parse('2026-10-24T14:00:00.000Z');
 const RECORD='a'.repeat(64),DOCUMENT='b'.repeat(64);
-const owned=Object.fromEntries(['name','offers','image','sku','mpn','brand','color'].map(k=>
+const owned=Object.fromEntries(['name','offers','image','sku','mpn','brand','color','condition','availability'].map(k=>
   [k,{strategy:'jsonld',recordId:RECORD}]));
 const observedAt=new Date(CLOCK-1000).toISOString();
 const page=()=>({

@@ -7,7 +7,7 @@ const CLOCK=Date.parse('2026-10-24T12:00:00.000Z');
 const observedAt=new Date(CLOCK-1500).toISOString();
 const RECORD_ID='a'.repeat(64),DOCUMENT_DIGEST='b'.repeat(64);
 const origin={strategy:'jsonld',adapterId:null,recordId:RECORD_ID};
-const fields=()=>Object.fromEntries(['offers','name','sku','mpn','gtin','brand','image','color'].map(k=>[k,{...origin}]));
+const fields=()=>Object.fromEntries(['offers','name','sku','mpn','gtin','brand','image','color','condition','availability'].map(k=>[k,{...origin}]));
 const page=()=>({
   provider:'url-resolver',providerMarket:'www.jarir.com',dataKind:'live',merchant:'Jarir',
   resolvedPageUrl:URL,sourceUrl:URL,observedAt,
@@ -70,7 +70,8 @@ test('v21.62: forged self-attestation and arbitrary caller fields never mint VER
   assert.equal(flagged.state,'VERIFIED','flags ignored; genuine controlled PDP evidence required');
 });
 test('v21.62: same-origin field ownership is mandatory (no price plus adjacent SKU/title/image)',async()=>{
-  for(const mutatedField of ['name','sku','mpn','image','brand','color']){
+  for(const mutatedField of ['name','sku','mpn','image','brand','color',
+    'condition','availability']){
     const session=setup(async()=>({
       ...page(),extraction:{...page().extraction,
         fieldSources:{...fields(),[mutatedField]:{strategy:'hydrated_state'}}}
@@ -219,7 +220,7 @@ test('v21.62: equal parser strategy does not prove identical record when two Pro
 });
 
 test('v21.63 cross-record ID borrowing fails even when both fields report jsonld strategy',async()=>{
-  for(const field of ['offers','name','sku','mpn','image','brand','color']){
+  for(const field of ['offers','name','sku','mpn','image','brand','color','condition','availability']){
     const p=page();
     p.extraction.fieldSources[field]={strategy:'jsonld',recordId:'f'.repeat(64)};
     const result=await setup(async()=>p).verify(offer());
@@ -498,4 +499,42 @@ test('v21.72 newly emitted PDP fields require same-record ownership even when ab
   assert.equal(accepted.state,'VERIFIED',accepted.reason);
   assert.equal(accepted.offer.image,page().image);
   assert.equal(accepted.badgeEligible,false,'predicate-only verification cannot mint a badge');
+});
+
+test('v21.76 selected source specification and availability ownership cannot be borrowed from sibling records',async()=>{
+  for(const field of ['condition','availability','storage','ram','region','sim',
+    'capacity','edition','bundleContents']){
+    const p=page();
+    const injected=field==='bundleContents'?['console','controller']:
+      field==='availability'?'in_stock':field==='condition'?'new':'variant-one';
+    if(['storage','ram','region','sim','capacity'].includes(field))
+      p.specs={...p.specs,[field]:injected};
+    else p[field]=injected;
+    const sibling={...p,extraction:{...p.extraction,
+      fieldSources:{...p.extraction.fieldSources,
+        [field]:{strategy:'jsonld',recordId:'f'.repeat(64)}}}};
+    const rejected=await setup(async()=>sibling).verifySelectedRevision(offer());
+    assert.equal(rejected.state,'MISSING_EVIDENCE',field);
+    assert.equal(rejected.reason,'cross_record_field_'+field,field);
+    const missing={...p,extraction:{...p.extraction,fieldSources:{
+      ...p.extraction.fieldSources,[field]:undefined
+    }}};
+    const noOrigin=await setup(async()=>missing).verifySelectedRevision(offer());
+    assert.equal(noOrigin.reason,'cross_record_field_'+field,
+      'missing origin cannot inherit name/offers record '+field);
+    const owned={...p,extraction:{...p.extraction,
+      fieldSources:{...p.extraction.fieldSources,
+        [field]:{strategy:'jsonld',recordId:RECORD_ID}}}};
+    const verified=await setup(async()=>owned).verifySelectedRevision(offer());
+    assert.equal(verified.state,'VERIFIED',field+' '+verified.reason);
+    assert.equal(verified.badgeEligible,false);
+  }
+});
+test('v21.76 selected Offer URL cannot silently diverge from source-owned purchase destination',async()=>{
+  const p=page();
+  const displaced={...p,sourceUrl:p.sourceUrl+'?variant=adjacent'};
+  const verdict=await setup(async()=>displaced).verifySelectedRevision(offer());
+  assert.equal(verdict.state,'MISSING_EVIDENCE');
+  assert.equal(verdict.reason,'selected_offer_destination_mismatch');
+  assert.equal((await setup().verifySelectedRevision(offer())).state,'VERIFIED');
 });

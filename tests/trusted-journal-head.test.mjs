@@ -40,7 +40,7 @@ const historical=()=>({
   image:'https://static.jarir.com/old.jpg'
 });
 function page({price=2529,recordId='a'.repeat(64),stamp=CLOCK-1000}={}){
-  const fields=Object.fromEntries(['offers','name','sku','mpn','image','brand','color']
+  const fields=Object.fromEntries(['offers','name','sku','mpn','image','brand','color','condition','availability']
     .map(key=>[key,{strategy:'jsonld',recordId}]));
   return {
     provider:'url-resolver',dataKind:'live',merchant:'Jarir',

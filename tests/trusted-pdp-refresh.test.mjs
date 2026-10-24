@@ -24,7 +24,7 @@ const page=(price=2529,stamp=NOW-1000)=>({
     selectedCount:1,productCount:1
   },reconciled:false,availableStrategies:['jsonld'],
   identity:{summary:{accepted:1,rejected:0}},conflictSummary:{hasConflicts:false},
-  fieldSources:Object.fromEntries(['offers','name','sku','mpn','image','brand','color']
+  fieldSources:Object.fromEntries(['offers','name','sku','mpn','image','brand','color','condition','availability']
     .map(name=>[name,{strategy:'jsonld',recordId:DIGEST}]))}
 });
 function store(){

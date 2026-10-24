@@ -18,7 +18,7 @@ const page={provider:'url-resolver',dataKind:'live',merchant:'Jarir',sourceUrl:u
     source:'jsonld_product_offer',selectedProductUrl:url,selectedOfferUrl:url,
     selectedCount:1},reconciled:false,availableStrategies:['jsonld'],
     conflictSummary:{hasConflicts:false},identity:{summary:{accepted:1,rejected:0}},
-    fieldSources:Object.fromEntries(['offers','name','sku','image'].map(k=>[k,{
+    fieldSources:Object.fromEntries(['offers','name','sku','image','condition','availability'].map(k=>[k,{
       strategy:'jsonld',recordId:record}]))}};
 function fakeStore(){
   const rows=[],heads=new Map();

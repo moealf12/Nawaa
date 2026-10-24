@@ -75,6 +75,14 @@ function sameRecordProvenance(page,offer){
      !selectedDestination(page.resolvedPageUrl,selected.selectedProductUrl)||
      !selectedDestination(page.resolvedPageUrl,selected.selectedOfferUrl))
     return 'missing_selected_product_record_proof';
+  // The displayed purchase destination must be precisely the selected Offer
+  // destination, including the order of sellable-variant query parameters.
+  // Product.url or page URL alone cannot authorize a sibling Offer URL.
+  try{
+    if(new URL(page.sourceUrl).href!==
+       new URL(selected.selectedOfferUrl,page.resolvedPageUrl).href)
+      return 'selected_offer_destination_mismatch';
+  }catch{return 'selected_offer_destination_mismatch';}
   if(!e||e.conflictSummary?.hasConflicts!==false||
      e.reconciled!==false||
      e.identity?.summary?.accepted!==1||
@@ -104,6 +112,25 @@ function sameRecordProvenance(page,offer){
      offer.brand!=null||offer.specs?.brand!=null)required.push('brand');
   if(page.color!=null||page.specs?.color!=null||
      offer.color!=null||offer.specs?.color!=null)required.push('color');
+  // The selected page, not the stale indexed listing, supplies ALL fields
+  // of a re-issued offer. Every meaningful nonidentity claim must therefore
+  // be owned by the same selected Product+Offer record as the price. A valid
+  // SKU+price pair must not launder neighboring availability or specifications.
+  const claimed=v=>v!==null&&v!==undefined&&v!==''&&v!=='unknown';
+  const sourceClaims={
+    condition:[page.condition,page.specs?.condition,page.variant?.condition],
+    availability:[page.availability],
+    storage:[page.storage,page.specs?.storage,page.variant?.storage],
+    capacity:[page.capacity,page.specs?.capacity,page.variant?.capacity],
+    ram:[page.ram,page.specs?.ram,page.variant?.ram],
+    region:[page.region,page.specs?.region,page.variant?.region],
+    sim:[page.sim,page.specs?.sim,page.variant?.sim],
+    edition:[page.edition,page.variant?.edition],
+    bundleContents:[page.bundleContents,page.variant?.bundleContents]
+  };
+  for(const [field,values] of Object.entries(sourceClaims)){
+    if(values.some(claimed))required.push(field);
+  }
   for(const field of required){
     if(originKey(fields[field])!==anchor||
        fields[field]?.recordId!==selected.recordId||

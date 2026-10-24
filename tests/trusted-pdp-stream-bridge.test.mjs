@@ -23,7 +23,7 @@ function page(price=2529){
       reconciled:false,availableStrategies:['jsonld'],
       identity:{summary:{accepted:1,rejected:0}},
       conflictSummary:{hasConflicts:false},
-      fieldSources:Object.fromEntries(['offers','name','sku','mpn','image','brand']
+      fieldSources:Object.fromEntries(['offers','name','sku','mpn','image','brand','condition','availability']
         .map(key=>[key,{strategy:'jsonld',recordId:DIGEST}]))}
   };
 }
