@@ -218,3 +218,39 @@ test('extra source-only attributes are not borrowed or required in an unclaimed 
   assert.equal(result.predicates.manufacturer,'NOT_CLAIMED');
   assert.equal(result.predicates.availability,'NOT_CLAIMED');
 });
+
+
+test('v21.72 conflicting asserted aliases cannot inherit issuer authority from a verified primary field',async()=>{
+  const variants=[
+    {sourceMeta:{productId:'666789'}},
+    {specs:{modelNumber:'WRONG-MODEL'}},
+    {variant:{storage:'512GB'}},
+    {ram:'8GB',specs:{ram:'16GB'}},
+    {bundleContents:['Console'],variant:{bundleContents:['Disc drive']}},
+    {brand:'Apple',manufacturer:'Another manufacturer'},
+    {gtin:'1111111111111',specs:{gtin:'2222222222222'}}
+  ];
+  for(const shadow of variants){
+    const {verifier,records}=setup();
+    // Both the selected source and the incoming offer are independently
+    // checked: a matched primary SKU/title/price must not conceal divergence.
+    let attempt=await verifier.verify({offer:{...base,...shadow},observationRef:reference});
+    assert.equal(attempt.state,'CONFLICTING_EVIDENCE',
+      'offer alias '+JSON.stringify(shadow));
+    records.set(reference,makeEvidence({selectedRecord:{...base,...shadow}}));
+    attempt=await verifier.verify({offer:base,observationRef:reference});
+    assert.equal(attempt.state,'CONFLICTING_EVIDENCE',
+      'source alias '+JSON.stringify(shadow));
+  }
+});
+test('v21.72 consistent aliases remain admissible while unrelated unclaimed evidence stays out of scope',async()=>{
+  const consistent={...base,sourceMeta:{productId:base.sku},
+    specs:{modelNumber:base.modelNumber,storage:base.storage},
+    variant:{storage:base.storage},brand:'Apple',manufacturer:'Apple'};
+  const {verifier,records}=setup();
+  records.set(reference,makeEvidence({selectedRecord:consistent}));
+  const issued=await verifier.verify({offer:consistent,observationRef:reference});
+  assert.equal(issued.state,'VERIFIED',issued.reason);
+  assert.equal(await verifier.accepts(issued,consistent,reference),true);
+  assert.equal(await verifier.accepts(issued,{...consistent,variant:{storage:'512GB'}},reference),false);
+});

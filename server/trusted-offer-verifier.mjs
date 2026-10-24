@@ -58,6 +58,38 @@ function claimValue(offer,key){
   return scalar(value);
 }
 
+// A single asserted value cannot conceal a contradictory shadow namespace.
+// This is enforced at the issuing verifier, not only in display correlation:
+// any admitted aliases must describe the SAME sellable source record.
+function aliasConflict(record){
+  if(!record||typeof record!=='object'||Array.isArray(record))
+    return 'alias_record_conflict';
+  const fields=[
+    ['sku',[record.sku,record.sourceMeta?.productId]],
+    ['brand',[record.brand,record.manufacturer,record.specs?.brand]],
+    ['modelNumber',[record.modelNumber,record.specs?.modelNumber]],
+    ['mpn',[record.mpn,record.specs?.mpn]],
+    ['gtin',[record.gtin,record.specs?.gtin]],
+    ['condition',[record.condition,record.variant?.condition,record.specs?.condition]],
+    ...VARIANT_KEYS.filter(k=>k!=='condition'&&k!=='bundleContents')
+      .map(k=>[k,[record[k],record.variant?.[k],record.specs?.[k]]])
+  ];
+  for(const [key,values] of fields){
+    const claimed=values.filter(v=>v!==null&&v!==undefined);
+    const comparable=claimed.map(scalar);
+    if(comparable.some(v=>v===null)||new Set(comparable).size>1)
+      return 'alias_'+key+'_conflict';
+  }
+  const outer=record.bundleContents,inner=record.variant?.bundleContents;
+  if(outer!=null||inner!=null){
+    const comparable=[outer,inner].filter(v=>v!=null)
+      .map(v=>claimValue({bundleContents:v},'bundleContents'));
+    if(comparable.some(v=>v===null)||new Set(comparable).size>1)
+      return 'alias_bundleContents_conflict';
+  }
+  return null;
+}
+
 function subject(record,observedAt){
   return {
     observedAt,title:record?.title,productPrice:record?.productPrice,currency:record?.currency,
@@ -89,6 +121,8 @@ function offerKey(o){
 }
 function fail(state,reason){return Object.freeze({state,eligible:false,reason,policyVersion:POLICY});}
 function compare(offer,observed){
+  const inconsistent=aliasConflict(offer)||aliasConflict(observed);
+  if(inconsistent)return inconsistent;
   if(!structurallyValidOffer(offer)||!structurallyValidOffer(observed))
     return 'invalid_selected_record';
   const diagnostic=assessFirstOfferOwnership(offer,observed);
