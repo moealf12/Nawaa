@@ -987,7 +987,7 @@ function exactMatchCard(group, selectedGroup, comparisonMarkup = "", repeatedDis
   `;
 }
 
-function selectedProductMedia(offer, group = null) {
+function selectedProductMedia(offer) {
   const title = offer?.sourceMeta?.nameAr || offer?.title || "المنتج";
   return productImageMarkup(offer, title, "config-image-fallback");
 }
