@@ -115,7 +115,7 @@ export function createTrustedObservationJournal({store,signingKey,now=()=>Date.n
     // This revalidates the recorded, server-issued source predicate receipt;
     // it cannot independently replay merchant HTML from its digest alone.
     return state('REVALIDATED','source_predicate_receipt_valid',{
-      eligible:true,receiptRef:ref,sourceId:captured.sourceId,
+      sourcePredicatesRevalidated:true,receiptRef:ref,sourceId:captured.sourceId,
       sourceRevision:captured.sourceRevision,sourceRecord:captured.sourceRecord,
       observedAt:captured.observedAt,issuedAt:captured.issuedAt,
       policy:captured.policy,predicates:Object.freeze({...captured.predicates}),
