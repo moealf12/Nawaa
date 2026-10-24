@@ -14,6 +14,7 @@ import {
   offerVariantDimensions,
 } from "./search-core.mjs";
 import {selectSearchStreamResult} from "./search-stream.mjs";
+import {createFirstOfferTimeline,structurallyValidOffer,assessFirstOfferOwnership} from "./search-first-offer-metrics.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
 import {arabicCount, visibleProductSpecifications, displayProductSpecification} from "./product-card-presentation.mjs";
 
@@ -50,6 +51,108 @@ const state = {
   remoteExhausted: false,
   requestId: 0,
 };
+
+
+// v21.57 opt-in, browser-test-readable observability. Never changes product
+// selection, ranking, price history, SSE reconciliation or DOM contents.
+// 'presentable' and rAF are deliberately NOT compositor-paint certificates.
+let firstOfferDiagnostic=null;
+function publishFirstOfferDiagnostic(){
+  if(!firstOfferDiagnostic)return;
+  const d=firstOfferDiagnostic;
+  window.__nawaaFirstOfferDiagnostics={
+    requestId:d.requestId,query:d.query,...d.timeline.snapshot(),
+    firstStructuralOffer:d.firstStructuralOffer,firstCard:d.firstCard,
+    firstSnapshotMs:d.firstSnapshotMs,
+    scope:"client_diagnostic_only_no_independent_merchant_attestation",
+    productionPaintCertified:false
+  };
+}
+function beginFirstOfferDiagnostic(requestId,query){
+  firstOfferDiagnostic?.timeline.finish('cancelled');
+  if(window.NAWAA_DIAGNOSTICS!==true){
+    firstOfferDiagnostic=null;
+    return;
+  }
+  firstOfferDiagnostic={
+    requestId,query,timeline:createFirstOfferTimeline(requestId),
+    firstStructuralOffer:null,firstCard:null,firstSnapshotMs:null
+  };
+  publishFirstOfferDiagnostic();
+}
+function markFirstOfferDiagnostic(requestId,milestone){
+  if(firstOfferDiagnostic?.requestId!==requestId)return;
+  firstOfferDiagnostic.timeline.mark(milestone,{requestId});
+  publishFirstOfferDiagnostic();
+}
+function observeFirstOfferCandidates(requestId,offers){
+  const d=firstOfferDiagnostic;
+  if(!d||d.requestId!==requestId||!Array.isArray(offers)||!offers.length)return;
+  d.timeline.mark('T3',{requestId});
+  if(d.firstSnapshotMs===null)d.firstSnapshotMs=performance.now();
+  const first=offers.find(structurallyValidOffer);
+  if(first&&!d.firstStructuralOffer){
+    d.timeline.mark('T4',{requestId});
+    d.firstStructuralOffer={
+      title:first.title,merchant:first.merchant,price:first.productPrice,
+      currency:first.currency,sourceUrl:first.sourceUrl,
+      ownership:assessFirstOfferOwnership(first)
+    };
+  }
+  publishFirstOfferDiagnostic();
+}
+function observeFirstRenderedCard(product,displayedSections){
+  const d=firstOfferDiagnostic;
+  if(!d||d.requestId!==state.requestId||d.firstCard)return;
+  const card=els.results.querySelector('.match-result-card');
+  if(!card)return;
+  const groups=displayedSections.flatMap(section=>section.groups);
+  const group=groups.find(item=>item.key===card.dataset.groupKey);
+  if(!group)return;
+  const available=(group.offers||[]).filter(item=>
+    item.availability!=='out_of_stock'&&item.canShipToSaudi!==false);
+  const priced=available.filter(item=>Number.isFinite(item.productPrice))
+    .sort((a,b)=>a.productPrice-b.productPrice);
+  const offer=priced[0]||group.bestOffer||group.offers?.[0];
+  if(!offer)return;
+  const domTitle=card.querySelector('.match-card-copy strong')?.textContent?.trim()||'';
+  const domPrice=card.querySelector('.match-card-price b')?.textContent?.trim()||'';
+  const expectedTitle=productDisplayTitle(offer);
+  const expectedPrice=fmt(priced[0]?.productPrice??null);
+  const ownership=assessFirstOfferOwnership(offer);
+  const match=domTitle===expectedTitle&&domPrice===expectedPrice;
+  d.firstCard={
+    groupKey:group.key,sourceUrl:offer.sourceUrl||null,
+    modelNumber:offer.specs?.modelNumber||offer.modelNumber||null,
+    merchant:offer.merchant||null,offerTitle:offer.title||null,
+    productPrice:offer.productPrice??null,currency:offer.currency||null,
+    domTitle,domPrice,expectedTitle,expectedPrice,
+    domMatchesSelectedOffer:match,structurallyValid:Boolean(structurallyValidOffer(offer)),
+    ownership,domCommitMs:performance.now()-d.timeline.snapshot().milestones.T0,
+    frameMs:null,secondFrameMs:null,visuallyPresentable:false,
+    screenshotPaintEvidence:false
+  };
+  publishFirstOfferDiagnostic();
+  const requestId=d.requestId,firstElement=card;
+  requestAnimationFrame(()=>{
+    if(firstOfferDiagnostic!==d||state.requestId!==requestId||!firstElement.isConnected)return;
+    d.firstCard.frameMs=performance.now()-d.timeline.snapshot().milestones.T0;
+    requestAnimationFrame(()=>{
+      if(firstOfferDiagnostic!==d||state.requestId!==requestId||!firstElement.isConnected)return;
+      const bounds=firstElement.getBoundingClientRect();
+      const style=getComputedStyle(firstElement);
+      const x=Math.max(0,Math.min(innerWidth-1,bounds.left+bounds.width/2));
+      const y=Math.max(0,Math.min(innerHeight-1,bounds.top+bounds.height/2));
+      const hit=document.elementFromPoint(x,y);
+      d.firstCard.secondFrameMs=performance.now()-d.timeline.snapshot().milestones.T0;
+      d.firstCard.visuallyPresentable=Boolean(bounds.width>0&&bounds.height>0&&
+        bounds.right>0&&bounds.bottom>0&&bounds.left<innerWidth&&
+        bounds.top<innerHeight&&style.display!=='none'&&style.visibility!=='hidden'&&
+        hit&&firstElement.contains(hit));
+      publishFirstOfferDiagnostic();
+    });
+  });
+}
 
 const nf = new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 2 });
 const fmt = (v) => Number.isFinite(v) ? nf.format(v) + " ر.س" : "غير مؤكد";
@@ -1156,6 +1259,7 @@ function renderProduct(product, query) {
       لا نخلط موديلًا أو سعة أو لونًا أو حالة مختلفة في المقارنة نفسها. والمواصفات الموحّدة تحتفظ بمصدر كل قيمة وتكشف التعارضات بين المصادر.
     </div>
   `;
+  observeFirstRenderedCard(product,displayedSections);
 
   els.results.querySelectorAll('.category-tab').forEach(button=>button.addEventListener('click',()=>{
     state.category=button.dataset.category; state.comparisonOpen=false; renderProduct(product,query);
@@ -1337,6 +1441,7 @@ async function runSearch(rawQuery) {
   state.eventSource?.close?.();
   state.eventSource = null;
   const requestId = ++state.requestId;
+  beginFirstOfferDiagnostic(requestId,query);
   if (state.query !== query) {
     state.availability = "all"; state.merchant = "all";
     state.variantSelections = {};
@@ -1368,11 +1473,13 @@ async function runSearch(rawQuery) {
       els.status.textContent = "نبحث الآن في المصادر الحية…";
 
       let data = null;
+      markFirstOfferDiagnostic(requestId,"T1");
       if (typeof EventSource !== "undefined") {
         data = await new Promise((resolve,reject)=>{
           state.eventSource?.close?.();
           const source=new EventSource(apiBase + "/api/search/stream?q=" + encodeURIComponent(query));
           state.eventSource=source;
+          source.addEventListener("open",()=>markFirstOfferDiagnostic(requestId,"T2"));
           let best=null;
           let bestWithOffers=null;
           let finished=false;
@@ -1398,6 +1505,7 @@ async function runSearch(rawQuery) {
               // canonical result. Partial snapshots are for rendering speed only; the
               // final snapshot owns cursors, provider diagnostics and completion state.
               best=payload;
+              observeFirstOfferCandidates(requestId,payload.offers);
               if(Array.isArray(payload.offers) && payload.offers.length){
                 bestWithOffers=payload;
                 recordPriceHistory(payload.offers);
@@ -1456,6 +1564,7 @@ async function runSearch(rawQuery) {
       state.nextCursor = data.nextCursor || null;
       state.remoteExhausted = !state.nextCursor;
       if (Array.isArray(data.offers) && data.offers.length) {
+        observeFirstOfferCandidates(requestId,data.offers);
         recordPriceHistory(data.offers);
         const liveProduct = {
           id: null,
@@ -1675,6 +1784,7 @@ async function openQuote(product, offer, sourceQuery) {
 addEventListener("pagehide",()=>{
   // A disposed page must not start JSON fallback after stream cancellation.
   state.requestId += 1;
+  firstOfferDiagnostic?.timeline.finish("cancelled");
   state.cancelActiveStream?.();
 });
 
