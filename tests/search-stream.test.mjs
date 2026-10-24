@@ -65,6 +65,12 @@ test('v21.68 cross-generation stale offers cannot pollute a new final SSE snapsh
   assert.deepEqual(selectSearchStreamResult(final,stale),final);
   const matching={...stale,streamGeneration:current};
   assert.deepEqual(selectSearchStreamResult(final,matching).offers,matching.offers);
+  assert.deepEqual(selectSearchStreamResult(final,{...stale,streamGeneration:undefined}),final,
+    'legacy snapshot must never fill a new generation final result');
+  assert.deepEqual(selectSearchStreamResult(
+    {...final,streamGeneration:undefined},matching),
+    {...final,streamGeneration:undefined},
+    'new snapshot must never pollute a legacy final result');
 });
 test('v21.68 SSE correlation rejects missing, malformed or mismatched generations and tolerates legacy',async()=>{
   const {acceptedStreamGeneration}=await import('../src/search-stream.mjs');
