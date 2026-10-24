@@ -1032,7 +1032,8 @@ const server = http.createServer(async (req, res) => {
       }));
     };
     send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString(),
-      trustCertification:'not_enabled_no_badge_or_t5'});
+      trustCertification:'not_enabled_no_badge_or_t5',
+      displayTrustPolicy:'display-snapshot-v1'});
 
     let closed=false;
     const streamController=new AbortController();

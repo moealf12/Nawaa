@@ -1497,6 +1497,7 @@ async function runSearch(rawQuery) {
           let bestWithOffers=null;
           let serverStreamGeneration=null;
           let acceptedDisplayRevision=0;
+          let displayContextRequired=false;
           let finished=false;
           let timeoutId=null;
           // A stream is settled once: cancellation, completion, error and timeout
@@ -1520,6 +1521,11 @@ async function runSearch(rawQuery) {
               // Old Render backends without the field continue normally.
               const pinned=pinStreamGeneration(serverStreamGeneration,meta.streamGeneration);
               if(pinned){
+                // A modern server promises every snapshot has a scoped frame.
+                // Missing frames then fail closed; older deployed APIs keep
+                // legacy ordinary-product display without customer trust.
+                if(serverStreamGeneration===null)
+                  displayContextRequired=meta.displayTrustPolicy==='display-snapshot-v1';
                 serverStreamGeneration=pinned;
                 if(firstOfferDiagnostic?.requestId===requestId){
                   firstOfferDiagnostic.serverStreamGeneration=serverStreamGeneration;
@@ -1538,7 +1544,7 @@ async function runSearch(rawQuery) {
                 serverStreamGeneration,payload,acceptedDisplayRevision);
               // Existing legacy sources may show offers, NEVER customer trust.
               // A modern but stale/forged snapshot envelope is wholly rejected.
-              if(payload.displayTrustContext!=null&&!displayContext)return;
+              if((displayContextRequired||payload.displayTrustContext!=null)&&!displayContext)return;
               if(displayContext)acceptedDisplayRevision=displayContext.snapshotRevision;
               // Always retain the newest snapshot, including the final empty/non-empty
               // canonical result. Partial snapshots are for rendering speed only; the
