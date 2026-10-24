@@ -21,4 +21,9 @@ export default [{
     'valid-typeof': 'error',
     'no-self-compare': 'error',
   },
+}, {
+  // Browser globals are scoped to the actual customer UI: retain the same
+  // correctness rules while avoiding Node-only assumptions for DOM APIs.
+  files: ['src/search-page.mjs'],
+  languageOptions: { globals: { ...globals.browser } },
 }];
