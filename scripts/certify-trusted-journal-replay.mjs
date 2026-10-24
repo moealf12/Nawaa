@@ -1,6 +1,7 @@
 // Real PostgreSQL cross-process PDP receipt/revocation certification.
 // Strict disposable CI only: no production schema, credentials, or live claim.
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {writeFile,readFile} from 'node:fs/promises';
 import {createIsolatedTrustedJournalStore,CI_SIGNING_KEY} from './trusted-journal-ci-store.mjs';
 import {createPdpObservationSession} from '../server/trusted-pdp-observation.mjs';
@@ -56,7 +57,31 @@ async function write(){
   assert.equal(second.state,'ARCHIVED');
   assert.equal((await journal.inspect(receipt.receiptRef)).state,'REVALIDATED');
   assert.equal((await journal.inspect(second.receiptRef)).state,'REVALIDATED');
-  await writeFile(checkpoint,JSON.stringify({ref:receipt.receiptRef,
+  // CI-only real PostgreSQL writer race. A lock prevents inconsistent final
+  // heads, while equal-time competing contents must quarantine that subject.
+  const conflictKey=createHash('sha256').update('v21.72 concurrent head').digest('hex');
+  const separateKey=createHash('sha256').update('v21.72 independent head').digest('hex');
+  const sameTime=new Date(Date.now()-1000).toISOString();
+  const a={sourceKey:conflictKey,observedAt:sameTime,
+    revision:'c'.repeat(64),recordId:'d'.repeat(64)};
+  const b={sourceKey:conflictKey,observedAt:sameTime,
+    revision:'e'.repeat(64),recordId:'f'.repeat(64)};
+  const results=await Promise.all([store.advanceHead(a),store.advanceHead(b)]);
+  assert.deepEqual(results.sort(),[false,true],
+    'one writer must win and equal-time contradictory content must quarantine');
+  const after=await store.currentHead(conflictKey);
+  assert.equal(after.conflicted,true);
+  assert.ok([a.revision,b.revision].includes(after.revision));
+  assert.equal(await store.advanceHead({...a,sourceKey:separateKey}),true);
+  assert.equal((await store.currentHead(separateKey)).conflicted,false);
+  const history=await pool.query(
+    'SELECT revision,is_conflicted FROM nawaa_ci_trusted_source_head_history WHERE source_key=$1 ORDER BY id',
+    [conflictKey]);
+  assert.equal(history.rows.length,2);
+  assert.deepEqual(history.rows.map(x=>x.is_conflicted),[false,true]);
+  await writeFile(checkpoint,JSON.stringify({
+    conflictedSourceKey:conflictKey,independentSourceKey:separateKey,
+    ref:receipt.receiptRef,
     alternateRef:second.receiptRef,offer:result.offer,
     observedAt,sourceRevision:receipt.sourceRevision})+'\n');
   console.log('TRUSTED_JOURNAL_PG_WRITE '+JSON.stringify({
@@ -70,6 +95,9 @@ async function read(){
   const journal=createTrustedObservationJournal({store,signingKey:key,requireCurrentHead:true});
   const valid=await journal.inspect(saved.ref,{expectedOffer:saved.offer});
   assert.equal(valid.state,'REVALIDATED',valid.reason);
+  // These are independent-process reads after commit, not shared memory.
+  assert.equal((await store.currentHead(saved.conflictedSourceKey)).conflicted,true);
+  assert.equal((await store.currentHead(saved.independentSourceKey)).conflicted,false);
   assert.equal(valid.predicates.gtin,'NOT_CLAIMED');
   // Independent Node process reconstructs source facts and field ownership
   // from the signed PostgreSQL receipt, NOT from the original WeakMap.
@@ -126,6 +154,7 @@ async function read(){
   }),false,'older out-of-order observations cannot roll back latest head');
   console.log('TRUSTED_JOURNAL_PG_READ '+JSON.stringify({
     separateNodeProcess:true,realPostgres:true,signedReceiptValidated:true,
+    concurrentHeadQuarantine:true,independentSourceIsolation:true,
     alteredOfferRejected:true,revocationCommitted:true,
     controlledSelectedPdpRefresh:true,fixtureMerchantEvidence:true,
     sourceHeadAdvanced:true,olderReceiptSuperseded:true,
