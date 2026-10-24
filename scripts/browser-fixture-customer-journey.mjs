@@ -367,8 +367,19 @@ try{
   try{
     await firstCardPage.goto(base+'/search.html?q='+encodeURIComponent(firstCardQuery),
       {waitUntil:'domcontentloaded',timeout:20000});
-    await firstCardPage.waitForFunction(()=>Boolean(
-      window.__nawaaFirstOfferDiagnostics?.firstCard?.secondFrameMs),null,{timeout:14000});
+    try{
+      await firstCardPage.waitForFunction(()=>Boolean(
+        window.__nawaaFirstOfferDiagnostics?.firstCard?.secondFrameMs),null,{timeout:14000});
+    }catch(error){
+      const diagnostic=await firstCardPage.evaluate(()=>({
+        cards:document.querySelectorAll('#results .match-result-card').length,
+        status:document.querySelector('#searchStatus')?.textContent||'',
+        optedIn:window.NAWAA_DIAGNOSTICS===true,
+        observation:window.__nawaaFirstOfferDiagnostics||null,
+      })).catch(()=>({unavailable:true}));
+      throw Error('v2157_first_surviving_card_unobserved '+JSON.stringify(diagnostic).slice(0,1800),
+        {cause:error});
+    }
     const observed=await firstCardPage.evaluate(()=>window.__nawaaFirstOfferDiagnostics);
     const sourceRecord=searchPayload(firstCardQuery,null).offers.find(
       o=>o.sourceUrl===observed.firstCard.sourceUrl);
