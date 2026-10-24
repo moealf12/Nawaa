@@ -1589,7 +1589,7 @@ async function runSearch(rawQuery) {
         const coverageNotice=coverageStatusText(data.coverage,data.errors);
         if (coverageNotice) els.status.textContent += " · " + coverageNotice;
         else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";
-        firstOfferDiagnostic?.requestId===requestId&&firstOfferDiagnostic.timeline.finish('complete');
+        if(firstOfferDiagnostic?.requestId===requestId)firstOfferDiagnostic.timeline.finish('complete');
         publishFirstOfferDiagnostic();
         return;
       }
@@ -1617,14 +1617,14 @@ async function runSearch(rawQuery) {
         </div>
       `;
       $("#retryLiveSearch")?.addEventListener("click", () => runSearch(query));
-      firstOfferDiagnostic?.requestId===requestId&&firstOfferDiagnostic.timeline.finish(incomplete?"partial":"empty");
+      if(firstOfferDiagnostic?.requestId===requestId)firstOfferDiagnostic.timeline.finish(incomplete?"partial":"empty");
       publishFirstOfferDiagnostic();
       return;
     } catch (error) {
       if (requestId !== state.requestId) return;
       console.warn("NAWAA live search unavailable", error);
       renderLiveSearchError(query, error);
-      firstOfferDiagnostic?.requestId===requestId&&firstOfferDiagnostic.timeline.finish("failed");
+      if(firstOfferDiagnostic?.requestId===requestId)firstOfferDiagnostic.timeline.finish("failed");
       publishFirstOfferDiagnostic();
       return;
     }
