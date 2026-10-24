@@ -2,7 +2,7 @@
 // inbound evidence object, cached listing, UI flag, or a second parser of one
 // seller record. Live acquisition uses the existing SSRF-hardened resolver.
 import {createHash,randomUUID} from 'node:crypto';
-import {resolveProductUrl} from './url-resolver.mjs';
+import {resolveSelectedJsonLdOffer} from './url-resolver.mjs';
 import {createTrustedOfferVerifier} from './trusted-offer-verifier.mjs';
 
 const SOURCE_ID='jarir-sa';
@@ -51,6 +51,16 @@ function sameRecordProvenance(page,offer){
   // adjacent JSON-LD Product nodes can BOTH have strategy="jsonld".
   // Certify only one unambiguous selected Product+Offer until the extractor
   // exports immutable per-record ownership identifiers.
+  const selected=e?.selectedProductRecord;
+  // Only an explicitly selected Product+single Offer is admissible.
+  // Strategy labels alone cannot identify source records or prove ownership.
+  if(!selected||selected.source!=='jsonld_product_offer'||
+     !/^[0-9a-f]{64}$/.test(selected.recordId||'')||
+     !/^[0-9a-f]{64}$/.test(selected.documentDigest||'')||
+     selected.selectedCount!==1||
+     !selectedDestination(page.resolvedPageUrl,selected.selectedProductUrl)||
+     !selectedDestination(page.resolvedPageUrl,selected.selectedOfferUrl))
+    return 'missing_selected_product_record_proof';
   if(!e||e.conflictSummary?.hasConflicts!==false||
      e.reconciled!==false||
      e.identity?.summary?.accepted!==1||
@@ -75,7 +85,10 @@ function sameRecordProvenance(page,offer){
   if(offer.brand!=null||offer.specs?.brand!=null)required.push('brand');
   if(offer.color!=null||offer.specs?.color!=null)required.push('color');
   for(const field of required){
-    if(originKey(fields[field])!==anchor)return 'cross_record_field_'+field;
+    if(originKey(fields[field])!==anchor||
+       fields[field]?.recordId!==selected.recordId||
+       fields.offers?.recordId!==selected.recordId)
+      return 'cross_record_field_'+field;
   }
   if(!required.some(field=>['sku','mpn','gtin'].includes(field)))
     return 'missing_attributable_hard_identity';
@@ -132,7 +145,7 @@ function rejection(reason,state='MISSING_EVIDENCE'){
 // JSON. The optional adapter is for deterministic Node tests; normal callers
 // get the existing pinned-DNS, redirect-checked product resolver.
 export function createPdpObservationSession({
-  readSelectedPage=resolveProductUrl,now=()=>Date.now(),
+  readSelectedPage=resolveSelectedJsonLdOffer,now=()=>Date.now(),
   maxRecords=MAX_RECORDS,maxAgeMs=MAX_CAPTURE_AGE_MS
 }={}){
   if(typeof readSelectedPage!=='function'||typeof now!=='function')
@@ -170,7 +183,8 @@ export function createPdpObservationSession({
     const updatedOffer=claimedOffer(offer,page.observedAt);
     const ref='jarir-pdp:'+randomUUID();
     const revision=sha([page.resolvedPageUrl,page.observedAt,record,
-      page.extraction.fieldSources,page.extraction.conflictSummary]);
+      page.extraction.fieldSources,page.extraction.conflictSummary,
+      page.extraction.selectedProductRecord]);
     const observation=Object.freeze({
       ref,revision,sourceId:SOURCE_ID,observedAt:page.observedAt,
       selectedRecord:Object.freeze(record)
