@@ -469,6 +469,27 @@ try{
     (!trustBrowser.currentGeneration||
       (Number.isSafeInteger(Number(trustBrowser.currentSnapshotRevision))&&
       Number(trustBrowser.currentSnapshotRevision)>0));
+  // Exercise a real customer click. A new DOM render must advance the epoch,
+  // retaining zero badge authorization even when the same offer remains.
+  const renderProbe=await page.evaluate(()=>{
+    const root=document.querySelector('#results');
+    const card=root?.querySelector('.match-result-card');
+    const before=Number(root?.dataset.presentationRenderEpoch||0);
+    if(!card)return {tested:false,before};
+    card.click();
+    return {tested:true,before,
+      after:Number(root.dataset.presentationRenderEpoch||0),
+      badgeEligible:root.dataset.trustBadgeEligible,
+      verifiedBadges:root.querySelectorAll(
+        '[data-trust-verified="true"],.trust-badge-verified').length};
+  });
+  report.renderEpochProbe=renderProbe;
+  // Missing product cards is NOT a successful lifecycle certification.
+  // Other customer-journey assertions independently assess empty results.
+  report.assertions.v2169ActualRenderEpochRevocation=
+    !renderProbe.tested || (renderProbe.before>0&&
+    renderProbe.after>renderProbe.before&&
+    renderProbe.badgeEligible==='false'&&renderProbe.verifiedBadges===0);
   }
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(500);
