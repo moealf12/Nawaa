@@ -3,6 +3,7 @@
 // Possession of JSON, a hash, or a copied verifier decision cannot mint trust.
 import {createHash,createHmac,randomUUID,timingSafeEqual} from 'node:crypto';
 import {inspectIssuedPdpReceipt} from './trusted-pdp-observation.mjs';
+import {createTrustedJournalKeyring} from './trusted-journal-keyring.mjs';
 
 const MAX_AGE_MS=5*60_000;
 const MAX_BYTES=24_000;
@@ -16,7 +17,7 @@ const parsedTime=v=>{
 const safeObject=v=>Boolean(v)&&typeof v==='object'&&!Array.isArray(v);
 function signed(key,event){
   return createHmac('sha256',key).update(
-    POLICY+'\n'+event.kind+'\n'+event.ref+'\n'+event.payload).digest('hex');
+    POLICY+'\n'+event.keyId+'\n'+event.kind+'\n'+event.ref+'\n'+event.payload).digest('hex');
 }
 function safeCompare(left,right){
   if(typeof left!=='string'||!HEX.test(left)||typeof right!=='string'||!HEX.test(right))return false;
@@ -48,16 +49,27 @@ function state(status,reason,additional={}){
 // The signing key must be an independently provisioned server secret, never
 // included in DB rows, request data, public source JSON or search responses.
 // Store must implement append(event) and events(ref), with append-only writes.
-export function createTrustedObservationJournal({store,signingKey,now=()=>Date.now(),
-  maxAgeMs=MAX_AGE_MS}={}){
+export function createTrustedObservationJournal({store,signingKey,keyring,
+  requireCurrentHead=false,now=()=>Date.now(),maxAgeMs=MAX_AGE_MS}={}){
   if(!store||typeof store.append!=='function'||typeof store.events!=='function')
     throw TypeError('server_controlled_journal_store_required');
-  const key=typeof signingKey==='string'?Buffer.from(signingKey):signingKey;
-  if(!Buffer.isBuffer(key)||key.length<32)throw TypeError('strong_private_signing_key_required');
+  // signingKey supports existing isolated v21.65 tests. Deployment adapters
+  // must provision keyring via trustedJournalKeyringFromEnv(); no fallback.
+  if(signingKey!==undefined&&keyring!==undefined)
+    throw TypeError('ambiguous_journal_key_authority');
+  const legacy=typeof signingKey==='string'?Buffer.from(signingKey):signingKey;
+  if(!keyring&&(!Buffer.isBuffer(legacy)||legacy.length<32))
+    throw TypeError('strong_private_signing_key_required');
+  const keys=keyring??createTrustedJournalKeyring({activeKeyId:'legacy',keys:{legacy}});
+  const key=keys.get(keys.activeKeyId);
+  if(!key||!keys.activeKeyId)throw TypeError('missing_active_journal_key');
+  if(typeof requireCurrentHead!=='boolean'||requireCurrentHead&&
+    (typeof store.appendCapture!=='function'||typeof store.currentHead!=='function'))
+    throw TypeError('current_source_head_store_required');
   if(typeof now!=='function'||!Number.isSafeInteger(maxAgeMs)||
     maxAgeMs<1||maxAgeMs>MAX_AGE_MS)throw RangeError('invalid_journal_ttl');
   const seal=(kind,ref,details)=>{
-    const event={kind,ref,payload:JSON.stringify(details)};
+    const event={kind,ref,keyId:keys.activeKeyId,payload:JSON.stringify(details)};
     if(Buffer.byteLength(event.payload)>MAX_BYTES)throw Error('journal_payload_budget');
     return Object.freeze({...event,signature:signed(key,event)});
   };
@@ -65,7 +77,8 @@ export function createTrustedObservationJournal({store,signingKey,now=()=>Date.n
     (event.kind==='capture'||event.kind==='revoke')&&
     typeof event.ref==='string'&&/^pdp-audit:[a-f0-9-]{36}$/.test(event.ref)&&
     typeof event.payload==='string'&&Buffer.byteLength(event.payload)<=MAX_BYTES&&
-    safeCompare(event.signature,signed(key,event));
+    typeof event.keyId==='string'&&Boolean(keys.get(event.keyId))&&
+    safeCompare(event.signature,signed(keys.get(event.keyId),event));
   async function inspect(ref,{expectedOffer}={}){
     if(typeof ref!=='string'||!/^pdp-audit:[a-f0-9-]{36}$/.test(ref))
       return state('MISSING_EVIDENCE','invalid_receipt_reference');
@@ -97,7 +110,10 @@ export function createTrustedObservationJournal({store,signingKey,now=()=>Date.n
       !safeObject(captured.predicates)||captured.scope!=='selected_pdp_revision_predicates'||
       captured.wholeOfferVerified!==false||captured.badgeEligible!==false||
       !safeObject(captured.offer)||typeof captured.offerDigest!=='string'||
-      captured.offerDigest!==hash(captured.offer))
+      captured.offerDigest!==hash(captured.offer)||
+      requireCurrentHead&&(!HEX.test(captured.sourceKey||'')||
+        typeof captured.offer.sku!=='string'||
+        captured.sourceKey!==hash([captured.sourceId,captured.offer.sku,captured.offer.sourceUrl])))
       return state('CONFLICTING_EVIDENCE','invalid_capture_contract');
     const observed=parsedTime(captured.observedAt),issued=parsedTime(captured.issuedAt);
     const present=now();
@@ -107,6 +123,19 @@ export function createTrustedObservationJournal({store,signingKey,now=()=>Date.n
     if(revoked)return state('REVOKED','journal_revoked',{sourceId:captured.sourceId,
       sourceRevision:captured.sourceRevision});
     if(present-observed>maxAgeMs)return state('EXPIRED','journal_observation_expired');
+    if(requireCurrentHead){
+      let latest;
+      try{latest=await store.currentHead(captured.sourceKey)}
+      catch{return state('SOURCE_BLOCKED','source_head_read_unavailable');}
+      if(!latest||!HEX.test(latest.revision||'')||
+        !HEX.test(latest.recordId||'')||
+        !Number.isFinite(parsedTime(latest.observedAt)))
+        return state('SOURCE_BLOCKED','source_head_missing_or_invalid');
+      if(latest.revision!==captured.sourceRevision||
+        latest.recordId!==captured.sourceRecord.recordId||
+        parsedTime(latest.observedAt)!==observed)
+        return state('SUPERSEDED','source_record_revision_changed');
+    }
     if(expectedOffer!==undefined){
       try{if(hash(snapshotOffer(expectedOffer))!==captured.offerDigest)
         return state('CONFLICTING_EVIDENCE','offer_revision_mismatch');}
@@ -145,15 +174,26 @@ export function createTrustedObservationJournal({store,signingKey,now=()=>Date.n
     let offer;
     try{offer=snapshotOffer(result.offer);}catch{return state('MISSING_EVIDENCE','unsupported_offer_payload');}
     const ref='pdp-audit:'+randomUUID();
+    const sourceKey=hash([ev.sourceId,offer.sku,offer.sourceUrl]);
     const receipt={
-      policy:POLICY,sourceId:ev.sourceId,sourceObservationRef:ev.ref,
+      policy:POLICY,sourceId:ev.sourceId,sourceKey,sourceObservationRef:ev.ref,
       sourceRevision:ev.revision,sourceRecord:ev.sourceRecord,
       observedAt:ev.observedAt,issuedAt:new Date(at).toISOString(),
       offer,offerDigest:hash(offer),predicates:result.decision.predicates,
       scope:result.certificateScope,wholeOfferVerified:false,badgeEligible:false
     };
-    try{await store.append(seal('capture',ref,receipt));}
-    catch{return state('SOURCE_BLOCKED','journal_write_failed');}
+    const event=seal('capture',ref,receipt);
+    if(requireCurrentHead){
+      const binding={sourceKey,observedAt:ev.observedAt,
+        revision:ev.revision,recordId:ev.sourceRecord.recordId};
+      let accepted;
+      try{accepted=await store.appendCapture(event,binding)}
+      catch{return state('SOURCE_BLOCKED','journal_write_failed');}
+      if(accepted!==true)return state('SUPERSEDED','source_capture_not_latest');
+    }else{
+      try{await store.append(event)}
+      catch{return state('SOURCE_BLOCKED','journal_write_failed');}
+    }
     return Object.freeze({state:'ARCHIVED',receiptRef:ref,sourceRevision:ev.revision,
       wholeOfferVerified:false,badgeEligible:false});
   }
