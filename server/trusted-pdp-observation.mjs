@@ -129,32 +129,45 @@ function bridgeCatalogIdentity(catalog,page){
   const explicitSku=hardIdentity(catalog.sku);
   const merchantRecordSku=hardIdentity(catalog.sourceMeta?.productId);
   if(explicitSku&&merchantRecordSku&&explicitSku!==merchantRecordSku)
-    return 'conflicting_catalog_sku_sources';
+    return {error:'conflicting_catalog_sku_sources'};
   const sku=explicitSku||merchantRecordSku;
   const pdpSku=hardIdentity(page.sku);
-  if(!sku||!pdpSku)return 'missing_listing_pdp_sku';
-  if(sku!==pdpSku)return 'listing_pdp_sku_conflict';
-  const pairs=[
-    [catalog.modelNumber??catalog.specs?.modelNumber,page.specs?.modelNumber,'model'],
-    [catalog.gtin??catalog.specs?.barcode,page.specs?.barcode,'gtin'],
-  ];
-  for(const [left,right,label] of pairs){
-    if(hardIdentity(left)&&!hardIdentity(right))
-      return 'listing_pdp_'+label+'_missing_evidence';
-    if(hardIdentity(left)&&hardIdentity(right)&&hardIdentity(left)!==hardIdentity(right))
-      return 'listing_pdp_'+label+'_conflict';
-  }
+  if(!sku||!pdpSku)return {error:'missing_listing_pdp_sku'};
+  if(sku!==pdpSku)return {error:'listing_pdp_sku_conflict'};
+
+  const model=hardIdentity(catalog.modelNumber??catalog.specs?.modelNumber);
+  const observedModel=hardIdentity(page.specs?.modelNumber);
+  if(model&&!observedModel)return {error:'listing_pdp_model_missing_evidence'};
+  if(model&&model!==observedModel)return {error:'listing_pdp_model_conflict'};
+
+  // A merchant search field called barcode is NOT automatically an asserted
+  // global GTIN. Preserve separate namespaces and evidence states. Both may
+  // describe the same product, but neither can impersonate the selected SKU.
+  const sourceGtin=hardIdentity(page.gtin??page.specs?.barcode);
+  const gtinClaim=hardIdentity(catalog.gtin??catalog.specs?.gtin);
+  const barcodeClaim=hardIdentity(catalog.specs?.barcode);
+  const status=(claim,label)=>{
+    if(!claim)return 'NOT_CLAIMED';
+    if(!sourceGtin)return 'MISSING_EVIDENCE';
+    if(claim!==sourceGtin)return 'CONFLICTING_EVIDENCE';
+    return 'VERIFIED';
+  };
+  const gtin=status(gtinClaim,'gtin');
+  const barcode=status(barcodeClaim,'barcode');
+  if(gtin==='CONFLICTING_EVIDENCE')return {error:'listing_pdp_gtin_conflict'};
+  if(barcode==='CONFLICTING_EVIDENCE')return {error:'listing_pdp_barcode_conflict'};
+
   if(catalog.condition&&catalog.condition!=='unknown'&&
      page.condition&&page.condition!=='unknown'&&
      hardIdentity(catalog.condition)!==hardIdentity(page.condition))
-    return 'listing_pdp_condition_conflict';
-  const keys=['storage','capacity','ram','region','sim','color','edition'];
-  for(const key of keys){
+    return {error:'listing_pdp_condition_conflict'};
+  for(const key of ['storage','capacity','ram','region','sim','color','edition']){
     const left=hardIdentity(catalog[key]??catalog.variant?.[key]??catalog.specs?.[key]);
     const right=hardIdentity(page[key]??page.variant?.[key]??page.specs?.[key]);
-    if(left&&right&&left!==right)return 'listing_pdp_variant_'+key+'_conflict';
+    if(left&&right&&left!==right)return {error:'listing_pdp_variant_'+key+'_conflict'};
   }
-  return null;
+  return {historicalClaims:Object.freeze({sku:'VERIFIED',
+    model:model?'VERIFIED':'NOT_CLAIMED',gtin,barcode})};
 }
 function selectedRecord(page){
   // Snapshot only documented selected-PDP fields; never enrich from a
@@ -220,9 +233,10 @@ export function createPdpObservationSession({
     // The indexed listing has NO authority over PDP title, price or image.
     // In selected-revision mode it only anchors SKU, compatible hard identity,
     // condition and explicitly comparable variants.
+    let bridge=null;
     if(mode==='selected-revision'){
-      const bridge=bridgeCatalogIdentity(offer,page);
-      if(bridge)return rejection(bridge,/conflict/.test(bridge)?
+      bridge=bridgeCatalogIdentity(offer,page);
+      if(bridge.error)return rejection(bridge.error,/conflict/.test(bridge.error)?
         'CONFLICTING_EVIDENCE':'MISSING_EVIDENCE');
     }
     // A new source observation is a NEW offer revision: never retroactively
@@ -246,7 +260,12 @@ export function createPdpObservationSession({
       return rejection(decision.reason||'same_offer_not_verified',
         decision.state==='CONFLICTING_EVIDENCE'?'CONFLICTING_EVIDENCE':'MISSING_EVIDENCE');
     }
+    // Source-owned predicate attestation != verification of every historic
+    // catalog attribute or authorization to show a customer trust badge.
     return Object.freeze({state:'VERIFIED',eligible:true,decision,
+      certificateScope:'selected_pdp_revision_predicates',
+      historicalClaims:bridge?.historicalClaims??Object.freeze({}),
+      wholeOfferVerified:false,badgeEligible:false,
       originalListingSuperseded:mode==='selected-revision',
       observationRef:ref,offer:updatedOffer});
   }
