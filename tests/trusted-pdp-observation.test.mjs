@@ -142,3 +142,34 @@ test('v21.62: invalid budgets reject unsafe session settings',()=>{
   assert.throws(()=>setup(async()=>page(),{maxRecords:100000}),/invalid_observation_budget/);
   assert.throws(()=>setup(async()=>page(),{maxAgeMs:86400000}),/invalid_observation_budget/);
 });
+
+test('v21.62 end-to-end: existing URL resolver consumes selected Jarir JSON-LD record without extra verifier network privileges',async()=>{
+  const dns=(await import('node:dns/promises')).default;
+  const {resolveProductUrl}=await import('../server/url-resolver.mjs');
+  const originalFetch=globalThis.fetch,originalLookup=dns.lookup;
+  const jsonLd={
+    '@type':'Product',name:offer().title,sku:'668751',mpn:'CFI2116B01Y',
+    url:URL,image:'https://static.jarir.com/668751.jpg',
+    brand:{'@type':'Brand',name:'Sony'},color:'White',
+    itemCondition:'https://schema.org/NewCondition',
+    offers:{'@type':'Offer',url:URL,price:'2529',priceCurrency:'SAR',
+      availability:'https://schema.org/InStock'}
+  };
+  try{
+    dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+    globalThis.fetch=async()=>new Response(
+      '<script type="application/ld+json">'+JSON.stringify({
+        '@context':'https://schema.org','@graph':[jsonLd]
+      })+'</script>',{headers:{'content-type':'text/html'}}
+    );
+    const session=createPdpObservationSession({readSelectedPage:resolveProductUrl,
+      now:()=>Date.now()});
+    const result=await session.verify(offer());
+    assert.equal(result.state,'VERIFIED',result.reason);
+    assert.equal(await session.accepts(result),true);
+    assert.equal(result.offer.sku,'668751');
+  }finally{
+    dns.lookup=originalLookup;
+    globalThis.fetch=originalFetch;
+  }
+});
