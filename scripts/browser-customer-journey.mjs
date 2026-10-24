@@ -440,6 +440,7 @@ try{
   // Run the production browser module itself against a simulated replay and
   // a forged badge grant. The currently issued server context is intentionally
   // WITHHELD: no positive customer VERIFIED UI is authorized by this test.
+  if(mode==='candidate'){
   const trustBrowser=await page.evaluate(async()=>{
     const {acceptDisplayTrustContext}=await import('/src/search-stream.mjs');
     const id='12345678-1234-4abc-8123-123456789abc';
@@ -460,6 +461,7 @@ try{
   report.assertions.v2169DisplayTrustFailClosed=
     trustBrowser.normal&&trustBrowser.replay&&trustBrowser.forged&&
     trustBrowser.visibleVerifiedElements===0;
+  }
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(500);
   const mobile=await page.evaluate(()=>({viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,
