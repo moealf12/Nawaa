@@ -13,7 +13,7 @@ import {
   buildOfferIntelligence,
   offerVariantDimensions,
 } from "./search-core.mjs";
-import {selectSearchStreamResult} from "./search-stream.mjs";
+import {selectSearchStreamResult,acceptedStreamGeneration} from "./search-stream.mjs";
 import {ownOfferImages} from "./product-image-ownership.mjs";
 import {createFirstOfferTimeline,structurallyValidOffer,assessFirstOfferOwnership} from "./search-first-offer-metrics.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
@@ -66,7 +66,8 @@ function publishFirstOfferDiagnostic(){
     firstStructuralOffer:d.firstStructuralOffer,firstCard:d.firstCard,
     firstSnapshotMs:d.firstSnapshotMs,
     scope:"client_diagnostic_only_no_independent_merchant_attestation",
-    productionPaintCertified:false
+    productionPaintCertified:false,
+    serverStreamGeneration:d.serverStreamGeneration||null
   };
 }
 function beginFirstOfferDiagnostic(requestId,query){
@@ -1494,6 +1495,7 @@ async function runSearch(rawQuery) {
           source.addEventListener("open",()=>markFirstOfferDiagnostic(requestId,"T2"));
           let best=null;
           let bestWithOffers=null;
+          let serverStreamGeneration=null;
           let finished=false;
           let timeoutId=null;
           // A stream is settled once: cancellation, completion, error and timeout
@@ -1509,10 +1511,28 @@ async function runSearch(rawQuery) {
           };
           const cancelStream=()=>finish(null);
           state.cancelActiveStream=cancelStream;
+          source.addEventListener("meta",(event)=>{
+            if(finished||requestId!==state.requestId)return;
+            try{
+              const meta=JSON.parse(event.data);
+              // A generation ID is correlation only, not a certified offer.
+              // Old Render backends without the field continue normally.
+              if(acceptedStreamGeneration(meta.streamGeneration,
+                  meta.streamGeneration)&&typeof meta.streamGeneration==='string'){
+                serverStreamGeneration=meta.streamGeneration;
+                if(firstOfferDiagnostic?.requestId===requestId){
+                  firstOfferDiagnostic.serverStreamGeneration=serverStreamGeneration;
+                  publishFirstOfferDiagnostic();
+                }
+              }
+            }catch{}
+          });
           source.addEventListener("snapshot",(event)=>{
             if(finished || requestId !== state.requestId) return;
             try {
               const payload=JSON.parse(event.data);
+              if(!acceptedStreamGeneration(serverStreamGeneration,payload.streamGeneration))
+                return; // Mixed/replayed server generations cannot change this card.
               // Always retain the newest snapshot, including the final empty/non-empty
               // canonical result. Partial snapshots are for rendering speed only; the
               // final snapshot owns cursors, provider diagnostics and completion state.
