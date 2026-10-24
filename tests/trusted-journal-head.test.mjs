@@ -17,9 +17,10 @@ function memory(){
     const previous=heads.get(b.sourceKey);
     if(previous){
       if(previous.conflicted)return false;
-      if(previous.recordId===b.recordId)
-        return previous.revision===b.revision&&
-          Date.parse(previous.observedAt)===Date.parse(b.observedAt);
+      if(previous.recordId===b.recordId){
+        if(Date.parse(previous.observedAt)!==Date.parse(b.observedAt))return false;
+        if(previous.revision===b.revision)return true;
+      }
       heads.set(b.sourceKey,{...previous,conflicted:true});
       return false;
     }

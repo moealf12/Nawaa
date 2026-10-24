@@ -29,7 +29,10 @@ export function createIsolatedTrustedJournalStore(){
       // A replay of the *same document* cannot renew an older source head or
       // extend receipt TTL merely by attaching a newer wall-clock timestamp.
       if(old.record_id===b.recordId){
-        return old.revision===b.revision&&previous===next;
+        if(previous!==next)return false; // no timestamp-based freshness renewal
+        if(old.revision===b.revision)return true; // identical committed replay
+        // Same source-record ID but incompatible revision at the SAME time
+        // is contradictory evidence, not a harmless later cache response.
       }
       // Different source document for one sellable subject, at ANY observed
       // timestamp, is incomparable without a merchant-issued revision order.
