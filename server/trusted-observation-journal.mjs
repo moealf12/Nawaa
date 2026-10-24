@@ -53,6 +53,11 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
   requireCurrentHead=false,now=()=>Date.now(),maxAgeMs=MAX_AGE_MS}={}){
   if(!store||typeof store.append!=='function'||typeof store.events!=='function')
     throw TypeError('server_controlled_journal_store_required');
+  // No accidental legacy signer or non-head-backed verifier in production.
+  // No production store is activated by this module alone.
+  if(process.env.NODE_ENV==='production'&&
+    (signingKey!==undefined||!keyring||requireCurrentHead!==true))
+    throw TypeError('production_journal_requires_private_keyring_and_current_head');
   // signingKey supports existing isolated v21.65 tests. Deployment adapters
   // must provision keyring via trustedJournalKeyringFromEnv(); no fallback.
   if(signingKey!==undefined&&keyring!==undefined)
