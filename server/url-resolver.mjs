@@ -226,7 +226,7 @@ function flattenJsonLd(node, out = []) {
   return out;
 }
 
-function extractJsonLd(html, pageUrl = null) {
+function extractJsonLd(html, pageUrl = null, {requireComplete=false} = {}) {
   const out = [];
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
@@ -237,6 +237,8 @@ function extractJsonLd(html, pageUrl = null) {
       flattenJsonLd(JSON.parse(raw), out);
     } catch {}
   }
+  // The certifier must never infer uniqueness from a silently truncated graph.
+  if(requireComplete&&out.length>512)throw Error('selected_pdp_schema_budget_exceeded');
   return resolveStructuredProductNodes(out, pageUrl);
 }
 
@@ -744,7 +746,7 @@ export async function resolveSelectedJsonLdOffer(url, options = {}) {
     }catch{return false;}
   };
   if(!samePage(finalUrl))throw Error('selected_pdp_redirect_mismatch');
-  const nodes=extractJsonLd(fetched.html,finalUrl);
+  const nodes=extractJsonLd(fetched.html,finalUrl,{requireComplete:true});
   if(nodes.length>512)throw Error('selected_pdp_schema_budget_exceeded');
   const products=nodes.filter(n=>typeIncludesProduct(n?.['@type']));
   // Explicit node.url is mandatory: @id alone identifies a graph record,
