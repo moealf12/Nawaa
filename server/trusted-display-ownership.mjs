@@ -113,29 +113,44 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
     throw TypeError('controlled_display_verifier_or_generation_required');
   const issued=new WeakMap();
   let revision=0;
+  let activeRenderEpoch=0;
   let activeDigests=new Set();
   let disabled=false;
-  // TRUSTED SERVER CALLER ONLY: feeds the actual canonical outbound snapshot.
-  // A completely empty snapshot invalidates all previous offer bindings.
+  // Trusted server caller must supply actual outbound snapshot offers. A
+  // rejected newer frame is consumed as untrusted: it must revoke the last
+  // frame rather than accidentally preserving a prior customer trust grant.
   function advance(snapshotRevision,offers){
     if(disabled)return false;
-    if(!Number.isSafeInteger(snapshotRevision)||snapshotRevision<=revision||
-       !Array.isArray(offers)||offers.length>MAX_OFFERS) return false;
+    if(!Number.isSafeInteger(snapshotRevision)||snapshotRevision<=revision)
+      return false;
+    const reject=()=>{revision=snapshotRevision;activeDigests=new Set();return false;};
+    if(!Array.isArray(offers)||offers.length>MAX_OFFERS)return reject();
     const next=new Set();
     for(const offer of offers){
       const digest=strictDigest(offer);
-      if(!digest)return false;
+      // A content hash is not an occurrence identity. A duplicated identical
+      // record cannot own a uniquely identified displayed card.
+      if(!digest||next.has(digest))return reject();
       next.add(digest);
     }
     revision=snapshotRevision;
     activeDigests=next;
     return true;
   }
+  // Trusted caller advances this on each visible presentation commit. Merely
+  // passing a forged epoch into bind()/accepts() cannot reactivate older cards.
+  function beginRender(nextEpoch){
+    if(disabled||!Number.isSafeInteger(nextEpoch)||nextEpoch<=activeRenderEpoch)
+      return false;
+    activeRenderEpoch=nextEpoch;
+    return true;
+  }
   async function bind({decision,offer,observationRef,displayOffer,
     streamGeneration:incoming,snapshotRevision,renderEpoch}={}){
     if(disabled||incoming!==streamGeneration||
        !Number.isSafeInteger(snapshotRevision)||snapshotRevision!==revision||
-       !Number.isSafeInteger(renderEpoch)||renderEpoch<=0)
+       !Number.isSafeInteger(renderEpoch)||renderEpoch<=0||
+       renderEpoch!==currentRenderEpoch())
       return denied('stale_or_invalid_display_context');
     if(!admissionFields(offer)||!admissionFields(displayOffer))
       return denied('unverified_presentation_field');
@@ -152,6 +167,11 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
     try{accepted=await verifier.accepts(decision,offer,observationRef);}
     catch{return denied('source_revalidation_failed');}
     if(!accepted)return denied('source_decision_invalidated');
+    // Verify the context AGAIN after the asynchronous source revalidation.
+    // A newer snapshot, render, or revocation can arrive during await.
+    if(disabled||revision!==snapshotRevision||renderEpoch!==currentRenderEpoch()||
+       !activeDigests.has(displayDigest))
+      return denied('display_superseded_during_verification');
     // No customer authority is serialized; an opaque in-process object is
     // used solely to assert cross-field ownership across future rechecks.
     const result=Object.freeze({state:'BOUND_INTERNAL',scope:'same_display_offer',
@@ -166,17 +186,22 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
     snapshotRevision,renderEpoch}={}){
     if(disabled||!bound||typeof bound!=='object'||incoming!==streamGeneration||
        revision!==snapshotRevision||!Number.isSafeInteger(renderEpoch)||
-       renderEpoch<=0)return false;
+       renderEpoch<=0||renderEpoch!==currentRenderEpoch())return false;
     const original=issued.get(bound);
     if(!original||original.snapshotRevision!==snapshotRevision||
        original.renderEpoch!==renderEpoch||
        !admissionFields(displayOffer)||
        original.displayDigest!==strictDigest(displayOffer)||
        !activeDigests.has(original.displayDigest))return false;
-    try{return await verifier.accepts(original.decision,original.offer,original.observationRef);}
+    let accepted=false;
+    try{accepted=await verifier.accepts(original.decision,original.offer,original.observationRef);}
     catch{return false;}
+    return Boolean(accepted&&!disabled&&revision===snapshotRevision&&
+      renderEpoch===currentRenderEpoch()&&activeDigests.has(original.displayDigest));
   }
-  function revoke(){disabled=true;activeDigests=new Set();revision=0;}
-  return Object.freeze({streamGeneration,advance,bind,accepts,revoke,
-    get currentSnapshotRevision(){return revision;}});
+  function currentRenderEpoch(){return activeRenderEpoch;}
+  function revoke(){disabled=true;activeDigests=new Set();revision=0;activeRenderEpoch=0;}
+  return Object.freeze({streamGeneration,advance,beginRender,bind,accepts,revoke,
+    get currentSnapshotRevision(){return revision;},
+    get currentRenderEpoch(){return activeRenderEpoch;}});
 }

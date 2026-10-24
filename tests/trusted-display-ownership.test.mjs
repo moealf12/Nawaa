@@ -26,6 +26,7 @@ async function valid(){
   const decision=await h.verifier.verify({offer,observationRef:ref});
   assert.equal(decision.state,'VERIFIED');
   assert.equal(h.display.advance(1,[offer]),true);
+  assert.equal(h.display.beginRender(1),true);
   const bound=await h.display.bind({decision,offer,observationRef:ref,displayOffer:{...offer},
     streamGeneration:generation,snapshotRevision:1,renderEpoch:1});
   assert.equal(bound.state,'BOUND_INTERNAL');
@@ -69,6 +70,10 @@ test('new search generation, snapshot, render or ref invalidates old binding',as
   assert.equal(await h.display.accepts(h.bound,context(offer,other)),false);
   assert.equal(await h.display.accepts(h.bound,context(offer,generation,2)),false);
   assert.equal(await h.display.accepts(h.bound,context(offer,generation,1,2)),false);
+  assert.equal(h.display.beginRender(2),true);
+  assert.equal(await h.display.accepts(h.bound,context()),false,
+    'stale render epoch must revoke old internal ownership');
+  assert.equal(h.display.beginRender(1),false);
   assert.equal(h.display.advance(1,[offer]),false);
   assert.equal(h.display.advance(0,[offer]),false);
   assert.equal(h.display.advance(2,[]),true);
@@ -114,10 +119,11 @@ test('malformed and boundary inputs fail closed without modifying prior valid sn
     assert.equal(h.display.advance(2,[malformed]),false);
     assert.equal(await h.display.accepts(h.bound,context(malformed)),false);
   }
-  assert.equal(h.display.currentSnapshotRevision,1);
-  assert.equal(await h.display.accepts(h.bound,context()),true);
-  assert.equal(h.display.advance(2,new Array(501).fill(offer)),false);
-  assert.equal(h.display.currentSnapshotRevision,1);
+  assert.equal(h.display.currentSnapshotRevision,2);
+  assert.equal(await h.display.accepts(h.bound,context()),false,
+    'malformed newer snapshots must invalidate earlier ownership');
+  assert.equal(h.display.advance(3,new Array(501).fill(offer)),false);
+  assert.equal(h.display.currentSnapshotRevision,3);
   assert.throws(()=>createTrustedDisplayOwnership(),/required/);
 });
 
@@ -153,4 +159,73 @@ test('v21.69 shadow identity and variant conflicts are never promoted from cover
       displayOffer:enriched,observationRef:ref,streamGeneration:generation,
       snapshotRevision:1,renderEpoch:1})).state,'DENIED',JSON.stringify(extra));
   }
+});
+
+test('v21.69 duplicate identical records do not invent unique display ownership',async()=>{
+  const h=await valid();
+  assert.equal(h.display.advance(2,[offer,{...offer}]),false);
+  assert.equal(h.display.currentSnapshotRevision,2);
+  assert.equal(await h.display.accepts(h.bound,context()),false);
+  assert.equal(h.display.advance(3,[offer]),true);
+  assert.equal(h.display.beginRender(2),true);
+  const rebound=await h.display.bind({decision:h.decision,offer,displayOffer:offer,
+    observationRef:ref,streamGeneration:generation,snapshotRevision:3,renderEpoch:2});
+  assert.equal(rebound.state,'BOUND_INTERNAL');
+  assert.equal(rebound.badgeEligible,false);
+});
+test('v21.69 asynchronous verification cannot mint bindings after snapshot or render supersession',async()=>{
+  const records=new Map([[ref,{ref,sourceId:'jarir-sa',revision:'r1',
+    observedAt,selectedRecord:{...offer}}]]);
+  let unblock=null;
+  let entered=null;
+  const gated=new Promise(resolve=>{entered=resolve;});
+  const waitForRelease=new Promise(resolve=>{unblock=resolve;});
+  let gatedRead=false;
+  const verifier=createTrustedOfferVerifier({
+    now:()=>now,
+    resolveObservation:async key=>{
+      if(gatedRead){entered();await waitForRelease;}
+      return records.get(key)||null;
+    }
+  });
+  const display=createTrustedDisplayOwnership({verifier,streamGeneration:generation});
+  const decision=await verifier.verify({offer,observationRef:ref});
+  assert.equal(display.advance(1,[offer]),true);
+  assert.equal(display.beginRender(1),true);
+  gatedRead=true;
+  const pending=display.bind({decision,offer,displayOffer:offer,observationRef:ref,
+    streamGeneration:generation,snapshotRevision:1,renderEpoch:1});
+  await gated;
+  assert.equal(display.advance(2,[offer]),true);
+  assert.equal(display.beginRender(2),true);
+  unblock();
+  assert.equal((await pending).state,'DENIED');
+});
+test('v21.69 asynchronous accepts fails closed when epoch changes during source read',async()=>{
+  const h=await valid();
+  let started=null,release=null;
+  let gate=false;
+  const entered=new Promise(resolve=>{started=resolve;});
+  const unblock=new Promise(resolve=>{release=resolve;});
+  const verifier={
+    accepts:async()=>{if(gate){started();await unblock;}return true;}
+  };
+  const guard=createTrustedDisplayOwnership({verifier,streamGeneration:generation});
+  assert.equal(guard.advance(1,[offer]),true);
+  assert.equal(guard.beginRender(1),true);
+  // This isolated concurrency test uses a controlled verifier stub. It cannot
+  // prove source attestation; it proves read-side epoch invalidation behavior.
+  const fakeDecision={state:'VERIFIED',eligible:true,scope:'selected_sellable_offer',
+    evidenceRevision:'r1',observationRef:ref};
+  const bound=await guard.bind({decision:fakeDecision,offer,displayOffer:offer,
+    observationRef:ref,streamGeneration:generation,snapshotRevision:1,renderEpoch:1});
+  assert.equal(bound.state,'BOUND_INTERNAL');
+  gate=true;
+  const pending=guard.accepts(bound,context());
+  await entered;
+  assert.equal(guard.beginRender(2),true);
+  release();
+  assert.equal(await pending,false);
+  assert.equal(await h.display.accepts(h.bound,context()),true,
+    'independent original verifier remains unaffected');
 });
