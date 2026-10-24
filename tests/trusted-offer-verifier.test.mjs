@@ -169,3 +169,20 @@ test('malformed replay inputs cannot crash authoritative acceptance',async()=>{
     assert.equal(await verifier.accepts(issued,candidate,reference),false);
   }
 });
+
+test('hard SKU punctuation remains identity-bearing despite fuzzy diagnostic normalization',async()=>{
+  const offer={...base,sku:'X+1'};
+  const {verifier,records}=setup();
+  records.set(reference,makeEvidence({selectedRecord:{...base,sku:'X1'}}));
+  const decision=await verifier.verify({offer,observationRef:reference});
+  assert.equal(decision.eligible,false);
+  assert.equal(decision.reason,'identity_sku_conflict');
+});
+test('identically ambiguous duplicated URL selectors do not establish destination ownership',async()=>{
+  const ambiguous={...base,sourceUrl:base.sourceUrl.replace('sku=666784',
+    'sku=666784&sku=666789')};
+  const {verifier,records}=setup();
+  records.set(reference,makeEvidence({selectedRecord:ambiguous}));
+  const decision=await verifier.verify({offer:ambiguous,observationRef:reference});
+  assert.equal(decision.eligible,false);
+});
