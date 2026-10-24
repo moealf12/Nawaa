@@ -23,3 +23,110 @@ export function firstOfferMilestones(offers = []) {
   }
   return {firstValid,firstExact,validCount,exactCount};
 }
+
+
+// v21.57: diagnostic-only evidence boundary. Structural validity, exact-match
+// ranking and same-sellable-item ownership are separate assertions. A browser
+// timing sample must never promote an inferred match to VERIFIED.
+export const OFFER_OWNERSHIP_STATES=Object.freeze([
+  'VERIFIED','CONSISTENT_BUT_UNVERIFIED','MISSING_EVIDENCE',
+  'CONFLICTING_EVIDENCE','SOURCE_BLOCKED'
+]);
+
+function safeHttpsUrl(value){
+  if(typeof value!=='string')return null;
+  try{
+    const u=new URL(value);
+    return u.protocol==='https:'&&u.hostname&&
+      !u.username&&!u.password?u:null;
+  }catch{return null;}
+}
+function canonicalId(value){
+  return typeof value==='string'||typeof value==='number'?
+    String(value).trim().toLowerCase().replace(/[^a-z0-9]/g,''):null;
+}
+function ownedIdentity(offer){
+  const specs=offer?.specs||{};
+  return {
+    sku:canonicalId(offer?.sku??offer?.sourceMeta?.productId),
+    model:canonicalId(offer?.modelNumber??specs.modelNumber),
+    gtin:canonicalId(offer?.gtin),
+  };
+}
+export function assessFirstOfferOwnership(offer,evidence=null){
+  const fields=['title','price','currency','merchant','sourceUrl','image','identity'];
+  const result={state:'MISSING_EVIDENCE',eligible:false,
+    reason:'missing_independent_same_offer_evidence',
+    fields:Object.fromEntries(fields.map(k=>[k,'MISSING_EVIDENCE']))};
+  if(!structurallyValidOffer(offer)){
+    return {...result,reason:'structurally_invalid_offer'};
+  }
+  result.fields.title='CONSISTENT_BUT_UNVERIFIED';
+  result.fields.price='CONSISTENT_BUT_UNVERIFIED';
+  result.fields.currency='CONSISTENT_BUT_UNVERIFIED';
+  result.fields.merchant='CONSISTENT_BUT_UNVERIFIED';
+  result.fields.sourceUrl='CONSISTENT_BUT_UNVERIFIED';
+  result.fields.image=offer.image?'CONSISTENT_BUT_UNVERIFIED':'MISSING_EVIDENCE';
+  const identity=ownedIdentity(offer);
+  result.fields.identity=Object.values(identity).some(Boolean)?
+    'CONSISTENT_BUT_UNVERIFIED':'MISSING_EVIDENCE';
+  if(evidence?.sourceBlocked===true){
+    return {...result,state:'SOURCE_BLOCKED',reason:'source_blocked'};
+  }
+  if(evidence?.crossFieldConflict===true){
+    return {...result,state:'CONFLICTING_EVIDENCE',reason:'explicit_cross_field_conflict'};
+  }
+  if(!evidence||typeof evidence!=='object'){
+    return {...result,state:'CONSISTENT_BUT_UNVERIFIED'};
+  }
+  const destination=safeHttpsUrl(offer.sourceUrl);
+  const evidenceDestination=safeHttpsUrl(evidence.sourceUrl);
+  const priced=evidence.productPrice===offer.productPrice&&
+    evidence.currency===offer.currency;
+  const merchant=evidence.merchant===offer.merchant;
+  const ids=ownedIdentity(evidence);
+  let shared=false;
+  for(const key of Object.keys(identity)){
+    if(identity[key]&&ids[key]){
+      if(identity[key]!==ids[key]){
+        return {...result,state:'CONFLICTING_EVIDENCE',reason:'identity_conflict_'+key};
+      }
+      shared=true;
+    }
+  }
+  if(destination&&evidenceDestination&&
+     destination.origin+destination.pathname!==
+     evidenceDestination.origin+evidenceDestination.pathname){
+    return {...result,state:'CONFLICTING_EVIDENCE',reason:'destination_conflict'};
+  }
+  if(evidence.productPrice!=null&&evidence.currency!=null&&!priced){
+    return {...result,state:'CONFLICTING_EVIDENCE',reason:'price_currency_conflict'};
+  }
+  if(evidence.merchant!=null&&!merchant){
+    return {...result,state:'CONFLICTING_EVIDENCE',reason:'merchant_conflict'};
+  }
+  const independentlyAttested=evidence.independentlyAttested===true;
+  const coherent=shared&&priced&&merchant&&destination&&evidenceDestination&&
+    evidence.title===offer.title;
+  if(!coherent||!independentlyAttested){
+    return {...result,state:'CONSISTENT_BUT_UNVERIFIED',
+      reason:!coherent?'incomplete_same_offer_evidence':'independent_attestation_missing'};
+  }
+  const imageVerified=!offer.image||evidence.image===offer.image;
+  if(!imageVerified){
+    return {...result,state:'CONFLICTING_EVIDENCE',reason:'image_conflict'};
+  }
+  const verified=Object.fromEntries(Object.entries(result.fields)
+    .map(([k,v])=>[k,k==='image'&&!offer.image?'MISSING_EVIDENCE':'VERIFIED']));
+  return {state:'VERIFIED',eligible:true,reason:'independently_attested_same_offer',
+    fields:verified};
+}
+
+export function firstOwnershipEligibleOffer(offers,evidenceForOffer=()=>null){
+  if(!Array.isArray(offers))return null;
+  for(const offer of offers){
+    const ownership=assessFirstOfferOwnership(offer,evidenceForOffer(offer));
+    if(ownership.eligible)return {offer,ownership};
+  }
+  return null;
+}
