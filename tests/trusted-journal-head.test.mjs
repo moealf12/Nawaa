@@ -130,3 +130,23 @@ test('v21.66 keys must come from explicit private configuration, no built-in fal
     store:memory(),signingKey:K1,keyring:config
   }),/ambiguous_journal_key_authority/);
 });
+
+test('v21.66 production mode never permits a legacy signer or headless journal',()=>{
+  const original=process.env.NODE_ENV;
+  try{
+    process.env.NODE_ENV='production';
+    assert.throws(()=>createTrustedObservationJournal({
+      store:memory(),signingKey:K1,requireCurrentHead:true
+    }),/production_journal_requires/);
+    assert.throws(()=>createTrustedObservationJournal({
+      store:memory(),keyring:ring('k1'),requireCurrentHead:false
+    }),/production_journal_requires/);
+    const secured=createTrustedObservationJournal({
+      store:memory(),keyring:ring('k1'),requireCurrentHead:true
+    });
+    assert.equal(secured.policyVersion,'trusted-pdp-journal-v1');
+  }finally{
+    if(original===undefined)delete process.env.NODE_ENV;
+    else process.env.NODE_ENV=original;
+  }
+});
