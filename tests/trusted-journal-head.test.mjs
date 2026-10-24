@@ -216,6 +216,10 @@ test('v21.72 signed scoped journal persists reconstructible selected source valu
   assert.equal(reopened.sourceEvidence.record.currency,'SAR');
   assert.equal(reopened.sourceEvidence.ownership.offers.recordId,'a'.repeat(64));
   assert.equal(reopened.sourceEvidence.ownership.name.recordId,'a'.repeat(64));
+  assert.equal(reopened.sourceRecord.selectedOfferUrl,URL);
+  assert.equal(reopened.sourceRecord.selectedProductUrl,URL);
+  assert.equal(reopened.wholeOfferVerified,false,
+    'persisted selected relationship cannot upgrade predicate-only scope');
   // A matching record digest is diagnostic; it is not independent authority.
   st.rows[0].payload=st.rows[0].payload.replace('"productPrice":2529','"productPrice":199');
   assert.equal((await build(st).inspect(archived.receiptRef)).state,'CONFLICTING_EVIDENCE');

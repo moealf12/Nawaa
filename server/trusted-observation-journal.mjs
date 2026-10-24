@@ -143,6 +143,18 @@ export function createTrustedObservationJournal({store,signingKey,keyring,
       return state('CONFLICTING_EVIDENCE','invalid_capture_contract');
     // Legacy scoped receipts remain readable. New receipts carry signed
     // reconstructible selected-record facts, without a trust-scope upgrade.
+    // A persisted selection URL is source relationship evidence; it must
+    // never contradict the actual selected sellable purchase destination.
+    if(captured.sourceRecord.selectedOfferUrl!==undefined){
+      if(typeof captured.sourceRecord.selectedOfferUrl!=='string'||
+         captured.sourceRecord.selectedOfferUrl!==captured.offer.sourceUrl)
+        return state('CONFLICTING_EVIDENCE','selected_offer_destination_conflict');
+    }
+    if(captured.sourceRecord.selectedProductUrl!==undefined){
+      if(typeof captured.sourceRecord.selectedProductUrl!=='string'||
+         !/^https:\/\//.test(captured.sourceRecord.selectedProductUrl))
+        return state('CONFLICTING_EVIDENCE','selected_product_destination_invalid');
+    }
     if(captured.sourceEvidence!==undefined){
       let evidence;
       try{evidence=boundedSourceEvidence({

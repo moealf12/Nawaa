@@ -268,10 +268,16 @@ export function createPdpObservationSession({
     const revision=sha([page.resolvedPageUrl,page.observedAt,record,
       page.extraction.fieldSources,page.extraction.conflictSummary,
       page.extraction.selectedProductRecord]);
+    const selected=page.extraction.selectedProductRecord;
     const sourceRecord=Object.freeze({
-      recordId:page.extraction.selectedProductRecord.recordId,
-      documentDigest:page.extraction.selectedProductRecord.documentDigest,
-      source:'jsonld_product_offer'
+      recordId:selected.recordId,
+      documentDigest:selected.documentDigest,
+      source:'jsonld_product_offer',
+      // The selected Product and Offer relationship must survive archival
+      // across processes. These URLs were checked against the actual PDP
+      // destination before a controlled verifier receipt was issued.
+      selectedProductUrl:new URL(selected.selectedProductUrl,page.resolvedPageUrl).href,
+      selectedOfferUrl:new URL(selected.selectedOfferUrl,page.resolvedPageUrl).href
     });
     // Diagnostic extraction lineage for durable cross-process audit. This
     // metadata never independently increases the selected-PDP predicate scope.
