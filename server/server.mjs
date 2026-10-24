@@ -1119,16 +1119,18 @@ const server = http.createServer(async (req, res) => {
       if(OMEGA_CANONICAL&&resolvedOffer)await canonicalCandidates([resolvedOffer],true);
       result=await canonicalResponse(result,normalizedComparisonQuery);
       const nextCursor = depth < MAX_SEARCH_DEPTH ? encodeSearchCursor(normalizedComparisonQuery, depth + 1) : null;
-      return jsonResponse(res, 200, {
+      return jsonResponse(res, 200, stripUntrustedCustomerTrustClaims({
         query: productUrl || q,
         comparisonQuery: resolvedOffer ? comparisonQuery : null,
-        resolvedOffer,
+        resolvedOffer:resolvedOffer
+          ? stripUntrustedCustomerTrustClaims({offers:[resolvedOffer]}).offers[0]
+          : null,
         destinationCountry: "SA",
         observedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         nextCursor,
         ...result,
-      }, origin || "*");
+      }), origin || "*");
     } catch (error) {
       return jsonResponse(res, 500, {
         error: "search_failed",

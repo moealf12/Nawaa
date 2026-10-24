@@ -14,7 +14,9 @@ const BLOCKED=new Set([
   'verifiedSource','certification','verificationDecision'
 ]);
 const hasOwn=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
-const forbidden=(key)=>BLOCKED.has(key)||/^__nawaaTrust|^_trust[A-Z]/.test(key);
+const forbidden=(key)=>BLOCKED.has(key)||key==='__proto__'||
+  key==='prototype'||key==='constructor'||
+  /^__nawaaTrust|^_trust[A-Z]/.test(key);
 function scrubRecord(record){
   if(!record||typeof record!=='object'||Array.isArray(record))return record;
   let changed=false;
@@ -43,10 +45,16 @@ export function stripUntrustedCustomerTrustClaims(snapshot){
     safe.offers=snapshot.offers.map(offer=>{
       if(!offer||typeof offer!=='object'||Array.isArray(offer))return offer;
       const cleaned=scrubRecord(offer);
-      if(!hasOwn(cleaned,'sourceMeta'))return cleaned;
-      const meta=scrubRecord(cleaned.sourceMeta);
-      if(meta===cleaned.sourceMeta)return cleaned;
-      return {...cleaned,sourceMeta:meta};
+      // Some providers bury forged claims in specs/variant/metadata rather
+      // than top-level. Shallow selective sanitization avoids a full recursive
+      // clone of every card (critical first-offer path).
+      let nested=null;
+      for(const key of ['sourceMeta','specs','variant','metadata','provenance']){
+        if(!hasOwn(cleaned,key))continue;
+        const original=cleaned[key],next=scrubRecord(original);
+        if(next!==original){nested??={...cleaned};nested[key]=next;}
+      }
+      return nested??cleaned;
     });
   }else if(hasOwn(snapshot,'offers')){
     safe.offers=snapshot.offers;

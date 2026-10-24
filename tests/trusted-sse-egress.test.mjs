@@ -59,7 +59,26 @@ test('v21.71 prototype injection cannot promote forged trust field',()=>{
   const polluted=JSON.parse('{"title":"X","productPrice":10,"__proto__":{"badgeEligible":true},"badgeEligible":true}');
   const result=scrub({offers:[polluted]});
   assert.equal(Object.hasOwn(result.offers[0],'badgeEligible'),false);
-  assert.equal(Object.hasOwn(result.offers[0],'__proto__'),true,
-    'unrelated source payload is unchanged; no trusted claim is inferred');
+  assert.equal(Object.hasOwn(result.offers[0],'__proto__'),false,
+    'prototype-poisoning keys are never reflected in customer JSON');
   assert.equal({}.badgeEligible,undefined);
+});
+
+test('v21.71 nested metadata and variants cannot transport trust authority',()=>{
+  const raw={...base,
+    specs:{...base.specs,wholeOfferVerified:true,customerVerified:true},
+    variant:{condition:'new',verificationStatus:'VERIFIED',badgeEligible:true},
+    metadata:{sourceRevision:'source-observed',trustCertification:'VERIFIED'},
+    provenance:{provider:'Jarir',issuer:'fake-attester'}};
+  const snapshot=scrub({offers:[raw]});
+  const found=snapshot.offers[0];
+  assert.equal(found.specs.modelNumber,'CFI2116A01Y');
+  assert.equal(found.metadata.sourceRevision,'source-observed');
+  assert.equal(found.provenance.provider,'Jarir');
+  for(const [field,checks] of [
+    ['specs',['wholeOfferVerified','customerVerified']],
+    ['variant',['verificationStatus','badgeEligible']],
+    ['metadata',['trustCertification']],['provenance',['issuer']]
+  ])for(const key of checks)assert.equal(Object.hasOwn(found[field],key),false,key);
+  assert.equal(raw.specs.wholeOfferVerified,true,'source record remains immutable');
 });
