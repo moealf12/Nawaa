@@ -117,6 +117,39 @@ function claimedOffer(offer,observedAt){
         Object.prototype.hasOwnProperty.call(variant,k)).map(k=>[k,variant[k]]))
   };
 }
+
+function hardIdentity(value){
+  return (typeof value==='string'||typeof value==='number')?
+    String(value).trim().toLowerCase():null;
+}
+// Catalog identity is an anchor, not a field donor. All fields of an
+// authoritative refreshed offer are copied exclusively from the selected
+// merchant PDP; a disagreement with a shared hard identifier blocks it.
+function bridgeCatalogIdentity(catalog,page){
+  const sku=hardIdentity(catalog.sku??catalog.sourceMeta?.productId);
+  const pdpSku=hardIdentity(page.sku);
+  if(!sku||!pdpSku)return 'missing_listing_pdp_sku';
+  if(sku!==pdpSku)return 'listing_pdp_sku_conflict';
+  const pairs=[
+    [catalog.modelNumber??catalog.specs?.modelNumber,page.specs?.modelNumber,'model'],
+    [catalog.gtin??catalog.specs?.barcode,page.specs?.barcode,'gtin'],
+  ];
+  for(const [left,right,label] of pairs){
+    if(hardIdentity(left)&&hardIdentity(right)&&hardIdentity(left)!==hardIdentity(right))
+      return 'listing_pdp_'+label+'_conflict';
+  }
+  if(catalog.condition&&catalog.condition!=='unknown'&&
+     page.condition&&page.condition!=='unknown'&&
+     hardIdentity(catalog.condition)!==hardIdentity(page.condition))
+    return 'listing_pdp_condition_conflict';
+  const keys=['storage','capacity','ram','region','sim','color','edition'];
+  for(const key of keys){
+    const left=hardIdentity(catalog[key]??catalog.variant?.[key]??catalog.specs?.[key]);
+    const right=hardIdentity(page[key]??page.variant?.[key]??page.specs?.[key]);
+    if(left&&right&&left!==right)return 'listing_pdp_variant_'+key+'_conflict';
+  }
+  return null;
+}
 function selectedRecord(page){
   // Snapshot only documented selected-PDP fields; never enrich from a
   // neighboring listing or a caller-provided product record.
@@ -157,7 +190,7 @@ export function createPdpObservationSession({
   const verifier=createTrustedOfferVerifier({
     resolveObservation:async ref=>observations.get(ref)||null,now,maxAgeMs
   });
-  async function verify(offer,{signal}={}){
+  async function runVerification(offer,{signal}={},mode='strict'){
     if(signal?.aborted)return rejection('cancelled','SOURCE_BLOCKED');
     if(offer?.providerMarket!==SOURCE_ID||offer?.merchant!=='Jarir'||
        !target(offer?.sourceUrl))
@@ -178,9 +211,19 @@ export function createPdpObservationSession({
        observationTime>present+60_000||present-observationTime>maxAgeMs)
       return rejection('stale_or_invalid_observation');
     const record=selectedRecord(page);
-    // A new receipt-time revision is not evidence the *old* listing was
-    // verified earlier. Never mutate the incoming offer.
-    const updatedOffer=claimedOffer(offer,page.observedAt);
+    // The indexed listing has NO authority over PDP title, price or image.
+    // In selected-revision mode it only anchors SKU, compatible hard identity,
+    // condition and explicitly comparable variants.
+    if(mode==='selected-revision'){
+      const bridge=bridgeCatalogIdentity(offer,page);
+      if(bridge)return rejection(bridge,/conflict/.test(bridge)?
+        'CONFLICTING_EVIDENCE':'MISSING_EVIDENCE');
+    }
+    // A new source observation is a NEW offer revision: never retroactively
+    // certify the stale indexed title/price/image as if they were observed.
+    const updatedOffer=mode==='selected-revision'?
+      claimedOffer({...record,providerMarket:SOURCE_ID},page.observedAt):
+      claimedOffer(offer,page.observedAt);
     const ref='jarir-pdp:'+randomUUID();
     const revision=sha([page.resolvedPageUrl,page.observedAt,record,
       page.extraction.fieldSources,page.extraction.conflictSummary,
@@ -198,8 +241,12 @@ export function createPdpObservationSession({
         decision.state==='CONFLICTING_EVIDENCE'?'CONFLICTING_EVIDENCE':'MISSING_EVIDENCE');
     }
     return Object.freeze({state:'VERIFIED',eligible:true,decision,
+      originalListingSuperseded:mode==='selected-revision',
       observationRef:ref,offer:updatedOffer});
   }
+  const verify=(offer,options)=>runVerification(offer,options,'strict');
+  const verifySelectedRevision=(offer,options)=>
+    runVerification(offer,options,'selected-revision');
   async function accepts(result,offer=result?.offer){
     return Boolean(result&&result.state==='VERIFIED'&&
       await verifier.accepts(result.decision,offer,result.observationRef));
@@ -212,5 +259,5 @@ export function createPdpObservationSession({
       title:r.selectedRecord.title,sku:r.selectedRecord.sku,
       price:r.selectedRecord.productPrice,currency:r.selectedRecord.currency});
   }
-  return Object.freeze({verify,accepts,evidence});
+  return Object.freeze({verify,verifySelectedRevision,accepts,evidence});
 }
