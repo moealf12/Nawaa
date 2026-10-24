@@ -715,6 +715,28 @@ export async function resolveProductUrl(url, options = {}) {
 }
 
 
+// A selected Product can declare multiple GS1 fields. Never silently pick
+// gtin14 while ignoring contradictory gtin13/gtin values in that SAME record.
+// Compare left-zero padded values for GS1 equivalence, preserve original text.
+function selectedGtin(product){
+  const claimed=['gtin14','gtin13','gtin12','gtin8','gtin']
+    .filter(key=>product?.[key]!=null&&String(product[key]).trim()!=='')
+    .map(key=>String(product[key]).trim());
+  if(!claimed.length)return null;
+  const valid=value=>{
+    if(!/^(?:[0-9]{8}|[0-9]{12}|[0-9]{13}|[0-9]{14})$/.test(value))return false;
+    const digits=value.split('').map(Number);
+    const sum=digits.slice(0,-1).reverse().reduce((total,digit,i)=>
+      total+digit*(i%2===0?3:1),0);
+    return (10-sum%10)%10===digits.at(-1);
+  };
+  if(claimed.some(value=>!valid(value)))throw Error('selected_pdp_invalid_gs1_gtin');
+  const expected=claimed[0].padStart(14,'0');
+  if(claimed.some(value=>value.padStart(14,'0')!==expected))
+    throw Error('selected_pdp_conflicting_gtin_fields');
+  return claimed[0];
+}
+
 // v21.63: strictly selected Product/Offer observation, without cross-strategy
 // reconciliation. Reuses pinned-DNS, redirect validation and bounded fetch.
 // Does not certify a merchant: only the controlled server verifier may do so.
@@ -762,7 +784,7 @@ export async function resolveSelectedJsonLdOffer(url, options = {}) {
   // plausible title alone cannot make the source page into a sellable SKU.
   const sku=typeof product.sku==='string'||typeof product.sku==='number'
     ?String(product.sku).trim():null;
-  const gtin=product.gtin14||product.gtin13||product.gtin12||product.gtin||null;
+  const gtin=selectedGtin(product);
   if(!sku&&!gtin)throw Error('selected_pdp_hard_identity_missing');
   const brand=typeof product.brand==='string'?product.brand:product.brand?.name||null;
   const imageRaw=product.image;
