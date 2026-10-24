@@ -50,6 +50,15 @@ export function parseMoney(value) {
 export function normalizeCondition(value = "") {
   const v = String(value).toLowerCase().replace(/[_-]+/g," ").trim();
   if (!v) return "unknown";
+  // Schema.org itemCondition values are enumerations, not space-delimited
+  // adjectives. "NewCondition" must not silently become unknown/used.
+  const schema = v.match(/^(?:https?:\/\/(?:www\.)?schema\.org\/)?(newcondition|usedcondition|refurbishedcondition|damagedcondition)\/?$/);
+  if(schema){
+    if(schema[1]==="newcondition")return "new";
+    if(schema[1]==="usedcondition")return "used";
+    if(schema[1]==="refurbishedcondition")return "refurbished";
+    return "unknown"; // DamagedCondition has no safe 1:1 retail state.
+  }
   if (/\b(refurbished?|renewed|remanufactured)\b/.test(v)) return "refurbished";
   if (/\b(open\s*box)\b/.test(v)) return "open_box";
   if (/\b(like\s*new|used|pre\s*owned|second\s*hand)\b/.test(v)) return "used";
