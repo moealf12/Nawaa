@@ -63,7 +63,7 @@ async function ready(){
   assert.ok(capture);
   const verified=(await h.journal.inspect(capture.ref));
   assert.equal(verified.state,'REVALIDATED');
-  return {...h,prepared,offer:verified.offer,captureRef:capture.ref};
+  return {...h,prepared,offer,captureRef:capture.ref};
 }
 const binding=(offer,rev=1,epoch=1,uuid=UUID)=>({
   streamGeneration:uuid,snapshotRevision:rev,renderEpoch:epoch,
