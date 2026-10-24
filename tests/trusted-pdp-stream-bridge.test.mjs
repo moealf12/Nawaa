@@ -100,7 +100,9 @@ test('duplicate source-owned records, mismatched generation, spoofed object and 
   assert.equal((await h.bridge.bind({...h.prepared},binding(h.offer))).state,'DENIED');
   assert.equal((await h.bridge.bind(h.prepared,binding(h.offer,1,1,
     'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'))).state,'DENIED');
-  await h.journal.revoke(h.captureRef,'fixture_source_revoked');
+  assert.equal((await h.journal.revoke(h.captureRef,'fixture_source_revoked')).state,
+    'MISSING_EVIDENCE','invalid revocation reasons must not mutate journal state');
+  assert.equal((await h.journal.revoke(h.captureRef,'security_revoke')).state,'REVOKED');
   assert.equal((await h.bridge.bind(h.prepared,binding(h.offer))).state,'DENIED');
 });
 test('source-head supersession and revocation of the bridge invalidate old source predicate evidence',async()=>{
