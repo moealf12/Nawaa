@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import pg from 'pg';
 import {MeiliSearch} from 'meilisearch';
 import {searchJarir} from '../server/providers/jarir.mjs';
-import {createPdpObservationSession} from '../server/trusted-pdp-observation.mjs';
+import {createControlledPdpRefresh} from '../server/trusted-pdp-refresh.mjs';
 import {createTrustedObservationJournal} from '../server/trusted-observation-journal.mjs';
 import {createIsolatedTrustedJournalStore,CI_SIGNING_KEY} from './trusted-journal-ci-store.mjs';
 import {writeFile} from 'node:fs/promises';
@@ -24,57 +24,54 @@ assert.ok(offers.length,'actual Jarir acquisition required, no fixture fallback'
 // without emitting a customer VERIFIED state or changing the production path.
 const selectedPdp=offers.find(o=>o.providerMarket==='jarir-sa'&&o.merchant==='Jarir');
 if(selectedPdp){
-  const verifier=createPdpObservationSession();
-  const started=Date.now();
-  const claim=await verifier.verifySelectedRevision(selectedPdp,{signal:AbortSignal.timeout(12000)});
-  const accepted=claim.state==='VERIFIED'&&await verifier.accepts(claim);
-  const evidence=accepted?verifier.evidence(claim.observationRef):null;
-  // Separately archive the ACTUAL merchant-derived scoped decision in an
-  // isolated PostgreSQL test table. The next CI step must revalidate it from
-  // a different Node process. No source HTML is invented or overwritten.
-  if(accepted){
-    const db=createIsolatedTrustedJournalStore();
-    try{
-      await db.initialize();
-      const journal=createTrustedObservationJournal({store:db.store,
-        signingKey:CI_SIGNING_KEY,requireCurrentHead:true});
-      const receipt=await journal.archive(claim);
-      assert.equal(receipt.state,'ARCHIVED',receipt.reason);
-      const recorded=await journal.recordFreshSource(claim);
-      assert.equal(recorded.state,'RECORDED',recorded.reason);
+  // One actual authorized selected-PDP fetch. The shared controlled refresh
+  // path updates source head and archives the scoped receipt atomically with
+  // the appropriate journal operations; no second merchant probe.
+  const db=createIsolatedTrustedJournalStore();
+  try{
+    await db.initialize();
+    const journal=createTrustedObservationJournal({store:db.store,
+      signingKey:CI_SIGNING_KEY,requireCurrentHead:true});
+    const refresh=createControlledPdpRefresh({journal});
+    const result=await refresh.refresh(selectedPdp,{
+      signal:AbortSignal.timeout(12000),archive:true
+    });
+    const accepted=result.state==='RECORDED';
+    if(accepted){
+      assert.ok(result.receiptRef,'actual scoped verifier must issue one receipt');
       await writeFile('.trusted-journal-live.json',JSON.stringify({
-        ref:receipt.receiptRef,offer:claim.offer,sourceId:evidence.sourceId,
-        documentDigest:evidence.sourceRecord.documentDigest
+        ref:result.receiptRef,offer:result.selectedOffer,
+        sourceId:result.sourceId,
+        documentDigest:result.selectedRecord?.documentDigest
       })+'\n');
       console.log('TRUSTED_PDP_LIVE_JOURNAL '+JSON.stringify({
-        livePdpObservation:true,sourceId:evidence.sourceId,
+        livePdpObservation:true,sourceId:result.sourceId,
         archived:true,controlledSourceHeadRecorded:true,
         additionalMerchantRequests:0,
         wholeOfferVerified:false,badgeEligible:false
       }));
-    }finally{await db.close();}
-  }
-  console.log('TRUSTED_PDP_LIVE_PROBE '+JSON.stringify({
-    observationType:'independently_fetched_same_merchant_PDP',
-    sameOriginEvidenceIsNotIndependentRetailer:true,
-    sourceUrl:selectedPdp.sourceUrl,sourceId:'jarir-sa',
-    status:accepted?'VERIFIED':'UNVERIFIED',
-    reason:accepted?null:claim.reason,
-    originalListingSuperseded:accepted?claim.originalListingSuperseded:false,
-    selectedPdpSku:accepted?claim.offer.sku:null,
-    selectedPdpGtin:accepted?(evidence?.gtin??null):null,
-    historicalGtinState:accepted?claim.historicalClaims?.gtin:null,
-    historicalBarcodeState:accepted?claim.historicalClaims?.barcode:null,
-    gtinPredicate:accepted?claim.decision.predicates.gtin:null,
-    sourceRecordId:accepted?evidence?.sourceRecord?.recordId:null,
-    sourceDocumentDigest:accepted?evidence?.sourceRecord?.documentDigest:null,
-    wholeOfferVerified:accepted?claim.wholeOfferVerified:false,
-    badgeEligible:accepted?claim.badgeEligible:false,
-    revision:accepted?evidence?.revision:null,
-    sourceObservedAt:accepted?evidence?.observedAt:null,
-    durationMs:Date.now()-started,
-    note:'Diagnostic CI only: no customer badge, no T5, no production release'
-  }));
+    }
+    console.log('TRUSTED_PDP_LIVE_PROBE '+JSON.stringify({
+      observationType:'independently_fetched_same_merchant_PDP',
+      sameOriginEvidenceIsNotIndependentRetailer:true,
+      sourceUrl:selectedPdp.sourceUrl,sourceId:'jarir-sa',
+      status:accepted?'VERIFIED':'UNVERIFIED',
+      reason:accepted?null:result.reason,
+      originalListingSuperseded:accepted,
+      selectedPdpSku:accepted?result.selectedOffer?.sku:null,
+      selectedPdpGtin:accepted?(result.selectedOffer?.gtin??null):null,
+      historicalGtinState:accepted?result.historicalClaims?.gtin:null,
+      historicalBarcodeState:accepted?result.historicalClaims?.barcode:null,
+      gtinPredicate:accepted?result.verifiedPredicates?.gtin:null,
+      sourceRecordId:accepted?result.selectedRecord?.recordId:null,
+      sourceDocumentDigest:accepted?result.selectedRecord?.documentDigest:null,
+      wholeOfferVerified:false,badgeEligible:false,
+      revision:accepted?result.sourceRevision:null,
+      sourceObservedAt:accepted?result.sourceObservedAt:null,
+      durationMs:result.durationMs??null,
+      note:'Diagnostic CI: controlled source refresh and journal, no customer badge, T5 or production release'
+    }));
+  }finally{await db.close();}
 }
 
 const evidence=[];
