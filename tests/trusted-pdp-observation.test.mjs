@@ -452,3 +452,32 @@ test('v21.64 selected JSON-LD owns GTIN independently of foreign sibling identif
     assert.equal(rejected.state,'CONFLICTING_EVIDENCE');
   }finally{dns.lookup=beforeLookup;globalThis.fetch=beforeFetch;}
 });
+
+test('v21.64 selected Product rejects contradictory GTINs without borrowing a valid sibling',async()=>{
+  const {resolveSelectedJsonLdOffer}=await import('../server/url-resolver.mjs');
+  const dns=(await import('node:dns/promises')).default;
+  const oldFetch=globalThis.fetch,oldLookup=dns.lookup;
+  const product={'@type':'Product',url:URL,sku:'668751',name:offer().title,
+    offers:{'@type':'Offer',url:URL,price:2529,priceCurrency:'SAR'}};
+  try{
+    dns.lookup=async()=>[{address:'93.184.216.34',family:4}];
+    const cases=[
+      [{...product,gtin13:'0012345678905',gtin14:'00012345678905'},null],
+      [{...product,gtin13:'0012345678905',gtin14:'09999999999999'},'invalid_gs1_gtin'],
+      [{...product,gtin13:'0012345678905',gtin:'12345678905'},'invalid_gs1_gtin'],
+      [{...product,gtin13:'0012345678905',gtin14:'10012345678902'},'conflicting_gtin_fields'],
+    ];
+    for(const [selected,err] of cases){
+      globalThis.fetch=async()=>new Response(
+        '<script type="application/ld+json">'+JSON.stringify({'@graph':[selected]})+'</script>',
+        {headers:{'content-type':'text/html'}}
+      );
+      if(err)await assert.rejects(resolveSelectedJsonLdOffer(URL),new RegExp(err));
+      else{
+        const record=await resolveSelectedJsonLdOffer(URL);
+        assert.equal(record.gtin,'00012345678905',
+          'preserve the most-specific source-declared GS1 identifier');
+      }
+    }
+  }finally{dns.lookup=oldLookup;globalThis.fetch=oldFetch;}
+});
