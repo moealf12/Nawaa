@@ -306,3 +306,47 @@ test('v21.63 oversized graph cannot hide a second sellable item beyond parser no
     await assert.rejects(resolveSelectedJsonLdOffer(URL),/schema_budget_exceeded/);
   }finally{dns.lookup=oldLookup;globalThis.fetch=oldFetch;}
 });
+
+test('v21.63 PDP-authoritative revision certifies only fresh merchant-owned title/price/image',async()=>{
+  const indexed={...offer(),title:'Index listing alias',productPrice:2499,
+    image:'https://static.jarir.com/stale-gallery.jpg',
+    independentlyAttested:true,issuer:'untrusted',eligible:true};
+  const session=setup();
+  const historical=await session.verify(indexed);
+  assert.notEqual(historical.state,'VERIFIED',
+    'do not retroactively certify title or price of stale index');
+  const fresh=await session.verifySelectedRevision(indexed);
+  assert.equal(fresh.state,'VERIFIED',fresh.reason);
+  assert.equal(fresh.originalListingSuperseded,true);
+  assert.equal(fresh.offer.title,page().title);
+  assert.equal(fresh.offer.productPrice,page().productPrice);
+  assert.equal(fresh.offer.image,page().image);
+  assert.equal(fresh.offer.observedAt,page().observedAt);
+  assert.equal(indexed.productPrice,2499);
+  assert.equal(await session.accepts(fresh),true);
+  assert.equal(await session.accepts(fresh,indexed),false);
+  for(const flag of ['independentlyAttested','issuer','eligible']){
+    assert.equal(Object.hasOwn(fresh.offer,flag),false);
+  }
+});
+test('v21.63 refreshed PDP cannot override known hard SKU, MPN, GTIN or selected-variant contradiction',async()=>{
+  const checks=[
+    {...offer(),sku:'644723'},
+    {...offer(),sourceMeta:{productId:'644723'},sku:undefined},
+    {...offer(),specs:{...offer().specs,modelNumber:'CFI2116A01Y'}},
+    {...offer(),specs:{...offer().specs,barcode:'9999'}},
+    {...offer(),specs:{...offer().specs,color:'Black'}},
+    {...offer(),condition:'refurbished'}
+  ];
+  for(const indexed of checks){
+    const result=await setup().verifySelectedRevision(indexed);
+    assert.equal(result.eligible,false,JSON.stringify(indexed));
+    assert.notEqual(result.state,'VERIFIED');
+  }
+});
+test('v21.63 fresh revision rejects unverifiable missing SKU rather than falling back to title',async()=>{
+  const index={...offer(),sku:undefined,sourceMeta:{}};
+  const claim=await setup().verifySelectedRevision(index);
+  assert.equal(claim.eligible,false);
+  assert.equal(claim.reason,'missing_listing_pdp_sku');
+});
