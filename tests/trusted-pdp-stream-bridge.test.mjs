@@ -28,17 +28,17 @@ function page(price=2529){
   };
 }
 function makeStore(){
-  const events=[],heads=new Map();
+  const rows=[],heads=new Map();
   const update=x=>{
     const current=heads.get(x.sourceKey);
     if(current&&Date.parse(x.observedAt)<Date.parse(current.observedAt))return false;
     heads.set(x.sourceKey,{...x});return true;
   };
-  return {events,heads,
-    append:async x=>events.push(x),
-    events:async ref=>events.filter(x=>x.ref===ref),
+  return {rows,heads,
+    append:async x=>rows.push(x),
+    events:async ref=>rows.filter(x=>x.ref===ref),
     currentHead:async key=>heads.get(key)||null,
-    appendCapture:async(x,head)=>{if(!update(head))return false;events.push(x);return true;},
+    appendCapture:async(x,head)=>{if(!update(head))return false;rows.push(x);return true;},
     advanceHead:async x=>update(x)};
 }
 function setup(){
@@ -56,10 +56,10 @@ async function ready(){
   const h=setup();
   const prepared=await h.bridge.observe(candidate());
   assert.equal(prepared.state,'STAGED_SOURCE_PREDICATES',JSON.stringify(prepared));
-  const offer=(await h.journal.inspect(h.store.events[0]?.ref ?? ''))
-    ?.offer;
-  // The original captured receipt is the source-owned offer authority.
-  const capture=h.store.events.find(e=>e.kind==='capture');
+  // Source-issued selected revision is the outbound candidate. The journal's
+  // intentionally smaller predicate-only snapshot is NOT interchangeable.
+  const offer=prepared.selectedOffer;
+  const capture=h.store.rows.find(e=>e.kind==='capture');
   assert.ok(capture);
   const verified=(await h.journal.inspect(capture.ref));
   assert.equal(verified.state,'REVALIDATED');

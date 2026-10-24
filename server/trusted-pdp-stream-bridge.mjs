@@ -71,7 +71,10 @@ export function createTrustedPdpStreamBridge({
       sourceRevision:reviewed.sourceRevision,sourceId:reviewed.sourceId,
       sourceRecordId:reviewed.sourceRecord?.recordId??null,
       sourcePredicatesRevalidated:true,wholeOfferVerified:false,
-      badgeEligible:false,customerVerified:false,t5Eligible:false});
+      badgeEligible:false,customerVerified:false,t5Eligible:false,
+      // Only the source-issued selected revision can be used as an outbound
+      // frame candidate; never substitute the historical indexed listing.
+      selectedOffer:Object.freeze(JSON.parse(JSON.stringify(selected.offer)))});
     issued.set(reference,{session,selected,receiptRef:archive.receiptRef,
       serial:serializeOffer(selected.offer),revision:reviewed.sourceRevision});
     return reference;
