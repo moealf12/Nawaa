@@ -1,0 +1,45 @@
+name: NAWAA v21.83 Dependency Audit
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/security-audit-ci.mjs'
+      - 'scripts/verify-security-lock-upgrade.mjs'
+      - '.github/workflows/security-audit.yml'
+      - 'package-lock.json'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reproduce exact lockfile without invoking third-party install scripts
+        run: npm ci --ignore-scripts
+      - name: Print bounded advisory identities, dependency paths and fix feasibility
+        run: node scripts/security-audit-ci.mjs
+
+  scoped-lock-remediation-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirm lockfile-only compatible upstream fixes without writing to GitHub
+        run: node scripts/verify-security-lock-upgrade.mjs

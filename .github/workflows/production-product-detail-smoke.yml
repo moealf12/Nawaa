@@ -37,11 +37,15 @@ jobs:
         run: |
           node --check scripts/verify-live-product-detail.mjs
           command -v google-chrome || command -v google-chrome-stable || command -v chromium
-      - name: Read-only real Render HTTP, mobile DOM and intercepted quote handoff
+      # For post-release audit, manually dispatch ONCE from main only after
+      # Render lists the target commit as LIVE. No polling or duplicate deploy.
+      # PR runs verify current production without pretending PR SHA is live.
+      - name: Read-only live Render health, mobile/desktop DOM and quote handoff
         timeout-minutes: 4
         env:
           NODE_ENV: test
           DATABASE_URL: ''
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || '' }}
         run: node scripts/verify-live-product-detail.mjs

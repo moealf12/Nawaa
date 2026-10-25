@@ -1,4 +1,4 @@
-// v21.82: READ-ONLY public-production synthetic customer journey.
+// v21.83: READ-ONLY public-production synthetic customer journey.
 // Never sends merchant requests, credentials, account data, or quote submissions.
 // A live HTTP/DOM smoke is not live product authenticity, P95, or a badge certificate.
 import assert from 'node:assert/strict';
@@ -18,8 +18,16 @@ const fixture={
   }
 };
 const start=Date.now();
+const healthResponse=await fetch(origin+'/health',{signal:AbortSignal.timeout(70000)});
+assert.equal(healthResponse.status,200,'public production health endpoint');
+const health=await healthResponse.json();
+assert.equal(health.ok,true,'production health must be healthy');
+assert.match(health.revision||'',/^[a-f0-9]{40}$/i,'production revision must be deployed SHA');
+const expected=process.env.NAWAA_EXPECT_LIVE_SHA;
+if(expected)assert.equal(health.revision,expected,'post-release exact-HEAD mismatch');
 for(const [path,needle,mime] of [
   ['/product.html','src/product-page.mjs','text/html'],
+  ['/search.html','src/search-page.mjs','text/html'],
   ['/src/product-page.mjs','visibleProductDetailSpecifications','javascript'],
   ['/src/product-card-presentation.mjs','displayProductSpecification','javascript']
 ]){
@@ -33,12 +41,15 @@ assert.ok(executablePath,'isolated CI runner must provide a Chromium executable'
 const browser=await chromium.launch({headless:true,executablePath,
   args:['--no-sandbox','--disable-dev-shm-usage']});
 try{
-  const context=await browser.newContext({locale:'ar-SA',viewport:{width:390,height:844}});
+  for(const viewport of [{width:390,height:844},{width:1365,height:820}]){
+  const context=await browser.newContext({locale:'ar-SA',viewport});
   const page=await context.newPage();
   const failures=[];
   page.on('pageerror',error=>failures.push(error.message));
   await page.route('**/*',route=>{
     const url=route.request().url();
+    // Never allow live search requests or real external quotation submissions.
+    if(url.startsWith(origin+'/api/'))return route.abort();
     return url.startsWith(origin+'/')?route.continue():route.abort();
   });
   await page.addInitScript(value=>{
@@ -48,6 +59,8 @@ try{
   },fixture);
   const response=await page.goto(target,{waitUntil:'domcontentloaded',timeout:90000});
   assert.equal(response?.status(),200,'actual Render product page HTTP status');
+  const back=await page.locator('a.back').getAttribute('href');
+  assert.equal(new URL(back,target).pathname,'/search.html','safe same-origin search navigation');
   await page.locator('#quoteBtn').waitFor({state:'visible',timeout:25000});
   const results=await page.evaluate(()=>{
     const rows=[...document.querySelectorAll('.spec-table > div')].map(el=>el.innerText);
@@ -84,8 +97,11 @@ try{
   console.log('LIVE_PRODUCT_DETAIL_SMOKE '+JSON.stringify({
     result:'PASS',source:'public Render HTTP plus real isolated Chromium',
     syntheticFixture:true,merchantAuthenticityCertified:false,productionP95Certified:false,
-    productHtmlStatus:200,jsModulesStatus:200,mobileViewport:'390x844',
+    productionRevision:health.revision,
+    productHtmlStatus:200,searchHtmlStatus:200,healthStatus:200,jsModulesStatus:200,
+    viewport:viewport.width+'x'+viewport.height,
     specRows:results.rows.length,quoteAttemptIntercepted:true,elapsedMs:Date.now()-start
   }));
   await context.close();
+  }
 }finally{await browser.close();}
