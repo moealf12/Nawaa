@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'scripts/verify-live-product-detail.mjs'
+      - 'scripts/live-sha-guard.mjs'
+      - 'tests/live-sha-guard.test.mjs'
       - '.github/workflows/production-product-detail-smoke.yml'
       - 'src/product-page.mjs'
       - 'src/product-card-presentation.mjs'
@@ -37,9 +39,9 @@ jobs:
         run: |
           node --check scripts/verify-live-product-detail.mjs
           command -v google-chrome || command -v google-chrome-stable || command -v chromium
-      # For post-release audit, manually dispatch ONCE from main only after
-      # Render lists the target commit as LIVE. No polling or duplicate deploy.
-      # PR runs verify current production without pretending PR SHA is live.
+      # Pull requests prove the currently deployed Render commit exactly matches
+      # the PR base main commit. A workflow_dispatch from main checks github.sha.
+      # Neither mode deploys, polls, or asserts that PR candidate code is live.
       - name: Read-only live Render health, mobile/desktop DOM and quote handoff
         timeout-minutes: 4
         env:
@@ -47,5 +49,5 @@ jobs:
           DATABASE_URL: ''
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
-          NAWAA_EXPECT_LIVE_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || '' }}
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
         run: node scripts/verify-live-product-detail.mjs

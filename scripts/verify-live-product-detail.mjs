@@ -1,9 +1,10 @@
-// v21.83: READ-ONLY public-production synthetic customer journey.
+// v21.84: READ-ONLY public-production synthetic customer journey.
 // Never sends merchant requests, credentials, account data, or quote submissions.
 // A live HTTP/DOM smoke is not live product authenticity, P95, or a badge certificate.
 import assert from 'node:assert/strict';
 import {existsSync} from 'node:fs';
 import {chromium} from 'playwright';
+import {requireLiveRevision} from './live-sha-guard.mjs';
 
 const origin='https://nawaa-search-api.onrender.com';
 const target=origin+'/product.html';
@@ -22,9 +23,8 @@ const healthResponse=await fetch(origin+'/health',{signal:AbortSignal.timeout(70
 assert.equal(healthResponse.status,200,'public production health endpoint');
 const health=await healthResponse.json();
 assert.equal(health.ok,true,'production health must be healthy');
-assert.match(health.revision||'',/^[a-f0-9]{40}$/i,'production revision must be deployed SHA');
 const expected=process.env.NAWAA_EXPECT_LIVE_SHA;
-if(expected)assert.equal(health.revision,expected,'post-release exact-HEAD mismatch');
+requireLiveRevision(health.revision,expected);
 for(const [path,needle,mime] of [
   ['/product.html','src/product-page.mjs','text/html'],
   ['/search.html','src/search-page.mjs','text/html'],
