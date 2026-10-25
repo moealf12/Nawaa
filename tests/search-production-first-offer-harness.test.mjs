@@ -52,10 +52,20 @@ test('small sample never certifies a production P95, including missing offers an
     median:out.medianObservedMs,min:out.minObservedMs,max:out.maxObservedMs,
     above:out.observedAboveTarget,p95:out.p95Ms,certified:out.p95Certified
   },{attempts:5,validFound:4,withoutValidOffer:1,median:1800,min:1500,
-    max:3200,above:3,p95:null,certified:false});
+    max:3200,above:1,p95:null,certified:false});
+  assert.equal(out.targetMs,3000);
 });
 
 test('valid response with no offers remains unverified for SLO',()=>{
   const out=sampleSummary([{firstValidMs:null,finished:true}]);
   assert.equal(out.validFound,0);assert.equal(out.p95Ms,null);assert.equal(out.p95Certified,false);
+});
+
+
+test('3000ms is inside the new target; 3001ms exceeds it without P95 certification',()=>{
+  const out=sampleSummary([{firstValidMs:2999},{firstValidMs:3000},{firstValidMs:3001}]);
+  assert.equal(out.targetMs,3000);
+  assert.equal(out.observedAboveTarget,1);
+  assert.equal(out.p95Ms,null);
+  assert.equal(out.p95Certified,false);
 });
