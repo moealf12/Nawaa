@@ -19,8 +19,15 @@ for(const name of new Set([...Object.keys(before.packages),...Object.keys(after.
    changes[name]=after.packages[name]??null;
 }
 const keys=Object.keys(changes);
-if(keys.length<2||keys.length>8||!keys.includes('node_modules/ip-address')||
-   !keys.includes('node_modules/undici'))
+// Before remediation, only two transitive records should change. Once
+// committed, a rerun must demonstrate that the lock is already minimal and
+// stable (zero updates), rather than failing for having nothing to repair.
+const previouslyVulnerable=
+  before.packages['node_modules/ip-address']?.version==='10.7.3'||
+  before.packages['node_modules/undici']?.version==='7.30.0';
+if(keys.length>8||(previouslyVulnerable&&
+    (!keys.includes('node_modules/ip-address')||!keys.includes('node_modules/undici')))||
+    (!previouslyVulnerable&&keys.length!==0))
   throw Error('unexpected_transitive_lock_diff: '+JSON.stringify(keys));
 console.log('V2183_LOCK_OBSERVED '+JSON.stringify({ip:after.packages['node_modules/ip-address']?.version,undici:after.packages['node_modules/undici']?.version,changedKeys:keys}));
 if(!['10.7.4','10.7.5'].includes(after.packages['node_modules/ip-address']?.version)||
