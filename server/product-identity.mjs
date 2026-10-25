@@ -186,7 +186,14 @@ export function identityCluster(candidates = [], anchorEntry = null) {
     const row = { source:sourceKey(entry), ...comparison };
     comparisons.push(row);
 
-    if (comparison.verdict === "different") rejected.push(entry);
+    // A fuzzy score (or a matching merchant SKU) cannot authorize borrowing
+    // fields from a record whose explicit sellable-product identifiers disagree.
+    // Unknown identifiers remain compatible; only observed contradictions block
+    // cross-source enrichment. This also protects price/image/MPN co-ownership.
+    const explicitIdentityConflict = comparison.conflicts.some((field) =>
+      ["gtin", "sku", "model", "brand"].includes(field)
+    );
+    if (comparison.verdict === "different" || explicitIdentityConflict) rejected.push(entry);
     else accepted.push(entry);
   }
 
