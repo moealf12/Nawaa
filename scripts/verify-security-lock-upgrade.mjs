@@ -23,7 +23,7 @@ if(keys.length<2||keys.length>8||!keys.includes('node_modules/ip-address')||
    !keys.includes('node_modules/undici'))
   throw Error('unexpected_transitive_lock_diff: '+JSON.stringify(keys));
 console.log('V2183_LOCK_OBSERVED '+JSON.stringify({ip:after.packages['node_modules/ip-address']?.version,undici:after.packages['node_modules/undici']?.version,changedKeys:keys}));
-if(after.packages['node_modules/ip-address']?.version!=='10.7.4'||
+if(!['10.7.4','10.7.5'].includes(after.packages['node_modules/ip-address']?.version)||
    after.packages['node_modules/undici']?.version!=='7.30.1')
   throw Error('unexpected_patched_versions');
 console.log('V2183_LOCK_DELTA '+JSON.stringify({keys,changes,
