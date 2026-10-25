@@ -3,15 +3,8 @@ name: Search Core Tests
 on:
   push:
     branches: [main]
-    paths:
-      - "server/**"
-      - "src/**"
-      - "tests/**"
-      - "workers/**"
-      - "scripts/**"
-      - "*.html"
-      - "package*.json"
-      - ".github/workflows/search-core-tests.yml"
+    # Main CI is a release prerequisite even for docs-only commits.
+    # Path-skipped checks are not a reliable protection for Render.
   pull_request:
     paths:
       - "server/**"
@@ -32,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -89,7 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -124,7 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -194,7 +187,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -263,7 +256,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -280,3 +273,25 @@ jobs:
           name: nawaa-quote-customer-${{ github.event.pull_request.head.sha || github.sha }}
           path: browser-artifacts/
           retention-days: 7
+
+  main-release-readiness:
+    # Independent fail-closed result for the SAME workflow run and main SHA.
+    # Do not promote based on a skipped, cancelled or partially green job set.
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs:
+      - test
+      - disposable-postgres-provenance
+      - disposable-meilisearch-restart
+      - disposable-omega-consistency
+      - disposable-quote-lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require actual checked-out main SHA and five successful jobs
+        env:
+          NAWAA_RELEASE_NEEDS_JSON: ${{ toJSON(needs) }}
+        run: node scripts/verify-main-release-gate.mjs
