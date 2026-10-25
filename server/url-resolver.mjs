@@ -22,6 +22,10 @@ function isPrivateIpv4(ip) {
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
+    // Documentation and benchmark networks are not public merchant targets.
+    (a === 192 && b === 0 && p[2] === 2) ||
+    (a === 198 && (b === 18 || b === 19 || (b === 51 && p[2] === 100))) ||
+    (a === 203 && b === 0 && p[2] === 113) ||
     (a === 100 && b >= 64 && b <= 127);
 }
 
@@ -35,7 +39,12 @@ function isPrivateIpv6(ip) {
     return isPrivateIpv4([high>>8,high&255,low>>8,low&255].join("."));
   }
   // Only global unicast 2000::/3 is eligible; exclude documentation space.
-  return !/^[23][0-9a-f]{3}:/.test(value) || value.startsWith("2001:db8:");
+  // 6to4 and Teredo can carry embedded IPv4 destinations; do not treat
+  // transition addresses as ordinary global-unicast merchant endpoints.
+  return !/^[23][0-9a-f]{3}:/.test(value) ||
+    value.startsWith("2001:db8:") ||
+    value.startsWith("2002:") ||
+    /^2001:(?:0:|:)/.test(value);
 }
 
 function isPrivateIp(ip) {
