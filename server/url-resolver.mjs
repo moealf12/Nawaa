@@ -60,7 +60,7 @@ export async function resolvePublicHttpsTarget(url) {
   if (!parsed.hostname || parsed.username || parsed.password) throw new Error("Invalid product URL");
   if (parsed.port && parsed.port !== "443") throw new Error("Non-standard ports are not allowed");
 
-  const lookupHost = parsed.hostname.replace(/^\\[|\\]$/g, "");
+  const lookupHost = parsed.hostname.replace(/^\[|\]$/g, "");
   const records = await dns.lookup(lookupHost, { all: true, verbatim: true });
   if (!records.length) throw new Error("Host could not be resolved");
   if (records.some((record) => isPrivateIp(record.address))) throw new Error("Private/internal addresses are not allowed");
@@ -110,7 +110,7 @@ async function fetchHtmlWithMockableFetch(target, redirects, signal) {
 function fetchHtmlPinned(target, redirects, signal) {
   return new Promise((resolve, reject) => {
     if(signal?.aborted)return reject(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
-    const hostname = target.parsed.hostname.replace(/^\\[|\\]$/g, "");
+    const hostname = target.parsed.hostname.replace(/^\[|\]$/g, "");
     const request = https.request({
       protocol:"https:",
       hostname,
