@@ -304,3 +304,55 @@ test('v21.77 identical two-card snapshot replay is harmless but not a new certif
   assert.equal(bound.customerVerified,false);
   assert.equal(bound.t5Eligible,false);
 });
+
+test('v21.79 bind rechecks mutable source and display after asynchronous verification',async()=>{
+  for(const mutation of ['display','source','unchanged']){
+    const source={...offer},rendered={...offer};
+    let signalStarted,releaseRead;
+    const started=new Promise(resolve=>{signalStarted=resolve;});
+    const release=new Promise(resolve=>{releaseRead=resolve;});
+    const verifier={accepts:async()=>{signalStarted();await release;return true;}};
+    const guard=createTrustedDisplayOwnership({verifier,streamGeneration:generation});
+    assert.equal(guard.advance(1,[source]),true);
+    assert.equal(guard.beginRender(1),true);
+    const decision={state:'VERIFIED',eligible:true,scope:'selected_sellable_offer',
+      evidenceRevision:'controlled-fixture',observationRef:ref};
+    const pending=guard.bind({decision,offer:source,displayOffer:rendered,
+      observationRef:ref,streamGeneration:generation,snapshotRevision:1,renderEpoch:1});
+    await started;
+    if(mutation==='display')rendered.productPrice=1;
+    if(mutation==='source')source.sku='adjacent-sku';
+    releaseRead();
+    const outcome=await pending;
+    assert.equal(outcome.state,mutation==='unchanged'?'BOUND_INTERNAL':'DENIED',mutation);
+    assert.equal(outcome.badgeEligible,false);
+  }
+});
+test('v21.79 accepts rechecks mutable source and display after asynchronous verification',async()=>{
+  for(const mutation of ['display','source','unchanged']){
+    const source={...offer},rendered={...offer};
+    let gate=false,signalStarted,releaseRead;
+    const started=new Promise(resolve=>{signalStarted=resolve;});
+    const release=new Promise(resolve=>{releaseRead=resolve;});
+    const verifier={accepts:async()=>{
+      if(gate){signalStarted();await release;}
+      return true;
+    }};
+    const guard=createTrustedDisplayOwnership({verifier,streamGeneration:generation});
+    assert.equal(guard.advance(1,[source]),true);
+    assert.equal(guard.beginRender(1),true);
+    const decision={state:'VERIFIED',eligible:true,scope:'selected_sellable_offer',
+      evidenceRevision:'controlled-fixture',observationRef:ref};
+    const bound=await guard.bind({decision,offer:source,displayOffer:rendered,
+      observationRef:ref,streamGeneration:generation,snapshotRevision:1,renderEpoch:1});
+    assert.equal(bound.state,'BOUND_INTERNAL');
+    gate=true;
+    const pending=guard.accepts(bound,context(rendered));
+    await started;
+    if(mutation==='display')rendered.title='Unrelated product';
+    if(mutation==='source')source.sourceUrl='https://www.jarir.com/other-sku';
+    releaseRead();
+    assert.equal(await pending,mutation==='unchanged',mutation);
+    assert.equal(bound.customerVerified,false);
+  }
+});
