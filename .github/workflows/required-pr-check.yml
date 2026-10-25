@@ -1,0 +1,51 @@
+name: NAWAA Required Pull Request Gate
+
+# Always emit a stable, non-skipped check for every pull request.
+# Existing expensive Search Core/Source Audit workflows remain path-filtered.
+# Configure main branch protection to require ONLY this unique check.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-required-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  nawaa-required-pr-check:
+    name: nawaa-required-pr-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact pull request head (not a movable branch)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Refuse stale or incorrect checkout
+        env:
+          NAWAA_EXPECTED_PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ ! "$NAWAA_EXPECTED_PR_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$actual" != "$NAWAA_EXPECTED_PR_SHA" ]]; then
+            echo "::error::PR checkout SHA does not match the event head SHA"
+            exit 1
+          fi
+          echo "Verified exact PR head SHA: $actual"
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install existing locked dependencies without third-party scripts
+        run: npm ci --ignore-scripts
+      - name: Run required deterministic Node test suite
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ""
+          MEILI_HOST: ""
+          MEILI_MASTER_KEY: ""
+        run: npm test
