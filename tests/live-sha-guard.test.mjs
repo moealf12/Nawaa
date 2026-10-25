@@ -19,3 +19,4 @@ test('v21.84 unavailable or malformed revision fails closed',()=>{
  for(const value of ['',null,undefined,'not-a-sha'])
   assert.throws(()=>requireLiveRevision(main,value),/expected_main_revision_missing_or_invalid/);
 });
+// Post-LIVE CI-only probe of the exact main revision after Render Git-provider auto-deploy (Issue #118).
