@@ -205,7 +205,9 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
     // Verify the context AGAIN after the asynchronous source revalidation.
     // A newer snapshot, render, or revocation can arrive during await.
     if(disabled||revision!==snapshotRevision||renderEpoch!==currentRenderEpoch()||
-       !activeDigests.has(displayDigest))
+       !activeDigests.has(displayDigest)||
+       !admissionFields(offer)||!admissionFields(displayOffer)||
+       strictDigest(offer)!==sourceDigest||strictDigest(displayOffer)!==displayDigest)
       return denied('display_superseded_during_verification');
     // No customer authority is serialized; an opaque in-process object is
     // used solely to assert cross-field ownership across future rechecks.
@@ -232,7 +234,10 @@ export function createTrustedDisplayOwnership({verifier,streamGeneration=randomU
     try{accepted=await verifier.accepts(original.decision,original.offer,original.observationRef);}
     catch{return false;}
     return Boolean(accepted&&!disabled&&revision===snapshotRevision&&
-      renderEpoch===currentRenderEpoch()&&activeDigests.has(original.displayDigest));
+      renderEpoch===currentRenderEpoch()&&activeDigests.has(original.displayDigest)&&
+      admissionFields(original.offer)&&admissionFields(displayOffer)&&
+      strictDigest(original.offer)===original.displayDigest&&
+      strictDigest(displayOffer)===original.displayDigest);
   }
   function currentRenderEpoch(){return activeRenderEpoch;}
   function revoke(){disabled=true;activeDigests=new Set();activeOrder=[];
