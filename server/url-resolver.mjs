@@ -2,7 +2,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import https from "node:https";
 import { moneyToSAR } from "./fx.mjs";
-import { normalizeCondition, normalizeAvailability, parseMoney } from "./provider-utils.mjs";
+import { normalizeCondition, normalizeAvailability, parseMoney, firstPositivePriceField } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
@@ -13,6 +13,9 @@ import { resolveStructuredProductNodes } from "./schemaorg-product-graph.mjs";
 
 const MAX_HTML_BYTES = 8000000;
 const MAX_REDIRECTS = 4;
+// v21.39: Diagnostic phase markers contain no URLs, IPs, cookies, prices or
+// merchant HTML. An observer must never change resolver behavior.
+const reportStage = (onStage, stage) => { try { if (typeof onStage === 'function') onStage(stage); } catch {} };
 
 function isPrivateIpv4(ip) {
   const p = ip.split(".").map(Number);
@@ -45,14 +48,16 @@ function isPrivateIp(ip) {
   return true;
 }
 
-export async function resolvePublicHttpsTarget(url) {
+export async function resolvePublicHttpsTarget(url, {onStage} = {}) {
   const parsed = new URL(url);
   if (parsed.protocol !== "https:") throw new Error("Only HTTPS product URLs are allowed");
   if (!parsed.hostname || parsed.username || parsed.password) throw new Error("Invalid product URL");
   if (parsed.port && parsed.port !== "443") throw new Error("Non-standard ports are not allowed");
 
   const lookupHost = parsed.hostname.replace(/^\\[|\\]$/g, "");
+  reportStage(onStage, 'dns_lookup_start');
   const records = await dns.lookup(lookupHost, { all: true, verbatim: true });
+  reportStage(onStage, 'dns_lookup_done');
   if (!records.length) throw new Error("Host could not be resolved");
   if (records.some((record) => isPrivateIp(record.address))) throw new Error("Private/internal addresses are not allowed");
   const pinned = records.find((record) => record.family === 4) || records[0];
@@ -67,18 +72,20 @@ const PRODUCT_HEADERS = {
   pragma: "no-cache",
 };
 
-async function fetchHtmlWithMockableFetch(target, redirects, signal) {
+async function fetchHtmlWithMockableFetch(target, redirects, signal, onStage) {
+  reportStage(onStage, 'request_start');
   const response = await fetch(target.parsed, {
     redirect: "manual",
     headers: PRODUCT_HEADERS,
     signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
   });
+  reportStage(onStage, 'response_headers');
   if ([301,302,303,307,308].includes(response.status)) {
     await response.body?.cancel();
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without location");
-    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal});
+    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal,onStage});
   }
   if (!response.ok) throw new Error("Product page returned " + response.status);
   const type = response.headers.get("content-type") || "";
@@ -93,15 +100,17 @@ async function fetchHtmlWithMockableFetch(target, redirects, signal) {
     if(total>MAX_HTML_BYTES){await reader.cancel();throw new Error("Product page is too large");}
     chunks.push(part.value);
   }
+  reportStage(onStage, 'response_body_complete');
   const merged=new Uint8Array(total);let offset=0;
   for(const chunk of chunks){merged.set(chunk,offset);offset+=chunk.byteLength;}
   return {finalUrl:target.parsed.href,html:new TextDecoder().decode(merged)};
 }
 
-function fetchHtmlPinned(target, redirects, signal) {
+function fetchHtmlPinned(target, redirects, signal, onStage) {
   return new Promise((resolve, reject) => {
     if(signal?.aborted)return reject(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
     const hostname = target.parsed.hostname.replace(/^\\[|\\]$/g, "");
+    reportStage(onStage, 'request_start');
     const request = https.request({
       protocol:"https:",
       hostname,
@@ -116,13 +125,14 @@ function fetchHtmlPinned(target, redirects, signal) {
         else callback(null,target.address,target.family);
       },
     }, (response) => {
+      reportStage(onStage, 'response_headers');
       const status = response.statusCode || 0;
       if ([301,302,303,307,308].includes(status)) {
         response.resume();
         if (redirects >= MAX_REDIRECTS) return reject(new Error("Too many redirects"));
         const location = response.headers.location;
         if (!location) return reject(new Error("Redirect without location"));
-        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal}).then(resolve,reject);
+        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal,onStage}).then(resolve,reject);
         return;
       }
       if (status < 200 || status >= 300) {
@@ -141,7 +151,12 @@ function fetchHtmlPinned(target, redirects, signal) {
         chunks.push(chunk);
       });
       response.on("error",reject);
-      response.on("end",()=>resolve({finalUrl:target.parsed.href,html:Buffer.concat(chunks,total).toString("utf8")}));
+      response.on("end",()=>{reportStage(onStage,"response_body_complete");resolve({finalUrl:target.parsed.href,html:Buffer.concat(chunks,total).toString("utf8")});});
+    });
+    request.once('socket', socket => {
+      reportStage(onStage, 'socket_assigned');
+      socket.once('connect', () => reportStage(onStage, 'tcp_connected'));
+      socket.once('secureConnect', () => reportStage(onStage, 'tls_connected'));
     });
     const abort=()=>request.destroy(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
     signal?.addEventListener("abort",abort,{once:true});
@@ -152,13 +167,13 @@ function fetchHtmlPinned(target, redirects, signal) {
   });
 }
 
-export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
-  const target = await resolvePublicHttpsTarget(url);
+export async function fetchHtmlSafe(url, redirects = 0, {signal,onStage} = {}) {
+  const target = await resolvePublicHttpsTarget(url,{onStage});
   if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
-    return fetchHtmlWithMockableFetch(target, redirects, signal);
+    return fetchHtmlWithMockableFetch(target, redirects, signal, onStage);
   }
-  return fetchHtmlPinned(target, redirects, signal);
+  return fetchHtmlPinned(target, redirects, signal, onStage);
 }
 
 function decodeHtml(value = "") {
@@ -211,7 +226,7 @@ function flattenJsonLd(node, out = []) {
   return out;
 }
 
-function extractJsonLd(html, pageUrl = null) {
+function extractJsonLd(html, pageUrl = null, {requireComplete=false} = {}) {
   const out = [];
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let match;
@@ -222,6 +237,8 @@ function extractJsonLd(html, pageUrl = null) {
       flattenJsonLd(JSON.parse(raw), out);
     } catch {}
   }
+  // The certifier must never infer uniqueness from a silently truncated graph.
+  if(requireComplete&&out.length>512)throw Error('selected_pdp_schema_budget_exceeded');
   return resolveStructuredProductNodes(out, pageUrl);
 }
 
@@ -253,11 +270,16 @@ function firstValue(obj, keys) {
 function embeddedOfferCandidate(node) {
   if (!node || typeof node !== "object" || Array.isArray(node)) return null;
   const title = firstValue(node, ["name","title","productName","product_name"]);
-  const priceRaw = firstValue(node, ["salePrice","sale_price","sellingPrice","finalPrice","price","currentPrice","current_price"]);
-  const priceObj = priceRaw && typeof priceRaw === "object" ? priceRaw : null;
-  const price = parseMoney(priceObj ? firstValue(priceObj, ["value","amount","price"]) : priceRaw);
-  const currency = firstValue(node, ["currency","priceCurrency","currencyCode","currency_code"]) ||
-    (priceObj && firstValue(priceObj, ["currency","currencyCode","currency_code"]));
+  const selectedPrice = firstPositivePriceField(node,
+    ["salePrice","sale_price","sellingPrice","finalPrice","currentPrice","current_price","price"],
+    ["value","amount","price"]);
+  const priceObj = selectedPrice?.raw && typeof selectedPrice.raw === "object" ? selectedPrice.raw : null;
+  const price = selectedPrice?.amount ?? null;
+  // The selected price's explicit currency belongs to that exact sellable
+  // amount. A generic catalog/root currency is fallback only, never an
+  // override that converts a correctly priced SKU at the wrong FX rate.
+  const currency = (priceObj && firstValue(priceObj, ["currency","currencyCode","currency_code","priceCurrency"])) ||
+    firstValue(node, ["currency","priceCurrency","currencyCode","currency_code"]);
   const imageRaw = firstValue(node, ["image","imageUrl","image_url","thumbnail","thumbnailUrl"]);
   const image = typeof imageRaw === "string" ? imageRaw :
     (Array.isArray(imageRaw) ? imageRaw[0] : imageRaw && firstValue(imageRaw, ["url","src"]));
@@ -538,7 +560,9 @@ function declaredSchemaProductType(product) {
 
 export async function extractProductDocument(url, options = {}) {
   const fetched = await fetchHtmlSafe(url, 0, options);
+  reportStage(options.onStage,'extraction_start');
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
+  reportStage(options.onStage,'extraction_done');
   return {
     finalUrl:fetched.finalUrl,
     candidates,
@@ -571,7 +595,9 @@ export async function resolveProductUrl(url, options = {}) {
     return offer && offer.price !== null && offer.currency;
   }) || candidates[0] || null;
   const freshnessState = freshnessSummary(candidates);
+  reportStage(options.onStage,'reconciliation_start');
   const reconciliation = reconcileProductCandidates(candidates, selected);
+  reportStage(options.onStage,'reconciliation_done');
   const compatibleCandidates = reconciliation.identity?.accepted?.length
     ? reconciliation.identity.accepted
     : candidates;
@@ -598,9 +624,11 @@ export async function resolveProductUrl(url, options = {}) {
   const originalPrice = (offer && offer.price) ?? null;
   const originalCurrency = (offer && offer.currency) || null;
 
+  reportStage(options.onStage,'fx_conversion_start');
   const priceSAR = originalPrice !== null && originalCurrency
     ? await moneyToSAR(originalPrice, originalCurrency).catch(() => null)
     : null;
+  reportStage(options.onStage,'fx_conversion_done');
 
   const country = inferCountry(finalUrl, originalCurrency);
   const rawCondition = product && product.itemCondition || "";
@@ -682,6 +710,127 @@ export async function resolveProductUrl(url, options = {}) {
       shopifyProductFound: candidates.some(entry=>entry.product?.shopifyVariantEvidence === true) || (selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics))),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
+    }
+  };
+}
+
+
+// A selected Product can declare multiple GS1 fields. Never silently pick
+// gtin14 while ignoring contradictory gtin13/gtin values in that SAME record.
+// Compare left-zero padded values for GS1 equivalence, preserve original text.
+function selectedGtin(product){
+  const claimed=['gtin14','gtin13','gtin12','gtin8','gtin']
+    .filter(key=>product?.[key]!=null&&String(product[key]).trim()!=='')
+    .map(key=>String(product[key]).trim());
+  if(!claimed.length)return null;
+  const valid=value=>{
+    if(!/^(?:[0-9]{8}|[0-9]{12}|[0-9]{13}|[0-9]{14})$/.test(value))return false;
+    const digits=value.split('').map(Number);
+    const sum=digits.slice(0,-1).reverse().reduce((total,digit,i)=>
+      total+digit*(i%2===0?3:1),0);
+    return (10-sum%10)%10===digits.at(-1);
+  };
+  if(claimed.some(value=>!valid(value)))throw Error('selected_pdp_invalid_gs1_gtin');
+  const expected=claimed[0].padStart(14,'0');
+  if(claimed.some(value=>value.padStart(14,'0')!==expected))
+    throw Error('selected_pdp_conflicting_gtin_fields');
+  return claimed[0];
+}
+
+// v21.63: strictly selected Product/Offer observation, without cross-strategy
+// reconciliation. Reuses pinned-DNS, redirect validation and bounded fetch.
+// Does not certify a merchant: only the controlled server verifier may do so.
+export async function resolveSelectedJsonLdOffer(url, options = {}) {
+  const fetched=await fetchHtmlSafe(url,0,options);
+  const finalUrl=fetched.finalUrl;
+  const requested=new URL(url),page=new URL(finalUrl);
+  const samePage=(candidate)=>{
+    if(typeof candidate!=='string'||!candidate.trim())return false;
+    try{
+      const u=new URL(candidate,page);
+      if(u.protocol!=='https:'||u.username||u.password||u.port&&u.port!=='443')return false;
+      if(u.hostname!==page.hostname||u.pathname.replace(/\/+$/,'')!==page.pathname.replace(/\/+$/,''))return false;
+      const selectors=new Set(['sku','variant','variantid','productid','optionid','model','storage','capacity','color','size']);
+      const collect=v=>{
+        const fields=new Map();
+        for(const [k,val] of v.searchParams){
+          const key=k.toLowerCase().replace(/[^a-z0-9]/g,'');
+          if(!selectors.has(key))continue;
+          if(!val||fields.has(key))return null;
+          fields.set(key,val.toLowerCase());
+        }
+        return fields;
+      };
+      const a=collect(requested),b=collect(u);
+      if(!a||!b||a.size!==b.size)return false;
+      for(const [k,v] of a)if(b.get(k)!==v)return false;
+      return true;
+    }catch{return false;}
+  };
+  if(!samePage(finalUrl))throw Error('selected_pdp_redirect_mismatch');
+  const nodes=extractJsonLd(fetched.html,finalUrl,{requireComplete:true});
+  if(nodes.length>512)throw Error('selected_pdp_schema_budget_exceeded');
+  const products=nodes.filter(n=>typeIncludesProduct(n?.['@type']));
+  // Explicit node.url is mandatory: @id alone identifies a graph record,
+  // not necessarily the purchasable subject of the requested destination.
+  const declared=products.filter(n=>typeof n.url==='string'&&samePage(n.url));
+  if(declared.length!==1)throw Error('selected_pdp_subject_missing_or_ambiguous');
+  const product=declared[0];
+  const priced=chooseOffer(product);
+  if(!priced||priced.currency!=='SAR'||priced.raw?.['@type']==='AggregateOffer')
+    throw Error('selected_pdp_unique_priced_offer_required');
+  if(priced.url&&!samePage(priced.url))throw Error('selected_pdp_offer_destination_conflict');
+  // A merchant-scoped SKU or GTIN anchors the chosen subject. Shared MPN or
+  // plausible title alone cannot make the source page into a sellable SKU.
+  const sku=typeof product.sku==='string'||typeof product.sku==='number'
+    ?String(product.sku).trim():null;
+  const gtin=selectedGtin(product);
+  if(!sku&&!gtin)throw Error('selected_pdp_hard_identity_missing');
+  const brand=typeof product.brand==='string'?product.brand:product.brand?.name||null;
+  const imageRaw=product.image;
+  const image=typeof imageRaw==='string'?imageRaw:
+    Array.isArray(imageRaw)&&imageRaw.length===1?
+      (typeof imageRaw[0]==='string'?imageRaw[0]:imageRaw[0]?.url):null;
+  const recordUrl=priced.url||product.url;
+  const sourceUrl=new URL(recordUrl,page).href;
+  const observedAt=new Date().toISOString();
+  const digest=(await import('node:crypto')).createHash('sha256')
+    .update(fetched.html).digest('hex');
+  const recordId=(await import('node:crypto')).createHash('sha256')
+    .update(JSON.stringify([digest,sourceUrl,sku,gtin,priced.price,priced.currency]))
+    .digest('hex');
+  return {
+    provider:'url-resolver',providerMarket:page.hostname,merchant:merchantName(finalUrl),
+    dataKind:'live',resolvedPageUrl:finalUrl,sourceUrl,observedAt,
+    title:product.name,sku,gtin:gtin||null,image:image?new URL(image,page).href:null,
+    condition:normalizeCondition(product.itemCondition||''),
+    availability:normalizeAvailability(priced.availability),
+    productPrice:priced.price,originalProductPrice:priced.price,
+    currency:'SAR',originalCurrency:'SAR',
+    specs:{brand,modelNumber:product.mpn||null,
+      color:product.color||null,storage:product.storage||null,
+      ram:product.ram||null,region:product.region||null,sim:product.sim||null,
+      barcode:gtin},
+    extraction:{
+      selectedProductRecord:{
+        recordId,documentDigest:digest,source:'jsonld_product_offer',
+        productCount:products.length,selectedCount:declared.length,
+        selectedProductUrl:product.url,selectedOfferUrl:sourceUrl
+      },
+      // This is a non-reconciled observation: every represented field comes
+      // from the exact selected Product node and its single associated Offer.
+      reconciled:false,conflictSummary:{hasConflicts:false},
+      identity:{summary:{accepted:1,rejected:0}},
+      availableStrategies:['jsonld'],
+      // Source locations are restricted to this one selected JSON-LD
+      // Product and its selected Offer, never hydrated siblings or meta tags.
+      fieldSources:Object.fromEntries([
+        'name','offers','image','sku','mpn','gtin','brand','color',
+        ...(product.itemCondition?['condition']:[]),
+        ...(priced.availability?['availability']:[]),
+        ...(['storage','capacity','ram','region','sim','edition','bundleContents']
+          .filter(k=>product[k]!=null&&product[k]!=='')) 
+      ].map(key=>[key,{strategy:'jsonld',recordId}]))
     }
   };
 }

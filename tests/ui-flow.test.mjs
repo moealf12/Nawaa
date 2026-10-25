@@ -114,7 +114,11 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(html,/عروض/);
   assert.doesNotMatch(html,/الذاكرة: No/,"a source boolean placeholder is not a valid PS5 memory specification");
   assert.match(html,/عرضان · متجر/,"two matching merchant offers must be grammatically correct in customer card coverage");
-  assert.match(html,/https:\/\/img.example\/digital-2.jpg/);
+  // v21.57: the cheaper selected offer owns the displayed image. A second
+  // merchant image in the same grouped comparison is NOT safe fallback evidence.
+  assert.match(html,/https:\/\/img.example\/digital-1.jpg/);
+  assert.doesNotMatch(html,/https:\/\/img.example\/digital-2.jpg/,
+    "the customer summary card must not silently borrow the adjacent offer image");
   let renderedCards = [],loadMoreButtons=[],detailButtons=[];
   let lastRenderedCardMarkup = null;
   element('#results').querySelectorAll = selector => {

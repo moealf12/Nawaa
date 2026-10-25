@@ -6,9 +6,13 @@ import {once} from 'node:events';
 import {existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import net from 'node:net';
 
+// Ten v21.20 required real-source queries + four existing guardrail intents.
 const queries=[
-  'iPhone 17 256GB Black','iPhone 17 512GB','iPhone 17 Pro','Dior',
-  'PS5 disc drive','nawaa-unfindable-943271-20261003'
+  'PS5','PS5 Slim','PS5 disc drive',
+  'iPhone 17 Pro','iPhone 17 Pro Max','iPhone 17 Pro case','iPhone 17 Pro capinha',
+  'HP laptop','HP printer','HP mouse',
+  'iPhone 17 256GB Black','iPhone 17 512GB','Dior',
+  'nawaa-unfindable-943271-20261003'
 ];
 const negative=queries.at(-1);
 const out={environment:'isolated_pr_head',queries:[],errors:[],generatedAt:new Date().toISOString(),
@@ -43,15 +47,42 @@ try{
       context=await browser.newContext({viewport:{width:1365,height:850},locale:'ar-SA',timezoneId:'Asia/Riyadh',serviceWorkers:'block'});
       await context.addInitScript(()=>{
         const Native=window.EventSource;
-        window.__nawaaMatrix={done:false,snapshots:0,anyExact:false,exactSamples:[],lastOfferCount:0};
+        window.__nawaaMatrix={done:false,snapshots:0,anyExact:false,exactSamples:[],lastOfferCount:0,
+          seenOfferSources:[],seenSourceKeys:{},finalOfferSources:[],coveragePartial:null};
         if(!Native)return;
         window.EventSource=class extends Native {
           constructor(...args){
             super(...args);
             this.addEventListener('snapshot',event=>{
               try{
-                const offers=JSON.parse(event.data)?.offers||[];
+                const snapshot=JSON.parse(event.data),offers=snapshot?.offers||[];
                 const r=window.__nawaaMatrix;r.snapshots++;r.lastOfferCount=offers.length;
+                r.coveragePartial=snapshot?.coverage?.partial??r.coveragePartial;
+                // Capture the original offer subject and attributable source,
+                // separately from the canonical card title. Bounds protect
+                // CI output; no raw merchant HTML, URLs' query tokens or secrets.
+                const evidence=o=>{
+                  let url='';
+                  try{const parsed=new URL(String(o.sourceUrl||''));if(parsed.protocol==='https:')url=parsed.origin+parsed.pathname;}catch{}
+                  return {title:String(o.title||'').slice(0,160),url,
+                    merchant:String(o.merchant||'').slice(0,60),
+                    price:o.productPrice??null,currency:String(o.currency||'').slice(0,8),
+                    originalPrice:o.originalProductPrice??null,
+                    originalCurrency:String(o.originalCurrency||'').slice(0,8),
+                    fxRate:o.fx?.rate??null,
+                    fxSource:String(o.fx?.source||'').slice(0,48),
+                    extraction:String(o.sourceMeta?.parsedFrom||'').slice(0,48),
+                    structuredPrice:o.sourceMeta?.searchPageStructuredPrice??null,
+                    stock:String(o.availability||'unknown').slice(0,32),
+                    exact:o.exactMatch===true,kind:String(o.productKind||'').slice(0,24)};
+                };
+                r.finalOfferSources=offers.slice(0,20).map(evidence);
+                for(const o of offers){
+                  if(r.seenOfferSources.length>=40)break;
+                  const item=evidence(o),key=item.url||item.merchant+':'+item.title;
+                  if(!key||r.seenSourceKeys[key])continue;
+                  r.seenSourceKeys[key]=true;r.seenOfferSources.push(item);
+                }
                 for(const o of offers){
                   if(o.exactMatch===true){
                     r.anyExact=true;
@@ -85,13 +116,18 @@ try{
         const groups=[...root?.querySelectorAll('.match-result-card')||[]].slice(0,10);
         const cards=groups.map((g,index)=>{
           const title=g.querySelector('.match-card-copy strong')?.textContent?.trim()||'';
+          const category=g.querySelector('.mini-kicker')?.textContent?.trim()||'';
+          const advertisedPrice=g.querySelector('.match-card-price b')?.textContent?.trim()||'';
+          const image=g.querySelector('.match-card-image img');
+          const imageState=!image?'fallback':image.complete?(image.naturalWidth>0?'loaded':'blocked'):'pending';
           g.click();
           const panel=document.querySelector('#results .selected-comparison[open]');
           const merchants=[...panel?.querySelectorAll('.merchant-row .merchant-main strong')||[]]
             .map(n=>n.textContent?.trim()).filter(Boolean);
           const links=[...panel?.querySelectorAll('.product-detail-btn[data-source]')||[]]
             .map(n=>{try{const u=new URL(n.getAttribute('data-source')||'');return u.protocol==='https:'?u.origin+u.pathname:null;}catch{return null;}});
-          return {index,title,merchantRows:panel?.querySelectorAll('.merchant-row').length||0,
+          return {index,title,category,advertisedPrice,imageState,
+            merchantRows:panel?.querySelectorAll('.merchant-row').length||0,
             merchantNames:[...new Set(merchants)],productLinks:links.filter(Boolean)};
         });
         return {cards,visibleCount:root?.querySelectorAll('.match-result-card').length||0,
@@ -130,6 +166,42 @@ try{
         result.assertions.explicitAccessoryNotCertifiedConsole=!data.stream?.exactSamples?.some(s=>
           /\bconsole\b/i.test(s.title)&&!/\b(?:drive|cover|accessory)\b/i.test(s.title));
       }
+      // Source-linked buyer acceptance includes v21.21 German cartridge and
+      // PS5 heatsink P0 evidence, not just faceplates/English toner.
+      // The previous workflow was green while
+      // genuine merchant accessory SKUs appeared as deceptively cheap devices.
+      const hasPath=pattern=>data.cards.some(c=>c.productLinks.some(url=>pattern.test(url)));
+      if(query==='PS5 Slim') {
+        result.assertions.noObservedFaceplatesAsConsoles=!hasPath(/B0CZL8886V|B0DKNVSGSM|B0CT5NH3NL|B0FMYJCSK7|B0CP6HTP2C/i);
+        // Examine ORIGINAL SSE source titles, not sanitized canonical cards.
+        // No monitor stating the complete console is absent may masquerade
+        // as an exact console in accepted source candidates.
+        result.assertions.noExplicitlyExcludedConsoleAsExact=
+          !(data.stream?.finalOfferSources||[]).some(o=>o.exact===true &&
+            /\bconsole not included\b/i.test(o.title) &&
+            /\b(?:monitor|display|screen)\b/i.test(o.title));
+        result.assertions.noCosmeticSkinAsConsole=
+          !(data.stream?.finalOfferSources||[]).some(o=>o.exact===true &&
+            /\b(?:skins?|vinyl wrap|decal)\b/i.test(o.title) &&
+            /\b(?:for|compatible with|fits)\b/i.test(o.title) &&
+            /(?:ps5|playstation 5)/i.test(o.title));
+      }
+      if(query==='iPhone 17 Pro Max')
+        result.assertions.noObservedProtectionBundleAsPhone=!hasPath(/panzerglass-care-3-in-1-explorer-bundle/i);
+      if(query==='HP printer')
+        result.assertions.noPrinterConsumablesAsDevices=!data.cards.some(c=>
+          /\b(?:printer paper|repair kit|user guide|drum unit|ink cartridges?|cartridges?|ink bottles?|paper jam)\b/i.test(c.title) ||
+          /^(?:skydo|printertree)\b/i.test(c.title) || c.productLinks.some(link=>/B0DDPWLL4J|B07RVXV1XH/i.test(link)));
+      if(query==='HP mouse')
+        result.assertions.hpMouseSubjectOnly=data.cards.every(c=>
+          /^\s*hp\b/i.test(c.title)&&/\b(?:mouse|mice)\b/i.test(c.title));
+      if(query==='PS5 disc drive')
+        result.assertions.completeDiscDriveOnly=data.cards.every(c=>
+          !/\b(?:power cable|empty shell|housing|travel case|carrying case|repair kit|connector module|optical drive module|disc drive module|kem-497aaa)\b/i.test(c.title) &&
+          !c.productLinks.some(link=>/B0F29BN21J|B0CJ8SM93K/i.test(link)));
+      if(query==='iPhone 17 Pro capinha')
+        result.assertions.capinhaIsPhoneCase=data.cards.every(c=>
+          /\b(?:case|cover|capa|capinha)\b/i.test(c.title));
       await page.setViewportSize({width:390,height:844});
       const mobile=await page.evaluate(()=>({viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth}));
       result.mobile=mobile;

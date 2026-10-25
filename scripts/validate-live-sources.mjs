@@ -1,4 +1,50 @@
-import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
+import { searchFreeStorefrontById, configuredFreeStorefrontIds } from "../server/providers/free-storefronts.mjs";
+import { resolveProductUrl } from "../server/url-resolver.mjs";
+import { classifyPdpProbeFailure } from "./bestbuy-pdp-probe-status.mjs";
+import { countDistinctLiveMerchants } from "./live-source-validation-counts.mjs";
+
+// CI-only forensic probe. Never consulted by production ranking/extraction.
+// A PDP may suggest a matching priced record, but this probe does NOT certify
+// full cross-field ownership or authorize publication of a recovered offer.
+async function probeBestBuyLinkOnlyCandidates(identityAudit) {
+  const candidates = (identityAudit?.discoveredLinkWithoutPricedOfferSamples || []).slice(0,2);
+  return Promise.all(candidates.map(async ({sku,url}) => {
+    const base = {sku,requestedUrl:url};
+    const started = performance.now();
+    const stages = [];
+    const onStage = stage => {
+      if (stages.length < 20) stages.push({stage,elapsedMs:Math.round(performance.now()-started)});
+    };
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "https:" || parsed.hostname !== "www.bestbuy.com" ||
+          parsed.username || parsed.password || parsed.port ||
+          !new RegExp("/sku/" + sku + "(?:/|$)", "i").test(parsed.pathname)) {
+        return {...base,status:"INVALID_DISCOVERY_URL"};
+      }
+      // Existing resolver performs HTTPS/DNS/redirect validation. Four seconds
+      // per page, maximum two parallel source requests, no retries or bypasses.
+      const pdp = await resolveProductUrl(parsed.origin + parsed.pathname,
+        {signal:AbortSignal.timeout(4000),onStage});
+      const finalUrl = new URL(pdp.resolvedPageUrl || pdp.sourceUrl || "");
+      const finalSku = /\/sku\/(\d+)(?:\/|$)/i.exec(finalUrl.pathname)?.[1] || null;
+      const sameSku = finalSku === sku && finalUrl.hostname === "www.bestbuy.com";
+      const hasPricedCandidate = Number.isFinite(pdp.originalProductPrice) &&
+        pdp.originalProductPrice > 0 && Boolean(pdp.originalCurrency);
+      return {...base,status:"PDP_PROBED_NOT_CERTIFIED",sameSku,
+        lastStage:stages.at(-1)?.stage || null,stages,
+        hasPricedCandidate,priceFieldSource:pdp.extraction?.fieldSources?.offers?.strategy || null,
+        identityRejections:pdp.extraction?.identity?.summary?.rejected ?? null,
+        title:typeof pdp.title === "string" ? pdp.title.slice(0,120) : null,
+        originalCurrency:pdp.originalCurrency || null};
+    } catch (error) {
+      return {...base,status:"PDP_UNVERIFIED",reasonCode:classifyPdpProbeFailure(stages,error),
+        lastStage:stages.at(-1)?.stage || null,
+        stages,error:String(error?.message || error).slice(0,140)};
+    }
+  }));
+}
+
 
 const CASES = [
   // Saudi/GCC certification batch: prioritize sources that can materially
@@ -6,9 +52,9 @@ const CASES = [
   ["amazon-sa","iphone 17"],["lulu-sa","iphone 17"],["samsung-sa","galaxy s25"],
   ["virgin-sa","airpods"],["amazon-ae","iphone 17"],["noon-ae","iphone 17"],
   ["sharafdg-ae","hp laptop"],["virgin-ae","iphone 17"],["virgin-ae","airpods"],["virgin-ae","apple watch"],["virgin-ae","macbook"],["virgin-ae","playstation 5"],["xcite-kw","hp laptop"],
-  ["lulu-ae","iphone 17"],["carrefour-ae","iphone 17"],["microless-ae","iphone 17"],["jumbo-ae","iphone 17"],
+  ["lulu-ae","iphone 17"],["microless-ae","iphone 17"],["jumbo-ae","iphone 17"],
   ["goldenscent-sa","dior sauvage"],["ounass-sa","nike shoes"],["sunandsand-sa","nike shoes"],
-  ["virgin-sa","airpods"],["homecentre-sa","office chair"],["mumzworld-sa","stroller"],
+  ["homecentre-sa","office chair"],["mumzworld-sa","stroller"],
   ["asos-global","nike air max"],["farfetch-sa","gucci shoes"],["etsy-global","silver necklace"],
   ["newegg-global","gaming laptop"],["bhphoto-us","canon camera"],["walmart-us","airpods"],
   ["bestbuy-us","apple airpods 4"],["nike-sa","nike shoes"],["adidas-sa","adidas shoes"],
@@ -18,15 +64,28 @@ const CASES = [
   ["ssense-global","nike shoes"],["jomashop-global","seiko watch"],["fragrancex-global","dior perfume"],
   ["lookfantastic-global","cerave cleanser"],["cultbeauty-global","niod serum"],["stockx-global","nike shoes"],["goat-global","nike shoes"],
   ["amazon-ae","airpods"],["noon-ae","airpods"],["sharafdg-ae","airpods"],
-  ["virgin-ae","airpods"],["xcite-kw","airpods"],["lulu-ae","airpods"],
+  ["xcite-kw","airpods"],["lulu-ae","airpods"],
 ];
+
+// Prevent invalid CI source coverage claims and avoid executing probes against
+// merchant IDs which are not configured in the actual storefront registry.
+// Carrefour UAE remains unconfigured and must be onboarded with real source
+// evidence before it is reintroduced into this validation matrix.
+const configuredStorefronts = new Set(configuredFreeStorefrontIds());
+const unconfiguredCases = CASES.filter(([store]) => !configuredStorefronts.has(store));
+if (unconfiguredCases.length) {
+  throw new Error("UNCONFIGURED_LIVE_SOURCE_CASES: " + JSON.stringify(unconfiguredCases));
+}
 
 let live = 0;
 const rows = [];
 for (const [store, query] of CASES) {
   const started = Date.now();
   try {
-    const result = await searchFreeStorefrontById(store, query, { perStore: 3 });
+    const result = await searchFreeStorefrontById(store, query, { perStore: 3, identityAudit: store === "bestbuy-us" });
+    const identityAudit = store === "bestbuy-us" ? result.diagnostics?.identityAudit || null : null;
+    if (identityAudit) identityAudit.unpricedLinkPdpProbes =
+      await probeBestBuyLinkOnlyCandidates(identityAudit);
     const offers = result.offers || [];
     // SKU is useful identity metadata, but it is not a requirement for a usable price result.
     // A live source must return the shopper-facing essentials: product, URL, image and price.
@@ -46,7 +105,8 @@ for (const [store, query] of CASES) {
       // Preserve bounded source-provided rejection evidence. Without these
       // first-five titles/reasons a 51→0 Amazon run cannot distinguish a
       // relevance filter from a source response change.
-      queryFilterSamples:result.diagnostics?.queryFilterSamples || []});
+      queryFilterSamples:result.diagnostics?.queryFilterSamples || [],
+      identityAudit});
   } catch (error) {
     rows.push({store,query,status:"PROBED_FAILED",candidates:0,offers:0,valid:0,ms:Date.now()-started,error:error?.message || String(error)});
   }
@@ -55,11 +115,14 @@ console.table(rows);
 const failed = rows.filter((row) => row.status === "PROBED_FAILED").length;
 const probedOnly = rows.filter((row) => row.status === "PROBED").length;
 const liveSources = rows.filter((row) => row.status === "LIVE_VALIDATED").map((row) => row.store);
-const report = {checked:CASES.length,liveValidated:live,liveSources,probedOnly,failed,rows};
+// Preserve the historical per-query counter while exposing real distinct-store coverage.
+// A retailer passing five queries is still one validated merchant for this gate.
+const uniqueLiveValidated = countDistinctLiveMerchants(rows);
+const report = {checked:CASES.length,liveValidated:live,uniqueLiveValidated,liveSources,probedOnly,failed,rows};
 console.log(JSON.stringify(report,null,2));
 await import("node:fs").then(({writeFileSync}) => writeFileSync("live-source-validation.json", JSON.stringify(report,null,2)));
 const minimumLive = Number(process.env.MIN_LIVE_SOURCES || 8);
-if (live < minimumLive) {
-  console.error(`VALIDATION_GATE_FAILED: ${live}/${minimumLive} required sources reached LIVE_VALIDATED.`);
+if (uniqueLiveValidated < minimumLive) {
+  console.error(`VALIDATION_GATE_FAILED: ${uniqueLiveValidated}/${minimumLive} distinct merchants reached LIVE_VALIDATED (${live} passing queries).`);
   process.exitCode = 1;
 }

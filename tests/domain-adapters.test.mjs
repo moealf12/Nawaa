@@ -186,3 +186,280 @@ test("ASOS adapter extracts stockPriceResponse payload", () => {
   assert.equal(result?.product?.offers?.price, 80);
   assert.equal(result?.product?.offers?.priceCurrency, "GBP");
 });
+
+
+test("v21.23 RED: Virgin PDP price must be anchored to the sold product, not header promotion", () => {
+  const url="https://app.virginmegastore.ae/en/gaming/playstation-hardware-accessories/playstation-accessories/sony-playstation-disc-drive-for-ps5-add-on-/p/1033214";
+  // SYNTHETIC STRUCTURAL REPRODUCTION of real merchant price mismatch,
+  // source PDP actually advertises AED 339 while candidate recorded AED 2.
+  // Does not claim to be the exact raw merchant HTML captured by the runner.
+  const html=`<html><head><meta property="og:title" content="Sony PlayStation Disc Drive for PS5 (Add-On)"></head>
+    <body><header><a href="/offers">AED 2 members' rewards</a></header>
+    <main><h1>Sony PlayStation Disc Drive for PS5 (Add-On)</h1>
+      <div class="product-price"><span>AED 339</span></div><button>Add to cart</button>
+    </main><section class="similar-products">Other Item AED 45</section></body></html>`;
+  const actual=extractDomainProduct(url,html);
+  assert.equal(actual?.adapterId,"virginmegastore");
+  assert.equal(actual?.product?.offers?.price,339,
+    "header and cross-sells must not supply the product price");
+  assert.equal(actual?.product?.offers?.priceCurrency,"AED");
+  assert.equal(actual?.product?.sku,"1033214");
+  const candidate=extractionCandidates(html,url).find(x=>x.strategy==="domain_adapter");
+  assert.equal(candidate?.product?.offers?.price,339);
+});
+
+test("v21.23 Virgin verified sale and missing PDP price avoid unsafe header selection",()=>{
+  const url="https://app.virginmegastore.ae/en/item/p/1105698";
+  const sale='<header>Accessory AED 2</header><h1>Complete PS5 Slim Console</h1>'+
+    '<div class="product-current-price">AED 2,299</div><del>AED 2,499</del>'+
+    '<footer>Similar products AED 12</footer>';
+  assert.equal(extractDomainProduct(url,sale)?.product?.offers?.price,2299);
+  const uncertain='<header>Rewards AED 2</header><h1>Complete PS5 Slim Console</h1>'+
+    '<div>No verified purchase price on this page</div>';
+  assert.equal(extractDomainProduct(url,uncertain),null,
+    "unknown PDP price must remain unknown rather than borrowing nav price");
+});
+
+
+test("v21.23 RED: Virgin divided price markup outranks payment-plan eligibility and loyalty amounts",()=>{
+  const url="https://app.virginmegastore.ae/en/ps5-disc-drive/p/1033214";
+  // SYNTHETIC structural reproduction informed by real candidate audit:
+  // PDP visible AED339, old scoped regex wrongly selected AED1000
+  // from Easy Payment Plans. Markup splits currency and amount.
+  const html='<meta property="og:title" content="Sony PS5 Add-On Disc Drive">'+
+    '<h1>Sony PS5 Add-On Disc Drive</h1><div class="pdp-price">'+
+    '<span>AED</span> &nbsp; <strong>339</strong></div>'+
+    '<div>Easy Payment Plans available for order over AED 1,000</div>'+
+    '<div>Earn 339 loyalty dots equivalent to AED 3.39</div>'+
+    '<div class="related-products">Gift AED 10</div>';
+  assert.equal(extractDomainProduct(url,html)?.product?.offers?.price,339,
+    'visible sold-product amount precedes payment-plan and loyalty values');
+  const noPurchasePrice='<meta property="og:title" content="Sony PS5 Add-On Disc Drive">'+
+    '<h1>Sony PS5 Add-On Disc Drive</h1>'+
+    '<div>Easy Payment Plans available for order over AED 1,000</div>'+
+    '<div>Earn loyalty dots equivalent to AED 3.39</div>';
+  assert.equal(extractDomainProduct(url,noPurchasePrice),null,
+    'financial plan and loyalty values cannot fabricate product purchase price');
+});
+
+
+test("v21.24 RED: current sellable price takes precedence over crossed-out and loyalty prices",()=>{
+  // SYNTHETIC METAMORPHIC DISCOUNT FIXTURES.
+  // Real merchant evidence motivating the class: Jarir renewed iPhone 17
+  // shows SAR 2999 full price, crossed-out SAR 3799, and SAR 182/month;
+  // Virgin page evidence contains financing thresholds and AED values.
+  // These are NOT captures of original merchant HTML or claims of live prices.
+  const url="https://app.virginmegastore.ae/en/electronics/p/762381";
+  const og='<meta property="og:title" content="Sample Headphones"><h1>Sample Headphones</h1>';
+  const oldBeforeCurrent=og+
+    '<div class="original-price"><del>AED 599</del></div>'+
+    '<div class="current-price"><strong>AED 399</strong></div>'+
+    '<div>Easy Payment Plans for orders above AED 1000</div>';
+  const textBeforeCurrent=og+
+    '<div>Was AED 599 Now AED 399</div>'+
+    '<div>Earn AED 3 cashback</div>';
+  const noActualPrice=og+
+    '<div class="original-price"><del>AED 599</del></div>'+
+    '<div>Easy Payment Plans on orders above AED 1000</div>';
+  const ambiguousPrice=og+
+    '<div>AED 599</div><div>AED 399</div><button>Add to cart</button>';
+  const currentBeforeOld=og+
+    '<div class="current-price">AED 399</div>'+
+    '<span class="original-price"><s>AED 599</s></span>';
+  for(const html of [oldBeforeCurrent,textBeforeCurrent,currentBeforeOld]){
+    const result=extractDomainProduct(url,html);
+    assert.equal(result?.product?.offers?.price,399,
+      "full current price must win over explicit crossed-out old/list price");
+    assert.equal(result?.product?.offers?.priceCurrency,"AED");
+  }
+  assert.equal(extractDomainProduct(url,noActualPrice),null,
+    "a strikethrough-only old price is not a present purchase price");
+  assert.equal(extractDomainProduct(url,ambiguousPrice),null,
+    "unqualified different prices have insufficient evidence for a purchase price");
+});
+
+
+test("v21.24 purchase-price provenance survives promo-only and cross-sell panels",()=>{
+  const url="https://app.virginmegastore.ae/en/items/p/438319";
+  const heading='<meta property="og:title" content="Sample Tablet"><h1>Sample Tablet</h1>';
+  const promoOnly=heading+'<div>Earn AED 20 cashback</div><div>Save up to AED 50</div>';
+  assert.equal(extractDomainProduct(url,promoOnly),null,
+    'cashback and reward-only amounts must not manufacture a retail price');
+  const validAfterPromo=heading+
+    '<div>Earn AED 20 cashback</div><div>Save up to AED 50</div>'+
+    '<div class="current-price">AED 399</div>'+
+    '<section class="similar-products">Accessory AED 4</section>';
+  assert.equal(extractDomainProduct(url,validAfterPromo)?.product?.offers?.price,399,
+    'promotions and unrelated cross-sells must not mask an actual sale price');
+  const relatedOnly=heading+
+    '<section class="related-products">Accessories AED 20</section>';
+  assert.equal(extractDomainProduct(url,relatedOnly),null,
+    'related products do not certify the primary item sale amount');
+});
+
+test("v21.24 non-Virgin adapter keeps current ASOS offer over crossed-out previous price",()=>{
+  // Synthetic STRUCTURAL cross-merchant control exercising the existing ASOS
+  // adapter's explicit current field, not an assertion about a live ASOS price.
+  const pageId=206633513;
+  const payload=JSON.stringify([{productId:pageId,
+    productPrice:{current:{value:80,text:"GBP 80"},previous:{value:120,text:"GBP 120"},currency:"GBP"}}]);
+  const html='<meta property="og:title" content="Nike Trainers">'+
+    "<script>window.asos.pdp.config.stockPriceResponse = '"+payload+"';</script>";
+  const result=extractDomainProduct("https://www.asos.com/nike/item/prd/"+pageId,html);
+  assert.equal(result?.adapterId,"asos");
+  assert.equal(result?.product?.offers?.price,80);
+  assert.equal(result?.product?.offers?.priceCurrency,"GBP");
+});
+
+
+test("v21.25 RED: structured embedded/current price wins over historical generic price",()=>{
+  // SYNTHETIC controlled JSON evidence. This is not a claim that these are
+  // raw live listings. A named currentPrice belongs to this SAME sku/offer.
+  const url="https://www.centrepointstores.com.sa/p/current-variant-A";
+  const item={productName:"Example Current Variant A",productId:"current-variant-A",
+    brandName:"Example",imageUrl:"https://example.org/a.jpg",
+    price:899,previousPrice:899,currentPrice:599,currency:"SAR",
+    availability:"in_stock"};
+  const html='<script type="application/json">'+JSON.stringify({product:item})+'</script>';
+  const observed=extractionCandidates(html,url);
+  for(const strategy of ["embedded_json","storefront_data","domain_adapter"]){
+    const candidate=observed.find(x=>x.strategy===strategy);
+    if(!candidate)continue;
+    assert.equal(candidate.product?.offers?.price,599,
+      strategy+" must use current sale price, not generic historical price");
+    assert.equal(candidate.product?.sku,"current-variant-A");
+    assert.equal(candidate.product?.offers?.priceCurrency,"SAR");
+  }
+  const selected=observed.find(x=>x.strategy==="embedded_json");
+  assert.ok(selected,"embedded source must be inspectable");
+  assert.equal(selected.product.offers.price,599);
+  assert.equal(item.price,899,"merchant raw observation stays immutable");
+});
+
+test("v21.25 RED: hydrated and storefront currentPrice obey explicit current field",()=>{
+  const item={name:"Actual Model C Black",sku:"actual-c-black",brand:"Example",
+    price:{amount:799,currency:"SAR"},
+    currentPrice:{amount:649,currency:"SAR"},oldPrice:799,
+    image:"https://example.org/c.jpg"};
+  const storefront='<script type="application/json">'+JSON.stringify({product:item})+'</script>';
+  const hydrated='<script>window.__INITIAL_STATE__ = '+JSON.stringify({product:item})+';</script>';
+  const storefrontOffer=extractionCandidates(storefront,"https://www.test-store.example/p/model-c").find(x=>x.strategy==="storefront_data");
+  const hydratedOffer=extractionCandidates(hydrated,"https://www.test-store.example/p/model-c").find(x=>x.strategy==="hydrated_state");
+  assert.equal(storefrontOffer?.product?.offers?.price,649);
+  assert.equal(hydratedOffer?.product?.offers?.price,649);
+  assert.equal(storefrontOffer?.product?.sku,"actual-c-black");
+  assert.equal(hydratedOffer?.product?.sku,"actual-c-black");
+});
+
+
+test("v21.26 RED: invalid highest-priority price must not hide valid same-SKU current offer",()=>{
+  // SYNTHETIC code-level adversarial cases, NOT actual Centrepoint PDP capture.
+  // Live PDP capture for IDs 3805958 and 5550476 was BLOCKED by HTTP403.
+  const url='https://www.centrepointstores.com.sa/p/controlled-price-a';
+  for (const invalid of [0,'N/A',-1]){
+    const source={productName:'Controlled Product A',productId:'controlled-price-a',
+      brandName:'Sample',imageUrl:'https://example.org/item.png',
+      salePrice:invalid,currentPrice:599,price:799,currency:'SAR'};
+    const snapshot=structuredClone(source);
+    const html='<script type="application/json">'+JSON.stringify({product:source})+'</script>';
+    const candidates=extractionCandidates(html,url);
+    for (const strategy of ['embedded_json','storefront_data','domain_adapter']){
+      const candidate=candidates.find(x=>x.strategy===strategy);
+      assert.equal(candidate?.product?.offers?.price,599,
+        strategy+' should skip invalid sale field '+JSON.stringify(invalid));
+      assert.equal(candidate?.product?.sku,'controlled-price-a');
+      assert.equal(candidate?.product?.offers?.priceCurrency,'SAR');
+    }
+    assert.deepEqual(source,snapshot,'merchant raw price claims untouched');
+  }
+  const fallback={productName:'Controlled Product B',productId:'controlled-price-b',
+    salePrice:'N/A',currentPrice:'',price:349,currency:'SAR'};
+  const html='<script type="application/json">'+JSON.stringify({product:fallback})+'</script>';
+  for (const strategy of ['embedded_json','storefront_data','domain_adapter'])
+    assert.equal(extractionCandidates(html,url).find(x=>x.strategy===strategy)?.product?.offers?.price,349,
+      strategy+' retains single valid generic price when higher-priority fields unavailable');
+});
+
+
+test("v21.26 selected positive price retains SAME FIELD currency and fallback semantics",()=>{
+  // SYNTHETIC same-product source object, not a direct Centrepoint PDP capture.
+  const item={productName:"Controlled Item Currency Variant",productId:"test-current-currency",
+    salePrice:{amount:"N/A",currencyCode:"AED"},
+    currentPrice:{amount:599,currencyCode:"SAR"},
+    price:{amount:799,currencyCode:"AED"}};
+  const html='<script type="application/json">'+JSON.stringify({product:item})+'</script>';
+  const url='https://www.centrepointstores.com.sa/p/controlled-item-current-currency';
+  for(const strategy of ['embedded_json','storefront_data','domain_adapter']){
+    const candidate=extractionCandidates(html,url).find(x=>x.strategy===strategy);
+    assert.equal(candidate?.product?.offers?.price,599,strategy);
+    assert.equal(candidate?.product?.offers?.priceCurrency,'SAR',
+      strategy+' must not borrow AED currency from rejected salePrice');
+    assert.equal(candidate?.product?.sku,'test-current-currency');
+  }
+  assert.equal(item.salePrice.amount,"N/A","original merchant source unchanged");
+});
+
+
+test("v21.27 RED: original Virgin discounted-PDP DOM does not suppress actual sale",()=>{
+  // REAL DOM CLASS EVIDENCE, bounded from independently fetched merchant PDPs
+  // in candidate live smoke #39656584626: TP-Link SKU 1018562 had 359/399
+  // and Ring SKU 1048264 had 299/399 AED. The HTML below is a reduced
+  // structural fixture preserving the observed element classes, not raw HTML.
+  for (const sample of [
+    {sku:'1018562',now:359,was:399,
+      title:'TP-Link BE230 BE3600 Dual-Band Wi-Fi 7 Router'},
+    {sku:'1048264',now:299,was:399,
+      title:'Ring Outdoor Camera Plus 2K Indoor/Outdoor Security Camera Battery - White'}
+  ]){
+    const url='https://app.virginmegastore.ae/en/products/p/'+sample.sku;
+    const prices='<div class="productDetail__descriptionPriceQuantity">'+
+      '<div class="price__container d-flex __container--column">'+
+      '<div class=""><div class="price__value ">'+
+      '<span class="price__currency ">AED</span>'+
+      '<span class="price__number gtm-price-number">'+sample.now+'</span>'+
+      '</div></div><div class="price__value price__value--original gtm-price-value-original">'+
+      '<span class="price__currency price__currency--strike-through">AED</span>'+
+      '<span class="price__number price__number--strike-through gtm-price-num-strike-through">'+sample.was+'</span>'+
+      '</div></div>';
+    const html='<meta property="og:title" content="'+sample.title+'">'+
+      '<h1>'+sample.title+'</h1>'+prices+
+      '<div>Easy Payment Plans available on orders above AED 1,000</div>'+
+      '<div>Earn loyalty dots equivalent to AED 3.59</div>';
+    const found=extractDomainProduct(url,html);
+    assert.equal(found?.adapterId,'virginmegastore');
+    assert.equal(found?.product?.sku,sample.sku);
+    assert.equal(found?.product?.offers?.price,sample.now,
+      'source-attributed current price must survive crossed-out old price');
+    assert.equal(found?.product?.offers?.priceCurrency,'AED');
+    const oldOnly=html.replace(
+      /<div class=""><div class="price__value ">[\s\S]*?<\/div><\/div>/,
+      '');
+    assert.equal(extractDomainProduct(url,oldOnly),null,
+      'old struck price alone cannot establish a current purchase price');
+  }
+});
+
+
+test("v21.28 RED: selected same-SKU sale field currency must override conflicting catalog default",()=>{
+  // SYNTHETIC targeted source-conflict regression, not an observed public PDP.
+  // Product-level currency may be a generic feed default; field-level
+  // currentPrice.currency is attributable to this chosen purchase amount.
+  const url='https://www.centrepointstores.com.sa/p/retail-currency-evidence';
+  const node={productName:'Retail Currency Evidence Test',productId:'retail-currency-evidence',
+    currentPrice:{amount:599,currencyCode:'SAR'},
+    salePrice:{amount:0,currencyCode:'AED'},
+    price:{amount:799,currencyCode:'AED'},
+    currency:'AED'};
+  const raw=structuredClone(node);
+  const html='<script type="application/json">'+JSON.stringify({product:node})+'</script>';
+  const candidates=extractionCandidates(html,url);
+  for(const strategy of ['embedded_json','storefront_data','domain_adapter']){
+    const item=candidates.find(c=>c.strategy===strategy);
+    assert.ok(item,'expected '+strategy+' candidate');
+    assert.equal(item.product.sku,'retail-currency-evidence');
+    assert.equal(item.product.offers.price,599);
+    assert.equal(item.product.offers.priceCurrency,'SAR',
+      'must use currency declared on the selected CURRENT price field, not root or rejected sale field');
+  }
+  assert.deepEqual(node,raw,'source observation must remain immutable');
+});

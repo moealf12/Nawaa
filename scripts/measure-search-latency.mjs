@@ -7,6 +7,7 @@ import {resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {writeFile} from 'node:fs/promises';
 import {firstOfferMilestones,structurallyValidOffer} from '../src/search-first-offer-metrics.mjs';
+import {summarizeDiagnosticLatencyGroup} from './latency-diagnostic-summary.mjs';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const samples = Number(process.env.LATENCY_SAMPLES || 3);
 if (!Number.isInteger(samples) || samples < 1 || samples > 10) throw Error('LATENCY_SAMPLES must be 1..10');
@@ -125,15 +126,15 @@ for(let sample=1;sample<=samples;sample++)for(const q of queries){
     }
   }
 }
-const quantile=(values,p)=>values.length?[...values].sort((a,b)=>a-b)[Math.ceil(p*values.length)-1]:null;
-const summary=versions.flatMap(v=>queries.flatMap(q=>['process-cold','process-warm'].map(phase=>{
-  const rows=observations.filter(r=>r.sha===v.sha&&r.q===q&&r.phase===phase);
-  const times=rows.map(r=>r.firstValidOfferMs).filter(Number.isFinite);
-  const exactTimes=rows.map(r=>r.firstExactOfferMs).filter(Number.isFinite);
-  return {sha:v.sha,q,phase,n:rows.length,successes:times.length,medianMs:quantile(times,.5),
-    maxMs:quantile(times,1),firstExactSuccesses:exactTimes.length,
-    firstExactMedianMs:quantile(exactTimes,.5),firstExactMaxMs:quantile(exactTimes,1),
-    sampleP95Ms:times.length>=20?quantile(times,.95):null,sloCertified:false};
-})));
+// Live CI is deliberately restricted to <=10 cold/warm samples per segment.
+// A sample-P95 requiring >=20 samples was therefore unreachable here.
+// Make the diagnostic-only nature explicit in the report rather than
+// silently exposing an ever-null percentile behind an impossible threshold.
+const summary=versions.flatMap(v=>queries.flatMap(q=>['process-cold','process-warm'].map(phase=>
+  summarizeDiagnosticLatencyGroup(
+    observations.filter(r=>r.sha===v.sha&&r.q===q&&r.phase===phase),
+    {sha:v.sha,q,phase}
+  )
+)));
 console.log('LATENCY_SUMMARY '+JSON.stringify(summary));
 if(process.env.LATENCY_OUTPUT)await writeFile(process.env.LATENCY_OUTPUT,JSON.stringify({versions,samples,summary,observations},null,2));

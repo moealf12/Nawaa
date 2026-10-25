@@ -11,6 +11,7 @@ on:
       - "scripts/**"
       - "*.html"
       - "package*.json"
+      - "eslint.config.mjs"
       - ".github/workflows/search-core-tests.yml"
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - "scripts/**"
       - "*.html"
       - "package*.json"
+      - "eslint.config.mjs"
       - ".github/workflows/search-core-tests.yml"
 
 permissions:
@@ -37,7 +39,9 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci --ignore-scripts
-      - name: Run test suite
+      - name: Static correctness checks (no formatting or runtime effect)
+        run: npm run lint
+      - name: Run existing node:test suite, including bounded property tests
         run: npm test
       - name: Live Crawlee smoke test against Jarir Saudi
         if: github.head_ref == 'feature/crawlee-local-ingestion-20261006'
@@ -101,6 +105,15 @@ jobs:
           MEILI_HOST: ""
           MEILI_MASTER_KEY: ""
         run: node --test tests/postgres-provenance.test.mjs
+      - name: Three independent Node processes replay signed PDP receipt and revocation on real PostgreSQL
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ""
+          NAWAA_TEST_DATABASE_URL: postgresql://nawaa_ci:test_only_not_a_secret@127.0.0.1:5432/nawaa_temporal_ci
+        run: |
+          node scripts/certify-trusted-journal-replay.mjs write
+          node scripts/certify-trusted-journal-replay.mjs read
+          node scripts/certify-trusted-journal-replay.mjs revoked
 
   disposable-meilisearch-restart:
     # Real Meilisearch process in a temporary CI Docker service; no production writes.
@@ -235,13 +248,16 @@ jobs:
         run: node scripts/certify-omega-scale.mjs
       - name: Independently acquired Jarir observation versus simulated predecessor
         run: node scripts/certify-omega-live-acceptance.mjs
+      - name: Revalidate real merchant PDP signed source receipt in a fresh Node process
+        run: node scripts/certify-omega-trusted-live-replay.mjs
       - name: Seventeen live customer SSE queries including all ten PS5 intents with canonical guard
         run: node scripts/measure-representative-first-offer.mjs
 
 
   disposable-quote-lifecycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    # Reserve time for npm installation plus HTTP and Chromium quote checks.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -267,6 +283,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - run: npm ci --ignore-scripts
       - name: Real quote HTTP, durable PostgreSQL, concurrency, expiration, authorization
         run: node scripts/certify-quote-http.mjs

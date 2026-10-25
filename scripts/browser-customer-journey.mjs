@@ -45,6 +45,20 @@ let page=null;
 try{
   const base=mode==='candidate'?await startCandidate():'https://moealf12.github.io/Nawaa';
   report.requestUrlBase=mode==='candidate'?'localhost_canonical_pr':'https://moealf12.github.io/Nawaa';
+  // Fail with a precise cause instead of waiting 55s if the production page's
+  // ESM dependency graph is omitted from the explicit localhost allowlist.
+  if(mode==='candidate'){
+    const required=['/src/search-page.mjs','/src/search-first-offer-metrics.mjs',
+      '/src/product-image-ownership.mjs'];
+    const checks=await Promise.all(required.map(async asset=>{
+      const response=await fetch(base+asset,{signal:AbortSignal.timeout(5000)});
+      return {asset,status:response.status,js:(response.headers.get('content-type')||'').includes('text/javascript')};
+    }));
+    report.moduleReachability=checks;
+    report.assertions.customerModuleImportsReachable=checks.every(x=>x.status===200&&x.js);
+    if(!report.assertions.customerModuleImportsReachable)
+      throw Error('candidate_browser_module_graph_not_served');
+  }
   const binary=['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium'].find(existsSync);
   if(!binary)throw Error('chromium_not_available_on_runner');
   browser=await chromium.launch({executablePath:binary,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -70,16 +84,49 @@ try{
         providerMarket: String(o.providerMarket || "").slice(0,70)
       };
     };
+    // Browser-only, no merchant requests or production instrumentation.
+    // These are observation boundaries, NOT proof of source-owned price/SKU
+    // and NOT a guarantee that a card was painted to physical pixels.
     window.__nawaaObserved = {first:[],suspicious:[],done:false,snapshots:0,
-      latestOfferCount:0,latestMerchantNames:[],latestMarkets:[]};
+      latestOfferCount:0,latestMerchantNames:[],latestMarkets:[],
+      sseOpenedAtMs:null,firstOfferSnapshotAtMs:null,firstExactCandidateSnapshotAtMs:null,
+      firstCardDomAtMs:null,firstCardFrameAtMs:null};
+    const watchFirstCard = () => {
+      const root=document.querySelector('#results');
+      if(!root)return;
+      const inspect=()=>{
+        const record=window.__nawaaObserved;
+        if(record.firstCardDomAtMs!==null || !root.querySelector('.match-result-card'))return;
+        record.firstCardDomAtMs=performance.now();
+        requestAnimationFrame(()=>{
+          if(record.firstCardFrameAtMs===null && root.querySelector('.match-result-card'))
+            record.firstCardFrameAtMs=performance.now();
+        });
+      };
+      new MutationObserver(inspect).observe(root,{childList:true,subtree:true});
+      inspect();
+    };
+    if(document.readyState==='loading')
+      document.addEventListener('DOMContentLoaded',watchFirstCard,{once:true});
+    else watchFirstCard();
     window.EventSource = class extends Native {
       constructor(...args) {
         super(...args);
+        window.__nawaaObserved.sseOpenedAtMs ??= performance.now();
         this.addEventListener("snapshot", event => {
           try {
             const offers = JSON.parse(event.data)?.offers || [];
             const record = window.__nawaaObserved;
             record.snapshots++;
+            const receivedAt=performance.now();
+            if(record.firstOfferSnapshotAtMs===null && offers.length)
+              record.firstOfferSnapshotAtMs=receivedAt;
+            // Matches the UI's initial exact-group selection preconditions;
+            // does not independently validate price, identity or provenance.
+            if(record.firstExactCandidateSnapshotAtMs===null &&
+              offers.some(o=>o?.exactMatch===true && Number(o.matchConfidence)>=0.9 &&
+                o.condition==='new'))
+              record.firstExactCandidateSnapshotAtMs=receivedAt;
             record.latestOfferCount=offers.length;
             record.latestMerchantNames=[...new Set(offers.map(o => String(o.merchant||'').slice(0,65)).filter(Boolean))];
             record.latestMarkets=[...new Set(offers.map(o => String(o.providerMarket||'').slice(0,70)).filter(Boolean))];
@@ -133,6 +180,34 @@ try{
       categoryExpand:result?.querySelectorAll('.show-category').length||0};
   });
   report.firstVisibleResultsMs=Math.round(performance.now()-began);
+  if(report.results.cards>0){
+    // DOM insertion and rAF are distinct; neither proves actual display
+    // compositor paint or attribution to a specific owned merchant Offer.
+    await page.waitForFunction(
+      ()=>Number.isFinite(window.__nawaaObserved?.firstCardFrameAtMs),
+      null,{timeout:3500});
+  }
+  report.browserLatencyPhases=await page.evaluate(()=>{
+    const record=window.__nawaaObserved||{};
+    const elapsed=(end,start)=>Number.isFinite(end)&&Number.isFinite(start)&&end>=start
+      ? Math.round(end-start) : null;
+    return {
+      firstOfferSnapshotFromSseOpenMs:elapsed(record.firstOfferSnapshotAtMs,record.sseOpenedAtMs),
+      firstExactCandidateSnapshotFromSseOpenMs:elapsed(record.firstExactCandidateSnapshotAtMs,record.sseOpenedAtMs),
+      firstCardDomFromNavigationMs:Number.isFinite(record.firstCardDomAtMs)?Math.round(record.firstCardDomAtMs):null,
+      firstCardFrameFromNavigationMs:Number.isFinite(record.firstCardFrameAtMs)?Math.round(record.firstCardFrameAtMs):null,
+      firstCardDomFromSseOpenMs:elapsed(record.firstCardDomAtMs,record.sseOpenedAtMs),
+      firstCardFrameFromSseOpenMs:elapsed(record.firstCardFrameAtMs,record.sseOpenedAtMs),
+      domToFrameOpportunityMs:elapsed(record.firstCardFrameAtMs,record.firstCardDomAtMs),
+      milestoneScope:'browser_DOM_and_animation_frame_opportunity_only',
+      sameSellableOfferOwnershipCertified:false,firstCardPaintCertified:false,
+      p95Certified:false
+    };
+  });
+  if(mode==='candidate'&&report.results.cards>0)
+    report.assertions.firstCardFrameTimingRecorded=
+      Number.isFinite(report.browserLatencyPhases.firstCardFrameFromNavigationMs)&&
+      Number.isFinite(report.browserLatencyPhases.domToFrameOpportunityMs);
   // Inspect the same actual SSE search: no extra merchant acquisition or fixture data.
   // The initial render and the completed stream are separate customer experiences.
   if(mode==='candidate'||/ps5/i.test(query)){
@@ -362,6 +437,77 @@ try{
   report.assertions.imageFallbackSafe=imageQA.brokenWithoutFallback===0&&
     imageQA.pendingWithoutFallback===0&&imageQA.loadedWithFallback===0&&
     imageQA.noImageWithoutFallback===0;
+  // Run the production browser module itself against a simulated replay and
+  // a forged badge grant. The currently issued server context is intentionally
+  // WITHHELD: no positive customer VERIFIED UI is authorized by this test.
+  if(mode==='candidate'){
+  const trustBrowser=await page.evaluate(async()=>{
+    const {acceptDisplayTrustContext,acceptSourcePredicateDiagnostic}=
+      await import('/src/search-stream.mjs');
+    const id='12345678-1234-4abc-8123-123456789abc';
+    const envelope={streamGeneration:id,displayTrustContext:{
+      policy:'display-snapshot-v1',scope:'stream_snapshot_not_sellable_offer',
+      streamGeneration:id,snapshotRevision:1,customerVerified:false,badgeEligible:false
+    }};
+    return {
+      normal:acceptDisplayTrustContext(id,envelope)?.badgeEligible===false,
+      replay:acceptDisplayTrustContext(id,envelope,1)===null,
+      forged:acceptDisplayTrustContext(id,{...envelope,
+        displayTrustContext:{...envelope.displayTrustContext,badgeEligible:true}})===null,
+      predicateSpoofRejected:(()=>{
+        const event={policy:'pdp-predicate-shadow-v1',
+          scope:'selected_pdp_revision_predicates',streamGeneration:id,
+          snapshotRevision:1,offerIndex:0,sourceId:'jarir-sa',
+          sourceRevision:'a'.repeat(64),sourceRecordId:'b'.repeat(64),
+          sourcePredicatesRevalidated:true,wholeOfferVerified:false,
+          badgeEligible:false,customerVerified:false,t5Eligible:false,
+          paintCertified:false,durableProof:false};
+        const offers=[{providerMarket:'jarir-sa'}];
+        return acceptSourcePredicateDiagnostic(id,1,event,offers)?.badgeEligible===false&&
+          acceptSourcePredicateDiagnostic(id,1,{...event,badgeEligible:true},offers)===null&&
+          acceptSourcePredicateDiagnostic(id,1,event,offers,1)===null;
+      })(),
+      visibleVerifiedElements:document.querySelectorAll(
+        '[data-trust-verified="true"],.trust-badge-verified').length,
+      domBadgeEligible:document.querySelector('#results')?.dataset.trustBadgeEligible,
+      currentEpoch:document.querySelector('#results')?.dataset.presentationRenderEpoch,
+      currentGeneration:document.querySelector('#results')?.dataset.presentationStreamGeneration,
+      currentSnapshotRevision:document.querySelector('#results')?.dataset.presentationSnapshotRevision
+    };
+  });
+  report.trustBrowser=trustBrowser;
+  report.assertions.v2169DisplayTrustFailClosed=
+    trustBrowser.normal&&trustBrowser.replay&&trustBrowser.forged&&
+    trustBrowser.predicateSpoofRejected&&trustBrowser.visibleVerifiedElements===0&&
+    trustBrowser.domBadgeEligible!=='true'&&
+    (!trustBrowser.currentGeneration||
+      (Number.isSafeInteger(Number(trustBrowser.currentSnapshotRevision))&&
+      Number(trustBrowser.currentSnapshotRevision)>0));
+  // Exercise a real customer click. A new DOM render must advance the epoch,
+  // retaining zero badge authorization even when the same offer remains.
+  const renderProbe=await page.evaluate(()=>{
+    const root=document.querySelector('#results');
+    const card=root?.querySelector('.match-result-card');
+    const before=Number(root?.dataset.presentationRenderEpoch||0);
+    if(!card)return {tested:false,before};
+    card.click();
+    return {tested:true,before,
+      after:Number(root.dataset.presentationRenderEpoch||0),
+      badgeEligible:root.dataset.trustBadgeEligible,
+      verifiedBadges:root.querySelectorAll(
+        '[data-trust-verified="true"],.trust-badge-verified').length};
+  });
+  report.renderEpochProbe=renderProbe;
+  // No cards means NOT TESTED, never an implied lifecycle PASS.
+  // Merchant availability can leave an otherwise valid Chromium journey empty.
+  if(renderProbe.tested){
+    report.assertions.v2169ActualRenderEpochRevocation=
+      renderProbe.before>0&&renderProbe.after>renderProbe.before&&
+      renderProbe.badgeEligible==='false'&&renderProbe.verifiedBadges===0;
+  }else{
+    report.renderEpochProbe.certification='NOT_TESTED_NO_PRODUCT_CARDS';
+  }
+  }
   await page.setViewportSize({width:390,height:844});
   await page.waitForTimeout(500);
   const mobile=await page.evaluate(()=>({viewport:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,

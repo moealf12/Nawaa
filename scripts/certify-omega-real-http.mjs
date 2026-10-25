@@ -66,6 +66,8 @@ const get=(port,path)=>new Promise((resolve,reject)=>{
 });
 const snapshots=body=>body.split(/\r?\n\r?\n/).filter(block=>block.startsWith("event: snapshot"))
   .map(block=>JSON.parse(block.match(/^data: (.*)$/m)?.[1]||"{}"));
+const sseMeta=body=>body.split(/\r?\n\r?\n/).filter(block=>block.startsWith("event: meta"))
+  .map(block=>JSON.parse(block.match(/^data: (.*)$/m)?.[1]||"{}"));
 const oldListen=http.Server.prototype.listen;
 http.Server.prototype.listen=function(...args){
   this.once("listening",async()=>{
@@ -75,6 +77,15 @@ http.Server.prototype.listen=function(...args){
       assert.equal(stream.status,200);
       const received=snapshots(stream.body);
       assert.ok(received.length>0,"actual SSE snapshots required");
+      const meta=sseMeta(stream.body);
+      assert.equal(meta.length,1,"one SSE generation meta event required");
+      const generation=meta[0].streamGeneration;
+      assert.match(generation,/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i);
+      assert.equal(meta[0].trustCertification,'not_enabled_no_badge_or_t5');
+      assert.ok(received.every(snapshot=>snapshot.streamGeneration===generation),
+        "each real SSE snapshot must belong to its server stream generation");
+      assert.ok(received.every(snapshot=>snapshot.badgeEligible!==true),
+        "server generation correlation may not grant a VERIFIED badge");
       const streamed=received.flatMap(s=>s.offers||[]);
       const canonical=streamed.filter(o=>o.sourceMeta?.productId==="677770");
       console.log("OMEGA_HTTP_SEARCH_DEBUG "+JSON.stringify({snapshotCount:received.length,offers:streamed.length,firstOffers:streamed.slice(0,4).map(o=>({title:o.title,sku:o.sku,sourceMeta:o.sourceMeta,price:o.productPrice})),lastCoverage:received.at(-1)?.coverage}));
@@ -102,6 +113,7 @@ http.Server.prototype.listen=function(...args){
         rawIndexedPrice:3049,acceptedCanonicalPrice:3299,
         nonemptyPaginationCanonicalOffers:pageCanonical.length,simulatedExpansionTransport:true,
         staleSSERejected:true,staleJSONRejected:true,
+        serverGenerationBound:true,clientBadgeCertified:false,
         blockedExternal,syntheticPrices:true
       }));
     }catch(e){

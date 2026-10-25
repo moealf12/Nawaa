@@ -4,7 +4,7 @@ import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import http from "node:http";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
@@ -37,6 +37,8 @@ import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
+import {stripUntrustedCustomerTrustClaims} from "./trusted-sse-egress.mjs";
+import {configuredPdpStreamShadow} from "./trusted-pdp-stream-shadow.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
 // Isolated canonical HTTP proof: synthetic canonical prices must not be mixed
@@ -67,6 +69,8 @@ const STATIC_FILES = new Map([
   ["/src/quote-admin.mjs", "src/quote-admin.mjs"],
   ["/config.js", "config.js"],
   ["/src/search-page.mjs", "src/search-page.mjs"],
+  ["/src/search-first-offer-metrics.mjs", "src/search-first-offer-metrics.mjs"],
+  ["/src/product-image-ownership.mjs", "src/product-image-ownership.mjs"],
   ["/src/product-card-presentation.mjs", "src/product-card-presentation.mjs"],
   ["/src/search-core.mjs", "src/search-core.mjs"],
   ["/src/search-query.mjs", "src/search-query.mjs"],
@@ -969,6 +973,9 @@ const server = http.createServer(async (req, res) => {
     if (q.length < 2 || q.length > 180) return jsonResponse(res,400,{error:"invalid_query"},origin || "*");
 
     const normalized = normalizeSearchQuery(q);
+    // Per HTTP stream, server-owned correlation only; not a trust certificate.
+    const streamGeneration = randomUUID();
+    let snapshotRevision = 0;
     const key = searchCacheKey(normalized,0);
     // Streamed searches must expose the same signed depth-1 cursor as /api/search.
     // Without it, the UI cannot request additional sources after an SSE result.
@@ -978,6 +985,7 @@ const server = http.createServer(async (req, res) => {
     const cached = cachedSearch.peek(key,{allowStale:false});
     const requestStarted = PROFILE_SEARCH_STREAM ? performance.now() : 0;
     let firstValidPublished=false,firstExactPublished=false;
+    let pdpShadow=null; // No source fetch unless explicit server-only opt-in.
     res.writeHead(200,{
       "content-type":"text/event-stream; charset=utf-8",
       "cache-control":"no-cache, no-transform",
@@ -991,9 +999,25 @@ const server = http.createServer(async (req, res) => {
       const measuring=PROFILE_SEARCH_STREAM && event==="snapshot";
       res.write("event: "+event+"\n");
       const serializeStarted=measuring ? performance.now() : 0;
-      const serialized=JSON.stringify(data);
+      // An SSE frame version belongs to this HTTP stream and THIS snapshot.
+      // This correlation envelope deliberately never attests to any sellable
+      // offer, and it cannot authorize customer badges or T5-T8 milestones.
+      const displayTrustContext=event==="snapshot" ? {
+        policy:"display-snapshot-v1",scope:"stream_snapshot_not_sellable_offer",
+        streamGeneration,snapshotRevision:++snapshotRevision,
+        customerVerified:false,badgeEligible:false
+      } : undefined;
+      // Source providers and indexed offers are untrusted inputs. Their
+      // self-described VERIFIED/badge flags cannot enter the customer SSE.
+      // This shallow, bounded egress step does not perform source IO.
+      const outgoing=event==="snapshot"
+        ? stripUntrustedCustomerTrustClaims(data) : data;
+      const serialized=JSON.stringify({...outgoing,streamGeneration,
+        ...(displayTrustContext ? {displayTrustContext} : {})});
       const serializedAt=measuring ? performance.now() : 0;
       res.write("data: "+serialized+"\n\n");
+      if(event==="snapshot")pdpShadow?.consider(outgoing,displayTrustContext.snapshotRevision);
+      if(event==="done"||event==="error")pdpShadow?.close();
       if (measuring) {
         const milestone=firstOfferMilestones(data?.offers);
         // One per milestone per request, bounded diagnostic labels only.
@@ -1017,7 +1041,9 @@ const server = http.createServer(async (req, res) => {
         serializeMs:serializedAt-serializeStarted,socketEnqueueMs:performance.now()-serializedAt,
       }));
     };
-    send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString()});
+    send("meta",{query:q,normalizedQuery:normalized,observedAt:new Date().toISOString(),
+      trustCertification:'not_enabled_no_badge_or_t5',
+      displayTrustPolicy:'display-snapshot-v1'});
 
     let closed=false;
     const streamController=new AbortController();
@@ -1027,8 +1053,13 @@ const server = http.createServer(async (req, res) => {
       if(!res.writableEnded) {
         closed=true;
         streamController.abort(new Error("search_client_disconnected"));
+        pdpShadow?.close();
       }
     });
+    // Fail closed when signing keys are absent, disabled or source throttled.
+    // This diagnostic remains entirely outside the critical first-SSE path.
+    pdpShadow=configuredPdpStreamShadow({streamGeneration,
+      signal:streamController.signal,sendEvent:send});
     try {
       if (cached) {
         send("snapshot",{...await canonicalResponse(cached,normalized),nextCursor});
@@ -1088,16 +1119,18 @@ const server = http.createServer(async (req, res) => {
       if(OMEGA_CANONICAL&&resolvedOffer)await canonicalCandidates([resolvedOffer],true);
       result=await canonicalResponse(result,normalizedComparisonQuery);
       const nextCursor = depth < MAX_SEARCH_DEPTH ? encodeSearchCursor(normalizedComparisonQuery, depth + 1) : null;
-      return jsonResponse(res, 200, {
+      return jsonResponse(res, 200, stripUntrustedCustomerTrustClaims({
         query: productUrl || q,
         comparisonQuery: resolvedOffer ? comparisonQuery : null,
-        resolvedOffer,
+        resolvedOffer:resolvedOffer
+          ? stripUntrustedCustomerTrustClaims({offers:[resolvedOffer]}).offers[0]
+          : null,
         destinationCountry: "SA",
         observedAt: new Date().toISOString(),
         durationMs: Date.now() - started,
         nextCursor,
         ...result,
-      }, origin || "*");
+      }), origin || "*");
     } catch (error) {
       return jsonResponse(res, 500, {
         error: "search_failed",

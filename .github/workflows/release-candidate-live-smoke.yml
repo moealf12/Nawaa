@@ -28,7 +28,8 @@ concurrency:
 jobs:
   real-source-candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Multi-source SSE and controlled A/B latency need room beyond npm install.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,6 +37,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
       - name: Install locked dependencies (no lifecycle scripts)
         run: npm ci --ignore-scripts
       - name: Test disposable candidate HTTP API and live storefronts (no production writes)
@@ -59,15 +61,34 @@ jobs:
           NAWAA_PROFILE_EXTRA: '1'
           NAWAA_PROFILE_EXTRA_SPLIT_JSON: '1'
         run: node scripts/probe-extra-fields.mjs
-      - name: Check out the v15.20 pre-index-write-guard production parent on the same runner
+      - name: Check out exact production main SHA as causal A/B baseline on the same runner
         uses: actions/checkout@v4
         with:
-          ref: d40a65990bc551e2db20c73890874567e502bd10
+          ref: c9ddf054c07315bf12ef68c7bd4781345b66cc6d
           path: .latency-baseline
           persist-credentials: false
-      - name: Reuse identical locked dependencies for the baseline
+      - name: Verify identical locked production dependencies for the baseline
         run: |
-          cmp package-lock.json .latency-baseline/package-lock.json
+          # Dev-only lint/property tooling legitimately changes the candidate
+          # lockfile, but must not change the comparable production closure.
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const load = path => JSON.parse(readFileSync(path, 'utf8'));
+          const candidate = load('package-lock.json');
+          const baseline = load('.latency-baseline/package-lock.json');
+          assert.deepEqual(candidate.packages[''].dependencies,
+            baseline.packages[''].dependencies,
+            'runtime direct dependency declarations must remain identical');
+          const production = lock => Object.entries(lock.packages)
+            .filter(([path, entry]) => path !== '' && entry.dev !== true)
+            .map(([path, entry]) => [path, entry.version || null,
+              entry.resolved || null, entry.integrity || null])
+            .sort((a, b) => a[0].localeCompare(b[0]));
+          assert.deepEqual(production(candidate), production(baseline),
+            'full production dependency graph must match for valid A/B comparison');
+          console.log('Production dependency parity verified; dev-only tools excluded');
+          NODE
           ln -s "$GITHUB_WORKSPACE/node_modules" .latency-baseline/node_modules
       - name: Controlled normalization CPU A/B and cross-version semantic equivalence
         run: node scripts/benchmark-query-normalization.mjs .latency-baseline .

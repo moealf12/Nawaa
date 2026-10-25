@@ -1,6 +1,6 @@
-import { CheerioCrawler, Configuration } from "crawlee";
+import {load} from "cheerio";
 import { parseMoney, normalizeAvailability } from "./provider-utils.mjs";
-import { resolvePublicHttpsTarget, fetchHtmlSafe } from "./url-resolver.mjs";
+import {fetchHtmlSafe} from "./url-resolver.mjs";
 
 const MAX_BODY_BYTES = 8_000_000;
 
@@ -86,29 +86,57 @@ function score(candidate){
   if(candidate.method==="json_ld") s+=0.08;
   return Math.min(1,Number(s.toFixed(3)));
 }
-function reconcile(candidates, finalUrl){
-  const ranked=candidates.filter(Boolean).map(c=>({...c,confidence:score(c)})).sort((a,b)=>b.confidence-a.confidence);
-  const best=ranked[0];
-  if(!best || !best.title || best.price===null) throw new Error("No structured product evidence found");
-  const field=(key)=>first(...ranked.map(c=>c[key]));
+export function reconcile(candidates, finalUrl){
+  const ranked=candidates.filter(Boolean).map(c=>({...c,confidence:score(c)}))
+    .sort((a,b)=>b.confidence-a.confidence);
+  // Price and currency are one inseparable, source-owned observation. Never
+  // combine two individually valid scalar fields into a fabricated offer.
+  const priced=ranked.find(c=>typeof c.title==="string"&&c.title.trim()&&
+    Number.isFinite(c.price)&&c.price>0&&
+    /^[A-Z]{3}$/.test(String(c.currency||"").trim().toUpperCase()));
+  if(!priced)throw new Error("No coherent structured product evidence found");
+
+  // Other extraction strategies may enrich only when they share an explicit
+  // product identifier with the chosen priced record, without contradiction.
+  // Same PDP or similar title alone cannot establish sellable-item ownership.
+  const identityFields=["sku","gtin","modelNumber"];
+  // A model/MPN alone may identify a family of sellable variants. An
+  // enrichment donor needs a matching merchant SKU or GTIN; hard identifier
+  // punctuation is identity-bearing (X+1 and X1 are not interchangeable).
+  const canonical=v=>String(v??"").normalize("NFKC").trim().toLowerCase();
+  const sameIdentity=other=>{
+    let strongMatch=false;
+    for(const key of identityFields){
+      const own=canonical(priced[key]),alternate=canonical(other[key]);
+      if(own&&alternate){
+        if(own!==alternate)return false;
+        if(key==="sku"||key==="gtin")strongMatch=true;
+      }
+    }
+    return strongMatch;
+  };
+  const trusted=[priced,...ranked.filter(c=>c!==priced&&sameIdentity(c))];
+  const origin=key=>trusted.find(c=>c[key]!==null&&c[key]!==undefined&&c[key]!=="");
+  const field=key=>first(...trusted.map(c=>c[key]));
   return {
-    title:field("title"),
+    title:priced.title,
     brand:field("brand"),
     sku:field("sku"),
     gtin:field("gtin"),
     modelNumber:field("modelNumber"),
     image:absolute(finalUrl,field("image")),
-    productPrice:field("price"),
-    originalProductPrice:field("price"),
-    originalCurrency:String(field("currency")||"").toUpperCase()||null,
+    productPrice:priced.price,
+    originalProductPrice:priced.price,
+    originalCurrency:String(priced.currency).trim().toUpperCase(),
     availability:field("availability")||"unknown",
     sourceUrl:finalUrl,
     extraction:{
       crawlee:true,
-      strategy:best.method,
+      strategy:priced.method,
       attemptedStrategies:[...new Set(ranked.map(c=>c.method))],
-      fieldSources:Object.fromEntries(["title","brand","sku","gtin","modelNumber","image","price","currency","availability"].map(k=>[k,ranked.find(c=>c[k]!==null&&c[k]!==undefined&&c[k]!=="")?.method||null])),
-      confidence:best.confidence,
+      fieldSources:Object.fromEntries(["title","brand","sku","gtin","modelNumber","image","price","currency","availability"]
+        .map(k=>[k,k==="price"||k==="currency"||k==="title"?priced.method:origin(k)?.method||null])),
+      confidence:priced.confidence,
     },
   };
 }
@@ -128,29 +156,50 @@ export async function extractProductWithCrawlee(url,{timeoutMs=12000}={}){
   } finally { clearTimeout(timer); }
 }
 
-export async function discoverProductUrlsWithCrawlee(url,{limit=24,timeoutMs=12000,allowedHost=null}={}){
-  const { parsed }=await resolvePublicHttpsTarget(url);
-  const timeoutSecs=Math.max(1,Math.ceil(timeoutMs/1000));
+// Extraction fallback and URL discovery must share the same network policy.
+// A separate CheerioCrawler socket after preflight DNS resolution could connect
+// to a different address or follow a redirect outside the pinned transport.
+// This helper is a pure *link enumerator*, not source or offer certification.
+export function extractDiscoveredProductUrls(html,finalUrl,{limit=24,allowedHost=null}={}){
+  const base=new URL(finalUrl);
+  if(allowedHost&&base.hostname!==allowedHost)
+    throw new Error("Discovery redirected beyond allowed merchant host");
+  if(typeof html!=="string"||Buffer.byteLength(html)>MAX_BODY_BYTES)
+    throw new Error("Discovery HTML exceeds body budget");
   const cap=Math.max(1,Math.min(96,Math.floor(Number(limit)||24)));
-  const config=new Configuration({persistStorage:false,purgeOnStart:true});
-  const discovered=[]; const seen=new Set(); let failure=null;
-  const crawler=new CheerioCrawler({maxConcurrency:1,maxRequestsPerCrawl:1,maxRequestRetries:1,navigationTimeoutSecs:timeoutSecs,requestHandlerTimeoutSecs:timeoutSecs+2,
-    async requestHandler({$,request}){
-      const base=request.loadedUrl||request.url;
-      $("a[href]").each((_,el)=>{
-        if(discovered.length>=cap) return false;
-        const href=$(el).attr("href"); let absoluteUrl;
-        try{absoluteUrl=new URL(href,base);}catch{return;}
-        if(absoluteUrl.protocol!=="https:") return;
-        if(allowedHost && absoluteUrl.hostname!==allowedHost) return;
-        if(!/\.html(?:$|[?#])/i.test(absoluteUrl.href)) return;
-        const key=absoluteUrl.origin+absoluteUrl.pathname;
-        if(seen.has(key)) return; seen.add(key); discovered.push(absoluteUrl.href);
-      });
-    },
-    async failedRequestHandler({request},error){failure=error instanceof Error?error:new Error(String(error||request.errorMessages?.at(-1)||"Crawlee discovery failed"));}
-  },config);
-  await crawler.run([{url:parsed.href,uniqueKey:parsed.href}]); await crawler.teardown();
-  if(!discovered.length && failure) throw failure;
-  return discovered;
+  const $=load(html);
+  const urls=[],seen=new Set();
+  $("a[href]").each((_,element)=>{
+    if(urls.length>=cap)return false;
+    let target;
+    try{target=new URL($(element).attr("href"),base);}catch{return;}
+    if(target.protocol!=="https:"||target.username||target.password||
+       target.port&&target.port!=="443")return;
+    if(allowedHost&&target.hostname!==allowedHost)return;
+    if(!/\.html$/i.test(target.pathname))return;
+    // Strip only known tracking keys from the de-duplication key. Preserve
+    // duplicate selectors and parameter ORDER: a source may interpret order.
+    const identity=new URL(target.href);
+    for(const key of [...identity.searchParams.keys()]){
+      if(/^(utm_.+|gclid|fbclid|msclkid|affiliate|aff)$/i.test(key))
+        identity.searchParams.delete(key);
+    }
+    const key=identity.origin+identity.pathname+identity.search;
+    if(seen.has(key))return;
+    seen.add(key);urls.push(target.href);
+  });
+  return urls;
+}
+
+// Legacy exported name retained for callers; acquisition no longer creates a
+// second crawler-owned network transport. Same bounded pinned-DNS/redirect/TLS
+// policy as the existing selected-product resolver, with a global deadline.
+export async function discoverProductUrlsWithCrawlee(url,{limit=24,timeoutMs=12000,allowedHost=null}={}){
+  const controller=new AbortController();
+  const duration=Math.max(1,Math.min(12000,Math.floor(Number(timeoutMs)||12000)));
+  const clock=setTimeout(()=>controller.abort(new Error("Discovery timed out")),duration);
+  try{
+    const {finalUrl,html}=await fetchHtmlSafe(url,0,{signal:controller.signal});
+    return extractDiscoveredProductUrls(html,finalUrl,{limit,allowedHost});
+  }finally{clearTimeout(clock);}
 }

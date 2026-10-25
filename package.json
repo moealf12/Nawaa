@@ -10,16 +10,23 @@
     "audit:source": "node scripts/audit-source.mjs",
     "audit:matrix": "node scripts/audit-matrix.mjs",
     "benchmark:search": "node scripts/search-quality-benchmark.mjs",
-    "validate:sources": "node scripts/validate-live-sources.mjs"
+    "validate:sources": "node scripts/validate-live-sources.mjs",
+    "lint": "eslint server/product-identity.mjs server/schemaorg-product-graph.mjs server/audit-contract.mjs server/provider-utils.mjs server/universal-acquisition.mjs src/search-page.mjs tests/product-evidence.property.test.mjs tests/universal-acquisition.test.mjs server/trusted-observation-journal.mjs server/trusted-offer-verifier.mjs server/trusted-pdp-observation.mjs tests/trusted-journal-head.test.mjs server/trusted-*.mjs tests/trusted-*.test.mjs scripts/trusted-*.mjs scripts/measure-search-latency.mjs scripts/latency-diagnostic-summary.mjs --max-warnings=0",
+    "test:property": "node --test tests/product-evidence.property.test.mjs",
+    "test:coverage:focused": "NAWAA_TEST_TRANSPORT=fetch node --test --experimental-test-coverage tests/product-evidence.property.test.mjs tests/universal-acquisition.test.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
-    "meilisearch": "^0.48.2",
-    "pg": "^8.16.3",
     "cheerio": "^1.1.2",
-    "crawlee": "3.18.2"
+    "crawlee": "3.18.2",
+    "meilisearch": "^0.48.2",
+    "pg": "^8.16.3"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "eslint": "9.39.5",
+    "fast-check": "4.10.2",
+    "globals": "17.13.0"
+  }
 }

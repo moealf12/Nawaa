@@ -50,6 +50,15 @@ export function parseMoney(value) {
 export function normalizeCondition(value = "") {
   const v = String(value).toLowerCase().replace(/[_-]+/g," ").trim();
   if (!v) return "unknown";
+  // Schema.org itemCondition values are enumerations, not space-delimited
+  // adjectives. "NewCondition" must not silently become unknown/used.
+  const schema = v.match(/^(?:https?:\/\/(?:www\.)?schema\.org\/)?(newcondition|usedcondition|refurbishedcondition|damagedcondition)\/?$/);
+  if(schema){
+    if(schema[1]==="newcondition")return "new";
+    if(schema[1]==="usedcondition")return "used";
+    if(schema[1]==="refurbishedcondition")return "refurbished";
+    return "unknown"; // DamagedCondition has no safe 1:1 retail state.
+  }
   if (/\b(refurbished?|renewed|remanufactured)\b/.test(v)) return "refurbished";
   if (/\b(open\s*box)\b/.test(v)) return "open_box";
   if (/\b(like\s*new|used|pre\s*owned|second\s*hand)\b/.test(v)) return "used";
@@ -73,4 +82,28 @@ export function makeProviderError(provider, error) {
     error: error instanceof Error ? error.message : String(error),
     offers: [],
   };
+}
+
+
+// Reuse one deterministic, pure selection rule across embedded JSON and
+// storefront adapters. Invalid or zero-valued high-priority placeholders must
+// not conceal a valid, same-node purchase price. This does NOT arbitrate two
+// valid contradictory sale/current/final prices; configured field order still
+// controls that case pending attributable merchant evidence.
+export function firstPositivePriceField(node, fieldKeys = [], valueKeys = ["amount","value","price"]) {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return null;
+  for (const key of fieldKeys) {
+    const raw = node[key];
+    if (raw === undefined || raw === null || raw === "") continue;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      for (const amountKey of valueKeys) {
+        const amount = parseMoney(raw[amountKey]);
+        if (amount !== null && amount > 0) return { amount, raw, field:key };
+      }
+      continue;
+    }
+    const amount = parseMoney(raw);
+    if (amount !== null && amount > 0) return { amount, raw, field:key };
+  }
+  return null;
 }
