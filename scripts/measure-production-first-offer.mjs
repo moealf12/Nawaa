@@ -1,6 +1,8 @@
 // Read-only, bounded live SSE observations. Diagnostic only; zero merchant
 // writes, quotes, production credentials, recurring probes or dependencies.
 // These are client-received milestones, not server execution durations.
+// v21.93 accepted target: first structurally valid offer <= 3000 ms (P95 goal).
+// Never certify a percentile from these bounded, heterogeneous samples.
 import {performance} from 'node:perf_hooks';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
@@ -16,8 +18,8 @@ export function sampleSummary(rows){
     attempts:rows.length,validFound:times.length,withoutValidOffer:rows.length-times.length,
     medianObservedMs:quantile(.5),minObservedMs:times[0]??null,maxObservedMs:times.at(-1)??null,
     // Small samples and heterogeneous queries cannot certify an SLO.
-    p95Ms:null,p95Certified:false,targetMs:1500,
-    observedAboveTarget:times.filter(ms=>ms>1500).length,
+    p95Ms:null,p95Certified:false,targetMs:3000,
+    observedAboveTarget:times.filter(ms=>ms>3000).length,
     note:'Small unstratified live sample; not production P95 or browser-render timing.',
   };
 }
