@@ -442,7 +442,7 @@ export function describeProduct(offer = {}) {
 }
 
 const ACCESSORY_TERMS = [
-  "case","cover","faceplate","faceplates","face plate","face plates","side shell plate","side shell plates","replacement shell","skin","skins","decal","decals","screen protector","protector","charger","cable","adapter",
+  "case","cover","faceplate","faceplates","face plate","face plates","side shell plate","side shell plates","replacement shell","screen protector","protector","charger","cable","adapter",
   "disc drive","disk drive","optical drive","blu ray drive","vertical stand","replacement stand","stand","حامل",
   "usb hub","expansion hub","multiport hub","hub","docking station","port expander","هب","موزع منافذ",
   "atomizer","perfume bottle","empty bottle","laptop sleeve","laptop sling","laptop bag","laptop briefcase","briefcase","rucksack","notebook sleeve","notebook sling","cooling fan","cpu fan","protective shell","privacy screen","active pen","lcd replacement","screen replacement","only compatible with","laptop battery","notebook battery","battery replacement","battery compatible","battery for","replacement battery","power supply","power supplies","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
