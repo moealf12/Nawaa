@@ -58,3 +58,22 @@ test('P0 positive: a console sold WITH an included faceplate stays a console bun
   assert.equal(productCategory(bundle),'console');
   assert.equal(assessOfferMatch('PS5 Slim Disc',bundle).exactMatch,true);
 });
+
+test('P0 positive: skincare serum does not become a gaming accessory due to a global skin keyword',()=>{
+  const serum={
+    ...genuine,
+    title:'Vitamin C Skin Serum 30ml',
+    sourceUrl:'https://fixture.example/vitamin-c-serum',
+    specs:{},
+  };
+  const match=assessOfferMatch('Vitamin C',serum);
+  assert.equal(match.exactMatch,true,'skin-care retail wording must not receive accessory penalty');
+  assert.equal(filterQueryOffers('Vitamin C',[serum]).offers.length,1);
+});
+
+test('P0 negative: a PS5 skin decal remains a gaming accessory',()=>{
+  const skin={...observedFaceplate,title:'PS5 Slim Disc Edition Skin Decal Protective Sticker'};
+  assert.equal(productCategory(skin),'accessory');
+  assert.equal(assessOfferMatch('PS5 Slim Disc',skin).exactMatch,false);
+  assert.equal(filterQueryOffers('PS5 Slim Disc',[skin]).offers.length,0);
+});
