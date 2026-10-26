@@ -65,10 +65,16 @@ jobs:
           ref: d40a65990bc551e2db20c73890874567e502bd10
           path: .latency-baseline
           persist-credentials: false
-      - name: Reuse identical locked dependencies for the baseline
+      - name: Prepare exact locked dependencies for historical baseline
         run: |
-          cmp package-lock.json .latency-baseline/package-lock.json
-          ln -s "$GITHUB_WORKSPACE/node_modules" .latency-baseline/node_modules
+          set -euo pipefail
+          if cmp -s package-lock.json .latency-baseline/package-lock.json; then
+            echo "Same lockfile: safely reuse the candidate dependency install"
+            ln -s "$GITHUB_WORKSPACE/node_modules" .latency-baseline/node_modules
+          else
+            echo "Different lockfiles: install historical baseline dependencies independently"
+            (cd .latency-baseline && npm ci --ignore-scripts --no-audit --no-fund)
+          fi
       - name: Controlled normalization CPU A/B and cross-version semantic equivalence
         run: node scripts/benchmark-query-normalization.mjs .latency-baseline .
       - name: Check matching semantics and benchmark filtering on one CPU
