@@ -328,7 +328,7 @@ const GAMING_PLATFORM = /\b(?:ps[45]|xbox(?: series [sx])?|nintendo switch(?: 2)
 const DISC_DRIVE_ACCESSORY = /\b(?:disc|disk|optical|blu ray) drive\b/;
 // Console accessories may mention a complete PS5 console in compatibility text.
 // Reject peripheral product nouns before trusting 'Console / Digital Edition'.
-const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
+const GAMING_ACCESSORY = /\b(?:controllers?|dualsense|dual sense|remote|camera|charging station|stick module|headset|adaptor|adapter|covers?|cases?|face\s?plates?|side shell plates?|replacement shells?|skins?|decals?|accessor(?:y|ies)|gift card|recharge card|disc drive|disk drive|optical drive|blu ray drive|cooling fans?|wall mounts?|mounting brackets?|game drives?|external hdd|external hard drive|hard drive enclosure|(?:usb|multiport|expansion|charging) hubs?|hubs?|docking stations?|port expanders?|stands?)\b/;
 // Storage-media nouns identify a sold component, not the PS5 it fits.
 // A title-leading real console subject remains a console when its SSD is included.
 const GAMING_STORAGE_ACCESSORY = /\b(?:ssds?|nvme|solid state drives?|storage expansion(?: drives?)?|external usb (?:ssd|drive))\b/;
@@ -442,7 +442,7 @@ export function describeProduct(offer = {}) {
 }
 
 const ACCESSORY_TERMS = [
-  "case","cover","screen protector","protector","charger","cable","adapter",
+  "case","cover","faceplate","faceplates","face plate","face plates","side shell plate","side shell plates","replacement shell","screen protector","protector","charger","cable","adapter",
   "disc drive","disk drive","optical drive","blu ray drive","vertical stand","replacement stand","stand","حامل",
   "usb hub","expansion hub","multiport hub","hub","docking station","port expander","هب","موزع منافذ",
   "atomizer","perfume bottle","empty bottle","laptop sleeve","laptop sling","laptop bag","laptop briefcase","briefcase","rucksack","notebook sleeve","notebook sling","cooling fan","cpu fan","protective shell","privacy screen","active pen","lcd replacement","screen replacement","only compatible with","laptop battery","notebook battery","battery replacement","battery compatible","battery for","replacement battery","power supply","power supplies","laptop screen","replacement screen","replacement display","display panel","lcd panel","lcd screen",
