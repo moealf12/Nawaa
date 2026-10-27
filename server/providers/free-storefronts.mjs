@@ -1530,6 +1530,25 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       ? filteredOffers
       : filteredOffers.slice(0, perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
+    // Counts describe distinct pipeline stages, not an additive source total:
+    // link discovery and structured-card discovery can overlap. A blocked
+    // transport before this point has unknown stages, never invented zeros.
+    // No merchant URLs, prices or customer fields are included.
+    const sourceStageCounts = {
+      structuredCandidates:directSearchOffers.length,
+      productLinkCandidates:links.length,
+      productPagesRequested:resolutionLinks.length,
+      productPagesPriced:resolvedOffers.length,
+      productPagesFailed:failures,
+      productPagesUnpriced:settled.length - resolvedOffers.length - failures,
+      structuredFxConverted:directOffers.length,
+      structuredFxRejected:directSearchOffers.length - directOffers.length,
+      preMatchOffers:allOffers.length,
+      relevanceRejected:allOffers.length - filteredOffers.length,
+      relevanceRetained:filteredOffers.length,
+      selectionTruncated:filteredOffers.length - offers.length,
+      emittedOffers:offers.length,
+    };
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
     // HTTP 200 is not healthy acquisition when an explicitly detected bot
     // challenge or failed primary search has yielded no verified product.
@@ -1549,6 +1568,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       offers,
       failures,
       diagnostics:{
+        sourceStageCounts,
         queryFilter,
         queryFilterSamples,
         // Keep bounded rejection reasons without replaying user-specific URL
@@ -1657,7 +1677,7 @@ export async function searchFreeStorefronts(query, options = {}) {
     const store = stores[index];
     if (result.status === "fulfilled") {
       offers.push(...result.value.offers);
-      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
+      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures, sourceStageCounts:result.value.diagnostics?.sourceStageCounts || null });
       if(result.value.diagnostics?.primarySearchError) errors.push({market:store.id,error:result.value.diagnostics.primarySearchError});
       // Avoid double-counting one blocked search. Valid empty catalogs and
       // legitimate query filtering must not be reported as source outages.
@@ -1668,7 +1688,7 @@ export async function searchFreeStorefronts(query, options = {}) {
         errors.push({ market:store.id, error:"No verified structured-price product pages found" });
     } else {
       errors.push({ market:store.id, error:result.reason?.message || String(result.reason) });
-      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:0, verifiedOffers:0, failures:1 });
+      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:0, verifiedOffers:0, failures:1, sourceStageCounts:null });
     }
   });
 
