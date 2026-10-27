@@ -1,4 +1,4 @@
-import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
+import { searchFreeStorefrontById, inspectSamsungSearchDiscovery, extractSamsungSearchOffers } from "../server/providers/free-storefronts.mjs";
 
 const CASES = [
   // Saudi/GCC certification batch: prioritize sources that can materially
@@ -20,6 +20,49 @@ const CASES = [
   ["amazon-ae","airpods"],["noon-ae","airpods"],["sharafdg-ae","airpods"],
   ["virgin-ae","airpods"],["xcite-kw","airpods"],["lulu-ae","airpods"],
 ];
+
+// One-time bounded source-discovery research within CI, not a production
+// crawler or pricing fallback. Alternative query variants do not certify any
+// offer unless the ordinary price, product and source evidence gates do so.
+async function probeSamsungSearchVariants() {
+  const alternatives=["s25","SM-S931B"]; // known first-party S25 series SKU prefix
+  const results=[];
+  for(const alternative of alternatives) {
+    const endpoint=new URL("https://www.samsung.com/sa_en/search/");
+    endpoint.searchParams.set("searchvalue",alternative);
+    try {
+      const response=await fetch(endpoint.href,{
+        headers:{ accept:"text/html,application/xhtml+xml", "accept-language":"en-US,en;q=0.9" },
+        signal:AbortSignal.timeout(7000),
+      });
+      const type=response.headers.get("content-type") || "";
+      if(!response.ok || !/text\/html|application\/xhtml\+xml/i.test(type)) {
+        results.push({searchTerm:alternative,status:"UNAVAILABLE",httpStatus:response.status});continue;
+      }
+      const html=await response.text();
+      if(html.length>5000000) {
+        results.push({searchTerm:alternative,status:"OVERSIZE"});continue;
+      }
+      const links=inspectSamsungSearchDiscovery(html,endpoint.href,"galaxy s25");
+      const priced=extractSamsungSearchOffers(html,"galaxy s25");
+      results.push({
+        searchTerm:alternative,
+        status:"PROBED",
+        htmlBytes:new TextEncoder().encode(html).byteLength,
+        exactModelBuyPdp:links.exactModelBuyPdp,
+        offModelBuyPdp:links.offModelBuyPdp,
+        unknownModelBuyPdp:links.unknownModelBuyPdp,
+        candidateSampleTruncated:links.sampleTruncated,
+        exactModelPaths:links.exactModelPaths,
+        pricedStructuredCandidates:priced.length,
+      });
+    } catch(error) {
+      results.push({searchTerm:alternative,status:"UNAVAILABLE",
+        reason:error?.name==="TimeoutError"?"TIMEOUT":"FETCH_FAILED"});
+    }
+  }
+  return results;
+}
 
 let live = 0;
 const rows = [];
@@ -49,7 +92,9 @@ for (const [store, query] of CASES) {
       // Preserve bounded source-provided rejection evidence. Without these
       // first-five titles/reasons a 51→0 Amazon run cannot distinguish a
       // relevance filter from a source response change.
-      queryFilterSamples:result.diagnostics?.queryFilterSamples || []});
+      queryFilterSamples:result.diagnostics?.queryFilterSamples || [],
+      ...(store==="samsung-sa" && valid.length===0
+        ? {alternateSearchDiagnostics:await probeSamsungSearchVariants()} : {})});
   } catch (error) {
     rows.push({store,query,status:"PROBED_FAILED",candidates:0,offers:0,valid:0,ms:Date.now()-started,error:error?.message || String(error)});
   }
