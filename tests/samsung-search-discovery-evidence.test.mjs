@@ -16,7 +16,8 @@ test('RED: sampled Samsung source evidence attributes zero exact S25 while ident
   const d=inspectSamsungSearchDiscovery(html(fixtures),search,query);
   assert.equal(d.requestedModel,'galaxy s25');
   assert.equal(d.exactModelBuyPdp,0);
-  assert.equal(d.offModelBuyPdp,3);
+  assert.equal(d.offModelBuyPdp,2);
+  assert.equal(d.unknownModelBuyPdp,1,'Z Fold8 is a buy page but lacks a Galaxy S-series model identifier');
   assert.equal(d.nonPurchaseCandidates,1);
   assert.ok(d.offModelPaths.some(x=>x.includes('galaxy-s26-ultra')));
   assert.equal(JSON.stringify(d).includes('searchvalue='),false,'never include raw search URL, query parameters or shopper tokens');
@@ -50,6 +51,7 @@ test('integration: zero-offer Samsung searches report bounded acquisition eviden
     assert.equal(count,1);
     assert.equal(result.offers.length,0);
     assert.equal(result.diagnostics.samsungDiscovery.exactModelBuyPdp,0);
-    assert.equal(result.diagnostics.samsungDiscovery.offModelBuyPdp,3);
+    assert.equal(result.diagnostics.samsungDiscovery.offModelBuyPdp,2);
+    assert.equal(result.diagnostics.samsungDiscovery.unknownModelBuyPdp,1);
   } finally {globalThis.fetch=previous;}
 });
