@@ -443,7 +443,12 @@ function extractLookfantasticPrimaryPrice(html, url) {
     .filter(value=>value.length>=4 && !["with","from","skin","size","dry","rough"].includes(value));
   if (subjectTokens.length<2 || subjectTokens.filter(value=>nameTokens.has(value)).length<2) return null;
 
-  const visible=main.text().replace(/\s+/g," ").trim();
+  // Cheerio text() concatenates adjacent <span>/<strong>/<button> nodes
+  // without separators. Retain word boundaries across HTML elements before
+  // decoding entity-escaped visible price labels and amounts.
+  const visible=decodeHtmlText((main.html() || "")
+    .replace(/<[^>]+>/g," ")
+    .replace(/&pound;|&#163;|&#xA3;/gi,"£"));
   const start=visible.indexOf(name);
   if (start<0) return null;
   const following=visible.slice(start+name.length,start+name.length+10000);
