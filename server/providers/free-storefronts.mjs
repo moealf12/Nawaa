@@ -1141,6 +1141,7 @@ export function inspectSamsungSearchDiscovery(html, searchUrl, query) {
     nonPurchaseCandidates:0,
     exactModelPaths:[],
     offModelPaths:[],
+    unknownModelPaths:[],
   };
   for (const candidate of candidates) {
     const url=new URL(candidate.url);
@@ -1154,6 +1155,7 @@ export function inspectSamsungSearchDiscovery(html, searchUrl, query) {
     const pathModels=normalizeSearchQuery(path).match(/\bgalaxy s\d+(?: ultra| plus| fe)?\b/g) || [];
     if (pathModels.length!==1) {
       evidence.unknownModelBuyPdp++;
+      if (evidence.unknownModelPaths.length<4) evidence.unknownModelPaths.push(path);
     } else if (requestedModel && pathModels[0]===requestedModel) {
       evidence.exactModelBuyPdp++;
       if (evidence.exactModelPaths.length<4) evidence.exactModelPaths.push(path);
@@ -1162,6 +1164,8 @@ export function inspectSamsungSearchDiscovery(html, searchUrl, query) {
       if (evidence.offModelPaths.length<4) evidence.offModelPaths.push(path);
     }
   }
+  evidence.modelLinkOutcome=!requestedModel ? "BROAD_QUERY" :
+    evidence.exactModelBuyPdp ? "EXACT_MODEL_LINK_OBSERVED" : "MODEL_LINK_NOT_OBSERVED";
   return evidence;
 }
 
