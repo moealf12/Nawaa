@@ -16,8 +16,10 @@ test('RED: sampled Samsung source evidence attributes zero exact S25 while ident
   const d=inspectSamsungSearchDiscovery(html(fixtures),search,query);
   assert.equal(d.requestedModel,'galaxy s25');
   assert.equal(d.exactModelBuyPdp,0);
+  assert.equal(d.modelLinkOutcome,'MODEL_LINK_NOT_OBSERVED');
   assert.equal(d.offModelBuyPdp,2);
   assert.equal(d.unknownModelBuyPdp,1,'Z Fold8 is a buy page but lacks a Galaxy S-series model identifier');
+  assert.ok(d.unknownModelPaths.some(x=>x.includes('galaxy-z-fold8')));
   assert.equal(d.nonPurchaseCandidates,1);
   assert.ok(d.offModelPaths.some(x=>x.includes('galaxy-s26-ultra')));
   assert.equal(JSON.stringify(d).includes('searchvalue='),false,'never include raw search URL, query parameters or shopper tokens');
@@ -27,6 +29,7 @@ test('positive: actual Samsung S25 PDP on a search HTML sample is reported witho
   const valid='https://www.samsung.com/sa_en/smartphones/galaxy-s25/buy/?modelCode=SM-S931B';
   const d=inspectSamsungSearchDiscovery(html([...fixtures,[valid,'Galaxy S25']]),search,query);
   assert.equal(d.exactModelBuyPdp,1);
+  assert.equal(d.modelLinkOutcome,'EXACT_MODEL_LINK_OBSERVED');
   assert.ok(d.exactModelPaths.includes('/sa_en/smartphones/galaxy-s25/buy/'));
   assert.equal('productPrice' in d,false);
   assert.equal('verifiedOffers' in d,false);
@@ -35,6 +38,7 @@ test('positive: actual Samsung S25 PDP on a search HTML sample is reported witho
 test('positive: broader Galaxy discovery does not imply a narrow model',()=>{
   const d=inspectSamsungSearchDiscovery(html(fixtures),search,'galaxy');
   assert.equal(d.requestedModel,null);
+  assert.equal(d.modelLinkOutcome,'BROAD_QUERY');
   assert.equal(d.exactModelBuyPdp,null);
 });
 
