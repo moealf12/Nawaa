@@ -43,6 +43,9 @@ for (const [store, query] of CASES) {
       failureSamples:result.diagnostics?.failureSamples || [],
       unpricedSamples:result.diagnostics?.unpricedSamples || [],
       queryFilter:result.diagnostics?.queryFilter || null,
+      // Sanitary, bounded URL-path evidence to diagnose model recall. Never
+      // infer a product price from an unselected Samsung family buy page.
+      ...(store==="samsung-sa" ? { samsungDiscovery:result.diagnostics?.samsungDiscovery || null } : {}),
       // Preserve bounded source-provided rejection evidence. Without these
       // first-five titles/reasons a 51→0 Amazon run cannot distinguish a
       // relevance filter from a source response change.
