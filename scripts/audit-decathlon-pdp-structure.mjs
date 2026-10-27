@@ -21,11 +21,44 @@ export function inspectDecathlonHtmlStructure(html,url){
   const sources=extractionCandidates(source,url);
   const byName=Object.fromEntries(["jsonld","embedded_json","hydrated_state","storefront_data","domain_adapter","meta"]
     .map(name=>[name,sources.some(x=>x.strategy===name)]));
+  const sourceEvidence=Object.fromEntries(sources.map(entry=>{
+    const product=entry.product||{};
+    const rawImage=Array.isArray(product.image)?product.image[0]:product.image;
+    const rawOffer=Array.isArray(product.offers)?product.offers[0]:product.offers;
+    return [entry.strategy,{
+      hasName:Boolean(product.name),
+      hasImage:Boolean(rawImage&&(typeof rawImage==="string"?rawImage:rawImage.url)),
+      hasSku:Boolean(product.sku),
+      hasVariantId:Boolean(product.variantId),
+      hasBrand:Boolean(product.brand),
+      hasPrice:Boolean(rawOffer?.price),
+      hasCurrency:Boolean(rawOffer?.priceCurrency),
+      hasCanonicalProductUrl:(()=>{
+        try{
+          const id=product.url || rawOffer?.url || product["@id"];
+          return Boolean(id)&&new URL(id,url).origin===new URL(url).origin &&
+            new URL(id,url).pathname.replace(/\\/+$/,"")===new URL(url).pathname.replace(/\\/+$/,"");
+        }catch{return false;}
+      })(),
+    }];
+  }));
+  const metaValue=(selector)=>String($(selector).first().attr("content")||"").trim();
+  const canonical=$('link[rel="canonical"]').first().attr("href")||"";
+  const canonicalMatches=(()=>{
+    try{
+      const c=new URL(canonical,url),u=new URL(url);
+      return c.hostname===u.hostname&&c.pathname.replace(/\\/+$/,"")===u.pathname.replace(/\\/+$/,"");
+    }catch{return false;}
+  })();
   const imageTags=$("img").length;
   const page=$("html").first().attr("lang")||"";
   return {
     status:"HTML_OBSERVED",
     availableStrategies:byName,
+    evidenceByStrategy:sourceEvidence,
+    canonicalMatches,
+    ogImageValuePresent:Boolean(metaValue('meta[property="og:image"]')),
+    twitterImageValuePresent:Boolean(metaValue('meta[name="twitter:image"]')),
     scriptsCount:scripts.length,structuredScriptsCount:scriptsJson.length,
     jsonLdProductText:/["']@type["']\s*:\s*["']Product["']/i.test(source),
     productDataJsonMarker:/["'](?:variants|product|selectedOrFirstAvailableVariant|sku)["']\s*:/i.test(source),
