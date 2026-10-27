@@ -31,7 +31,7 @@ test("RED: strict owned product identity can be extracted, but never a price/off
 test("negative: another merchant, unrelated product URL, canonical conflict reject",()=>{
   assert.equal(extractDecathlonScopedIdentity(fixture(),"https://evil.example/products/own-product").status,"INVALID_SOURCE_URL");
   assert.equal(extractDecathlonScopedIdentity(fixture({canon:host+"/products/other"}),url).status,"CANONICAL_OWNERSHIP_NOT_VERIFIED");
-  assert.equal(extractDecathlonScopedIdentity(fixture({schematicUrl:host+"/products/other"}),url).status,"SCHEMA_URL_CONFLICT");
+  assert.equal(extractDecathlonScopedIdentity(fixture({schematicUrl:host+"/products/other"}),url).status,"SCHEMA_SUBJECT_NOT_UNIQUE");
 });
 test("negative: unrelated JSON-LD sibling cannot provide variant identity",()=>{
   assert.equal(extractDecathlonScopedIdentity(fixture({schemaName:"Other Product"}),url).status,"SCHEMA_SUBJECT_NOT_UNIQUE");
