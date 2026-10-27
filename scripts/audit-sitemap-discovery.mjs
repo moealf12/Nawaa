@@ -112,7 +112,7 @@ function result(status,{productCandidates=0,complete=false,requests=0,
 }
 
 export async function auditDecathlonSitemap({
-  fetchPage=fetch,signal,
+  fetchPage=fetch,signal,onProductSample=null,
 }={}){
   const deadline=AbortSignal.timeout(6500);
   const combined=signal?AbortSignal.any([signal,deadline]):deadline;
@@ -136,13 +136,19 @@ export async function auditDecathlonSitemap({
   try{
     const root=await acquire(ROOT);
     if(root.kind==="INVALID")return result("XML_INVALID",{requests});
-    if(root.kind==="urlset")return result(root.productUrls.length?"CANDIDATES_OBSERVED":"NO_CANDIDATES_OBSERVED",{
-      requests,productCandidates:root.productUrls.length,complete:root.complete,candidatePageKind:"urlset",
-    });
+    if(root.kind==="urlset"){
+      // A research-only callback receives at most two already-validated,
+      // same-origin product URLs. Ordinary audit emits aggregate counts only.
+      if(typeof onProductSample==="function") onProductSample(root.productUrls.slice(0,2));
+      return result(root.productUrls.length?"CANDIDATES_OBSERVED":"NO_CANDIDATES_OBSERVED",{
+        requests,productCandidates:root.productUrls.length,complete:root.complete,candidatePageKind:"urlset",
+      });
+    }
     if(root.childSitemaps.length===0)
       return result("NO_PRODUCT_SITEMAP_OBSERVED",{requests,complete:false,candidatePageKind:"sitemapindex"});
     const child=await acquire(root.childSitemaps[0]);
     if(child.kind!=="urlset")return result("XML_INVALID",{requests});
+    if(typeof onProductSample==="function")onProductSample(child.productUrls.slice(0,2));
     const complete=root.complete && root.entryCount===1 &&
       root.childSitemaps.length===1 && child.complete;
     const status=complete
