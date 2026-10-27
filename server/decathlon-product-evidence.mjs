@@ -25,9 +25,10 @@ export function extractDecathlonScopedIdentity(html,requestedUrl){
   if(!expected)return EMPTY("INVALID_SOURCE_URL");
   const $=load(String(html||"").slice(0,1_500_000));
   const canon=$('link[rel="canonical"]').first().attr("href");
-  if(!canon||pagePath(new URL(canon,requestedUrl).href)!==expected)
-    return EMPTY("CANONICAL_OWNERSHIP_NOT_VERIFIED");
-  const title=$("title").first().text().trim();
+  let canonicalPath=null;
+  try{if(canon)canonicalPath=pagePath(new URL(canon,requestedUrl).href);}catch{}
+  if(canonicalPath!==expected)return EMPTY("CANONICAL_OWNERSHIP_NOT_VERIFIED");
+  const title=meta($,"og:title")||$("title").first().text().trim();
   if(!title)return EMPTY("MISSING_PAGE_TITLE");
   const products=[];
   $("script[type='application/ld+json']").slice(0,12).each((_,el)=>{
@@ -69,7 +70,8 @@ export function extractDecathlonScopedIdentity(html,requestedUrl){
   const image=safeImage(meta($,"og:image"),requestedUrl);
   if(!image)return EMPTY("IMAGE_EVIDENCE_MISSING");
   const named=meta($,"og:title");
-  if(named&&normal(named)!==normal(title))return EMPTY("META_TITLE_CONFLICT");
+  if(named&&normal(named)!==normal(exactlyOwned[0].name))
+    return EMPTY("META_TITLE_CONFLICT");
   // Identity only, no product sale offer or price fields exposed from this
   // extractor. Integration with search must require independent price binding.
   return {status:"SCOPED_IDENTITY_OBSERVED",identityProven:true,
