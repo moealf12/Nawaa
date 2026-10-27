@@ -1016,7 +1016,20 @@ function extractJsonLdSearchOffers(html, searchUrl, store, query) {
       const price=Number(offer?.price ?? offer?.lowPrice);
       const currency=String(offer?.priceCurrency||"").toUpperCase();
       let sourceUrl=node.url || offer?.url || null;
-      try { if(sourceUrl) sourceUrl=new URL(sourceUrl,searchUrl).href; } catch { sourceUrl=null; }
+      try {
+        if (sourceUrl) {
+          const candidate=new URL(sourceUrl,searchUrl);
+          // JSON-LD is untrusted merchant HTML. Match the existing embedded
+          // search/product-link ownership gates before promoting a priced card
+          // as belonging to the selected merchant.
+          const trusted=candidate.protocol==="https:" &&
+            !candidate.username && !candidate.password &&
+            (!candidate.port || candidate.port==="443") &&
+            sameHost(candidate.href,searchUrl) &&
+            store.productPath.test(candidate.href);
+          sourceUrl=trusted ? canonicalizeCandidateUrl(candidate.href) : null;
+        }
+      } catch { sourceUrl=null; }
       const hay=normalizeSearchQuery(title); const hits=tokens.filter(t=>hay.includes(t)).length;
       if(title && sourceUrl && Number.isFinite(price) && price>0 && currency && (tokens.length<=1 || hits/tokens.length>=0.2)){
         const key=sourceUrl+"|"+price; if(!seen.has(key)){seen.add(key); offers.push({productId:String(node.sku||node.productID||sourceUrl),title,image:Array.isArray(node.image)?node.image[0]:node.image||null,price,currency,sourceUrl});}
