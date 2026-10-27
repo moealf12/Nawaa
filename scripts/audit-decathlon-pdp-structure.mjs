@@ -57,6 +57,14 @@ export function inspectDecathlonHtmlStructure(html,url){
   const dataSku=$("[data-sku]").toArray().map(el=>String($(el).attr("data-sku")||"").trim()).filter(Boolean);
   const inputVariants=$('form[action*="/cart/add"] input[name="id"]').toArray().map(el=>
     String($(el).attr("value")||"").trim()).filter(Boolean);
+  const insideMainProduct=(el)=>$(el).closest('main,product-info,[data-section-type="product"],[data-product-id],.product').length>0;
+  const scopedSku=$('[data-sku]').toArray().filter(insideMainProduct)
+    .map(el=>String($(el).attr("data-sku")||"").trim()).filter(Boolean);
+  const scopedVariant=$('form[action*="/cart/add"] input[name="id"]').toArray()
+    .filter(insideMainProduct).map(el=>String($(el).attr("value")||"").trim()).filter(Boolean);
+  const formCount=$('form[action*="/cart/add"]').length;
+  const sameSkuAsScoped=Boolean(dataSku.length&&scopedSku.length&&
+    new Set(dataSku).size===1&&new Set(scopedSku).size===1&&dataSku[0]===scopedSku[0]);
   const metaValue=(selector)=>String($(selector).first().attr("content")||"").trim();
   const canonical=$('link[rel="canonical"]').first().attr("href")||"";
   const canonicalMatches=(()=>{
@@ -75,6 +83,10 @@ export function inspectDecathlonHtmlStructure(html,url){
     scriptsWithShopifyVariantMarkers:variantsScriptMarkers.length,
     uniqueDataSkuValues:new Set(dataSku).size,
     uniqueCartFormVariantIds:new Set(inputVariants).size,
+    scopedSkuInMainProduct:new Set(scopedSku).size,
+    scopedVariantInMainProduct:new Set(scopedVariant).size,
+    dataSkuConsistentWithMain:sameSkuAsScoped,
+    productFormCount:formCount,
     canonicalMatches,
     ogImageValuePresent:Boolean(metaValue('meta[property="og:image"]')),
     twitterImageValuePresent:Boolean(metaValue('meta[name="twitter:image"]')),
