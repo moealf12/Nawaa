@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classifyS25CatalogOffer, auditS25Sources } from "../scripts/audit-s25-source-coverage.mjs";
+import { classifyS25CatalogOffer, assessS25PdpCorroboration, auditS25Sources } from "../scripts/audit-s25-source-coverage.mjs";
 
 const offer = (changes={})=>({
   provider:"jarir-direct",merchant:"Jarir",
@@ -93,4 +93,41 @@ test("audit: transport failures are UNKNOWN, not zero stock or zero retailer inv
   assert.equal(r.sources[0].eligible,null);
   assert.equal(r.sources[1].status,"NO_CATALOG_CANDIDATE");
   assert.equal(r.claims.merchantInventoryVerified,false);
+});
+
+
+test("RED: independently fetched exact variant page corroborates source catalog price without stock claim",()=>{
+  const index=offer();
+  const page={...index,provider:"url-resolver",resolvedPageUrl:index.sourceUrl};
+  const verdict=assessS25PdpCorroboration("jarir-direct",index,page);
+  assert.equal(verdict,"PDP_PRICE_CORROBORATED");
+});
+
+test("negative: PDP cannot verify a cross-SKU price or different amount",()=>{
+  const index=offer();
+  assert.equal(assessS25PdpCorroboration("jarir-direct",index,
+    {...index,sourceUrl:"https://www.jarir.com/sa-en/samsung-galaxy-s25-smartphones-651001.html"}),"IDENTITY_MISMATCH");
+  assert.equal(assessS25PdpCorroboration("jarir-direct",index,
+    {...index,productPrice:2499,originalProductPrice:2499}),"PRICE_MISMATCH");
+  assert.equal(assessS25PdpCorroboration("jarir-direct",index,
+    {...index,productPrice:null,originalProductPrice:null}),"UNPRICED_PDP");
+});
+
+test("RED: bounded optional PDP probe tests one selected catalog candidate per merchant, never all colors",async()=>{
+  let pages=0;
+  const index=offer();
+  const r=await auditS25Sources({
+    searchJarir:async()=>({offers:[index,offer({sourceUrl:"https://www.jarir.com/sa-en/samsung-galaxy-s25-smartphones-651001.html"})],errors:[]}),
+    searchExtraUnbxd:async()=>({offers:[],errors:[]}),
+    resolvePage:async item=>{
+      pages++;
+      assert.equal(item.sourceUrl,index.sourceUrl);
+      return {...item,provider:"url-resolver",resolvedPageUrl:item.sourceUrl};
+    },
+  });
+  assert.equal(pages,1);
+  assert.equal(r.sources[0].pdpProbe.status,"PDP_PRICE_CORROBORATED");
+  assert.equal(r.claims.pdpPriceVerified,true);
+  assert.equal(r.claims.s25DeliveryVerified,false);
+  assert.equal("productPrice" in r.sources[0].pdpProbe,false);
 });
