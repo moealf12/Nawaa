@@ -4,7 +4,7 @@ import { searchFreeStorefrontById, searchFreeStorefronts, routeFreeStorefronts }
 import { sourceReliability } from '../server/source-reliability.mjs';
 
 const storeId = 'asos-global';
-const query = 'nike air max';
+const query = 'nike shoes';
 const documents = [
   { '@type': 'Product', name: 'Nike Air Max Running Shoes', url: 'https://www.asos.com/prd/123456789', offers: { price: 175, priceCurrency: 'SAR' } },
   { '@type': 'Product', name: 'Sony PlayStation 5 Console', url: 'https://www.asos.com/prd/987654321', offers: { price: 299, priceCurrency: 'SAR' } },
@@ -34,16 +34,16 @@ test('RED: expose loss accounting between structured extraction, price normaliza
   const result = await fixtureSearch(html);
   const stages = result.diagnostics?.sourceStageCounts;
   assert.ok(stages, 'sourceStageCounts must be present even for successful storefront searches');
-  assert.equal(stages.structuredCandidates, 2);
+  assert.equal(stages.structuredCandidates, 1, 'the source extractor rejected the unrelated product before the main relevance stage');
   assert.equal(stages.productPagesRequested, 0, 'verified structured search cards do not trigger PDP lookups');
   assert.equal(stages.productPagesPriced, 0);
   assert.equal(stages.productPagesFailed, 0);
   assert.equal(stages.structuredFxRejected, 0);
-  assert.equal(stages.preMatchOffers, 2);
+  assert.equal(stages.preMatchOffers, 1);
   assert.equal(stages.relevanceRejected + stages.relevanceRetained, stages.preMatchOffers);
   assert.equal(stages.relevanceRetained, stages.emittedOffers + stages.selectionTruncated);
   assert.equal(stages.emittedOffers, result.offers.length);
-  assert.ok(stages.relevanceRejected >= 1, 'irrelevant PlayStation result must not become a Nike offer');
+  assert.equal(stages.relevanceRejected, 0, 'source extractor rejection is not a later relevance loss');
 });
 
 test('RED: legitimate empty search reports zero stages, not an imagined extraction or price failure', async () => {
@@ -73,7 +73,7 @@ test('RED: public aggregate diagnostics carry counts without merchant URLs or pr
     assert.equal(result.diagnostics.length, 1);
     const stages = result.diagnostics[0].sourceStageCounts;
     assert.ok(stages);
-    assert.equal(stages.structuredCandidates, 2);
+    assert.equal(stages.structuredCandidates, 1, 'the source extractor rejected the unrelated product before the main relevance stage');
     assert.equal(stages.emittedOffers, result.offers.length);
     assert.equal(JSON.stringify(stages).includes('https://'), false);
     assert.equal(JSON.stringify(stages).includes('175'), false);
