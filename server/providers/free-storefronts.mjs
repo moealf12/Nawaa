@@ -333,6 +333,20 @@ function sameHost(candidate, base) {
   } catch { return false; }
 }
 
+// An adaptive or structured extractor may propose candidates, but only an
+// HTTPS PDP on the merchant's own search domain is allowed to become an offer.
+function trustedStructuredOfferUrl(value, searchUrl, store) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const candidate=new URL(value,searchUrl);
+    if (candidate.protocol!=="https:" || candidate.username || candidate.password ||
+        (candidate.port && candidate.port!=="443") ||
+        !sameHost(candidate.href,searchUrl) ||
+        !store.productPath.test(candidate.href)) return null;
+    return canonicalizeCandidateUrl(candidate.href);
+  } catch { return null; }
+}
+
 
 const LANDMARK_BLOOMREACH = {
   "centrepoint-sa":{
@@ -967,8 +981,9 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
     const rawUrl = node.url ?? node.productUrl ?? node.canonicalUrl ?? node.pdpUrl ?? node.productDetailUrl ?? node.seoUrl ?? node?.offers?.url;
     let sourceUrl = null;
     try { if (rawUrl) sourceUrl = new URL(String(rawUrl).replace(/\\u002F/gi,"/").replace(/\\\//g,"/"), searchUrl).href; } catch {}
+    sourceUrl = trustedStructuredOfferUrl(sourceUrl, searchUrl, store);
     const image = node.image ?? node.imageUrl ?? node.mainImageUrl ?? node.thumbnail ?? node?.images?.[0]?.url ?? null;
-    if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && store.productPath.test(sourceUrl) && Number.isFinite(price) && price > 0 && /^[A-Z]{3}$/.test(currency)) {
+    if (title && sourceUrl && Number.isFinite(price) && price > 0 && /^[A-Z]{3}$/.test(currency)) {
       const hay = normalizeSearchQuery(title + " " + sourceUrl);
       const hits = tokens.filter(t => hay.includes(t)).length;
       const key = canonicalizeCandidateUrl(sourceUrl) + "|" + price;
@@ -1015,21 +1030,7 @@ function extractJsonLdSearchOffers(html, searchUrl, store, query) {
       const offer=Array.isArray(node.offers)?node.offers[0]:node.offers;
       const price=Number(offer?.price ?? offer?.lowPrice);
       const currency=String(offer?.priceCurrency||"").toUpperCase();
-      let sourceUrl=node.url || offer?.url || null;
-      try {
-        if (sourceUrl) {
-          const candidate=new URL(sourceUrl,searchUrl);
-          // JSON-LD is untrusted merchant HTML. Match the existing embedded
-          // search/product-link ownership gates before promoting a priced card
-          // as belonging to the selected merchant.
-          const trusted=candidate.protocol==="https:" &&
-            !candidate.username && !candidate.password &&
-            (!candidate.port || candidate.port==="443") &&
-            sameHost(candidate.href,searchUrl) &&
-            store.productPath.test(candidate.href);
-          sourceUrl=trusted ? canonicalizeCandidateUrl(candidate.href) : null;
-        }
-      } catch { sourceUrl=null; }
+      const sourceUrl=trustedStructuredOfferUrl(node.url || offer?.url || null,searchUrl,store);
       const hay=normalizeSearchQuery(title); const hits=tokens.filter(t=>hay.includes(t)).length;
       if(title && sourceUrl && Number.isFinite(price) && price>0 && currency && (tokens.length<=1 || hits/tokens.length>=0.2)){
         const key=sourceUrl+"|"+price; if(!seen.has(key)){seen.add(key); offers.push({productId:String(node.sku||node.productID||sourceUrl),title,image:Array.isArray(node.image)?node.image[0]:node.image||null,price,currency,sourceUrl});}
