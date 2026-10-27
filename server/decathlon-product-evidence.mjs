@@ -22,7 +22,9 @@ const safeImage=(url,base)=>{
   try{
     const u=new URL(url.trim(),base);
     // Page URL itself, non-image protocols and dangerous credentials are not images.
-    if(u.href===new URL(base).href || u.protocol!=="https:"||
+    const allowedHost=u.hostname==="decathlon.com.sa"||
+      u.hostname==="cdn.shopify.com"||u.hostname.endsWith(".shopifycdn.net");
+    if(!allowedHost||u.href===new URL(base).href || u.protocol!=="https:"||
        u.username||u.password||(u.port&&u.port!=="443")||
        !/\.(?:jpe?g|png|webp|avif)(?:$|[?#])/i.test(u.href))
       return null;
@@ -75,7 +77,11 @@ export function extractDecathlonScopedIdentity(html,requestedUrl){
   const requestedVariant=url.searchParams.get("variant");
   if(requestedVariant&&requestedVariant!==selectedVariant)
     return EMPTY("VARIANT_URL_CONFLICT");
-  const image=safeImage(meta($,"og:image"),requestedUrl);
+  // Prefer a source-declared HTTPS OpenGraph image; if legacy OG metadata
+  // is HTTP, use only the independent HTTPS twitter:image field as evidence.
+  // Never silently rewrite the merchant's HTTP URL to HTTPS.
+  const image=safeImage(meta($,"og:image"),requestedUrl)||
+    safeImage(String($('meta[name="twitter:image"]').first().attr("content")||"").trim(),requestedUrl);
   if(!image)return EMPTY("IMAGE_EVIDENCE_MISSING");
   const named=meta($,"og:title");
   if(named&&normal(named)!==normal(product.name))
