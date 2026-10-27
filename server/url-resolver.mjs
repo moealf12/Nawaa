@@ -545,8 +545,34 @@ function declaredSchemaProductType(product) {
   return types.size === 1 ? types.values().next().value : null;
 }
 
+// This observational branch reuses only already-acquired HTML. There is no
+// second PDP request, no source replay, and no new candidate/offer publication.
+// Dynamic loading avoids a runtime dependency cycle with our existing
+// Shopify/Schema.org extractors and costs nothing while the flag is OFF.
+export async function inspectFetchedDecathlonDocumentShadow(fetched, url, options = {}) {
+  if(process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW!=="1")return;
+  let requested,actual;
+  try{requested=new URL(url);actual=new URL(fetched.finalUrl);}catch{return;}
+  if(requested.protocol!=="https:"||actual.protocol!=="https:"||
+     requested.hostname!=="decathlon.com.sa"||
+     actual.hostname!=="decathlon.com.sa"||
+     requested.pathname.replace(/\/+$/,"")!==actual.pathname.replace(/\/+$/,""))return;
+  try {
+    const {observeDecathlonSearchEvidence} = await import("./decathlon-shadow-gate.mjs");
+    observeDecathlonSearchEvidence({
+      enabled:true,requestedUrl:url,finalUrl:fetched.finalUrl,
+      html:fetched.html,fetchedAtMs:options.fetchedAtMs ?? Date.now(),
+      nowMs:options.nowMs ?? Date.now(),
+      onObservation:options.onDecathlonShadow,
+    });
+  }catch{
+    // Side-channel failure must not alter existing PDP resolution or SSE.
+  }
+}
+
 export async function extractProductDocument(url, options = {}) {
   const fetched = await fetchHtmlSafe(url, 0, options);
+  await inspectFetchedDecathlonDocumentShadow(fetched,url,options);
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
   return {
     finalUrl:fetched.finalUrl,
