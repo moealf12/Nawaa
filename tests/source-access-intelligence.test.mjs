@@ -118,3 +118,21 @@ test("GREEN guardrail: transient Amazon 503 may still retry once under the origi
   assert.equal(attempts,2);
   assert.equal(result.length,1);
 });
+
+
+test("negative E.1.2: explicit 403 denies access without probing a different Virgin catalog endpoint", {concurrency:false}, async()=>{
+  const previous=globalThis.fetch;
+  let calls=0;
+  try{
+    sourceRateLimitGuard.reset("virgin-ae");
+    globalThis.fetch=async()=>{
+      calls++;
+      return new Response("Forbidden",{status:403,headers:{"content-type":"text/html"}});
+    };
+    await assert.rejects(searchFreeStorefrontById("virgin-ae","airpods",{perStore:2}),/HTTP 403/);
+    assert.equal(calls,1,"alternate category endpoint is not a bypass for a denied search");
+  } finally {
+    globalThis.fetch=previous;
+    sourceRateLimitGuard.reset("virgin-ae");
+  }
+});
