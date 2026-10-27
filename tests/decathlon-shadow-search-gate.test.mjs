@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {inspectFetchedDecathlonDocumentShadow} from "../server/url-resolver.mjs";
 import {
   isDecathlonShadowEnabled,
   observeDecathlonSearchEvidence,
@@ -121,4 +122,48 @@ test("v22.02 feature shadow cannot change price fields/offer count in existing r
     fetchedAtMs:1000,nowMs:1000,
   });
   assert.equal(JSON.stringify(existing),before);
+});
+
+
+test("resolver integration: OFF never emits diagnostics; enabled consumes existing PDP HTML only", {concurrency:false},async()=>{
+  const prev=process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW;
+  const fetched={finalUrl:url,html:html()};
+  let count=0,received=null;
+  const options={fetchedAtMs:1000,nowMs:1000,onDecathlonShadow:x=>{count++;received=x;}};
+  try{
+    delete process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW;
+    assert.equal(await inspectFetchedDecathlonDocumentShadow(fetched,url,options),undefined);
+    assert.equal(count,0);
+    process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW="1";
+    assert.equal(await inspectFetchedDecathlonDocumentShadow(fetched,url,options),undefined);
+    assert.equal(count,1);
+    assert.equal(received.status,"EXPLICIT_VARIANT_SKU_PRICE_OWNERSHIP");
+    assert.equal(received.trustedOfferEligible,false);
+    assert.equal(received.sourceFreshnessCertified,false);
+    // Source document is never changed or converted into a new offer.
+    assert.equal(fetched.html,html());
+    await inspectFetchedDecathlonDocumentShadow(fetched,
+      "https://other.example/products/kalenji-shoes",options);
+    assert.equal(count,1);
+    await inspectFetchedDecathlonDocumentShadow({
+      ...fetched,finalUrl:"https://decathlon.com.sa/products/other"},url,options);
+    assert.equal(count,1);
+  }finally{
+    if(prev===undefined)delete process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW;
+    else process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW=prev;
+  }
+});
+
+test("resolver integration: throwing observability callback fails open for existing search but fails closed on promotion", {concurrency:false},async()=>{
+  const prev=process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW;
+  try{
+    process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW="1";
+    await assert.doesNotReject(()=>inspectFetchedDecathlonDocumentShadow(
+      {finalUrl:url,html:html()},url,{
+      fetchedAtMs:1000,nowMs:1000,onDecathlonShadow:()=>{throw Error("metrics receiver failed");}
+    }));
+  }finally{
+    if(prev===undefined)delete process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW;
+    else process.env.NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW=prev;
+  }
 });
