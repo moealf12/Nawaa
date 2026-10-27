@@ -922,6 +922,28 @@ export function extractBestBuySearchOffers(html, query) {
   return offers;
 }
 
+// Samsung HTML search includes recommendations and next-generation devices.
+// For an explicitly requested Galaxy S model, only an HTTPS Samsung-owned
+// smartphone buy PDP whose *URL* declares that exact model may consume a
+// limited product-page verification slot. A misleading anchor is not proof.
+function samsungSearchPdpMatchesIntent(sourceUrl, query) {
+  let parsed;
+  try { parsed=new URL(sourceUrl); } catch { return false; }
+  if (parsed.protocol!=="https:" ||
+      !["www.samsung.com","samsung.com"].includes(parsed.hostname.toLowerCase()) ||
+      parsed.username || parsed.password ||
+      (parsed.port && parsed.port!=="443") ||
+      !parsed.pathname.startsWith("/sa_en/")) return false;
+  const model=parseSearchIntent(query).model;
+  if (!model || !/^galaxy s\d+\b/.test(model)) return true;
+  if (!/^\/sa_en\/smartphones\/[^?#]+\/buy\/?$/i.test(parsed.pathname)) return false;
+  let semantic;
+  try { semantic=normalizeSearchQuery(decodeURIComponent(parsed.pathname)); }
+  catch { return false; }
+  const found=semantic.match(/\bgalaxy s\d+(?: ultra| plus| fe)?\b/g) || [];
+  return found.length===1 && found[0]===model;
+}
+
 export function extractSamsungSearchOffers(html, query) {
   const source = String(html || "");
   const tokens = normalizeSearchQuery(query).split(" ").filter(t => t.length >= 2);
@@ -944,7 +966,9 @@ export function extractSamsungSearchOffers(html, query) {
     const hay = normalizeSearchQuery(title + " " + productId + " " + sourceUrl);
     const hits = tokens.filter(t => hay.includes(t)).length;
     const key = productId + "|" + price;
-    if (!title || !productId || !Number.isFinite(price) || price <= 0 || (tokens.length > 1 && hits / tokens.length < 0.2) || seen.has(key)) continue;
+    if (!samsungSearchPdpMatchesIntent(sourceUrl, query) ||
+        !title || !productId || !Number.isFinite(price) || price <= 0 ||
+        (tokens.length > 1 && hits / tokens.length < 0.2) || seen.has(key)) continue;
     seen.add(key);
     offers.push({ productId, title, image:imageMatch ? decodeHtml(imageMatch[1]) : null, price, currency:"SAR", sourceUrl });
   }
@@ -1039,6 +1063,7 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
     let url;
     try { url = new URL(decodeHtml(rawUrl).replace(/\\u002F/gi, "/").replace(/\\\//g, "/"), searchUrl).href; } catch { return; }
     if (!sameHost(url, searchUrl) || !store.productPath.test(url)) return;
+    if (store.id==="samsung-sa" && !samsungSearchPdpMatchesIntent(url, query)) return;
     // Product discovery must never promote static assets (images/fonts/etc.) to
     // product pages even when a loose storefront regex happens to match them.
     try {
