@@ -132,7 +132,9 @@ export async function auditS25Sources({searchJarir:jarir=callJarir,
     claims:{merchantInventoryVerified:false,s25DeliveryVerified:false,
       pdpPriceVerified:sources.some(x=>x.pdpProbe?.status==="PDP_PRICE_CORROBORATED"),
       canPromoteToTrustedOffer:false},
-    caveat:"Catalog-price candidates have NOT been certified against the live product PDP, selected variant, delivery or availability.",
+    caveat:sources.some(x=>x.pdpProbe?.status==="PDP_PRICE_CORROBORATED")
+      ? "One sampled SKU at each eligible source was checked; corroboration applies only to exact tested SKU(s). Availability, delivery and all other variants remain unverified."
+      : "Catalog-price candidates have NOT been certified against live product PDPs, delivery or availability.",
   };
 }
 
