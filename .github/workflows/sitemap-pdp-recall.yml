@@ -1,0 +1,56 @@
+name: NAWAA Sitemap PDP and Search Recall Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit-sitemap-discovery.mjs'
+      - 'scripts/audit-sitemap-pdp-recall.mjs'
+      - 'tests/sitemap-pdp-recall.test.mjs'
+      - '.github/workflows/sitemap-pdp-recall.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-sitemap-pdp-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Validate exact SHA
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - name: Use existing Node 22 runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Existing locked dependencies only
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Deterministic ownership, price and bounded recovery tests
+        run: node --test tests/sitemap-pdp-recall.test.mjs
+      - name: One bounded public Decathlon sample and existing search comparison
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/audit-sitemap-pdp-recall.mjs | tee sitemap-pdp-recall.json
+      - name: Preserve diagnostic statuses only, short retention
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sitemap-pdp-recall-${{ github.event.pull_request.head.sha }}
+          path: sitemap-pdp-recall.json
+          if-no-files-found: ignore
+          retention-days: 7
