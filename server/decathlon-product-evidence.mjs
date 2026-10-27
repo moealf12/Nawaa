@@ -2,6 +2,7 @@
 // Zero offers, prices, stock, delivery or customer-visible authority.
 // No network calls. Never use alone to certify a current sellable offer.
 import { load } from "cheerio";
+import { extractionCandidates } from "./url-resolver.mjs";
 const HOST="decathlon.com.sa";
 const normal=s=>String(s||"").normalize("NFKC").toLowerCase()
   .replace(/[^\p{L}\p{N}]+/gu," ").replace(/\s+/g," ").trim();
@@ -38,22 +39,14 @@ export function extractDecathlonScopedIdentity(html,requestedUrl){
   if(canonicalPath!==expected)return EMPTY("CANONICAL_OWNERSHIP_NOT_VERIFIED");
   const title=meta($,"og:title")||$("title").first().text().trim();
   if(!title)return EMPTY("MISSING_PAGE_TITLE");
-  const products=[];
-  $("script[type='application/ld+json']").slice(0,12).each((_,el)=>{
-    const raw=$(el).html()||"";
-    if(raw.length>100_000)return;
-    try{
-      const parsed=JSON.parse(raw);
-      const nodes=Array.isArray(parsed)?parsed:parsed?.["@graph"]||[parsed];
-      for(const node of (Array.isArray(nodes)?nodes:[nodes]).slice(0,75)){
-        const types=[].concat(node?.["@type"]||[]);
-        if(types.some(v=>String(v).toLowerCase().replace(/^https?:\/\/schema\.org\//,"")==="product"))
-          products.push(node);
-      }
-    }catch{}
-  });
-  const exactlyOwned=products.filter(p=>normal(p.name)===normal(title));
-  if(exactlyOwned.length!==1)return EMPTY("SCHEMA_SUBJECT_NOT_UNIQUE");
+  // Reuse NAWAA's existing bounded Schema.org graph resolver. Shopify
+  // emits ProductGroup/graph references as well as individual Products; a
+  // second ad-hoc JSON-LD parser can miss legitimate page-level evidence.
+  const graph=extractionCandidates(String(html||"").slice(0,1_500_000),requestedUrl)
+    .find(entry=>entry.strategy==="jsonld")?.product||null;
+  if(!graph?.name||normal(graph.name)!==normal(title))
+    return EMPTY("SCHEMA_SUBJECT_NOT_UNIQUE");
+  const product=graph;
   // JSON-LD attributes may describe a family. Never import its Offer or
   // a guessed variant price; only compare current subject identity.
   const product=exactlyOwned[0];
