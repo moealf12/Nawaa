@@ -62,7 +62,7 @@ export function classifySourceError(error){
 }
 
 export function classifySourceObservation({
-  status=200,html="",candidates=0,verifiedOffers=0,catalogObserved=false,
+  status=200,html="",candidates=0,verifiedOffers=0,pricedCandidates=0,catalogObserved=false,
   blockedReason=null,redirectChanged=false,extractionFailed=false,
   identityConflict=false,
 }={}){
@@ -77,6 +77,9 @@ export function classifySourceObservation({
   if(shell)return outcome("HTTP_200_JS_SHELL");
   if(identityConflict)return outcome("PRODUCT_IDENTITY_MISMATCH");
   if(verifiedOffers>0)return outcome("VERIFIED_OFFER_AVAILABLE");
+  // A priced search-card candidate is NOT independently verified against a
+  // sellable SKU/PDP. Keep this state separate from trusted live offers.
+  if(pricedCandidates>0)return outcome("CATALOG_CANDIDATE_PRESENT");
   if(extractionFailed)return outcome("EXTRACTION_FAILURE");
   if(catalogObserved&&candidates===0)return outcome("HTTP_200_EMPTY_CATALOG");
   return outcome("CATALOG_RESULT_NOT_FOUND");
