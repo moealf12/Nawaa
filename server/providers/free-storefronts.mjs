@@ -134,7 +134,10 @@ const STORES = [
   {
     id:"nike-sa", name:"Nike Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["nike"], categories:["clothing","shoes","sports","bag"],
     search:(q)=>"https://www.nike.sa/en/search?q="+encodeURIComponent(q),
-    productPath:/\/[^?#]+(?:[?#].*)?$/i,
+    // Require the merchant's observed SKU+colour PDP suffix. Broad paths such
+    // as /en/mens/shoes or /en/collections/structure are category pages and
+    // must never consume the expensive limited PDP verification budget.
+    productPath:/\/[A-Z0-9]{6,}-\d{3}\.html(?:[?#]|$)/i,
   },
   {
     id:"sephora-sa", name:"Sephora Saudi", countryCode:"SA", countryNameAr:"السعودية", brands:["sephora"], categories:["beauty","perfume"],
