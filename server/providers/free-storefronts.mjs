@@ -1120,6 +1120,51 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
 
+// This read-only forensic view describes sampled URLs already present in the
+// downloaded Samsung search HTML. It neither fetches nor certifies a PDP price.
+// Bypass *only* the model gate in a diagnostic copy of the store definition so
+// rejected S26/FE links remain observable rather than silently disappearing.
+export function inspectSamsungSearchDiscovery(html, searchUrl, query) {
+  const store=STORES.find(entry=>entry.id==="samsung-sa");
+  const intent=parseSearchIntent(query);
+  const requestedModel=/^galaxy s\d+\b/.test(intent.model||"") ? intent.model : null;
+  const sampled=extractProductLinks(html,searchUrl,{...store,id:"samsung-diagnostic"},query,65);
+  const candidates=sampled.slice(0,64);
+  const evidence={
+    requestedModel,
+    sampledCandidates:candidates.length,
+    sampleTruncated:sampled.length>64,
+    productBuyPdp:0,
+    exactModelBuyPdp:requestedModel ? 0 : null,
+    offModelBuyPdp:requestedModel ? 0 : null,
+    unknownModelBuyPdp:0,
+    nonPurchaseCandidates:0,
+    exactModelPaths:[],
+    offModelPaths:[],
+  };
+  for (const candidate of candidates) {
+    const url=new URL(candidate.url);
+    const path=url.pathname;
+    // Buy pages are family PDPs. Discovering one proves no offer/variant price.
+    if (!/^\/sa_en\/smartphones\/[^?#]+\/buy\/?$/i.test(path)) {
+      evidence.nonPurchaseCandidates++;
+      continue;
+    }
+    evidence.productBuyPdp++;
+    const pathModels=normalizeSearchQuery(path).match(/\bgalaxy s\d+(?: ultra| plus| fe)?\b/g) || [];
+    if (pathModels.length!==1) {
+      evidence.unknownModelBuyPdp++;
+    } else if (requestedModel && pathModels[0]===requestedModel) {
+      evidence.exactModelBuyPdp++;
+      if (evidence.exactModelPaths.length<4) evidence.exactModelPaths.push(path);
+    } else if (requestedModel) {
+      evidence.offModelBuyPdp++;
+      if (evidence.offModelPaths.length<4) evidence.offModelPaths.push(path);
+    }
+  }
+  return evidence;
+}
+
 async function fetchText(url,{signal}={}) {
   const response = await fetch(url, {
     headers:{
@@ -1468,6 +1513,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     options.signal?.throwIfAborted();
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
     const links = html ? extractProductLinks(html, searchUrl, store, query, candidateLimit) : [];
+    const samsungDiscovery=store.id==="samsung-sa" && html
+      ? inspectSamsungSearchDiscovery(html, searchPageFinalUrl || searchUrl, matchingQuery)
+      : null;
     const jsonLdOffers = html ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query) : [];
     const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
     // Search-result offers are already price-verified. Do not fan out into slow product pages.
@@ -1580,6 +1628,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         // query strings, credentials or merchant cookies into CI artifacts.
         productLinkTrust:store.id === "aliexpress-cn" ? aliexpressProductLinkTrust : null,
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
+        samsungDiscovery,
         primarySearchError,
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
