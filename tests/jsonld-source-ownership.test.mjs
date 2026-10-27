@@ -10,7 +10,7 @@ const query = 'nike air max';
 const title = 'Nike Air Max Running Shoes';
 const validPdp = 'https://www.asos.com/prd/123456789';
 
-async function offersFromJsonLd(sourceUrl) {
+async function offersFromJsonLd(sourceUrl, { arrayOffers = false } = {}) {
   const originalFetch = globalThis.fetch;
   sourceReliability.reset(storeId);
   try {
@@ -25,7 +25,9 @@ async function offersFromJsonLd(sourceUrl) {
         name: title,
         url: sourceUrl,
         sku: 'SHOE-123',
-        offers: { '@type': 'Offer', price: '175', priceCurrency: 'SAR' }
+        offers: arrayOffers
+          ? [{ '@type': 'Offer', price: '175', priceCurrency: 'SAR' }]
+          : { '@type': 'Offer', price: '175', priceCurrency: 'SAR' }
       };
       return new Response(
         '<html><head><script type="application/ld+json">' +
@@ -63,4 +65,27 @@ test('positive control: same-merchant HTTPS product record remains a comparable 
   assert.equal(offers[0].sourceUrl, validPdp);
   assert.equal(offers[0].merchant, 'ASOS');
   assert.equal(offers[0].productPrice, 175);
+});
+
+test('positive control: JSON-LD Offer arrays resolve the same source-owned product without embedded extraction', async () => {
+  const offers = await offersFromJsonLd(validPdp, { arrayOffers: true });
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].sourceUrl, validPdp);
+  assert.equal(offers[0].productPrice, 175);
+});
+
+test('positive control: relative same-merchant PDP remains valid', async () => {
+  const offers = await offersFromJsonLd('/prd/123456789', { arrayOffers: true });
+  assert.equal(offers.length, 1);
+  assert.equal(offers[0].sourceUrl, validPdp);
+});
+
+test('negative controls: structured offers reject URL credentials and non-standard ports', async () => {
+  for (const url of [
+    'https://user:pass@www.asos.com/prd/123456789',
+    'https://www.asos.com:8443/prd/123456789'
+  ]) {
+    const offers = await offersFromJsonLd(url, { arrayOffers: true });
+    assert.deepEqual(offers, [], url);
+  }
 });
