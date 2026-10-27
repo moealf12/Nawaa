@@ -5,6 +5,8 @@ on:
     paths:
       - 'scripts/audit-decathlon-pdp-structure.mjs'
       - 'tests/decathlon-pdp-structure.test.mjs'
+      - 'tests/decathlon-scoped-identity.test.mjs'
+      - 'server/decathlon-product-evidence.mjs'
       - '.github/workflows/decathlon-pdp-forensics.yml'
 
 permissions:
@@ -36,7 +38,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Controlled structural diagnosis tests
-        run: node --test tests/decathlon-pdp-structure.test.mjs
+        run: node --test tests/decathlon-pdp-structure.test.mjs tests/decathlon-scoped-identity.test.mjs
       - name: Read-only two-product Decathlon template evidence
         env:
           DATABASE_URL: ''
