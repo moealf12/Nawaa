@@ -136,3 +136,28 @@ test("negative E.1.2: explicit 403 denies access without probing a different Vir
     sourceRateLimitGuard.reset("virgin-ae");
   }
 });
+
+
+test("diagnostics E.1.1: 200 JS shell is not mistaken for an empty healthy catalog", {concurrency:false},async()=>{
+  const previous=globalThis.fetch;
+  let calls=0;
+  try{
+    sourceRateLimitGuard.reset("lulu-sa");
+    globalThis.fetch=async()=>{
+      calls++;
+      return new Response("<html><div id='root'></div><script src='/assets/app.js'></script></html>",{
+        status:200,headers:{"content-type":"text/html"}
+      });
+    };
+    const result=await searchFreeStorefrontById("lulu-sa","iphone 17",{perStore:2});
+    assert.equal(calls,1);
+    assert.equal(result.offers.length,0);
+    assert.equal(result.diagnostics.sourceObservation,"HTTP_200_JS_SHELL");
+  }finally{globalThis.fetch=previous;sourceRateLimitGuard.reset("lulu-sa");}
+});
+
+test("diagnostics E.1.1: priced catalog candidates cannot be called PDP-verified offers",()=>{
+  const result=classifySourceObservation({status:200,pricedCandidates:2,verifiedOffers:0,candidates:2});
+  assert.equal(result.failureClass,"CATALOG_CANDIDATE_PRESENT");
+  assert.equal(result.productAvailability,"unknown");
+});
