@@ -49,7 +49,6 @@ export function extractDecathlonScopedIdentity(html,requestedUrl){
   const product=graph;
   // JSON-LD attributes may describe a family. Never import its Offer or
   // a guessed variant price; only compare current subject identity.
-  const product=exactlyOwned[0];
   if(product.url){
     try{if(pagePath(new URL(product.url,requestedUrl).href)!==expected)
       return EMPTY("SCHEMA_URL_CONFLICT");}
@@ -71,7 +70,7 @@ export function extractDecathlonScopedIdentity(html,requestedUrl){
   const image=safeImage(meta($,"og:image"),requestedUrl);
   if(!image)return EMPTY("IMAGE_EVIDENCE_MISSING");
   const named=meta($,"og:title");
-  if(named&&normal(named)!==normal(exactlyOwned[0].name))
+  if(named&&normal(named)!==normal(product.name))
     return EMPTY("META_TITLE_CONFLICT");
   // Identity only, no product sale offer or price fields exposed from this
   // extractor. Integration with search must require independent price binding.
