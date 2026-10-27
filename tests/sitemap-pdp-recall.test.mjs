@@ -4,6 +4,7 @@ import {
   validateDecathlonPdpEvidence,
   summarizePdpFieldEvidence,
   compareSitemapWithStoreSearch,
+  compareSitemapUrlPresence,
   auditSitemapPdpRecall,
 } from "../scripts/audit-sitemap-pdp-recall.mjs";
 
@@ -130,4 +131,31 @@ test("PDP diagnostic records only field-presence facts, never values or product 
   assert.equal(text.includes("RUN-100"),false);
   assert.equal(text.includes("99"),false);
   assert.equal(text.includes("running-shoes"),false);
+});
+
+
+test("candidate URL search is a weak discovery signal, not a verified priced offer",()=>{
+  const matching={sourceUrl:product,productPrice:1,currency:"SAR"};
+  const found=compareSitemapUrlPresence(product,{offers:[matching]});
+  assert.equal(found.status,"URL_PRESENT_IN_SEARCH_OFFERS");
+  assert.equal(found.trustedOfferEligible,false);
+  assert.equal(found.productPriceCorroborated,false);
+  assert.equal(compareSitemapUrlPresence(product,{offers:[]}).status,"URL_NOT_OBSERVED_IN_SEARCH_OFFERS");
+  assert.equal(compareSitemapUrlPresence(product,{offers:[],diagnostics:{primarySearchError:"HTTP 403"}}).status,"SEARCH_UNAVAILABLE");
+  assert.equal(compareSitemapUrlPresence(product,{offers:[{...matching,sourceUrl:other}]}).status,"URL_NOT_OBSERVED_IN_SEARCH_OFFERS");
+});
+
+test("weak URL-only comparisons can run with missing PDP image/SKU but cannot promote a price",async()=>{
+  let queries=0;
+  const report=await auditSitemapPdpRecall({
+    fetchPage:async()=>new Response(xml([product,other]),{status:200,headers:{"content-type":"text/xml"}}),
+    resolvePdp:async url=>({...pdp(),sourceUrl:url,resolvedPageUrl:url,image:null,sku:null,variantId:null}),
+    searchStore:async()=>{queries++;return {offers:[],diagnostics:{}};},
+  });
+  assert.equal(queries,2);
+  assert.equal(report.searchQueries,2);
+  assert.equal(report.pdpIdentityAndPriceObserved,0);
+  assert.equal(report.urlNotObservedInSearchOffers,2);
+  assert.equal(report.trustedOffersCreated,0);
+  assert.equal(report.verifiedGlobalRecallUplift,false);
 });
