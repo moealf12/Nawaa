@@ -54,8 +54,16 @@ export function extractDecathlonScopedIdentity(html,requestedUrl){
       return EMPTY("SCHEMA_URL_CONFLICT");}
     catch{return EMPTY("SCHEMA_URL_CONFLICT");}
   }
-  const scope=$("main").first();
-  if(!scope.length)return EMPTY("NO_PRODUCT_SCOPE");
+  // Shopify storefronts often render #MainContent or <product-info>
+  // without a native <main>. Only consider containers that independently
+  // enclose both a SKU marker and a genuine add-to-cart variant control.
+  const scopes=$('main,#MainContent,[role="main"],product-info,[data-product-id],.product')
+    .toArray().filter(el=>$(el).find("[data-sku]").length>0 &&
+      $(el).find('form[action*="/cart/add"] input[name="id"]').length>0);
+  const innermost=scopes.filter(el=>!scopes.some(other=>other!==el&&
+    $(other).parents().toArray().includes(el)));
+  if(innermost.length!==1)return EMPTY("NO_PRODUCT_SCOPE");
+  const scope=$(innermost[0]);
   const skus=scope.find("[data-sku]").toArray().map(el=>$(el).attr("data-sku"));
   const variants=scope.find('form[action*="/cart/add"] input[name="id"]')
     .toArray().map(el=>$(el).attr("value"));
