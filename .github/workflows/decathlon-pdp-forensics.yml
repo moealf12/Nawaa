@@ -1,0 +1,53 @@
+name: NAWAA Decathlon PDP Template Forensics
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit-decathlon-pdp-structure.mjs'
+      - 'tests/decathlon-pdp-structure.test.mjs'
+      - '.github/workflows/decathlon-pdp-forensics.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-decathlon-forensics-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  forensics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Enforce exact commit
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Controlled structural diagnosis tests
+        run: node --test tests/decathlon-pdp-structure.test.mjs
+      - name: Read-only two-product Decathlon template evidence
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/audit-decathlon-pdp-structure.mjs | tee decathlon-structure.json
+      - name: Preserve aggregate evidence with short retention
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decathlon-structure-${{ github.event.pull_request.head.sha }}
+          path: decathlon-structure.json
+          if-no-files-found: ignore
+          retention-days: 7
