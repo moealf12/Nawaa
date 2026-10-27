@@ -1,4 +1,5 @@
 import { parseMoney } from "./provider-utils.mjs";
+import { load as loadHtml } from "cheerio";
 
 const MAX_DEPTH = 14;
 const MAX_ARRAY_ITEMS = 600;
@@ -411,6 +412,64 @@ function extractNeweggHtmlProduct(html) {
   };
 }
 
+
+// Domain-specific last resort: only the visible, explicitly labelled GBP
+// "Current price" of this Lookfantastic PDP. Never use RRP, finance payments,
+// sizes in a selector, a related product, or structured unrelated candidates.
+function extractLookfantasticPrimaryPrice(html, url) {
+  let page;
+  try { page=new URL(url); } catch { return null; }
+  if (!["lookfantastic.com","www.lookfantastic.com"].includes(page.hostname) ||
+      page.protocol!=="https:" || page.username || page.password ||
+      (page.port && page.port!=="443")) return null;
+  const match=page.pathname.match(/^\/p\/([a-z0-9-]+)\/(\d{6,})\/?$/i);
+  if (!match) return null;
+  const sku=match[2];
+  // Explicitly requested variation cannot borrow the page default's price.
+  if (page.searchParams.has("variation") && page.searchParams.get("variation")!==sku) return null;
+
+  const $=loadHtml(String(html || ""));
+  $("script,style,noscript,template,[hidden],[aria-hidden='true'],[style*='display:none'],[style*='display: none']").remove();
+  const main=$("main").first();
+  if (main.length!==1) return null;
+  const headings=main.find("h1");
+  if (headings.length!==1) return null;
+  const name=headings.first().text().replace(/\s+/g," ").trim();
+  if (name.length<10 || name.length>300) return null;
+
+  // Corroborate the actual product H1 with the canonical PDP slug.
+  const nameTokens=new Set(name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+  const subjectTokens=match[1].toLowerCase().split("-")
+    .filter(value=>value.length>=4 && !["with","from","skin","size","dry","rough"].includes(value));
+  if (subjectTokens.length<2 || subjectTokens.filter(value=>nameTokens.has(value)).length<2) return null;
+
+  // Cheerio text() concatenates adjacent <span>/<strong>/<button> nodes
+  // without separators. Retain word boundaries across HTML elements before
+  // decoding entity-escaped visible price labels and amounts.
+  const visible=decodeHtmlText((main.html() || "")
+    .replace(/<[^>]+>/g," ")
+    .replace(/&pound;|&#163;|&#xA3;/gi,"£"));
+  const start=visible.indexOf(name);
+  if (start<0) return null;
+  const following=visible.slice(start+name.length,start+name.length+10000);
+  const checkoutIndex=following.search(/\badd to (?:basket|bag|cart)\b/i);
+  if (checkoutIndex<0) return null;
+  const purchaseSection=following.slice(0,checkoutIndex);
+  const priceMentions=[...purchaseSection.matchAll(/\bcurrent price\s*:?\s*£\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi)];
+  if (priceMentions.length!==1) return null;
+  const price=parseMoney(priceMentions[0][1]);
+  if (price===null || price<=0) return null;
+
+  const image=$("meta[property='og:image']").first().attr("content") || null;
+  return {
+    name,
+    image,
+    brand:null,
+    sku,
+    offers:{price,priceCurrency:"GBP",availability:""}
+  };
+}
+
 export function extractDomainProduct(url, html) {
   const adapter = findDomainAdapter(url);
   if (!adapter) return null;
@@ -433,6 +492,13 @@ export function extractDomainProduct(url, html) {
       const candidate = buildCandidate(node, adapter);
       if (candidate) candidates.push(candidate);
     });
+  }
+
+  // Preserve the existing structured price source as the authority. Only
+  // inspect the scoped visible PDP when every existing domain candidate failed.
+  if (adapter.id==="lookfantastic" && candidates.length===0) {
+    const primary=extractLookfantasticPrimaryPrice(html,url);
+    if (primary) candidates.push(primary);
   }
 
   const pageProductId = productIdFromUrl(url, adapter.id);
