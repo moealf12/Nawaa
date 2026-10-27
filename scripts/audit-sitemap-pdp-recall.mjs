@@ -24,6 +24,18 @@ function exactSourceProductPath(url){
   }catch{return null;}
 }
 
+export function summarizePdpFieldEvidence(pdp){
+  return {
+    hasTitle:typeof pdp?.title==="string"&&pdp.title.trim().length>0,
+    hasImage:typeof pdp?.image==="string"&&/^https:\/\//i.test(pdp.image),
+    hasVariantIdentity:Boolean(pdp?.sku||pdp?.variantId),
+    hasPrice:Number.isFinite(pdp?.productPrice)&&pdp.productPrice>0 &&
+      Number.isFinite(pdp?.originalProductPrice)&&pdp.originalProductPrice>0,
+    hasSARCurrency:pdp?.currency==="SAR"&&pdp?.originalCurrency==="SAR",
+    hasExplicitConflicts:Array.isArray(pdp?.extraction?.conflicts)&&pdp.extraction.conflicts.length>0,
+  };
+}
+
 export function validateDecathlonPdpEvidence(candidateUrl,pdp){
   const decision=(status,priceObserved=false)=>({
     status,priceObserved,priceCorroboratedBySearch:false,trustedOfferEligible:false,
@@ -120,24 +132,28 @@ export async function auditSitemapPdpRecall({
     catch{statuses.push({pdp:"PDP_UNAVAILABLE",search:"NOT_RUN"});accessFailures++;continue;}
     const check=validateDecathlonPdpEvidence(candidateUrl,pdp);
     if(!check.priceObserved){
-      statuses.push({pdp:check.status,search:"NOT_RUN"});continue;
+      statuses.push({pdp:check.status,search:"NOT_RUN",
+        fields:summarizePdpFieldEvidence(pdp)});continue;
     }
     observed++;
     const query=queryFromVerifiedPage(pdp);
     if(!query||searchQueries>=SEARCH_LIMIT){
-      statuses.push({pdp:check.status,search:"NOT_RUN"});continue;
+      statuses.push({pdp:check.status,search:"NOT_RUN",
+        fields:summarizePdpFieldEvidence(pdp)});continue;
     }
     searchQueries++;
     let searchResult;
     try{
       searchResult=await searchStore(query,requestSignal);
-    }catch{statuses.push({pdp:check.status,search:"SEARCH_UNAVAILABLE"});accessFailures++;continue;}
+    }catch{statuses.push({pdp:check.status,search:"SEARCH_UNAVAILABLE",
+      fields:summarizePdpFieldEvidence(pdp)});accessFailures++;continue;}
     const match=compareSitemapWithStoreSearch(candidateUrl,pdp,searchResult);
     if(match.status==="NOT_FOUND_IN_THIS_SEARCH")notObserved++;
     if(match.status==="SEARCH_SAME_ITEM_PRICE_MATCH")searchMatches++;
     if(match.status==="SEARCH_PRICE_CONFLICT"||match.status==="SEARCH_VARIANT_CONFLICT")
       priceConflicts++;
-    statuses.push({pdp:check.status,search:match.status});
+    statuses.push({pdp:check.status,search:match.status,
+      fields:summarizePdpFieldEvidence(pdp)});
   }
   return {
     schemaVersion:"nawaa.sitemap-pdp-coverage.v1",sourceId:SOURCE,
