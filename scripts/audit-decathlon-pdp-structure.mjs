@@ -4,6 +4,7 @@ import {load} from "cheerio";
 import {auditDecathlonSitemap} from "./audit-sitemap-discovery.mjs";
 import {fetchHtmlSafe,extractionCandidates} from "../server/url-resolver.mjs";
 import {compareProductIdentity} from "../server/product-identity.mjs";
+import {extractDecathlonScopedIdentity} from "../server/decathlon-product-evidence.mjs";
 import {resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -16,6 +17,7 @@ const isProductUrl=(raw)=>{
 export function inspectDecathlonHtmlStructure(html,url){
   if(!isProductUrl(url))return {status:"INVALID_SOURCE_URL"};
   const source=String(html||"").slice(0,1_500_000);
+  const scoped=extractDecathlonScopedIdentity(source,url);
   const $=load(source);
   const scripts=$("script").slice(0,150).toArray();
   const scriptsJson=scripts.filter(el=>/application\/(?:json|ld\+json)/i.test($(el).attr("type")||""));
@@ -77,6 +79,9 @@ export function inspectDecathlonHtmlStructure(html,url){
   const page=$("html").first().attr("lang")||"";
   return {
     status:"HTML_OBSERVED",
+    scopedIdentityStatus:scoped.status,
+    scopedIdentityObserved:scoped.identityProven===true,
+    // Never serialize the extracted SKU, selected variant, image, URL or title.
     availableStrategies:byName,
     evidenceByStrategy:sourceEvidence,
     sourceConsensus,
