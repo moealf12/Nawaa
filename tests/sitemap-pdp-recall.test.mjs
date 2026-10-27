@@ -124,8 +124,8 @@ test("RED: 403/429 sitemap denies access; no PDP, search or retry",async()=>{
 test("PDP diagnostic records only field-presence facts, never values or product identifiers",()=>{
   const x=summarizePdpFieldEvidence(pdp({image:null,sku:null,variantId:null}));
   assert.deepEqual(x,{
-    hasTitle:true,hasImage:false,hasVariantIdentity:false,hasPrice:true,
-    hasSARCurrency:true,hasExplicitConflicts:false,
+    hasTitle:true,isPlaceholderTitle:false,hasImage:false,hasVariantIdentity:false,hasPrice:true,
+    hasSARCurrency:true,hasExplicitConflicts:false,extractionStrategy:"none",
   });
   const text=JSON.stringify(x);
   assert.equal(text.includes("RUN-100"),false);
@@ -158,4 +158,21 @@ test("weak URL-only comparisons can run with missing PDP image/SKU but cannot pr
   assert.equal(report.urlNotObservedInSearchOffers,2);
   assert.equal(report.trustedOffersCreated,0);
   assert.equal(report.verifiedGlobalRecallUplift,false);
+});
+
+
+test("placeholder title never becomes SKU proof; limited lookup uses sanitized source slug",async()=>{
+  const queries=[];
+  const generic="منتج من رابط خارجي";
+  const report=await auditSitemapPdpRecall({
+    fetchPage:async()=>new Response(xml([product]),{status:200,headers:{"content-type":"text/xml"}}),
+    resolvePdp:async()=>pdp({title:generic,image:null,sku:null,variantId:null}),
+    searchStore:async query=>{queries.push(query);return {offers:[],diagnostics:{}};},
+  });
+  assert.deepEqual(queries,["kalenji running shoes 100"]);
+  assert.equal(report.statuses[0].fields.isPlaceholderTitle,true);
+  assert.equal(report.statuses[0].fields.hasTitle,false);
+  assert.equal(report.pdpIdentityAndPriceObserved,0);
+  assert.equal(report.urlNotObservedInSearchOffers,1);
+  assert.equal(report.trustedOffersCreated,0);
 });
