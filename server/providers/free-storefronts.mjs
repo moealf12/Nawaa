@@ -2,7 +2,7 @@ import { resolveProductUrl } from "../url-resolver.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
-import { SourceHttpError, parseRetryAfter, classifySourceError, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
+import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1559,11 +1559,17 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       : filteredOffers.slice(0, perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
+    const sourceObservation = classifySourceObservation({
+      status:200,html,candidates:directSearchOffers.length || links.length,
+      pricedCandidates:offers.length,
+      blockedReason:searchDiagnostics?.blockedReason || null,
+    }).failureClass;
     // HTTP 200 is not healthy acquisition when an explicitly detected bot
     // challenge or failed primary search has yielded no verified product.
     // A genuinely empty parsed catalog is instead a valid zero-yield search.
     const acquisitionBlocked = offers.length === 0 &&
-      Boolean(searchDiagnostics?.blockedReason || primarySearchError);
+      Boolean(searchDiagnostics?.blockedReason || primarySearchError ||
+        sourceObservation === "HTTP_200_JS_SHELL");
     sourceReliability.record(store.id, {
       transportOk: !verificationBlocked && !acquisitionBlocked,
       offers: offers.length,
@@ -1585,6 +1591,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         sourceAccessFailure,
+        sourceObservation,
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
           : links.slice(0,5).map((candidate)=>candidate.url)),
