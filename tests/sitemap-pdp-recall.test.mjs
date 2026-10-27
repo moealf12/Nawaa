@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   validateDecathlonPdpEvidence,
+  summarizePdpFieldEvidence,
   compareSitemapWithStoreSearch,
   auditSitemapPdpRecall,
 } from "../scripts/audit-sitemap-pdp-recall.mjs";
@@ -116,4 +117,17 @@ test("RED: 403/429 sitemap denies access; no PDP, search or retry",async()=>{
     assert.equal(result.trustedOffersCreated,0);
     assert.equal(result.catalogCompleteness,false);
   }
+});
+
+
+test("PDP diagnostic records only field-presence facts, never values or product identifiers",()=>{
+  const x=summarizePdpFieldEvidence(pdp({image:null,sku:null,variantId:null}));
+  assert.deepEqual(x,{
+    hasTitle:true,hasImage:false,hasVariantIdentity:false,hasPrice:true,
+    hasSARCurrency:true,hasExplicitConflicts:false,
+  });
+  const text=JSON.stringify(x);
+  assert.equal(text.includes("RUN-100"),false);
+  assert.equal(text.includes("99"),false);
+  assert.equal(text.includes("running-shoes"),false);
 });
