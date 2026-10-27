@@ -7,6 +7,7 @@ import {
   parseRetryAfter,
   SourceHttpError,
   sourceRateLimitGuard,
+  createSourceRateLimitGuard,
 } from "../src/source-access-intelligence.mjs";
 import { fetchAmazonSearchPages, searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
 
@@ -50,7 +51,6 @@ test("RED E.1.2: Retry-After seconds/date strictly parsed; no negative, unbounde
 
 test("RED E.1.2: 429 source guard blocks repeat requests and honors Retry-After",()=>{
   let clock=1000;
-  const {createSourceRateLimitGuard}=await import("../src/source-access-intelligence.mjs");
   const guard=createSourceRateLimitGuard({now:()=>clock});
   guard.record429("merchant-a","120");
   assert.equal(guard.canRequest("merchant-a").allowed,false);
