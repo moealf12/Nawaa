@@ -8,6 +8,7 @@ on:
       - 'scripts/audit-decathlon-shadow-search.mjs'
       - 'tests/decathlon-shadow-search-gate.test.mjs'
       - 'tests/decathlon-shadow-live-audit.test.mjs'
+      - 'tests/decathlon-resolver-shadow-parity.test.mjs'
       - '.github/workflows/decathlon-shadow-search.yml'
 
 permissions:
@@ -41,7 +42,7 @@ jobs:
       - name: Verify OFF/ON, no customer offers, freshness and adversarial cases
         env:
           NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
-        run: node --test tests/decathlon-shadow-search-gate.test.mjs tests/decathlon-shadow-live-audit.test.mjs
+        run: node --test tests/decathlon-shadow-search-gate.test.mjs tests/decathlon-shadow-live-audit.test.mjs tests/decathlon-resolver-shadow-parity.test.mjs
       - name: One bounded source-only live observation (feature enabled for CI only)
         env:
           NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '1'
