@@ -4,11 +4,12 @@ import {extractDecathlonScopedIdentity} from "../server/decathlon-product-eviden
 const host="https://decathlon.com.sa",url=host+"/products/own-product";
 function fixture({canon=url,title="Kalenji Running Shoes",schemaName=title,sku="KAL-100",variant="12345",
   image="https://cdn.shopify.com/products/shoes.jpg",addDifferentVariant=false,addDifferentSku=false,
-  metaTitle=title,schematicUrl=url}={}){
+  metaTitle=title,schematicUrl=url,twitterImage=null}={}){
   const schema={ "@context":"https://schema.org","@type":"Product",name:schemaName,url:schematicUrl,
     offers:{"@type":"AggregateOffer",lowPrice:"1",priceCurrency:"SAR"}};
   return '<html><head><title>'+title+' | Decathlon</title><link rel="canonical" href="'+canon+'">'+
-  '<meta property="og:title" content="'+metaTitle+'"><meta property="og:image" content="'+image+'"></head>'+
+  '<meta property="og:title" content="'+metaTitle+'"><meta property="og:image" content="'+image+'">'+
+  (twitterImage===null?'':'<meta name="twitter:image" content="'+twitterImage+'">')+'</head>'+
   '<body><main><h1>'+title+'</h1><div class="product" data-sku="'+sku+'"></div>'+
   (addDifferentSku?'<div class="upsell" data-sku="OTHER-SKU"></div>':"")+
   '<form action="/cart/add"><input name="id" value="'+variant+'"></form>'+
@@ -50,4 +51,22 @@ test("negative: no SKU, no form, no canonical cannot be silently defaulted",()=>
   assert.equal(extractDecathlonScopedIdentity(fixture({sku:""}),url).status,"SKU_AMBIGUOUS");
   assert.equal(extractDecathlonScopedIdentity(fixture({variant:""}),url).status,"VARIANT_AMBIGUOUS");
   assert.equal(extractDecathlonScopedIdentity(fixture({canon:""}),url).status,"CANONICAL_OWNERSHIP_NOT_VERIFIED");
+});
+
+test("source-owned HTTPS Twitter image salvages PDP identity when OG image is HTTP",()=>{
+  const x=extractDecathlonScopedIdentity(fixture({
+    image:"http://decathlon.com.sa/cdn/shop/files/legacy.jpg",
+    twitterImage:"https://decathlon.com.sa/cdn/shop/files/product.jpg",
+  }),url);
+  assert.equal(x.status,"SCOPED_IDENTITY_OBSERVED");
+  assert.equal(x.image,"https://decathlon.com.sa/cdn/shop/files/product.jpg");
+  assert.equal(x.priceProven,false);
+  assert.equal(x.inventoryProven,false);
+});
+test("untrusted external host cannot spoof product image from either OG or Twitter",()=>{
+  const x=extractDecathlonScopedIdentity(fixture({
+    image:"https://evil.example/fake.jpg",
+    twitterImage:"http://decathlon.com.sa/image.jpg",
+  }),url);
+  assert.equal(x.status,"IMAGE_EVIDENCE_MISSING");
 });
