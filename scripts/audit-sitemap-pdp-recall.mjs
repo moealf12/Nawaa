@@ -24,15 +24,26 @@ function exactSourceProductPath(url){
   }catch{return null;}
 }
 
+function isPlaceholderTitle(title){
+  const s=String(title||"").trim().toLowerCase();
+  return s==="منتج من رابط خارجي"||s==="product from external url";
+}
+
 export function summarizePdpFieldEvidence(pdp){
+  const strategy=String(pdp?.extraction?.strategy||"none");
+  const allowedStrategies=new Set(["jsonld","embedded_json","hydrated_state",
+    "storefront_data","domain_adapter","meta","none"]);
   return {
-    hasTitle:typeof pdp?.title==="string"&&pdp.title.trim().length>0,
+    hasTitle:typeof pdp?.title==="string"&&pdp.title.trim().length>0 &&
+      !isPlaceholderTitle(pdp.title),
+    isPlaceholderTitle:isPlaceholderTitle(pdp?.title),
     hasImage:typeof pdp?.image==="string"&&/^https:\/\//i.test(pdp.image),
     hasVariantIdentity:Boolean(pdp?.sku||pdp?.variantId),
     hasPrice:Number.isFinite(pdp?.productPrice)&&pdp.productPrice>0 &&
       Number.isFinite(pdp?.originalProductPrice)&&pdp.originalProductPrice>0,
     hasSARCurrency:pdp?.currency==="SAR"&&pdp?.originalCurrency==="SAR",
     hasExplicitConflicts:Array.isArray(pdp?.extraction?.conflicts)&&pdp.extraction.conflicts.length>0,
+    extractionStrategy:allowedStrategies.has(strategy)?strategy:"unknown",
   };
 }
 
@@ -50,7 +61,7 @@ export function validateDecathlonPdpEvidence(candidateUrl,pdp){
     if(selected!==null&&String(pdp.variantId||"")!==selected)
       return decision("PDP_IDENTITY_MISMATCH");
   }
-  if(!pdp.title?.trim()||!pdp.image||!/^https:\/\//i.test(pdp.image))
+  if(!pdp.title?.trim()||isPlaceholderTitle(pdp.title)||!pdp.image||!/^https:\/\//i.test(pdp.image))
     return decision("PDP_SUBJECT_UNCERTAIN");
   if(!pdp.sku&&!pdp.variantId)return decision("PDP_VARIANT_UNCERTAIN");
   if(Array.isArray(pdp.extraction?.conflicts)&&pdp.extraction.conflicts.length)
@@ -101,10 +112,13 @@ const defaultPdp=(url,signal)=>resolveProductUrl(url,{signal});
 const defaultSearch=(query,signal)=>
   searchFreeStorefrontById(SOURCE,query,{perStore:3,signal});
 
-function queryFromVerifiedPage(pdp){
-  // A short one-merchant query is an experimental coverage probe only.
-  // Avoid reusing URLs, user inputs, dynamic query parameters or descriptions.
-  const clean=String(pdp?.title||"").normalize("NFKC")
+function queryFromVerifiedPage(pdp,candidateUrl){
+  // A placeholder cannot become query evidence. Source-owned slug provides
+  // a bounded, weak discovery query instead (never identity/price evidence).
+  const slug=exactSourceProductPath(candidateUrl)?.split("/").at(-1)||"";
+  const input=isPlaceholderTitle(pdp?.title)||!String(pdp?.title||"").trim()
+    ?slug.replace(/-/g," "):pdp.title;
+  const clean=String(input||"").normalize("NFKC")
     .replace(/[^\p{L}\p{N}\s-]/gu," ").replace(/\s+/g," ").trim();
   if(clean.length<6)return null;
   return clean.split(" ").slice(0,7).join(" ").slice(0,90);
@@ -150,12 +164,11 @@ export async function auditSitemapPdpRecall({
     // Even without SKU or image, the same-path URL can be compared with
     // merchant search as *weak discovery evidence*, never as a price claim.
     // Cross-product redirects, however, cannot launch another source query.
-    if(check.status==="PDP_IDENTITY_MISMATCH" ||
-       check.status==="PDP_SUBJECT_UNCERTAIN" && !fields.hasTitle){
+    if(check.status==="PDP_IDENTITY_MISMATCH"){
       statuses.push({pdp:check.status,search:"NOT_RUN",fields});continue;
     }
     if(check.priceObserved)observed++;
-    const query=queryFromVerifiedPage(pdp);
+    const query=queryFromVerifiedPage(pdp,candidateUrl);
     if(!query||searchQueries>=SEARCH_LIMIT){
       statuses.push({pdp:check.status,search:"NOT_RUN",fields});continue;
     }
