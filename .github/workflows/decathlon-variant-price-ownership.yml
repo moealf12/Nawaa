@@ -1,0 +1,50 @@
+name: NAWAA Decathlon Variant Price Ownership Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'server/decathlon-variant-price-ownership.mjs'
+      - 'scripts/audit-decathlon-variant-price-ownership.mjs'
+      - 'tests/decathlon-variant-price-ownership.test.mjs'
+      - '.github/workflows/decathlon-variant-price-ownership.yml'
+permissions:
+  contents: read
+concurrency:
+  group: decathlon-variant-price-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  variant-price:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify exact candidate head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install only existing locked packages
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Deterministic variant price attribution tests
+        run: node --test tests/decathlon-variant-price-ownership.test.mjs
+      - name: Read-only bounded Decathlon two-PDP evidence
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/audit-decathlon-variant-price-ownership.mjs | tee decathlon-price-ownership.json
+      - name: Upload aggregate-only diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decathlon-variant-price-${{ github.event.pull_request.head.sha }}
+          path: decathlon-price-ownership.json
+          if-no-files-found: ignore
+          retention-days: 7
