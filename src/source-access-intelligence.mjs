@@ -30,6 +30,9 @@ export function parseRetryAfter(header,{now=Date.now()}={}){
     if(!Number.isSafeInteger(seconds))return null;
     ms=seconds*1000;
   }else{
+    // Date.parse accepts non-HTTP strings such as "-3" as a past date.
+    // Require an actual IMF-fixdate Retry-After field before parsing it.
+    if(!/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/i.test(value))return null;
     const date=Date.parse(value);
     if(!Number.isFinite(date))return null;
     ms=Math.max(0,date-now);
