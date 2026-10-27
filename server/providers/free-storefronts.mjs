@@ -1358,7 +1358,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       // Virgin's generic search endpoint can reject server-side clients while its
       // public category catalog remains rendered and price-bearing. Fall back to a
       // deterministic family catalog before declaring the provider unavailable.
-      if (store.id === "virgin-ae") {
+      if (store.id === "virgin-ae" &&
+          sourceAccessFailure !== "HTTP_403_ACCESS_DENIED" &&
+          sourceAccessFailure !== "HTTP_429_RATE_LIMITED") {
         const catalogUrl = virginAeCatalogUrl(query);
         if (catalogUrl) {
           try {
@@ -1374,6 +1376,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
       }
     }
+    // Explicit access denial applies to this acquisition. Do not try a
+    // different endpoint as a transport workaround for the same search.
+    if (!html && (sourceAccessFailure === "HTTP_403_ACCESS_DENIED" ||
+                  sourceAccessFailure === "HTTP_429_RATE_LIMITED"))
+      throw new Error(primarySearchError || sourceAccessFailure);
     const aliexpressProductLinkTrust = {rejectedProductLinks:0,rejectionSamples:[]};
     const htmlFirstOffers =
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query, aliexpressProductLinkTrust) :
