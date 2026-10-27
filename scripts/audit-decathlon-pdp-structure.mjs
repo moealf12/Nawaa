@@ -37,7 +37,7 @@ export function inspectDecathlonHtmlStructure(html,url){
         try{
           const id=product.url || rawOffer?.url || product["@id"];
           return Boolean(id)&&new URL(id,url).origin===new URL(url).origin &&
-            new URL(id,url).pathname.replace(/\\/+$/,"")===new URL(url).pathname.replace(/\\/+$/,"");
+            new URL(id,url).pathname.replace(/\/+$/,"")===new URL(url).pathname.replace(/\/+$/,"");
         }catch{return false;}
       })(),
     }];
@@ -47,7 +47,7 @@ export function inspectDecathlonHtmlStructure(html,url){
   const canonicalMatches=(()=>{
     try{
       const c=new URL(canonical,url),u=new URL(url);
-      return c.hostname===u.hostname&&c.pathname.replace(/\\/+$/,"")===u.pathname.replace(/\\/+$/,"");
+      return c.hostname===u.hostname&&c.pathname.replace(/\/+$/,"")===u.pathname.replace(/\/+$/,"");
     }catch{return false;}
   })();
   const imageTags=$("img").length;
