@@ -17,8 +17,16 @@ const onlyOne=values=>{const clean=values.map(x=>String(x||"").trim()).filter(Bo
 const meta=($,key)=>String($('meta[property="'+key+'"]').first().attr("content")||"").trim();
 const EMPTY=(reason)=>({status:reason,identityProven:false,priceProven:false,inventoryProven:false});
 const safeImage=(url,base)=>{
-  try{const u=new URL(url,base);return u.protocol==="https:"&&!u.username&&!u.password&&(!u.port||u.port==="443")?u.href:null;}
-  catch{return null;}
+  if(typeof url!=="string"||!url.trim()||url.length>2000)return null;
+  try{
+    const u=new URL(url.trim(),base);
+    // Page URL itself, non-image protocols and dangerous credentials are not images.
+    if(u.href===new URL(base).href || u.protocol!=="https:"||
+       u.username||u.password||(u.port&&u.port!=="443")||
+       !/\.(?:jpe?g|png|webp|avif)(?:$|[?#])/i.test(u.href))
+      return null;
+    return u.href;
+  }catch{return null;}
 };
 export function extractDecathlonScopedIdentity(html,requestedUrl){
   const expected=pagePath(requestedUrl);
