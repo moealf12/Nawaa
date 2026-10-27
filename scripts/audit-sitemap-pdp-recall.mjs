@@ -82,6 +82,21 @@ export function compareSitemapWithStoreSearch(candidateUrl,pdp,searchResult){
   return decision("SEARCH_PRICE_CONFLICT");
 }
 
+// Weak URL-only coverage observation. Never calls a listing price corroborated.
+export function compareSitemapUrlPresence(candidateUrl,searchResult){
+  const decision=status=>({
+    status,trustedOfferEligible:false,productPriceCorroborated:false,
+  });
+  const path=exactSourceProductPath(candidateUrl);
+  if(!path)return decision("INVALID_SITEMAP_URL");
+  if(!searchResult||searchResult.diagnostics?.primarySearchError||
+     searchResult.diagnostics?.searchPage?.blockedReason||
+     !Array.isArray(searchResult.offers))
+    return decision("SEARCH_UNAVAILABLE");
+  return decision(searchResult.offers.some(x=>exactSourceProductPath(x.sourceUrl)===path)
+    ?"URL_PRESENT_IN_SEARCH_OFFERS":"URL_NOT_OBSERVED_IN_SEARCH_OFFERS");
+}
+
 const defaultPdp=(url,signal)=>resolveProductUrl(url,{signal});
 const defaultSearch=(query,signal)=>
   searchFreeStorefrontById(SOURCE,query,{perStore:3,signal});
@@ -109,7 +124,7 @@ export async function auditSitemapPdpRecall({
     }
   });
   let sampledPdp=0,observed=0,searchQueries=0,notObserved=0,searchMatches=0;
-  let priceConflicts=0,accessFailures=0;
+  let priceConflicts=0,accessFailures=0,urlNotObserved=0;
   const statuses=[];
   if(["SOURCE_DENIED","SOURCE_RATE_LIMITED","SOURCE_UNAVAILABLE","XML_INVALID"].includes(sitemap.status)){
     return {
@@ -117,7 +132,7 @@ export async function auditSitemapPdpRecall({
       sitemapStatus:sitemap.status,sitemapRequests:sitemap.requests,
       sitemapProductCandidates:sitemap.productCandidates,
       catalogCompleteness:false,sampledPdp:0,pdpIdentityAndPriceObserved:0,
-      searchQueries:0,notObservedInSampledSearch:0,searchPriceMatches:0,
+      searchQueries:0,notObservedInSampledSearch:0,urlNotObservedInSearchOffers:0,searchPriceMatches:0,
       searchPriceConflicts:0,accessFailures:0,statuses:[],
       trustedOffersCreated:0,inventoryVerified:false,verifiedGlobalRecallUplift:false,
     };
@@ -131,29 +146,35 @@ export async function auditSitemapPdpRecall({
     try{pdp=await resolvePdp(candidateUrl,requestSignal);}
     catch{statuses.push({pdp:"PDP_UNAVAILABLE",search:"NOT_RUN"});accessFailures++;continue;}
     const check=validateDecathlonPdpEvidence(candidateUrl,pdp);
-    if(!check.priceObserved){
-      statuses.push({pdp:check.status,search:"NOT_RUN",
-        fields:summarizePdpFieldEvidence(pdp)});continue;
+    const fields=summarizePdpFieldEvidence(pdp);
+    // Even without SKU or image, the same-path URL can be compared with
+    // merchant search as *weak discovery evidence*, never as a price claim.
+    // Cross-product redirects, however, cannot launch another source query.
+    if(check.status==="PDP_IDENTITY_MISMATCH" ||
+       check.status==="PDP_SUBJECT_UNCERTAIN" && !fields.hasTitle){
+      statuses.push({pdp:check.status,search:"NOT_RUN",fields});continue;
     }
-    observed++;
+    if(check.priceObserved)observed++;
     const query=queryFromVerifiedPage(pdp);
     if(!query||searchQueries>=SEARCH_LIMIT){
-      statuses.push({pdp:check.status,search:"NOT_RUN",
-        fields:summarizePdpFieldEvidence(pdp)});continue;
+      statuses.push({pdp:check.status,search:"NOT_RUN",fields});continue;
     }
     searchQueries++;
     let searchResult;
     try{
       searchResult=await searchStore(query,requestSignal);
-    }catch{statuses.push({pdp:check.status,search:"SEARCH_UNAVAILABLE",
-      fields:summarizePdpFieldEvidence(pdp)});accessFailures++;continue;}
-    const match=compareSitemapWithStoreSearch(candidateUrl,pdp,searchResult);
+    }catch{statuses.push({pdp:check.status,search:"SEARCH_UNAVAILABLE",fields});
+      accessFailures++;continue;}
+    const linkCheck=compareSitemapUrlPresence(candidateUrl,searchResult);
+    if(linkCheck.status==="URL_NOT_OBSERVED_IN_SEARCH_OFFERS")urlNotObserved++;
+    const match=check.priceObserved
+      ?compareSitemapWithStoreSearch(candidateUrl,pdp,searchResult)
+      :{status:linkCheck.status};
     if(match.status==="NOT_FOUND_IN_THIS_SEARCH")notObserved++;
     if(match.status==="SEARCH_SAME_ITEM_PRICE_MATCH")searchMatches++;
     if(match.status==="SEARCH_PRICE_CONFLICT"||match.status==="SEARCH_VARIANT_CONFLICT")
       priceConflicts++;
-    statuses.push({pdp:check.status,search:match.status,
-      fields:summarizePdpFieldEvidence(pdp)});
+    statuses.push({pdp:check.status,search:match.status,fields});
   }
   return {
     schemaVersion:"nawaa.sitemap-pdp-coverage.v1",sourceId:SOURCE,
@@ -162,6 +183,7 @@ export async function auditSitemapPdpRecall({
     catalogCompleteness:sitemap.complete,
     sampledPdp,pdpIdentityAndPriceObserved:observed,
     searchQueries,notObservedInSampledSearch:notObserved,
+    urlNotObservedInSearchOffers:urlNotObserved,
     searchPriceMatches:searchMatches,searchPriceConflicts:priceConflicts,
     accessFailures,statuses,
     trustedOffersCreated:0,inventoryVerified:false,
