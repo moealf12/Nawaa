@@ -197,6 +197,19 @@ function isEvidencedCompleteLaptop(offer = {}) {
   return true;
 }
 
+// "Case" on a complete Apple Watch can describe its chassis instead of
+// a protective accessory. Require a title-leading full device and corroborating
+// GPS/size/case-with-band evidence; compatible cases and replacement straps fail.
+function isEvidencedCompleteAppleWatch(offer = {}) {
+  const retail=normalizeSearchQuery(offer.title || "");
+  if (!/^(?:shop for )?apple watch (?:ultra \d+|series \d+|se(?: \d+)?)(?: |$)/.test(retail)) return false;
+  if (!/\b(?:gps|cellular)\b/.test(retail) || !/\b(?:3[89]|4[0-9]|5[0-9])mm\b/.test(retail)) return false;
+  if (!/\b(?:aluminium|aluminum|titanium|stainless steel) case with\b/.test(retail)) return false;
+  if (!/\b(?:milanese loop|sport band|sport loop|solo loop)\b/.test(retail)) return false;
+  if (/\b(?:replacement|protective|protector|cover|case only|strap only|compatible with|fits)\b/.test(retail)) return false;
+  return true;
+}
+
 // The matching path already computed describeProduct(offer); reuse that immutable
 // value rather than normalizing its title and metadata a second time.
 function productCategoryWithDescription(offer, gaming) {
@@ -230,6 +243,7 @@ function productCategoryWithDescription(offer, gaming) {
   const computerSubjectBeforeClaim=hpClaim && /\b(?:laptops?|notebooks?|chromebooks?|macbooks?|computers?|desktops?|pcs?|pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen)\b/.test(
     normalizedRetailTitle.slice(0,hpClaim.index));
   if(hpClaim && !computerSubjectBeforeClaim) return 'accessory';
+  if (isEvidencedCompleteAppleWatch(offer)) return 'watch';
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   if (isEvidencedCompleteLaptop(offer)) return 'laptop';
   let urlSemantic = "";
@@ -539,7 +553,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
-  const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
+  const titleHasAccessory = !isEvidencedCompleteAppleWatch(offer) && !isVerifiedLaptopCarryBundle(offer) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
