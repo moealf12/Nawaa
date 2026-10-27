@@ -1,0 +1,55 @@
+name: NAWAA Bounded Sitemap Discovery Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit-sitemap-discovery.mjs'
+      - 'tests/sitemap-catalog-discovery.test.mjs'
+      - '.github/workflows/sitemap-discovery-evidence.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-sitemap-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sitemap-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Exact candidate SHA checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Refuse wrong git revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "Exact HEAD verified"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Existing locked dependencies only
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Source ownership, XML and no-stock regression tests
+        run: node --test tests/sitemap-catalog-discovery.test.mjs
+      - name: One bounded public Decathlon sitemap observation
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/audit-sitemap-discovery.mjs | tee sitemap-evidence.json
+      - name: Upload aggregate-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sitemap-evidence-${{ github.event.pull_request.head.sha }}
+          path: sitemap-evidence.json
+          if-no-files-found: ignore
+          retention-days: 7
