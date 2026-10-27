@@ -37,7 +37,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Deterministic model, provenance and price-rejection tests
         run: node --test tests/s25-source-coverage-audit.test.mjs
-      - name: Two existing Saudi catalog adapters, bounded once, no PDPs
+      - name: Two Saudi catalog adapters, at most one source-owned PDP probe each
         env:
           NODE_ENV: test
           DATABASE_URL: ''
