@@ -90,6 +90,18 @@ export function inspectDecathlonHtmlStructure(html,url){
       return c.hostname===u.hostname&&c.pathname.replace(/\/+$/,"")===u.pathname.replace(/\/+$/,"");
     }catch{return false;}
   })();
+  const twitterImageUrlShape=(()=>{
+    const raw=metaValue('meta[name="twitter:image"]');
+    if(!raw)return {hasValue:false};
+    try{
+      const u=new URL(raw,url);
+      return {hasValue:true,isHttps:u.protocol==="https:",
+        merchantHost:u.hostname==="decathlon.com.sa",
+        shopifyCdn:u.hostname==="cdn.shopify.com"||u.hostname.endsWith(".shopifycdn.net"),
+        pathHasImageExtension:/\.(?:jpe?g|png|webp|avif)$/i.test(u.pathname),
+        sameAsProductPage:u.href===url};
+    }catch{return {hasValue:true,parseable:false};}
+  })();
   const imageTags=$("img").length;
   const page=$("html").first().attr("lang")||"";
   return {
@@ -110,6 +122,7 @@ export function inspectDecathlonHtmlStructure(html,url){
     canonicalMatches,
     ogImageValuePresent:Boolean(metaValue('meta[property="og:image"]')),
     ogImageUrlShape:imageUrlShape,
+    twitterImageUrlShape,
     twitterImageValuePresent:Boolean(metaValue('meta[name="twitter:image"]')),
     scriptsCount:scripts.length,structuredScriptsCount:scriptsJson.length,
     jsonLdProductText:/["']@type["']\s*:\s*["']Product["']/i.test(source),
