@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { searchJarir } from "../server/providers/jarir.mjs";
 import { searchExtraUnbxd } from "../server/providers/extra-unbxd.mjs";
 import { normalizeSearchQuery, queryMatchReasons } from "../src/search-query.mjs";
+import { sameOfferIdentity } from "../server/product-identity.mjs";
+import { resolveProductUrl } from "../server/url-resolver.mjs";
 
 const SOURCE_RULES=Object.freeze({
   "jarir-direct":Object.freeze({
@@ -53,11 +55,30 @@ export function classifyS25CatalogOffer(provider, offer){
     priceVerifiedAgainstPdp:false,deliveryVerified:false};
 }
 
+// Page truth must be the *same* source-owned selected product, not the S25
+// family landing price, sibling variant, struck-through RRP or instalments.
+export function assessS25PdpCorroboration(provider,catalog,page){
+  if(!classifyS25CatalogOffer(provider,catalog).eligible)
+    return "CATALOG_IDENTITY_INVALID";
+  if(!page || !sameOfferIdentity(catalog,page))
+    return "IDENTITY_MISMATCH";
+  if(queryMatchReasons("galaxy s25 256gb",page).length)
+    return "PDP_MODEL_OR_STORAGE_CONFLICT";
+  if(!Number.isFinite(page.productPrice) || page.productPrice<=0 ||
+     !Number.isFinite(page.originalProductPrice) ||
+     page.currency!=="SAR" || page.originalCurrency!=="SAR")
+    return "UNPRICED_PDP";
+  if(page.productPrice!==catalog.productPrice ||
+     page.originalProductPrice!==catalog.originalProductPrice)
+    return "PRICE_MISMATCH";
+  return "PDP_PRICE_CORROBORATED";
+}
+
 const callJarir=(q,signal)=>searchJarir(q,LIMIT,q,{signal});
 const callExtra=(q,signal)=>searchExtraUnbxd(q,LIMIT,q,{signal});
 
 export async function auditS25Sources({searchJarir:jarir=callJarir,
-  searchExtraUnbxd:extra=callExtra}={}){
+  searchExtraUnbxd:extra=callExtra,resolvePage=null}={}){
   const defs=[
     {provider:"jarir-direct",searcher:jarir},
     {provider:"extra-unbxd",searcher:extra},
@@ -75,7 +96,7 @@ export async function auditS25Sources({searchJarir:jarir=callJarir,
         strictRejected:null,duplicates:null,hasCatalogPricingEvidence:false};
     }
     const seen=new Set();
-    let accepted=0,rejected=0,duplicates=0;
+    let accepted=0,rejected=0,duplicates=0,firstCandidate=null;
     for(const item of result.offers.slice(0,LIMIT)){
       const evaluation=classifyS25CatalogOffer(provider,item);
       if(!evaluation.eligible){rejected++;continue;}
@@ -84,13 +105,24 @@ export async function auditS25Sources({searchJarir:jarir=callJarir,
       const key=item.sourceUrl;
       if(seen.has(key)){duplicates++;continue;}
       seen.add(key);
+      if(!firstCandidate)firstCandidate=item;
       accepted++;
+    }
+    let pdpProbe={attempted:0,status:"NOT_REQUESTED"};
+    if(resolvePage && firstCandidate){
+      try {
+        // At most one PDP per source and only after model/SKU catalog gates.
+        const page=await resolvePage(firstCandidate,AbortSignal.timeout(6500));
+        pdpProbe={attempted:1,status:assessS25PdpCorroboration(provider,firstCandidate,page)};
+      } catch {
+        pdpProbe={attempted:1,status:"PDP_UNAVAILABLE"};
+      }
     }
     return {
       provider,status:accepted?"CATALOG_CANDIDATES":"NO_CATALOG_CANDIDATE",
       returned:result.offers.length,eligible:accepted,
       strictRejected:rejected,duplicates,
-      hasCatalogPricingEvidence:accepted>0,
+      hasCatalogPricingEvidence:accepted>0,pdpProbe,
     };
   }));
   return {
@@ -98,12 +130,15 @@ export async function auditS25Sources({searchJarir:jarir=callJarir,
     targetStorage:"256 GB",market:"SA",
     sources,
     claims:{merchantInventoryVerified:false,s25DeliveryVerified:false,
-      pdpPriceVerified:false,canPromoteToTrustedOffer:false},
+      pdpPriceVerified:sources.some(x=>x.pdpProbe?.status==="PDP_PRICE_CORROBORATED"),
+      canPromoteToTrustedOffer:false},
     caveat:"Catalog-price candidates have NOT been certified against the live product PDP, selected variant, delivery or availability.",
   };
 }
 
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  const result=await auditS25Sources();
+  const result=await auditS25Sources({
+    resolvePage:(offer,signal)=>resolveProductUrl(offer.sourceUrl,{signal}),
+  });
   process.stdout.write(JSON.stringify(result,null,2)+"\n");
 }
