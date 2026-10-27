@@ -1,0 +1,76 @@
+name: NAWAA Samsung Browser Discovery Experiment
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/diagnose-samsung-browser.mjs'
+      - 'tests/samsung-browser-forensics.test.mjs'
+      - '.github/workflows/samsung-browser-forensics.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-samsung-browser-forensics-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  browser-compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Validate immutable candidate SHA
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_HEAD"
+          echo "Exact head verified: $actual"
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install existing locked dependencies only
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run deterministic browser evidence controls (no network)
+        run: node --test tests/samsung-browser-forensics.test.mjs
+
+      - name: Verify runner Chromium (no dependency download)
+        run: |
+          set -euo pipefail
+          for chrome in /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium /usr/bin/chromium-browser /opt/google/chrome/chrome; do
+            if [ -x "$chrome" ]; then
+              "$chrome" --version
+              exit 0
+            fi
+          done
+          echo "::error::No runner-provided Chromium/Chrome executable; test not performed"
+          exit 2
+
+      - name: Compare one public Samsung HTML request with one rendered Chromium DOM
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          SAMSUNG_BROWSER_REPORT: samsung-browser-forensics.json
+        run: node scripts/diagnose-samsung-browser.mjs
+
+      - name: Preserve sanitized diagnostic evidence, even if browser unavailable
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: samsung-browser-forensics-${{ github.event.pull_request.head.sha }}
+          path: samsung-browser-forensics.json
+          if-no-files-found: ignore
+          retention-days: 7
