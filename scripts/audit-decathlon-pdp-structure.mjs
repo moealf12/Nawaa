@@ -3,6 +3,7 @@
 import {load} from "cheerio";
 import {auditDecathlonSitemap} from "./audit-sitemap-discovery.mjs";
 import {fetchHtmlSafe,extractionCandidates} from "../server/url-resolver.mjs";
+import {compareProductIdentity} from "../server/product-identity.mjs";
 import {resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -42,6 +43,20 @@ export function inspectDecathlonHtmlStructure(html,url){
       })(),
     }];
   }));
+  const jsonldEntry=sources.find(x=>x.strategy==="jsonld");
+  const metaEntry=sources.find(x=>x.strategy==="meta");
+  const candidateComparison=jsonldEntry&&metaEntry
+    ?compareProductIdentity(jsonldEntry.product,metaEntry.product):null;
+  const sourceConsensus=candidateComparison?{
+    verdict:candidateComparison.verdict,
+    conflicts:candidateComparison.conflicts,
+    titleSimilarity:candidateComparison.titleSimilarity??null,
+    matchedFields:candidateComparison.matches,
+  }:null;
+  const variantsScriptMarkers=scripts.filter(el=>/\bproductVariants\b|ShopifyAnalytics\.meta\.product|\bwpmLoader\b/.test($(el).html()||""));
+  const dataSku=$("[data-sku]").toArray().map(el=>String($(el).attr("data-sku")||"").trim()).filter(Boolean);
+  const inputVariants=$('form[action*="/cart/add"] input[name="id"]').toArray().map(el=>
+    String($(el).attr("value")||"").trim()).filter(Boolean);
   const metaValue=(selector)=>String($(selector).first().attr("content")||"").trim();
   const canonical=$('link[rel="canonical"]').first().attr("href")||"";
   const canonicalMatches=(()=>{
@@ -56,6 +71,10 @@ export function inspectDecathlonHtmlStructure(html,url){
     status:"HTML_OBSERVED",
     availableStrategies:byName,
     evidenceByStrategy:sourceEvidence,
+    sourceConsensus,
+    scriptsWithShopifyVariantMarkers:variantsScriptMarkers.length,
+    uniqueDataSkuValues:new Set(dataSku).size,
+    uniqueCartFormVariantIds:new Set(inputVariants).size,
     canonicalMatches,
     ogImageValuePresent:Boolean(metaValue('meta[property="og:image"]')),
     twitterImageValuePresent:Boolean(metaValue('meta[name="twitter:image"]')),
