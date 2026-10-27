@@ -1,0 +1,60 @@
+name: NAWAA Decathlon Default-Off Search Shadow Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'server/url-resolver.mjs'
+      - 'server/decathlon-shadow-gate.mjs'
+      - 'scripts/audit-decathlon-shadow-search.mjs'
+      - 'tests/decathlon-shadow-search-gate.test.mjs'
+      - 'tests/decathlon-shadow-live-audit.test.mjs'
+      - '.github/workflows/decathlon-shadow-search.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-decathlon-shadow-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  decathlon-shadow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Refuse unexpected commit
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Existing locked dependencies, no packages added
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify OFF/ON, no customer offers, freshness and adversarial cases
+        env:
+          NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
+        run: node --test tests/decathlon-shadow-search-gate.test.mjs tests/decathlon-shadow-live-audit.test.mjs
+      - name: One bounded source-only live observation (feature enabled for CI only)
+        env:
+          NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '1'
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NODE_ENV: test
+        run: node scripts/audit-decathlon-shadow-search.mjs | tee decathlon-shadow-report.json
+      - name: Store aggregate-only read-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-decathlon-shadow-${{ github.event.pull_request.head.sha }}
+          path: decathlon-shadow-report.json
+          if-no-files-found: ignore
+          retention-days: 7
