@@ -1319,7 +1319,11 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
         // New EU merchants yielded no trusted live offers in the first audit.
         // Incubate them behind established merchants until real catalog yield is observed;
         // stable routing deliberately ignores mutable process-local yield.
-        pilotUnproven:Boolean(store.euSource) && (stable || health.offers===0),
+        // The new Noon KSA adapter has no confirmed real yield (first
+        // GitHub Actions audit returned HTTP 403). Incubate behind productive
+        // merchants until actual valid offers exist. Explicit Noon intent stays first.
+        pilotUnproven:Boolean(store.euSource || store.id==="noon-sa") &&
+          (stable || health.offers===0),
         skippedForCooldown:false,
       };
     })
