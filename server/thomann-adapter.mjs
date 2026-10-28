@@ -24,7 +24,7 @@ function primaryPrice(text,title){
   if(!vat)return null;
   const slice=body.slice(Math.max(0,vat.index-850),vat.index)
     .replace(/\bB[- ]Stock\b.{0,105}?(?:\bab\s*)?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?\s*€/gi," ")
-    .replace(/\bUVP\s*:?\s*(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?\s*€/gi," ");
+    .replace(/UVP\s*:?\s*(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?\s*€/gi," ");
   const values=[];
   for(const m of slice.matchAll(euroPattern)){
     const price=parseEuro(m[1]);if(price!==null)values.push(price);
