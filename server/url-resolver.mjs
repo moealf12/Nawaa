@@ -8,6 +8,7 @@ import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mj
 import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
 import {isRetiredSourceUrl} from "../src/source-retirement.mjs";
 import {inspectAmazonDePdpHtml,extractAmazonDeScopedOffer,amazonDeDeclaredSellerAttribution} from "../src/amazon-de-pdp-identity.mjs";
+import {amazonDeCustomerPriceDecision} from "../src/amazon-de-price-gate.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
@@ -606,6 +607,14 @@ export async function extractProductDocument(url, options = {}) {
 export async function resolveProductUrl(url, options = {}) {
   const extracted = await extractProductDocument(url, options);
   const finalUrl = extracted.finalUrl;
+  // The structure of a Product/Offer is evidence-only. A public URL resolver
+  // may not publish a German Amazon price before buyer-visible buybox parity.
+  const amazonDeGate=amazonDeCustomerPriceDecision({sourceUrl:finalUrl});
+  if(!amazonDeGate.customerPublishable){
+    const error=new Error("AMAZON_DE_BUYBOX_PARITY_NOT_ATTESTED");
+    error.failureClass="SOURCE_PRICE_PUBLICATION_HELD";
+    throw error;
+  }
   const requested = new URL(url);
   const resolved = new URL(finalUrl);
   if (requested.searchParams.has('variant') && (

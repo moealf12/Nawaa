@@ -128,3 +128,20 @@ test("Amazon Germany unparsed HTML is not falsely reported as verified zero inve
     candidates:0,offers:[],
   }).status,"NO_CANDIDATES");
 });
+
+
+test("Amazon Germany source probe does not equate found cards with publishable price",()=>{
+  const report=summarizeEuropeanProbe("amazon-de",{
+    candidates:2,offers:[],diagnostics:{
+      customerPublicationGate:{
+        status:"BUYBOX_SAME_OFFER_PARITY_UNVERIFIED",
+        customerPublishable:false,withheldSearchCandidates:2,
+      },
+    },
+  });
+  assert.equal(report.status,"PRICE_PUBLICATION_HELD");
+  assert.equal(report.offersReturned,0);
+  assert.equal(report.fieldsPass,0);
+  assert.equal(report.activationApproved,false);
+  assert.equal(report.merchantAttested,false);
+});

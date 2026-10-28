@@ -7,6 +7,7 @@ import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
 import {retiredSourceRecord} from "../../src/source-retirement.mjs";
 import {diagnoseAmazonGermanyHtml} from "../../src/europe-source-diagnostics.mjs";
+import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../src/amazon-de-price-gate.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
@@ -1621,7 +1622,12 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           limit:2,signal:options.signal,
         })
       : null;
-    const independentlyPricedOffers = thomannParity ? thomannParity.accepted : directSearchOffers;
+    // A source search card gives no proof of the seller/buybox on the
+    // selected PDP. Do not expose Amazon DE prices to shoppers in this pilot.
+    const amazonDePriceHold=amazonDeCustomerPriceDecision({sourceId:store.id});
+    const independentlyPricedOffers = amazonDePriceHold.customerPublishable
+      ? (thomannParity ? thomannParity.accepted : directSearchOffers)
+      : [];
     // Scan more links in the already loaded search HTML when structured cards
     // exist, but never convert that wider discovery into PDP network fan-out.
     const discoveryLimit=directSearchOffers.length
@@ -1676,11 +1682,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     });
     // A priced search card that failed PDP parity cannot re-enter through
     // the fallback PDP-only discovery path and silently acquire trust.
-    const resolutionLinks = thomannFamilyRequested && directSearchOffers.length
+    // No secondary PDP probes for Amazon DE while prices are held. Search
+    // acquisition is one transparent request, without retries or alternate routes.
+    const resolutionLinks = !amazonDePriceHold.customerPublishable ||
+      (thomannFamilyRequested && directSearchOffers.length)
       ? [] : recoveryPlan.links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
     const resolvedOffers = settled
-      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
+      .filter((result) => amazonDePriceHold.customerPublishable &&
+        result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
       .map((result) => ({
         ...result.value,
         provider:"free-storefronts",
@@ -1774,6 +1784,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         primarySearchError,
         sourceAccessFailure,
         sourceObservation,
+        ...(!amazonDePriceHold.customerPublishable?{
+          customerPublicationGate:{
+            status:AMAZON_DE_PUBLICATION_HOLD,customerPublishable:false,
+            withheldSearchCandidates:directSearchOffers.length,
+            withheldResolvedOffers:0,sourcePriceVerified:false,
+            buyerVisibleBuyboxVerified:false,shippingToSaudiVerified:false,
+          },
+        }:{}),
         ...(amazonDeAcquisition?{amazonDeAcquisition}:{}),
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)

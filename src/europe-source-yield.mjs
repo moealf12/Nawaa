@@ -89,6 +89,9 @@ export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0
   const zeroYieldReason=storeId==="amazon-de" &&
     allowedAmazonClasses.has(amazonDiagnostic?.classification)
       ? amazonDiagnostic.classification:null;
+  const publicationHeld=storeId==="amazon-de" &&
+    result?.diagnostics?.customerPublicationGate?.status===
+      "BUYBOX_SAME_OFFER_PARITY_UNVERIFIED";
   const candidates=integer(result?.candidates);
   const unpriced=integer(result?.diagnostics?.unpricedSamples?.length);
   const sourceFailure=error||result?.diagnostics?.primarySearchError||
@@ -100,6 +103,7 @@ export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0
     failure?"SOURCE_REQUEST_FAILED":
     unpriced>0?"PRODUCTS_FOUND_PRICE_MISSING":
     offers.length>0?"OFFERS_REJECTED_BY_PROVENANCE":
+    (publicationHeld&&candidates>0)?"PRICE_PUBLICATION_HELD":
     candidates>0?"CANDIDATES_WITHOUT_VALID_OFFER":
     (zeroYieldReason==="NO_ASIN_MARKERS" ||
       zeroYieldReason==="ASIN_MARKERS_WITHOUT_PRICE_MARKERS" ||
