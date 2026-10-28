@@ -32,6 +32,11 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Run test suite
         run: npm test
+      - name: Thomann phase-F single exact-model live acceptance (one-shot)
+        if: github.event_name == 'pull_request' && github.head_ref == 'feat/europe-yield-evidence-20261028'
+        env:
+          NAWAA_THOMANN_EXACT_MODEL_LIVE: '1'
+        run: node --test tests/thomann-exact-model.test.mjs
       - name: Live Crawlee smoke test against Jarir Saudi
         if: github.head_ref == 'feature/crawlee-local-ingestion-20261006'
         continue-on-error: true
