@@ -5,8 +5,10 @@ on:
     paths:
       - 'server/decathlon-quote-readiness.mjs'
       - 'scripts/benchmark-decathlon-shadow-quote.mjs'
+      - 'scripts/audit-decathlon-quote-revalidation.mjs'
       - 'tests/decathlon-quote-readiness.test.mjs'
       - 'tests/decathlon-quote-benchmark.test.mjs'
+      - 'tests/decathlon-live-quote-revalidation.test.mjs'
       - '.github/workflows/decathlon-quote-readiness.yml'
 
 permissions:
@@ -43,7 +45,7 @@ jobs:
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
           NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
-        run: node --test tests/decathlon-quote-readiness.test.mjs tests/decathlon-quote-benchmark.test.mjs
+        run: node --test tests/decathlon-quote-readiness.test.mjs tests/decathlon-quote-benchmark.test.mjs tests/decathlon-live-quote-revalidation.test.mjs
       - name: Read-only zero-network fixture comparison
         env:
           DATABASE_URL: ''
@@ -51,11 +53,20 @@ jobs:
           MEILI_MASTER_KEY: ''
           NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
         run: node scripts/benchmark-decathlon-shadow-quote.mjs | tee quote-fixture-benchmark.json
+      - name: One source-owned live product, two independent public PDP observations
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
+        run: node scripts/audit-decathlon-quote-revalidation.mjs | tee decathlon-quote-live.json
       - name: Archive aggregate diagnostic only
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: decathlon-quote-fixture-${{ github.event.pull_request.head.sha }}
-          path: quote-fixture-benchmark.json
+          path: |
+            quote-fixture-benchmark.json
+            decathlon-quote-live.json
           if-no-files-found: ignore
           retention-days: 7
