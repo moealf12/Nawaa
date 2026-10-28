@@ -100,13 +100,17 @@ export function extractBike24Product(html,rawUrl){
   // search listing, a min-price/aggregate offer, or unrelated page content.
   const price=visible??schemaPrice;
   if(price===null)return null;
-  const plain=clean($("main").first().text()||$("body").text());
+  // Cheerio joins adjacent block text without a separator. Preserve
+  // field boundaries: "Item Code: GAR643304" must not run into "MPN" or GTIN.
+  const sheet=$("main").first().length?$("main").first():$("body");
+  sheet.find("p,div,section,article,li,dt,dd,h1,h2,br").each((_,node)=>$(node).append(" "));
+  const plain=clean(sheet.text());
   const maker=plain.match(/\bmanufacturer item code\s*:\s*([0-9A-Z-]{7,30})\b/i)?.[1]||null;
   const gtin=plain.match(/\bGTINs?\s*:\s*(\d{8,14})\b/i)?.[1]||null;
   const listed=structural[0]||null;
   if(maker&&listed?.mpn&&maker.toUpperCase()!==String(listed.mpn).toUpperCase())return null;
   if(gtin&&listed?.gtin&&gtin!==String(listed.gtin))return null;
-  const itemCode=plain.match(/\bItem Code\s*:\s*([A-Z0-9-]{5,24})\b/i)?.[1]||null;
+  const itemCode=plain.match(/(?:^|\s)Item Code\s*:\s*([A-Z]{2,6}\d{3,10})\b/i)?.[1]||null;
   const owned=bike24Identity({title,sourceUrl:rawUrl,mpn:maker||listed?.mpn,gtin:gtin||listed?.gtin});
   return {
     name:title,image,brand:"Garmin",sku:itemCode,
