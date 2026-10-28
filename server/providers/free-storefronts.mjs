@@ -5,6 +5,7 @@ import { moneyToSAR } from "../fx.mjs";
 import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
+import {retiredSourceRecord} from "../../src/source-retirement.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
@@ -82,13 +83,6 @@ const STORES = [
     search:q=>"https://www.pccomponentes.com/buscar/?query="+encodeURIComponent(q),
     // A single product slug, never the search/catalog/account routes.
     productPath:/^\/(?!buscar(?:\/|$)|search(?:\/|$)|category(?:\/|$)|configurador(?:\/|$))[a-z0-9-]{18,}(?:[?#]|$)/i,
-  },
-  {
-    id:"bike24-de", name:"BIKE24", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
-    brands:["bike24"],
-    saudiDelivery:"verified_market", categories:["sports","shoes","clothing","accessory"],
-    search:q=>"https://www.bike24.com/search?searchTerm="+encodeURIComponent(q),
-    productPath:/\/p\d+\.html(?:[?#]|$)/i,
   },
   {
     id:"thomann-de", name:"Thomann", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
@@ -1368,6 +1362,15 @@ export function selectedStores(query) {
 }
 
 export async function searchFreeStorefrontById(storeId, query, options = {}) {
+  // Stable catalog-level 404 classification, never a fake retailer HTTP response.
+  // Explicit legacy calls short-circuit without DNS, fetch, or retry.
+  const retired=retiredSourceRecord(storeId);
+  if(retired)return {
+    storeId,candidates:0,offers:[],failures:0,searchUrl:null,
+    diagnostics:{status:retired.status,sourceObservation:"SOURCE_RETIRED",
+      sourceCatalogCode:retired.catalogCode,httpStatus:null,
+      primarySearchError:null,reason:retired.reason},
+  };
   const store = STORES.find((entry) => entry.id === storeId);
   if (!store) throw new Error("unknown storefront: " + storeId);
   const requestedPerStore = Number(options.perStore);

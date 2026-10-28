@@ -1,12 +1,12 @@
 import {observedSourceHttpStatus} from "./source-http-profile.mjs";
+import {retiredSourceRecord} from "./source-retirement.mjs";
 // Evidence-only probe configuration. Not an activation or merchant certification.
 export const EUROPE_SOURCES = Object.freeze({
   "amazon-uk": {query:"iphone 17",host:"www.amazon.co.uk",country:"GB",currency:"GBP",path:/\/(?:dp|gp\/product)\/[A-Z0-9]{10}(?:\/|$)/i},
   "amazon-de": {query:"iphone 17",host:"www.amazon.de",country:"DE",currency:"EUR",path:/\/(?:dp|gp\/product)\/[A-Z0-9]{10}(?:\/|$)/i},
   "mediamarkt-de": {query:"iphone 17",host:"www.mediamarkt.de",country:"DE",currency:"EUR",path:/^\/de\/product\/_?[^/?#]+\.html$/i,noDirect:true},
   "pccomponentes-es": {query:"iphone 17",host:"www.pccomponentes.com",country:"ES",currency:"EUR",path:/^\/(?!buscar(?:\/|$)|search(?:\/|$)|category(?:\/|$)|configurador(?:\/|$))[a-z0-9-]{18,}\/?$/i,noDirect:true},
-  "bike24-de": {query:"running shoes",host:"www.bike24.com",country:"DE",currency:"EUR",path:/^\/p\d+\.html$/i},
-  "thomann-de": {query:"studio headphones",host:"www.thomann.de",country:"DE",currency:"EUR",path:/^\/(?:de|gb|intl)\/[^/?#]+\.htm$/i},
+  "thomann-de": {query:"superlux hd 662",host:"www.thomann.de",country:"DE",currency:"EUR",path:/^\/(?:de|gb|intl)\/[^/?#]+\.htm$/i},
 });
 const integer = value => Number.isFinite(Number(value)) ? Math.max(0,Math.floor(Number(value))) : 0;
 const positive = value => typeof value==="number" && Number.isFinite(value) && value>0;
@@ -53,6 +53,13 @@ export function sourceErrorClass(error) {
 
 // Do not store raw HTML, PII, arbitrary merchant URL query strings or prices in CI evidence.
 export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0) {
+  const retired=retiredSourceRecord(storeId);
+  if(retired)return {
+    storeId,query:null,status:retired.status,sourceCatalogCode:retired.catalogCode,
+    candidates:0,offersReturned:0,fieldsPass:0,unpricedSamples:0,
+    errors:null,httpStatus:null,rejectionReasons:{},durationMs:0,
+    merchantAttested:false,saudiDeliveryVerified:false,activationApproved:false,
+  };
   const spec=EUROPE_SOURCES[storeId];
   if(!spec)throw Error("UNKNOWN_EUROPE_SOURCE");
   const offers=Array.isArray(result?.offers)?result.offers:[];

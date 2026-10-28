@@ -14,7 +14,6 @@ on:
           - amazon-de
           - mediamarkt-de
           - pccomponentes-es
-          - bike24-de
           - thomann-de
 
 permissions:

@@ -1,6 +1,7 @@
 import {writeFile} from "node:fs/promises";
 import {searchFreeStorefrontById} from "../server/providers/free-storefronts.mjs";
 import {EUROPE_SOURCES,summarizeEuropeanProbe} from "../src/europe-source-yield.mjs";
+import {retiredSourceRecord,RETIRED_SOURCE_CATALOG} from "../src/source-retirement.mjs";
 
 const argv=process.argv.slice(2);
 const arg=(flag,defaultValue)=>{
@@ -12,11 +13,15 @@ const unknown=argv.filter((value,index)=> !["--store","--output"].includes(value
 if(unknown.length || argv.some((value,index)=>["--store","--output"].includes(value) && !argv[index+1]))
   throw Error("INVALID_ARGUMENTS");
 const selected=arg("--store","all");
-if(selected!=="all" && !Object.hasOwn(EUROPE_SOURCES,selected))throw Error("UNKNOWN_EUROPE_SOURCE");
+if(selected!=="all" && !Object.hasOwn(EUROPE_SOURCES,selected) && !retiredSourceRecord(selected))throw Error("UNKNOWN_EUROPE_SOURCE");
 const output=arg("--output","europe-source-yield.json");
 const ids=selected==="all"?Object.keys(EUROPE_SOURCES):[selected];
 const reports=[];
 for(const id of ids){
+  if(retiredSourceRecord(id)){
+    reports.push(summarizeEuropeanProbe(id,null));
+    continue;
+  }
   const started=Date.now();
   let result=null,error=null;
   try {
@@ -31,6 +36,9 @@ const report={
   observedAt:new Date().toISOString(),
   evidenceScope:"one search query per source; fields only; no independent merchant attestation",
   noInventoryMutation:true,noProductionActivation:true,
+  retiredSources:Object.entries(RETIRED_SOURCE_CATALOG).map(([id,record])=>({
+    storeId:id,status:record.status,sourceCatalogCode:record.catalogCode,httpStatus:null,
+  })),
   sources:reports,
   summary:{sourcesChecked:reports.length,sourcesWithCompleteFields:reports.filter(r=>r.fieldsPass>0).length,
     totalCandidates:reports.reduce((n,r)=>n+r.candidates,0),

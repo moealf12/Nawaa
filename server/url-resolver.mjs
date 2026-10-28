@@ -6,6 +6,7 @@ import { normalizeCondition, normalizeAvailability, parseMoney } from "./provide
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
 import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
+import {isRetiredSourceUrl} from "../src/source-retirement.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
@@ -164,6 +165,11 @@ function fetchHtmlPinned(target, redirects, signal) {
 }
 
 export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
+  if(isRetiredSourceUrl(url)){
+    const error=new Error("SOURCE_RETIRED");
+    error.sourceCatalogCode=404;
+    throw error;
+  }
   const target = await resolvePublicHttpsTarget(url);
   if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {

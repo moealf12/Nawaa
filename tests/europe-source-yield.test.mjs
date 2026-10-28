@@ -9,10 +9,14 @@ const sample={
   originalProductPrice:79.9,originalCurrency:"EUR",
   fx:{rate:4.38,source:"frankfurter",observedAt:"2026-10-28T15:00:00Z"},canShipToSaudi:null
 };
-test("all six EU pilots have bounded source specifications",()=>{
+test("five active EU pilots exclude the retired BIKE24 source",()=>{
   assert.deepEqual(Object.keys(EUROPE_SOURCES),[
-    "amazon-uk","amazon-de","mediamarkt-de","pccomponentes-es","bike24-de","thomann-de"
+    "amazon-uk","amazon-de","mediamarkt-de","pccomponentes-es","thomann-de"
   ]);
+  assert.equal(EUROPE_SOURCES["thomann-de"].query,"superlux hd 662");
+  assert.equal(summarizeEuropeanProbe("bike24-de",null).status,"SOURCE_RETIRED");
+  assert.equal(summarizeEuropeanProbe("bike24-de",null).sourceCatalogCode,404);
+  assert.equal(summarizeEuropeanProbe("bike24-de",null).httpStatus,null);
 });
 test("valid field-level sample is explicitly not certified",()=>{
   assert.deepEqual(inspectEuropeanOffer("thomann-de",sample),{fieldsPass:true,issues:[]});
