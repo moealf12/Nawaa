@@ -1,0 +1,61 @@
+name: NAWAA Merchant Grant Authenticity Gate
+
+on:
+  pull_request:
+    paths:
+      - 'server/merchant-grant-signature.mjs'
+      - 'server/merchant-feed-authorization-gate.mjs'
+      - 'tests/merchant-grant-signature.test.mjs'
+      - 'tests/merchant-feed-authorization-gate.test.mjs'
+      - 'docs/source-partnerships/decathlon-sa-authorized-feed.md'
+      - '.github/workflows/merchant-grant-authenticity.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-partner-authenticity-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact source HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Assert exact revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Existing locked packages only
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify operator-signed receipts and negative authorization controls
+        env:
+          NAWAA_PARTNER_AUTHORITY_PUBLIC_KEY_SPKI_B64: ''
+          NAWAA_PARTNER_AUTHORITY_KEY_ID: ''
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node --test tests/merchant-grant-signature.test.mjs tests/merchant-feed-authorization-gate.test.mjs tests/decathlon-partner-readiness.test.mjs
+      - name: Verify production-default DENY without any operator key
+        env:
+          NAWAA_PARTNER_AUTHORITY_PUBLIC_KEY_SPKI_B64: ''
+          NAWAA_PARTNER_AUTHORITY_KEY_ID: ''
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/audit-decathlon-partner-readiness.mjs | tee partner-authenticity.json
+      - name: Retain aggregate permissions-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-grant-authenticity-${{ github.event.pull_request.head.sha }}
+          path: partner-authenticity.json
+          if-no-files-found: ignore
+          retention-days: 7
