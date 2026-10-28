@@ -84,3 +84,37 @@ test("403/429 stops the PDP checks; no transport reroute",async()=>{
   assert.deepEqual(result.accepted,[]);
   assert.deepEqual(result.diagnostics,[{reason:"PDP_ACCESS_DENIED"}]);
 });
+
+
+test("Scoped PDP JSON-LD price must equal the visible buybox; UVP is irrelevant",()=>{
+  const url=URLS.BASE;
+  const own=(price,shipping="")=>'<script type="application/ld+json">'+JSON.stringify({
+    "@context":"https://schema.org","@type":"Product",name:names.BASE,
+    url:URLS.BASE,offers:{"@type":"Offer",price,priceCurrency:"EUR",
+      ...(shipping?{shippingDetails:{shippingDestination:{addressCountry:"SA"},
+        shippingRate:{value:9.99,currency:"EUR"}}}:{})}
+  })+'</script>'+html(names.BASE,"239735");
+  assert.equal(extractThomannProduct(own(33),url)?.offers?.price,33);
+  assert.equal(extractThomannProduct(own(31),url),null);
+  assert.equal(extractThomannProduct(own(67),url),null);
+  const s=extractThomannProduct(own(33,true),url)?.shippingContext;
+  assert.deepEqual(s,{country:"SA",amountEUR:9.99,source:"PDP_JSON_LD",checkoutVerified:false});
+});
+test("Unrelated cross-sell structured price does not overrule the base PDP",()=>{
+  const script='<script type="application/ld+json">'+JSON.stringify({
+    "@context":"https://schema.org","@type":"Product",name:names.F,url:URLS.F,
+    offers:{"@type":"Offer",price:3,priceCurrency:"EUR"}
+  })+'</script>';
+  assert.equal(extractThomannProduct(script+html(names.BASE,"239735"),URLS.BASE)?.offers?.price,33);
+});
+test("JSON-LD Saudi shipping context is not inferred without exact country and rate",()=>{
+  const script='<script type="application/ld+json">'+JSON.stringify({
+    "@type":"Product",name:names.BASE,url:URLS.BASE,offers:{
+      "@type":"Offer",price:33,priceCurrency:"EUR",
+      shippingDetails:{shippingDestination:{addressCountry:"DE"},shippingRate:{value:0,currency:"EUR"}}
+    }
+  })+'</script>';
+  const product=extractThomannProduct(script+html(names.BASE,"239735"),URLS.BASE);
+  assert.equal(product?.offers?.price,33);
+  assert.equal(product?.shippingContext,undefined);
+});
