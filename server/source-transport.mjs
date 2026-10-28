@@ -1,7 +1,6 @@
 // NAWAA source transport: fetch-first, explicit per-merchant opt-in only.
 // Never change outbound IP/network after a denial, and never infer inventory.
 import {chooseSourceTransport} from "../src/source-request-routing.mjs";
-import {merchantRequestHeaders} from "../src/source-http-profile.mjs";
 
 const normalizeIds=(ids)=>Array.isArray(ids) ? ids.filter(x=>typeof x==="string" && /^[a-z0-9][a-z0-9-]{1,79}$/i.test(x)) : [];
 const unsafeHost=(host)=>!host || host==="localhost" || host.endsWith(".localhost") ||
@@ -66,17 +65,7 @@ export function createApprovedSourceFetcher({
       // This is host allowlisting, NOT DNS/IP pinning. PDP uses the
       // existing pinned transport until equivalent socket pinning exists.
       if(!hosts.has(parsed.hostname.toLowerCase()))throw Error("HOST_NOT_ALLOWED");
-      // Only the BIKE24 isolated PDP JSON-LD experiment may request a
-      // structured representation. Negotiation does not guarantee JSON or
-      // imply access permission. Never forward spoofed caller UA headers.
-      const requestedAccept=init.headers?.accept || init.headers?.Accept;
-      const structuredAccept="application/ld+json, application/json, text/html";
-      const headers=sourceId==="bike24-de"
-        ? {...merchantRequestHeaders(sourceId),
-           ...(context?.structuredPdp===true && requestedAccept===structuredAccept
-               ? {accept:structuredAccept} : {})}
-        : init.headers;
-      return impitFetch(parsed.href,{...init,headers,method:"GET",redirect:"error"});
+      return impitFetch(parsed.href,{...init,method:"GET",redirect:"error"});
     }
     if(hosts.size&&!hosts.has(parsed.hostname.toLowerCase()))throw Error("HOST_NOT_ALLOWED");
     return fetchImpl(parsed.href,{...init,method:"GET"});
