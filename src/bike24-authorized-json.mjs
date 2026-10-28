@@ -76,7 +76,7 @@ export function parseAuthorizedBike24Json(payload,query,{now=Date.now()}={}){
     const invalidCode=(record?.mpn!=null&&record.mpn!==""&&!maker)||
       (record?.gtin!=null&&record.gtin!==""&&!gtin);
     if(!identity||String(record?.retailerProductId||"")!==identity.retailerProductId||
-       cents===null||!image||invalidCode||!Number.isFinite(observed)||
+       cents===null||record?.currency!=="EUR"||!image||invalidCode||!Number.isFinite(observed)||
        observed>now+5*60_000||now-observed>72*3600_000||
        !bike24MatchesQuery(query,{title,sourceUrl:productUrl})){
       rejected++;continue;
