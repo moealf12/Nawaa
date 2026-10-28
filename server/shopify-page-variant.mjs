@@ -90,3 +90,60 @@ export function extractShopifyVariantState(html,url) {
     offers:{name:text(variant.title),sku:text(variant.sku),image,price:Number(amount),priceCurrency:currency,url:productUrl.href},
   };
 }
+
+
+/**
+ * v22.04: Observes only literal per-selected-variant availability fields
+ * in source-owned Shopify wpmLoader JSON. This is a merchandising signal,
+ * not confirmed physical inventory, cart buyability, checkout or delivery.
+ * Keep original extraction and prices unchanged.
+ */
+export function inspectShopifySelectedVariantAvailability(html,variantUrl,expectedSku) {
+  const out=(status,other={})=>Object.freeze({
+    status,selectedVariantMatched:false,merchantAvailableSignal:null,
+    sourceSignal:null,inventoryQuantityFieldPresent:false,
+    inventoryVerified:false,checkoutVerified:false,shippingVerified:false,
+    trustedOfferEligible:false,...other,
+  });
+  if(typeof expectedSku!=="string"||!expectedSku.trim()||expectedSku.length>80)
+    return out("SELECTED_VARIANT_RECORD_UNVERIFIED");
+  const attested=extractShopifyVariantState(html,variantUrl);
+  if(!attested?.shopifyVariantEvidence||
+     attested.offers?.sku!==expectedSku||
+     !Number.isFinite(attested.offers?.price)||attested.offers.price<=0)
+    return out("SELECTED_VARIANT_RECORD_UNVERIFIED");
+  let requested;
+  try{requested=new URL(variantUrl);}catch{return out("SELECTED_VARIANT_RECORD_UNVERIFIED");}
+  const selectedId=requested.searchParams.get("variant");
+  const matches=[];
+  for(const block of String(html||"").matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)){
+    if(!/\bwpmLoader\b/.test(block[1]))continue;
+    const objects=initPayloads(block[1]);
+    if(!objects)return out("SELECTED_VARIANT_RECORD_UNVERIFIED");
+    for(const payload of objects){
+      if(!Array.isArray(payload?.productVariants)||payload.productVariants.length>500)continue;
+      for(const item of payload.productVariants){
+        if(item&&String(item.id)===selectedId)matches.push(item);
+      }
+    }
+  }
+  if(matches.length!==1||String(matches[0].sku)!==expectedSku)
+    return out("SELECTED_VARIANT_RECORD_UNVERIFIED");
+  const item=matches[0],flags=[];
+  if(typeof item.availableForSale==="boolean")
+    flags.push(["availableForSale",item.availableForSale]);
+  if(typeof item.available==="boolean")
+    flags.push(["available",item.available]);
+  const quantityField=Object.hasOwn(item,"inventory_quantity")&&
+    Number.isFinite(item.inventory_quantity);
+  const base={selectedVariantMatched:true,
+    inventoryQuantityFieldPresent:quantityField};
+  if(flags.some(([,v])=>v!==flags[0][1]))
+    return out("VARIANT_AVAILABILITY_CONFLICT",base);
+  if(!flags.length)return out("SELECTED_VARIANT_AVAILABILITY_UNKNOWN",base);
+  const value=flags[0][1];
+  return out(value?"SELECTED_VARIANT_AVAILABLE_SIGNAL":
+    "SELECTED_VARIANT_UNAVAILABLE_SIGNAL",{
+    ...base,merchantAvailableSignal:value,sourceSignal:flags[0][0],
+  });
+}
