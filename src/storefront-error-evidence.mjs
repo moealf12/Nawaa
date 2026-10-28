@@ -18,8 +18,14 @@ export function storefrontSourceFailure(storeId,error,{observedFailureClass=null
     throw Error("INVALID_STOREFRONT_ID");
   const message=error instanceof Error?error.message:String(error??"");
   const inferred=classifySourceError(error instanceof Error?error:{message}).failureClass;
+  // classifySourceError's generic fallback is SOURCE_TRANSPORT_FAILURE.
+  // That fallback is not evidence of a transport error: unknown parsing/logic
+  // exceptions must remain UNKNOWN unless the error mentions a network cause.
+  const transportObserved=/\b(?:fetch failed|network error|econnreset|enotfound|eai_again|dns|socket hang up|econnrefused)\b/i.test(message);
+  const safeInference=inferred==="SOURCE_TRANSPORT_FAILURE" && !transportObserved
+    ? "UNKNOWN" : inferred;
   const failureClass=FAILURE_CLASSES.has(observedFailureClass)?observedFailureClass:
-    FAILURE_CLASSES.has(inferred)?inferred:"SOURCE_TRANSPORT_FAILURE";
+    FAILURE_CLASSES.has(safeInference)?safeInference:"UNKNOWN";
   return {
     market:storeId,
     sourceId:storeId,
