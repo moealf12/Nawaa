@@ -32,6 +32,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Run test suite
         run: npm test
+      - name: One-shot BIKE24 exact-model live PDP evidence (Phase G)
+        if: github.event_name == 'pull_request' && github.head_ref == 'feature/v21-98-bike24-amazon-de'
+        run: node scripts/certify-bike24-live.mjs
       - name: Live Crawlee smoke test against Jarir Saudi
         if: github.head_ref == 'feature/crawlee-local-ingestion-20261006'
         continue-on-error: true
