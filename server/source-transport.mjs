@@ -54,6 +54,11 @@ export function createApprovedSourceFetcher({
     const method=String(init?.method||"GET").toUpperCase();
     if(method!=="GET")throw Error("GET_ONLY");
     const sourceId=String(context?.sourceId||"");
+    // BIKE24 Phase G.2 has explicitly retired direct HTML acquisition.
+    // Never reopen it with a source-specific impit opt-in, Accept header,
+    // or legacy one-shot diagnostic. Its approved JSON feed uses a separate
+    // DNS-pinned HTTP/2 reader, not this generic storefront transport.
+    if(sourceId==="bike24-de")throw Error("BIKE24_DIRECT_HTML_DISABLED");
     const transport=chooseSourceTransport({sourceId,approvedSourceIds:approved,optIn});
     const hosts=allowedHosts(approvedSourceHosts[sourceId]);
     if(transport==="impit"){
@@ -91,7 +96,6 @@ export function createRuntimeSourceFetcher({
     "amazon-de":["www.amazon.de"],
     "mediamarkt-de":["www.mediamarkt.de"],
     "pccomponentes-es":["www.pccomponentes.com"],
-    "bike24-de":["www.bike24.com"],
     "thomann-de":["www.thomann.de"],
   };
   const approved=fromEnv().filter(id=>Object.hasOwn(knownHosts,id));
