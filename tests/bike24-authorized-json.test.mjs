@@ -57,6 +57,26 @@ test("G.2 unknown/unapproved endpoint fails closed rather than probing guessed p
  }).hostname,"partner.example.com");
 });
 
+test("G.2 respects BIKE24 published crawler route exclusions without contacting the store",()=>{
+  const enabled={
+    NAWAA_BIKE24_JSON_ENABLED:"1",
+    NAWAA_BIKE24_JSON_ALLOWED_HOST:"www.bike24.com",
+  };
+  for(const path of ["/api/products.json","/search","/search-result-v2","/suche",
+    "/ajax.php","/cdn-cgi/challenge","/checkout/order","/header"]){
+    assert.throws(()=>authorizedBike24JsonConfig({...enabled,
+      NAWAA_BIKE24_JSON_URL:"https://www.bike24.com"+path,
+    }),/CRAWLER_ROUTE_DISALLOWED/);
+  }
+  // A separately approved partner host has its own contract and is not
+  // incorrectly bound by a different site's robots.txt.
+  assert.equal(authorizedBike24JsonConfig({
+    ...enabled,
+    NAWAA_BIKE24_JSON_ALLOWED_HOST:"partner.example.com",
+    NAWAA_BIKE24_JSON_URL:"https://partner.example.com/api/v1/feed.json",
+  }).hostname,"partner.example.com");
+});
+
 test("G.2 exact model and independent variant-hash preservation",()=>{
  const parsed=parseAuthorizedBike24Json(payload(
    sample(),sample(" Solar","2735528"),sample(" Sensor Bundle","2735529"),
