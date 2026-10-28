@@ -9,6 +9,7 @@ import {retiredSourceRecord} from "../../src/source-retirement.mjs";
 import {diagnoseAmazonGermanyHtml} from "../../src/europe-source-diagnostics.mjs";
 import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../src/amazon-de-price-gate.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
+import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -49,6 +50,12 @@ const STORES = [
     id:"amazon-sa", name:"Amazon Saudi", countryCode:"SA", countryNameAr:"السعودية", categories:["*"],
     search:(q)=>"https://www.amazon.sa/s?k="+encodeURIComponent(q),
     productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
+  },
+  {
+    id:"noon-sa", name:"Noon Saudi", countryCode:"SA", countryNameAr:"السعودية",
+    brands:["noon","نون"],categories:["*"],
+    search:q=>"https://www.noon.com/saudi-en/search/?q="+encodeURIComponent(q),
+    productPath:/^\/saudi-en\/(?:[a-z0-9-]{2,150}\/)?N\d{8}V\/p\/?(?:[?#]|$)/i,
   },
   {
     id:"amazon-ae", name:"Amazon UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
@@ -1246,7 +1253,7 @@ export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,
   return fulfilled;
 }
 
-const GENERAL_STORE_IDS = new Set(["amazon-sa","amazon-ae","aliexpress-cn","temu-global","walmart-us"]);
+const GENERAL_STORE_IDS = new Set(["amazon-sa","noon-sa","amazon-ae","aliexpress-cn","temu-global","walmart-us"]);
 const CATEGORY_NEIGHBORS = {
   phone:["tablet","accessory"], tablet:["phone","laptop","accessory"], laptop:["desktop","monitor","accessory"],
   desktop:["laptop","monitor","accessory"], monitor:["desktop","laptop","accessory"], audio:["accessory","phone"],
@@ -1508,6 +1515,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       store.id === "amazon-uk" ? extractAmazonSearchOffers(html, query, "https://www.amazon.co.uk", "GBP") :
       store.id === "amazon-de" ? extractAmazonSearchOffers(html, query, "https://www.amazon.de", "EUR") :
+      store.id === "noon-sa" ? extractNoonSaudiCatalogCards(html, query) :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       (() => {
         const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
@@ -1644,7 +1652,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         merchant:store.name,
         merchantCountryCode:store.countryCode,
         merchantCountryNameAr:store.countryNameAr,
-        canShipToSaudi:store.countryCode === "SA" ? true :
+        canShipToSaudi:store.id==="noon-sa" ? null : store.countryCode === "SA" ? true :
           store.saudiDelivery === "no_direct" ? false : null,
         isLocal:store.countryCode === "SA",
         exactMatch:false,
@@ -1672,6 +1680,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         dataKind:"live",
         fx:{ rate:converted.rate, source:converted.source, observedAt:converted.observedAt },
         sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true,
+          ...(store.id==="noon-sa"?{sellerDeclared:item.sellerDeclared||null,
+            buyboxVerified:false,deliveryVerified:false}:{}),
           priceEvidence:item.pdpPriceEvidence || "SEARCH_CARD_ONLY" },
       };
     }))).filter(Boolean);
@@ -1685,6 +1695,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // No secondary PDP probes for Amazon DE while prices are held. Search
     // acquisition is one transparent request, without retries or alternate routes.
     const resolutionLinks = !amazonDePriceHold.customerPublishable ||
+      store.id==="noon-sa" ||
       (thomannFamilyRequested && directSearchOffers.length)
       ? [] : recoveryPlan.links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
