@@ -43,10 +43,9 @@ export function buildPartnerGrantSigningPayload(grant){
   // fields, including digest and time window. JSON array has stable order.
   return Buffer.from(JSON.stringify(["nawaa.partner-grant.ed25519.v1",...values]),"utf8");
 }
-export function verifyPartnerGrantSignature(grant,{
-  authorityPublicKeyBase64=process.env.NAWAA_PARTNER_AUTHORITY_PUBLIC_KEY_SPKI_B64,
-  authorityKeyId=process.env.NAWAA_PARTNER_AUTHORITY_KEY_ID,
-}={}){
+export function verifyPartnerGrantSignature(grant){
+  const authorityPublicKeyBase64=process.env.NAWAA_PARTNER_AUTHORITY_PUBLIC_KEY_SPKI_B64;
+  const authorityKeyId=process.env.NAWAA_PARTNER_AUTHORITY_KEY_ID;
   // This verifier is internal to the source gate. The real call site never
   // forwards an attacker-provided key; tests can supply the trusted operator
   // pin only by their own process environment.
