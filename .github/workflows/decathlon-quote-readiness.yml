@@ -1,0 +1,61 @@
+name: NAWAA Decathlon Quote Trust and Fixture Benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'server/decathlon-quote-readiness.mjs'
+      - 'scripts/benchmark-decathlon-shadow-quote.mjs'
+      - 'tests/decathlon-quote-readiness.test.mjs'
+      - 'tests/decathlon-quote-benchmark.test.mjs'
+      - '.github/workflows/decathlon-quote-readiness.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: decathlon-quote-trust-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quote-readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Exact PR SHA checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Reject mismatched commit
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Existing locked dependencies only
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Two-observation quote safety plus precision and latency fixture tests
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
+        run: node --test tests/decathlon-quote-readiness.test.mjs tests/decathlon-quote-benchmark.test.mjs
+      - name: Read-only zero-network fixture comparison
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
+        run: node scripts/benchmark-decathlon-shadow-quote.mjs | tee quote-fixture-benchmark.json
+      - name: Archive aggregate diagnostic only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decathlon-quote-fixture-${{ github.event.pull_request.head.sha }}
+          path: quote-fixture-benchmark.json
+          if-no-files-found: ignore
+          retention-days: 7
