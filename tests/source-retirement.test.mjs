@@ -5,6 +5,7 @@ import {configuredFreeStorefronts,routeFreeStorefronts,searchFreeStorefrontById}
   from "../server/providers/free-storefronts.mjs";
 import {fetchHtmlSafe} from "../server/url-resolver.mjs";
 import {EUROPE_SOURCES,summarizeEuropeanProbe} from "../src/europe-source-yield.mjs";
+import {currentSources} from "../server/source-config.mjs";
 
 test("retired BIKE24 is catalog 404, never a fabricated HTTP 404",()=>{
   const state=retiredSourceRecord("bike24-de");
@@ -12,6 +13,12 @@ test("retired BIKE24 is catalog 404, never a fabricated HTTP 404",()=>{
   assert.equal(state.catalogCode,404);
   assert.equal(state.observedHttpStatus,null);
   assert.equal(retiredSourceRecord("thomann-de"),null);
+  const registry=currentSources().find(entry=>entry.id==="bike24-de");
+  assert.equal(registry.status,"disabled");
+  assert.equal(registry.sourceStatus,"SOURCE_RETIRED");
+  assert.equal(registry.catalogCode,404);
+  assert.equal(registry.httpStatus,null);
+  assert.deepEqual(registry.adapters,[]);
 });
 
 test("BIKE24 is absent from catalog, routing, and five-source European pilot",()=>{

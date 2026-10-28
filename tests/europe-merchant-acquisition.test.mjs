@@ -15,11 +15,10 @@ const europe=[
   ["amazon-de","DE","offer_dependent"],
   ["mediamarkt-de","DE","no_direct"],
   ["pccomponentes-es","ES","no_direct"],
-  ["bike24-de","DE","verified_market"],
   ["thomann-de","DE","offer_dependent"],
 ];
 
-test("RED: six EU merchant search routes are configured without duplicating existing merchants",()=>{
+test("Five active EU merchant search routes are configured without duplication",()=>{
   const stores=configuredFreeStorefronts();
   const ids=stores.map(x=>x.id);
   assert.equal(ids.length,new Set(ids).size);
@@ -41,7 +40,7 @@ test("RED: correct product-family routing covers UK/DE electronics and specialty
   const audio=routeFreeStorefronts("studio headphones",Infinity,{stable:true}).map(x=>x.store.id);
   assert.ok(audio.includes("thomann-de"));
   const shoes=routeFreeStorefronts("running shoes",Infinity,{stable:true}).map(x=>x.store.id);
-  assert.ok(shoes.includes("bike24-de"));
+  assert.equal(shoes.includes("bike24-de"),false);
 });
 
 test("RED: shipping evidence is distinct from offer-level delivery verification",()=>{
@@ -166,10 +165,11 @@ test("pilot EU merchants remain on subsequent pages, without displacing the firs
 });
 
 test("a specifically requested EU retailer bypasses the pilot deprioritization",()=>{
+  assert.equal(routeFreeStorefronts("bike24 running shoes",Infinity,{stable:true}).some(x=>x.store.id==="bike24-de"),false);
   for(const [query,id] of [
     ["amazon uk iphone 17","amazon-uk"],["amazon germany iphone 17","amazon-de"],
     ["mediamarkt iphone 17","mediamarkt-de"],["pccomponentes laptop","pccomponentes-es"],
-    ["bike24 running shoes","bike24-de"],["thomann headphones","thomann-de"],
+    ["thomann headphones","thomann-de"],
   ]){
     assert.ok(routeFreeStorefronts(query,5,{stable:true}).some(x=>x.store.id===id),
       "explicit EU merchant must remain eligible: "+id);
