@@ -165,6 +165,11 @@ function fetchHtmlPinned(target, redirects, signal) {
 }
 
 export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
+  // Phase G.2: BIKE24 explicitly has no HTML transport path, including
+  // manual PDP resolution. Do not try another URL or transport after 403.
+  const requested=new URL(url);
+  if(["bike24.com","www.bike24.com","bike24.de","www.bike24.de"].includes(
+    requested.hostname.toLowerCase()))throw Error("BIKE24_HTML_ROUTE_DISABLED");
   const target = await resolvePublicHttpsTarget(url);
   if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
