@@ -118,3 +118,38 @@ test("RED: price comparators are discovery indexes, never fake sale offers",asyn
     await assert.rejects(searchFreeStorefrontById(id,"iphone 17"),/unknown storefront/);
   }
 });
+
+test("Thomann pilot uses the German merchant site, never an international redirect to another host",{concurrency:false},async()=>{
+  const old=globalThis.fetch;
+  const hits=[];
+  try{
+    globalThis.fetch=async input=>{
+      hits.push(String(input));
+      return new Response("<html><body>No matching products</body></html>",{
+        status:200,headers:{"content-type":"text/html"}
+      });
+    };
+    const result=await searchFreeStorefrontById("thomann-de","studio headphones",{perStore:1});
+    assert.equal(result.offers.length,0);
+    assert.equal(hits.length,1);
+    assert.ok(hits[0].startsWith("https://www.thomann.de/de/search_dir.html?sw="));
+  } finally {globalThis.fetch=old}
+});
+
+test("foreign JSON-LD product price cannot be attributed to a trusted EU merchant host",{concurrency:false},async()=>{
+  const old=globalThis.fetch;
+  const bad=JSON.stringify({"@context":"https://schema.org","@type":"Product",
+    name:"Apple iPhone 17 256GB",url:"https://untrusted.example/item/iphone-17",
+    offers:{"@type":"Offer",price:"49",priceCurrency:"EUR"}});
+  let count=0;
+  try{
+    globalThis.fetch=async ()=>{
+      count++;
+      return new Response('<html><script type="application/ld+json">'+bad+'</script></html>',{
+        status:200,headers:{"content-type":"text/html"}});
+    };
+    const result=await searchFreeStorefrontById("mediamarkt-de","iphone 17",{perStore:2});
+    assert.equal(result.offers.length,0);
+    assert.equal(count,1);
+  }finally{globalThis.fetch=old}
+});
