@@ -5,17 +5,16 @@
 // No caller-provided evidence flags may turn this policy into an approval.
 export const AMAZON_DE_PUBLICATION_HOLD="BUYBOX_SAME_OFFER_PARITY_UNVERIFIED";
 
-function amazonDePdp(url){
+function amazonDeOfficialHost(url){
   try{
     const parsed=new URL(url);
     return parsed.protocol==="https:" && !parsed.username && !parsed.password &&
       (!parsed.port || parsed.port==="443") &&
-      ["amazon.de","www.amazon.de"].includes(parsed.hostname.toLowerCase()) &&
-      /^\/(?:dp|gp\/product)\/[A-Z0-9]{10}(?:\/|$)/i.test(parsed.pathname);
+      ["amazon.de","www.amazon.de"].includes(parsed.hostname.toLowerCase());
   }catch{return false}
 }
 export function amazonDeCustomerPriceDecision({sourceId=null,sourceUrl=null}={}){
-  const held=sourceId==="amazon-de" || amazonDePdp(sourceUrl);
+  const held=sourceId==="amazon-de" || amazonDeOfficialHost(sourceUrl);
   return Object.freeze({
     customerPublishable:!held,
     ...(held?{status:AMAZON_DE_PUBLICATION_HOLD}:{}),

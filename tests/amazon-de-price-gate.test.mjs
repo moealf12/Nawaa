@@ -72,3 +72,17 @@ test("Amazon Germany search results with a priced HTML card are diagnostic only,
     assert.equal(JSON.stringify(result.offers).includes("299.99"),false);
   }finally{globalThis.fetch=original}
 });
+
+test("All official Amazon DE URL shapes remain held; this is not a PDP-only gate",()=>{
+  const variants=[
+    "https://www.amazon.de/gp/aw/d/B0FQFW3423",
+    "https://amazon.de/s?k=watch",
+    "https://www.amazon.de/gp/product/B0FQFW3423",
+    "https://www.amazon.de/dp/B0FQFW3423?th=1",
+  ];
+  for(const sourceUrl of variants)
+    assert.equal(amazonDeCustomerPriceDecision({sourceUrl}).customerPublishable,false,sourceUrl);
+  for(const sourceUrl of ["https://www.amazon.de.evil.example/dp/B0FQFW3423",
+    "https://www.amazon.co.uk/dp/B0FQFW3423"])
+    assert.equal(amazonDeCustomerPriceDecision({sourceUrl}).customerPublishable,true,sourceUrl);
+});

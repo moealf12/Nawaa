@@ -30,3 +30,10 @@ test("Provider aliases cannot launder an Amazon DE PDP into shopper JSON",()=>{
   const safe=enforceCustomerOfferPublication({offers:[disguised,sa]});
   assert.deepEqual(safe.offers,[sa]);
 });
+
+test("Alternate Amazon DE paths cannot bypass the cached customer response gate",()=>{
+  const alt={...de,providerMarket:"other-market",
+    sourceUrl:"https://www.amazon.de/gp/aw/d/B0FQFW3423"};
+  const safe=enforceCustomerOfferPublication({offers:[alt,sa]});
+  assert.deepEqual(safe.offers,[sa]);
+});
