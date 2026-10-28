@@ -92,8 +92,11 @@ export function assessAuthorizedMerchantFeed({
      trustedGrant.merchantHost!==entry.merchantHost)
     return deny("MERCHANT_AUTHORIZATION_REQUIRED");
 
+  // Access grants expire in the future; the date must not be fabricated,
+  // malformed, expired or an implausible indefinite authorization.
   if(!Number.isFinite(nowMs)||nowMs<=0||
-     !validTime(trustedGrant.validUntil,nowMs) && Date.parse(trustedGrant.validUntil)<=nowMs)
+     typeof trustedGrant.validUntil!=="string"||
+     !/^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(trustedGrant.validUntil))
     return deny("MERCHANT_AUTHORIZATION_EXPIRED");
   const grantExpiry=Date.parse(trustedGrant.validUntil);
   if(!Number.isFinite(grantExpiry)||grantExpiry<=nowMs||
