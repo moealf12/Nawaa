@@ -634,6 +634,7 @@ export async function resolveProductUrl(url, options = {}) {
     image: image ? new URL(image, finalUrl).href : null,
     title: title || "منتج من رابط خارجي",
     sku: product?.sku || null,
+    identityHash: product?.identityHash || null,
     variantId: product?.variantId || null,
     vendor:product?.vendor || null,
     productType:product?.productType || declaredSchemaProductType(product),
