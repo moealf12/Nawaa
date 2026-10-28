@@ -7,7 +7,7 @@ import { extractDomainProduct } from "./domain-adapters.mjs";
 import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
 import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
 import {isRetiredSourceUrl} from "../src/source-retirement.mjs";
-import {inspectAmazonDePdpHtml} from "../src/amazon-de-pdp-identity.mjs";
+import {inspectAmazonDePdpHtml,extractAmazonDeScopedOffer} from "../src/amazon-de-pdp-identity.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
@@ -443,6 +443,13 @@ export function extractMetaProductState(html) {
 }
 
 export function extractionCandidates(html, url = null) {
+  // Amazon DE PDPs must never fall back to generic meta tags, embedded
+  // recommendation prices or a cross-sell's unrelated Offer.
+  const amazonDe=url?extractAmazonDeScopedOffer(html,url):null;
+  if(amazonDe)return amazonDe.product ? [{
+    strategy:"domain_adapter",product:amazonDe.product,confidence:0.92,
+    adapterId:"amazon-de-same-asin",
+  }] : [];
   // Thomann's own main PDP buybox is the only eligible price owner.
   // Generic JSON-LD/meta/hydration can contain B-Stock or related products.
   if (url && isThomannProductUrl(url)) {
@@ -571,6 +578,11 @@ export async function extractProductDocument(url, options = {}) {
     throw failure;
   }
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
+  if(amazonIdentity && candidates.length===0){
+    const failure=new Error("AMAZON_DE_SCOPED_OFFER_NOT_OBSERVED");
+    failure.failureClass="UNVERIFIED_PRODUCT_OFFER";
+    throw failure;
+  }
   return {
     finalUrl:fetched.finalUrl,
     candidates,
@@ -582,8 +594,10 @@ export async function extractProductDocument(url, options = {}) {
         .map((entry) => entry.adapterId),
       htmlBytes:new TextEncoder().encode(fetched.html).byteLength,
       ...(amazonIdentity?{amazonDeIdentity:{
-        status:amazonIdentity.status,requestedProductIdentityAttested:false,
-        priceVerified:false,
+        status:extractAmazonDeScopedOffer(fetched.html,fetched.finalUrl)?.status ||
+          amazonIdentity.status,
+        requestedProductIdentityAttested:false,priceVerified:false,
+        buyerVisiblePriceParity:false,sellerIndependentlyVerified:false,
       }}:{}),
     },
   };
@@ -719,6 +733,9 @@ export async function resolveProductUrl(url, options = {}) {
       storefrontProductFound: candidates.some((entry) => entry.strategy === "storefront_data"),
       domainAdapterFound: candidates.some((entry) => entry.strategy === "domain_adapter"),
       domainAdapterId: candidates.find((entry) => entry.strategy === "domain_adapter")?.adapterId || null,
+      amazonDeOfferEvidence:product?.amazonDeOfferEvidence||null,
+      sourceDeclaredSeller:product?.sourceDeclaredSeller||null,
+      sellerIndependentlyVerified:false,
       shopifyProductFound: candidates.some(entry=>entry.product?.shopifyVariantEvidence === true) || (selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics))),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)
