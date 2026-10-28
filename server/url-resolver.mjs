@@ -6,6 +6,7 @@ import { normalizeCondition, normalizeAvailability, parseMoney } from "./provide
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
 import {extractBike24Product,isBike24GarminEdge540Page} from "./bike24-adapter.mjs";
+import {isBike24H2ProbeUrl,fetchBike24HtmlOverH2} from "./bike24-h2.mjs";
 import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
@@ -167,6 +168,13 @@ function fetchHtmlPinned(target, redirects, signal) {
 export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
   const target = await resolvePublicHttpsTarget(url);
   if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
+  // Manual, first-request-only, exact BIKE24 PDP HTTP/2 experiment.
+  // No automatic fallback after denial; preserves prevalidated public DNS pin,
+  // strict TLS certificate checks, the transparent NAWAA agent and no redirects.
+  if(process.env.NAWAA_BIKE24_HTTP2_PROBE==="1" &&
+     isBike24H2ProbeUrl(target.parsed.href)){
+    return fetchBike24HtmlOverH2(target,{signal});
+  }
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
     return fetchHtmlWithMockableFetch(target, redirects, signal);
   }
