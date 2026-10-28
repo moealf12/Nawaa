@@ -1,6 +1,7 @@
 // NAWAA source transport: fetch-first, explicit per-merchant opt-in only.
 // Never change outbound IP/network after a denial, and never infer inventory.
 import {chooseSourceTransport} from "../src/source-request-routing.mjs";
+import {merchantRequestHeaders} from "../src/source-http-profile.mjs";
 
 const normalizeIds=(ids)=>Array.isArray(ids) ? ids.filter(x=>typeof x==="string" && /^[a-z0-9][a-z0-9-]{1,79}$/i.test(x)) : [];
 const unsafeHost=(host)=>!host || host==="localhost" || host.endsWith(".localhost") ||
@@ -61,12 +62,8 @@ export function createApprovedSourceFetcher({
       // existing pinned transport until equivalent socket pinning exists.
       if(!hosts.has(parsed.hostname.toLowerCase()))throw Error("HOST_NOT_ALLOWED");
       const headers=sourceId==="bike24-de"
-        ? {
-            accept:"text/html,application/xhtml+xml;q=0.9",
-            "accept-language":"en-GB,en;q=0.9,de;q=0.4",
-            "user-agent":"NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)",
-          }
-        :init.headers;
+        ? merchantRequestHeaders(sourceId,init.headers)
+        : init.headers;
       return impitFetch(parsed.href,{...init,headers,method:"GET",redirect:"error"});
     }
     if(hosts.size&&!hosts.has(parsed.hostname.toLowerCase()))throw Error("HOST_NOT_ALLOWED");
