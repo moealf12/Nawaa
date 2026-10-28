@@ -1,0 +1,33 @@
+name: Public Sitemap Evidence (read-only)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly and disabled until an explicit merchant configuration is set.
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: ${{ vars.NAWAA_PUBLIC_SITEMAP_SOURCES_JSON != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Poll approved public merchant sitemaps
+        env:
+          NAWAA_PUBLIC_SITEMAP_SOURCES_JSON: ${{ vars.NAWAA_PUBLIC_SITEMAP_SOURCES_JSON }}
+        run: node scripts/poll-public-sitemaps.mjs --output sitemap-evidence.json
+      - name: Archive revalidation evidence (never update inventory)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-sitemap-evidence
+          path: sitemap-evidence.json
+          if-no-files-found: warn
+          retention-days: 7

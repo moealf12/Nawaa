@@ -3,6 +3,7 @@ import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryO
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
+import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1166,7 +1167,9 @@ async function fetchText(url,{signal,storeId}={}) {
     error.failureClass="HTTP_429_RATE_LIMITED";
     throw error;
   }
-  const response = await fetch(url, {
+  // Only explicitly opted-in merchant hosts may use the optional transport.
+  // A 403/429 is returned as-is: never rotate source routes after denial.
+  const response = await createRuntimeSourceFetcher({fetchImpl:globalThis.fetch})(url, {
     headers:{
       accept:"text/html,application/xhtml+xml",
       "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
@@ -1180,7 +1183,7 @@ async function fetchText(url,{signal,storeId}={}) {
     },
     redirect:"follow",
     signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),
-  });
+  },{sourceId:storeId});
   if(response.status===429 && storeId)
     sourceRateLimitGuard.record429(storeId,response.headers.get("retry-after"));
   if(!response.ok) throw new SourceHttpError(response.status,{
