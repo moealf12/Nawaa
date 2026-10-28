@@ -19,7 +19,8 @@ import { extractNawaaProduct } from "./nawaa-extractor.mjs";
 import { searchSaudiRetailers } from "./providers/saudi-retailers.mjs";
 import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
 import { searchJarir } from "./providers/jarir.mjs";
-import { noonConfigured, searchNoon } from "./providers/noon.mjs";
+import { searchNoon } from "./providers/noon.mjs";
+import {legacyNoonProviderActive} from "./noon-source-policy.mjs";
 import { carrefourConfigured, searchCarrefour } from "./providers/carrefour.mjs";
 import { searchSharafDG } from "./providers/sharafdg.mjs";
 import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarovski.mjs";
@@ -162,7 +163,7 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
     }), { explicit:true, deadlineMs:7500 });
   }
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
-  if (noonConfigured()) add("noon-catalog", () => searchNoon(providerQuery));
+  if (legacyNoonProviderActive()) add("noon-catalog", () => searchNoon(providerQuery));
   if (ebayConfigured()) add("ebay", () => searchEbayWorldwide(providerQuery));
   if (shopifyConfigured()) add("shopify", () => searchConfiguredShopifyStores(providerQuery));
   return tasks;
@@ -900,7 +901,7 @@ const server = http.createServer(async (req, res) => {
         amazonCreators: amazonCreatorsConfigured() ? configuredAmazonCreatorMarkets().map((market) => market.id) : [],
         freeStorefronts: configuredFreeStorefronts().map((store) => store.id),
         carrefour: carrefourConfigured(),
-        noon: noonConfigured(),
+        noon: legacyNoonProviderActive(),
         ebay: ebayConfigured(),
         shopify: shopifyConfigured(),
       },
