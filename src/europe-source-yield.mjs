@@ -101,6 +101,10 @@ export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0
     unpriced>0?"PRODUCTS_FOUND_PRICE_MISSING":
     offers.length>0?"OFFERS_REJECTED_BY_PROVENANCE":
     candidates>0?"CANDIDATES_WITHOUT_VALID_OFFER":
+    (zeroYieldReason==="NO_ASIN_MARKERS" ||
+      zeroYieldReason==="ASIN_MARKERS_WITHOUT_PRICE_MARKERS" ||
+      zeroYieldReason==="ASIN_MARKERS_WITH_UNEXTRACTED_PRICES")
+      ?"SEARCH_HTML_UNPARSED":
     "NO_CANDIDATES";
   return {
     storeId,query:spec.query,status,candidates,offersReturned:offers.length,fieldsPass,

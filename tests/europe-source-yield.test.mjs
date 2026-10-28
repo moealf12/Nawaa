@@ -109,3 +109,22 @@ test("Amazon Germany only exposes allowlisted zero-yield diagnostics, no raw HTM
   });
   assert.equal(unknown.zeroYieldReason,null);
 });
+
+test("Amazon Germany unparsed HTML is not falsely reported as verified zero inventory",()=>{
+  const diagnostic={
+    candidates:0,offers:[],
+    diagnostics:{amazonDeAcquisition:{
+      classification:"NO_ASIN_MARKERS",asinMarkers:0,priceMarkers:0,
+    }},
+  };
+  const report=summarizeEuropeanProbe("amazon-de",diagnostic);
+  assert.equal(report.status,"SEARCH_HTML_UNPARSED");
+  assert.equal(report.zeroYieldReason,"NO_ASIN_MARKERS");
+  assert.equal(report.httpStatus,null);
+  assert.equal(report.fieldsPass,0);
+  assert.equal(report.activationApproved,false);
+  // Real explicit zero-result evidence is not established by missing HTML markers.
+  assert.equal(summarizeEuropeanProbe("amazon-de",{
+    candidates:0,offers:[],
+  }).status,"NO_CANDIDATES");
+});
