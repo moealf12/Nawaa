@@ -51,6 +51,9 @@ const COMPILED_ALIASES = ALIASES.map(([alias, canonical]) =>
 
 export function normalizeSearchQuery(value = "") {
   let text = String(value).normalize("NFKC").toLowerCase()
+    // Samsung's "S25+" is a sellable Plus variant. Preserve that suffix
+    // before punctuation stripping turns it into the base S25 model.
+    .replace(/\b(s\d{1,3})\s*\+/g, "$1 plus ")
     .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
     .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0))
     .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
@@ -579,6 +582,16 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       : UNREQUESTED_VARIANT_TERMS.some((term) => titleTokens.has(term) && !queryTokens.has(term))
   );
   if (hasUnrequestedVariant) confidence *= 0.82;
+  // An explicit Samsung Galaxy S model/edition mismatch cannot become a
+  // sellable exact match just because generic tokens and storage overlap.
+  // Only model claims in the merchant's own retail title are considered here.
+  // Missing evidence is NOT promoted into either a match or a conflict.
+  const requestedGalaxyModel=/^galaxy s\d+(?: ultra| plus| fe)?$/.test(intent.model||"")
+    ? intent.model : null;
+  const conflictingGalaxyModel=Boolean(requestedGalaxyModel &&
+    explicitModels(offer?.title||"").some(model=>
+      /^galaxy s\d+(?: ultra| plus| fe)?$/.test(model) && model!==requestedGalaxyModel));
+  if (conflictingGalaxyModel) confidence *= 0.2;
 
   // A real merchant carrier-specific plan variant (e.g. Best Buy (AT&T) or
   // (Verizon)) is not evidenced as an interchangeable unlocked phone for a
@@ -618,7 +631,8 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const structuralTermsMatch = !categoryTokenRequested || (effectiveCategory && offerCategory === effectiveCategory);
   const exactMatch = confidence >= 0.92 && hits === q.length && structuralTermsMatch &&
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
-      !hasUnrequestedVariant && !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch;
+      !hasUnrequestedVariant && !conflictingGalaxyModel &&
+      !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
@@ -627,6 +641,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     matchReason: exactMatch ? "يطابق مواصفات بحثك" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
+      conflictingGalaxyModel ? "طراز Galaxy مختلف عن الجهاز المطلوب" :
       hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : sparseLaptopEvidence ? "بيانات العرض لا تثبت وجود جهاز لابتوب كامل" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
   };
 }
