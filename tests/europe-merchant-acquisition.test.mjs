@@ -153,3 +153,25 @@ test("foreign JSON-LD product price cannot be attributed to a trusted EU merchan
     assert.equal(count,1);
   }finally{globalThis.fetch=old}
 });
+
+test("pilot EU merchants remain on subsequent pages, without displacing the first shopper search wave",{concurrency:false},()=>{
+  for(const query of ["iphone 17","PS5 Slim","running shoes","studio headphones"]){
+    const first=routeFreeStorefronts(query,16,{stable:true});
+    assert.equal(first.length,16);
+    assert.equal(first.some(x=>europe.some(([id])=>id===x.store.id)),false,
+      "EU candidates with zero live offers must not replace existing sources in initial wave: "+query);
+  }
+  const all=routeFreeStorefronts("iphone 17",Infinity,{stable:true});
+  assert.ok(all.some(x=>x.store.id==="amazon-de"),"pilot still available for later cursor passes");
+});
+
+test("a specifically requested EU retailer bypasses the pilot deprioritization",()=>{
+  for(const [query,id] of [
+    ["amazon uk iphone 17","amazon-uk"],["amazon germany iphone 17","amazon-de"],
+    ["mediamarkt iphone 17","mediamarkt-de"],["pccomponentes laptop","pccomponentes-es"],
+    ["bike24 running shoes","bike24-de"],["thomann headphones","thomann-de"],
+  ]){
+    assert.ok(routeFreeStorefronts(query,5,{stable:true}).some(x=>x.store.id===id),
+      "explicit EU merchant must remain eligible: "+id);
+  }
+});
