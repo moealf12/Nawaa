@@ -77,6 +77,22 @@ test("G.2 respects BIKE24 published crawler route exclusions without contacting 
   }).hostname,"partner.example.com");
 });
 
+test("G.3 HTML PDP cannot be configured as JSON feed, even with enabled flag",async()=>{
+  let requests=0;
+  for(const path of ["/p2735527.html","/p2735527.htm","/p2735527%2Ehtml"]){
+    const env={
+      NAWAA_BIKE24_JSON_ENABLED:"1",
+      NAWAA_BIKE24_JSON_ALLOWED_HOST:"www.bike24.com",
+      NAWAA_BIKE24_JSON_URL:"https://www.bike24.com"+path,
+    };
+    assert.throws(()=>authorizedBike24JsonConfig(env),/HTML_ENDPOINT_REJECTED/);
+    await assert.rejects(searchAuthorizedBike24Json("garmin edge 540",{
+      env,getJson:async()=>{requests++;throw Error("UNEXPECTED_NETWORK");}
+    }),/HTML_ENDPOINT_REJECTED/);
+  }
+  assert.equal(requests,0);
+});
+
 test("G.2 exact model and independent variant-hash preservation",()=>{
  const parsed=parseAuthorizedBike24Json(payload(
    sample(),sample(" Solar","2735528"),sample(" Sensor Bundle","2735529"),
