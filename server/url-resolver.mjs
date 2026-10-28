@@ -4,6 +4,7 @@ import https from "node:https";
 import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, normalizeAvailability, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
+import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
@@ -434,6 +435,12 @@ export function extractMetaProductState(html) {
 }
 
 export function extractionCandidates(html, url = null) {
+  // Thomann's own main PDP buybox is the only eligible price owner.
+  // Generic JSON-LD/meta/hydration can contain B-Stock or related products.
+  if (url && isThomannProductUrl(url)) {
+    const product=extractThomannProduct(html,url);
+    return product ? [{strategy:"domain_adapter",product,confidence:0.96,adapterId:"thomann"}] : [];
+  }
   const nodes = extractJsonLd(html, url);
   const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
   // An explicit family ProductGroup is evidence for this product page.
