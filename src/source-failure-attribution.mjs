@@ -8,7 +8,8 @@ const knownClasses = new Set([
   "HTTP_200_BLOCK_PAGE","HTTP_200_JS_SHELL","HTTP_200_EMPTY_CATALOG",
   "HTTP_REDIRECT_CHANGED","PRODUCT_IDENTITY_MISMATCH",
   "EXTRACTION_FAILURE","CATALOG_RESULT_NOT_FOUND",
-  "SOURCE_TRANSPORT_FAILURE","PRICE_EVIDENCE_INCOMPLETE"
+  "SOURCE_TRANSPORT_FAILURE","PRICE_EVIDENCE_INCOMPLETE",
+  "NO_VERIFIED_STRUCTURED_PRICE_PDP"
 ]);
 const sourceId = value => typeof value === "string" &&
   /^[a-z0-9][a-z0-9:_-]{0,79}$/i.test(value) ? value.toLowerCase() : "unknown";
@@ -57,7 +58,11 @@ export function attributeSourceFailures(errors,{query="unknown"}={}) {
   const list=Array.isArray(errors)?errors:[];
   const normalizedQuery=safeQuery(query);
   for(const entry of list){
-    const id=sourceId(entry?.sourceId??entry?.provider??"unknown");
+    const parent=entry?.sourceId;
+    // Legacy aggregated errors had market but only generic sourceId; prefer a
+    // concrete merchant id when it is explicitly provided, never infer one.
+    const id=sourceId(parent&&parent!=="free-storefronts" ? parent :
+      entry?.market??parent??entry?.provider??"unknown");
     const failureClass=classifyFailure(entry);
     const key=id+"\u0000"+failureClass;
     const prior=rows.get(key);
