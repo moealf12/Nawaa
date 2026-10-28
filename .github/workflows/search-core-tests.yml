@@ -20,39 +20,6 @@ permissions:
   contents: read
 
 jobs:
-  european-remaining-yield-one-shot:
-    # Phase H: one deliberately bounded evidence run for two non-denied EU
-    # pilot merchants. Remove this CI job immediately after evidence capture.
-    # No BIKE24, no retry/transport-switch, no source activation or trust claim.
-    if: github.event_name == 'pull_request' && github.head_ref == 'feature/europe-five-sources-retire-bike24-20261028'
-    runs-on: ubuntu-latest
-    timeout-minutes: 6
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: npm ci --ignore-scripts
-      - name: Capture strict Thomann exact-model and Amazon DE pilot yield
-        run: |
-          node scripts/certify-europe-yield.mjs --store thomann-de --output europe-thomann-evidence.json
-          node scripts/certify-europe-yield.mjs --store amazon-de --output europe-amazon-de-evidence.json
-      - name: Save source-yield evidence (no HTML, no credentials)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: europe-remaining-yield-evidence
-          path: |
-            europe-thomann-evidence.json
-            europe-amazon-de-evidence.json
-          if-no-files-found: warn
-          retention-days: 7
-
   test:
     runs-on: ubuntu-latest
     steps:
