@@ -1,6 +1,7 @@
 // NAWAA global source registry.
 // "candidate" means the merchant/market is a discovery target, not yet an active adapter.
 // Saudi delivery must be verified per offer before an item can be ranked.
+import {retiredSourceRecord} from "./source-retirement.mjs";
 
 
 /** First-party Decathlon merchant is excluded from all NAWAA discovery sources. */
@@ -65,7 +66,7 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "pccomponentes-es", name: "PcComponentes", countryCode: "ES", region: "Europe", status: "candidate", saudiDelivery: "no_direct" },
   // European merchant acquisition targets. A shipping route at store level
   // never certifies that a particular SKU can be purchased into Saudi Arabia.
-  { id: "bike24-de", name: "BIKE24", countryCode: "DE", region: "Europe", status: "candidate", saudiDelivery: "verified_market" },
+  { id: "bike24-de", name: "BIKE24", countryCode: "DE", region: "Europe", status: "disabled", saudiDelivery: "unknown", sourceStatus:"SOURCE_RETIRED", catalogCode:404 },
   { id: "thomann-de", name: "Thomann", countryCode: "DE", region: "Europe", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "coolblue-nl", name: "Coolblue", countryCode: "NL", region: "Europe", status: "candidate", saudiDelivery: "unknown" },
   { id: "alternate-de", name: "Alternate", countryCode: "DE", region: "Europe", status: "candidate", saudiDelivery: "unknown" },
@@ -160,6 +161,10 @@ const SOURCE_ADAPTERS = {
 export function buildSourceRegistry({configuredProviders = [], shopifyStores = [], storefronts = []} = {}) {
   const configured = new Set(configuredProviders);
   const sources = WORLD_SOURCE_REGISTRY.map(source => {
+    const retired=retiredSourceRecord(source.id);
+    if(retired)return {...source,adapter:null,adapters:[],status:"disabled",
+      sourceStatus:retired.status,catalogCode:retired.catalogCode,
+      httpStatus:null,saudiDelivery:"unknown"};
     const adapter = SOURCE_ADAPTERS[source.id] || null;
     const storefrontId = {"newegg-us":"newegg-global",bhphoto:"bhphoto-us"}[source.id] || source.id;
     const direct = storefronts.some(store=>store.id===storefrontId) ? "free-storefronts:"+storefrontId : null;
@@ -169,7 +174,7 @@ export function buildSourceRegistry({configuredProviders = [], shopifyStores = [
   });
   const seen = new Set(sources.map(source => source.id));
   for(const store of storefronts) {
-    if(isExcludedMerchantSource(store)) continue;
+    if(retiredSourceRecord(store.id) || isExcludedMerchantSource(store)) continue;
     const adapter="free-storefronts:"+store.id;
     if(sources.some(source=>source.adapters?.includes(adapter)) || seen.has(store.id)) continue;
     seen.add(store.id);

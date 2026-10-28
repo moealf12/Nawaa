@@ -1,3 +1,4 @@
+import {filterAmazonDeUnattestedCustomerOffers} from "../src/amazon-de-price-gate.mjs";
 // Keep the shopper's first results diversified across independently identified
 // merchants, without allowing weak matches or accessories to outrank strong exact
 // matches. Never globally re-sort after round-robin: it undoes the diversity.
@@ -17,7 +18,7 @@ export function compareOffers(a,b) {
 export function selectDiverseOffers(offers = [], limit = 120) {
   const cap = limit === Infinity ? Infinity : (Number.isFinite(limit) ? Math.max(0,Math.floor(limit)) : 120);
   if (!cap) return [];
-  const sorted = [...offers].sort(compareOffers), selected=[];
+  const sorted = filterAmazonDeUnattestedCustomerOffers(offers).sort(compareOffers), selected=[];
   for (const tier of [3,2,1,0]) {
     const tierOffers=sorted.filter(offer => relevanceTier(offer)===tier);
     let cursor=0;

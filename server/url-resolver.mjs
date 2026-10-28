@@ -4,6 +4,11 @@ import https from "node:https";
 import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, normalizeAvailability, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
+import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
+import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
+import {isRetiredSourceUrl} from "../src/source-retirement.mjs";
+import {inspectAmazonDePdpHtml,extractAmazonDeScopedOffer,amazonDeDeclaredSellerAttribution} from "../src/amazon-de-pdp-identity.mjs";
+import {amazonDeCustomerPriceDecision} from "../src/amazon-de-price-gate.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
@@ -79,7 +84,7 @@ const PRODUCT_HEADERS = {
 async function fetchHtmlWithMockableFetch(target, redirects, signal) {
   const response = await fetch(target.parsed, {
     redirect: "manual",
-    headers: PRODUCT_HEADERS,
+    headers: productPageRequestHeaders(target.parsed.href, PRODUCT_HEADERS),
     signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
   });
   if ([301,302,303,307,308].includes(response.status)) {
@@ -118,7 +123,7 @@ function fetchHtmlPinned(target, redirects, signal) {
       path:target.parsed.pathname + target.parsed.search,
       method:"GET",
       servername:net.isIP(hostname) ? undefined : hostname,
-      headers:{...PRODUCT_HEADERS,host:target.parsed.host},
+      headers:{...productPageRequestHeaders(target.parsed.href,PRODUCT_HEADERS),host:target.parsed.host},
       agent:false,
       lookup:(_host,options,callback)=>{
         if(options?.all) callback(null,[{address:target.address,family:target.family}]);
@@ -162,6 +167,11 @@ function fetchHtmlPinned(target, redirects, signal) {
 }
 
 export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
+  if(isRetiredSourceUrl(url)){
+    const error=new Error("SOURCE_RETIRED");
+    error.sourceCatalogCode=404;
+    throw error;
+  }
   const target = await resolvePublicHttpsTarget(url);
   if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
@@ -434,6 +444,19 @@ export function extractMetaProductState(html) {
 }
 
 export function extractionCandidates(html, url = null) {
+  // Amazon DE PDPs must never fall back to generic meta tags, embedded
+  // recommendation prices or a cross-sell's unrelated Offer.
+  const amazonDe=url?extractAmazonDeScopedOffer(html,url):null;
+  if(amazonDe)return amazonDe.product ? [{
+    strategy:"domain_adapter",product:amazonDe.product,confidence:0.92,
+    adapterId:"amazon-de-same-asin",
+  }] : [];
+  // Thomann's own main PDP buybox is the only eligible price owner.
+  // Generic JSON-LD/meta/hydration can contain B-Stock or related products.
+  if (url && isThomannProductUrl(url)) {
+    const product=extractThomannProduct(html,url);
+    return product ? [{strategy:"domain_adapter",product,confidence:0.96,adapterId:"thomann"}] : [];
+  }
   const nodes = extractJsonLd(html, url);
   const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
   // An explicit family ProductGroup is evidence for this product page.
@@ -547,7 +570,20 @@ function declaredSchemaProductType(product) {
 
 export async function extractProductDocument(url, options = {}) {
   const fetched = await fetchHtmlSafe(url, 0, options);
+  // An HTML 200 that lacks the product's requested Amazon DE ASIN is not
+  // valid product evidence, even if generic meta or cross-sell content exists.
+  const amazonIdentity=inspectAmazonDePdpHtml(fetched.html,fetched.finalUrl);
+  if(amazonIdentity?.status==="PDP_ASIN_NOT_OBSERVED"){
+    const failure=new Error("AMAZON_DE_PDP_IDENTITY_NOT_OBSERVED");
+    failure.failureClass="UNVERIFIED_PRODUCT_DOCUMENT";
+    throw failure;
+  }
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
+  if(amazonIdentity && candidates.length===0){
+    const failure=new Error("AMAZON_DE_SCOPED_OFFER_NOT_OBSERVED");
+    failure.failureClass="UNVERIFIED_PRODUCT_OFFER";
+    throw failure;
+  }
   return {
     finalUrl:fetched.finalUrl,
     candidates,
@@ -558,6 +594,12 @@ export async function extractProductDocument(url, options = {}) {
         .filter((entry) => entry.strategy === "domain_adapter" && entry.adapterId)
         .map((entry) => entry.adapterId),
       htmlBytes:new TextEncoder().encode(fetched.html).byteLength,
+      ...(amazonIdentity?{amazonDeIdentity:{
+        status:extractAmazonDeScopedOffer(fetched.html,fetched.finalUrl)?.status ||
+          amazonIdentity.status,
+        requestedProductIdentityAttested:false,priceVerified:false,
+        buyerVisiblePriceParity:false,sellerIndependentlyVerified:false,
+      }}:{}),
     },
   };
 }
@@ -565,6 +607,14 @@ export async function extractProductDocument(url, options = {}) {
 export async function resolveProductUrl(url, options = {}) {
   const extracted = await extractProductDocument(url, options);
   const finalUrl = extracted.finalUrl;
+  // The structure of a Product/Offer is evidence-only. A public URL resolver
+  // may not publish a German Amazon price before buyer-visible buybox parity.
+  const amazonDeGate=amazonDeCustomerPriceDecision({sourceUrl:finalUrl});
+  if(!amazonDeGate.customerPublishable){
+    const error=new Error("AMAZON_DE_BUYBOX_PARITY_NOT_ATTESTED");
+    error.failureClass="SOURCE_PRICE_PUBLICATION_HELD";
+    throw error;
+  }
   const requested = new URL(url);
   const resolved = new URL(finalUrl);
   if (requested.searchParams.has('variant') && (
@@ -612,20 +662,23 @@ export async function resolveProductUrl(url, options = {}) {
     : null;
 
   const country = inferCountry(finalUrl, originalCurrency);
+  // The Amazon DE marketplace location cannot establish a third-party seller's country.
+  const amazonSeller=amazonDeDeclaredSellerAttribution(product);
   const rawCondition = product && product.itemCondition || "";
   const condition = normalizeCondition(rawCondition);
 
   return {
     provider: "url-resolver",
     providerMarket: new URL(finalUrl).hostname,
-    merchant: merchantName(finalUrl),
-    merchantCountryCode: country.countryCode,
-    merchantCountryNameAr: country.countryNameAr,
+    merchant: amazonSeller?.sellerName||merchantName(finalUrl),
+    merchantCountryCode: amazonSeller?.sellerCountryCode||country.countryCode,
+    merchantCountryNameAr: amazonSeller?.sellerCountryNameAr||country.countryNameAr,
     sourceUrl: offer && offer.url ? new URL(offer.url, finalUrl).href : finalUrl,
     resolvedPageUrl:finalUrl,
     image: image ? new URL(image, finalUrl).href : null,
     title: title || "منتج من رابط خارجي",
     sku: product?.sku || null,
+    identityHash: product?.identityHash || null,
     variantId: product?.variantId || null,
     vendor:product?.vendor || null,
     productType:product?.productType || declaredSchemaProductType(product),
@@ -642,6 +695,9 @@ export async function resolveProductUrl(url, options = {}) {
     productPrice: (priceSAR && priceSAR.value) ?? null,
     originalProductPrice: originalPrice,
     shipping: null,
+    // Strictly scoped structured-data context is informational only; no
+    // checkout or ship-to-Saudi claim is inferred from a PDP schema node.
+    shippingContext: product?.shippingContext || null,
     importCost: null,
     tax: null,
     mandatoryFees: 0,
@@ -688,6 +744,10 @@ export async function resolveProductUrl(url, options = {}) {
       storefrontProductFound: candidates.some((entry) => entry.strategy === "storefront_data"),
       domainAdapterFound: candidates.some((entry) => entry.strategy === "domain_adapter"),
       domainAdapterId: candidates.find((entry) => entry.strategy === "domain_adapter")?.adapterId || null,
+      amazonDeOfferEvidence:product?.amazonDeOfferEvidence||null,
+      sourceDeclaredSeller:product?.sourceDeclaredSeller||null,
+      sellerIndependentlyVerified:false,
+      amazonDeMarketplace:amazonSeller?.marketplace||null,
       shopifyProductFound: candidates.some(entry=>entry.product?.shopifyVariantEvidence === true) || (selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics))),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)

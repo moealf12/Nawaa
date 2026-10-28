@@ -1,0 +1,147 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {EUROPE_SOURCES,inspectEuropeanOffer,sourceErrorClass,summarizeEuropeanProbe}
+  from "../src/europe-source-yield.mjs";
+const sample={
+  providerMarket:"thomann-de",merchantCountryCode:"DE",dataKind:"live",
+  title:"AKG K-240 Studio",sourceUrl:"https://www.thomann.de/de/akg_k_240_studio_kopfhoerer.htm?type=quickSearch",
+  image:"https://cdn.thomann.de/akg-k240.jpg",productPrice:350,currency:"SAR",
+  originalProductPrice:79.9,originalCurrency:"EUR",
+  fx:{rate:4.38,source:"frankfurter",observedAt:"2026-10-28T15:00:00Z"},canShipToSaudi:null
+};
+test("five active EU pilots exclude the retired BIKE24 source",()=>{
+  assert.deepEqual(Object.keys(EUROPE_SOURCES),[
+    "amazon-uk","amazon-de","mediamarkt-de","pccomponentes-es","thomann-de"
+  ]);
+  assert.equal(EUROPE_SOURCES["thomann-de"].query,"superlux hd 662");
+  assert.equal(summarizeEuropeanProbe("bike24-de",null).status,"SOURCE_RETIRED");
+  assert.equal(summarizeEuropeanProbe("bike24-de",null).sourceCatalogCode,404);
+  assert.equal(summarizeEuropeanProbe("bike24-de",null).httpStatus,null);
+});
+test("valid field-level sample is explicitly not certified",()=>{
+  assert.deepEqual(inspectEuropeanOffer("thomann-de",sample),{fieldsPass:true,issues:[]});
+  const report=summarizeEuropeanProbe("thomann-de",{candidates:3,offers:[sample]});
+  assert.equal(report.status,"FIELD_COMPLETE_NOT_ATTESTED");
+  assert.equal(report.activationApproved,false);
+  assert.equal(report.merchantAttested,false);
+  assert.equal(report.saudiDeliveryVerified,false);
+});
+test("foreign host, credentials, search URL and malformed path fail provenance",()=>{
+  for(const sourceUrl of [
+    "https://www.thomann.de.evil.example/de/akg_k_240_studio_kopfhoerer.htm",
+    "https://evil@www.thomann.de/de/akg_k_240_studio_kopfhoerer.htm",
+    "https://www.thomann.de/de/search_dir.html?sw=akg",
+    "https://www.thomann.de/de/../search_dir.html"
+  ]){
+    assert.ok(inspectEuropeanOffer("thomann-de",{...sample,sourceUrl}).issues.includes("PRODUCT_URL_PROVENANCE"));
+  }
+});
+test("cross-market price provenance rejects ambiguous currency, invalid SAR, missing FX",()=>{
+  for(const update of [
+    {originalCurrency:"SAR"},{originalProductPrice:0},{productPrice:NaN},{currency:"EUR"},{fx:null}
+  ])assert.equal(inspectEuropeanOffer("thomann-de",{...sample,...update}).fieldsPass,false);
+});
+test("EU delivery claim cannot be inferred from search result",()=>{
+  assert.ok(inspectEuropeanOffer("thomann-de",{...sample,canShipToSaudi:true}).issues
+    .includes("UNSUPPORTED_SAUDI_DELIVERY_CLAIM"));
+  const media={...sample,providerMarket:"mediamarkt-de",
+    sourceUrl:"https://www.mediamarkt.de/de/product/_apple-iphone-17-256-gb-1234567.html",
+    canShipToSaudi:null};
+  assert.ok(inspectEuropeanOffer("mediamarkt-de",media).issues.includes("UNSUPPORTED_SAUDI_DELIVERY_CLAIM"));
+});
+test("error classes and zero-yield states remain distinct",()=>{
+  for(const [input,expected] of [
+    ["HTTP 403","ACCESS_DENIED_OR_LIMITED"],
+    ["HTTP 429","ACCESS_DENIED_OR_LIMITED"],
+    ["HTTP 503","REMOTE_SERVICE_ERROR"],
+    ["Product page request timed out","TIMEOUT"]
+  ])assert.equal(sourceErrorClass(input),expected);
+  assert.equal(summarizeEuropeanProbe("amazon-uk",null,new Error("HTTP 503")).status,"SOURCE_REQUEST_FAILED");
+  assert.equal(summarizeEuropeanProbe("amazon-de",{candidates:0,offers:[]}).status,"NO_CANDIDATES");
+  assert.equal(summarizeEuropeanProbe("thomann-de",{candidates:3,offers:[],diagnostics:{
+    unpricedSamples:[{title:"AKG K-240 Studio"}]}}).status,"PRODUCTS_FOUND_PRICE_MISSING");
+  assert.equal(summarizeEuropeanProbe("pccomponentes-es",null,new Error("HTTP 403")).status,"ACCESS_DENIED_OR_LIMITED");
+  assert.equal(summarizeEuropeanProbe("pccomponentes-es",null,new Error("HTTP 403")).httpStatus,403);
+  assert.equal(summarizeEuropeanProbe("mediamarkt-de",null,new Error("HTTP 429")).httpStatus,429);
+  assert.equal(summarizeEuropeanProbe("amazon-uk",null,new Error("HTTP 503")).httpStatus,503);
+  assert.equal(summarizeEuropeanProbe("amazon-de",{candidates:0,offers:[]}).httpStatus,null);
+});
+test("wrong source identity, blank image and price prevent field pass",()=>{
+  for(const update of [
+    {providerMarket:"amazon-de"},{merchantCountryCode:"GB"},{dataKind:"fixture"},
+    {image:"javascript:alert(1)"},{title:"x"},{sourceUrl:"http://www.thomann.de/de/item.htm"}
+  ])assert.equal(inspectEuropeanOffer("thomann-de",{...sample,...update}).fieldsPass,false);
+});
+test("unknown merchant must not silently fall back",()=>{
+  assert.throws(()=>summarizeEuropeanProbe("unknown",{}),/UNKNOWN_EUROPE_SOURCE/);
+});
+
+test("European reporting separates field completeness from PDP price parity",()=>{
+  const observed={...sample,sourceMeta:{priceEvidence:"PDP_OBSERVED_ONLY"}};
+  const result=summarizeEuropeanProbe("thomann-de",{candidates:3,offers:[observed]});
+  assert.equal(result.fieldsPass,1);
+  assert.deepEqual(result.priceEvidenceCounts,{
+    searchPdpParity:0,pdpObservedOnly:1,searchCardOnly:0,unknown:0,
+  });
+  assert.equal(result.activationApproved,false);
+  const parity=summarizeEuropeanProbe("thomann-de",{
+    candidates:2,offers:[{...sample,sourceMeta:{priceEvidence:"SEARCH_PDP_PRICE_PARITY"}}],
+  });
+  assert.equal(parity.priceEvidenceCounts.searchPdpParity,1);
+  assert.equal(parity.merchantAttested,false);
+  assert.equal(parity.saudiDeliveryVerified,false);
+});
+test("Amazon Germany only exposes allowlisted zero-yield diagnostics, no raw HTML",()=>{
+  const result=summarizeEuropeanProbe("amazon-de",{
+    candidates:0,offers:[],diagnostics:{
+      amazonDeAcquisition:{
+        classification:"ASIN_MARKERS_WITHOUT_PRICE_MARKERS",
+        sourceHtml:"secret raw page",cookie:"not allowed",
+      },
+    },
+  });
+  assert.equal(result.zeroYieldReason,"ASIN_MARKERS_WITHOUT_PRICE_MARKERS");
+  assert.equal(JSON.stringify(result).includes("secret raw page"),false);
+  const unknown=summarizeEuropeanProbe("amazon-de",{
+    candidates:0,offers:[],diagnostics:{
+      amazonDeAcquisition:{classification:"UNVERIFIED_UNKNOWN_STATE"},
+    },
+  });
+  assert.equal(unknown.zeroYieldReason,null);
+});
+
+test("Amazon Germany unparsed HTML is not falsely reported as verified zero inventory",()=>{
+  const diagnostic={
+    candidates:0,offers:[],
+    diagnostics:{amazonDeAcquisition:{
+      classification:"NO_ASIN_MARKERS",asinMarkers:0,priceMarkers:0,
+    }},
+  };
+  const report=summarizeEuropeanProbe("amazon-de",diagnostic);
+  assert.equal(report.status,"SEARCH_HTML_UNPARSED");
+  assert.equal(report.zeroYieldReason,"NO_ASIN_MARKERS");
+  assert.equal(report.httpStatus,null);
+  assert.equal(report.fieldsPass,0);
+  assert.equal(report.activationApproved,false);
+  // Real explicit zero-result evidence is not established by missing HTML markers.
+  assert.equal(summarizeEuropeanProbe("amazon-de",{
+    candidates:0,offers:[],
+  }).status,"NO_CANDIDATES");
+});
+
+
+test("Amazon Germany source probe does not equate found cards with publishable price",()=>{
+  const report=summarizeEuropeanProbe("amazon-de",{
+    candidates:2,offers:[],diagnostics:{
+      customerPublicationGate:{
+        status:"BUYBOX_SAME_OFFER_PARITY_UNVERIFIED",
+        customerPublishable:false,withheldSearchCandidates:2,
+      },
+    },
+  });
+  assert.equal(report.status,"PRICE_PUBLICATION_HELD");
+  assert.equal(report.offersReturned,0);
+  assert.equal(report.fieldsPass,0);
+  assert.equal(report.activationApproved,false);
+  assert.equal(report.merchantAttested,false);
+});

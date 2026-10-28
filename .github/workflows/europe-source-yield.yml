@@ -1,0 +1,45 @@
+name: European Source Yield Evidence (manual, read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      store:
+        description: "Choose a known EU source; all probes run sequentially"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - amazon-uk
+          - amazon-de
+          - mediamarkt-de
+          - pccomponentes-es
+          - thomann-de
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Inspect one bounded search per source
+        env:
+          EU_STORE: ${{ inputs.store }}
+        run: node scripts/certify-europe-yield.mjs --store "$EU_STORE" --output europe-source-yield.json
+      - name: Preserve read-only diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: europe-source-yield-evidence
+          path: europe-source-yield.json
+          if-no-files-found: warn
+          retention-days: 7
