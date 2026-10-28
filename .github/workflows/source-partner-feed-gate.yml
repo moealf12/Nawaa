@@ -1,0 +1,62 @@
+name: NAWAA Source Partner Feed Authorization Gate
+
+on:
+  pull_request:
+    paths:
+      - 'server/merchant-feed-authorization-gate.mjs'
+      - 'scripts/audit-decathlon-partner-readiness.mjs'
+      - 'tests/merchant-feed-authorization-gate.test.mjs'
+      - 'tests/decathlon-partner-readiness.test.mjs'
+      - 'docs/source-partnerships/decathlon-sa-authorized-feed.md'
+      - '.github/workflows/source-partner-feed-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-source-partner-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  authorization-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Exact PR HEAD checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Reject wrong commit
+        env:
+          EXACT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Locked dependencies only; no new services
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Source permission, variant, price and digest tests
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NAWAA_DECATHLON_AJAX_LIVE_PROBE: '0'
+          NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
+        run: node --test tests/merchant-feed-authorization-gate.test.mjs tests/decathlon-partner-readiness.test.mjs
+      - name: No-network source partner readiness artifact
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/audit-decathlon-partner-readiness.mjs | tee partner-readiness.json
+      - name: Archive source-status-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-partner-gate-${{ github.event.pull_request.head.sha }}
+          path: partner-readiness.json
+          if-no-files-found: ignore
+          retention-days: 7
