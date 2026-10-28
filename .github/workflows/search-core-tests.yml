@@ -32,9 +32,6 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Run test suite
         run: npm test
-      - name: Thomann pilot live acquisition (bounded, read-only, PR only)
-        if: github.event_name == 'pull_request' && github.head_ref == 'feat/europe-yield-evidence-20261028'
-        run: node scripts/certify-europe-yield.mjs --store thomann-de --output europe-source-yield.json
       - name: Live Crawlee smoke test against Jarir Saudi
         if: github.head_ref == 'feature/crawlee-local-ingestion-20261006'
         continue-on-error: true
