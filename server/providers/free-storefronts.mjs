@@ -6,6 +6,7 @@ import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceOb
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
 import {retiredSourceRecord} from "../../src/source-retirement.mjs";
+import {diagnoseAmazonGermanyHtml} from "../../src/europe-source-diagnostics.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
@@ -1521,6 +1522,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
         return merged;
       })();
+    // Source-specific, bounded diagnostic only. No additional merchant fetch.
+    // A legitimate empty catalog and an unparsed HTML response are different.
+    const amazonDeAcquisition = store.id==="amazon-de"
+      ? diagnoseAmazonGermanyHtml(html,{extractedCards:htmlFirstOffers.length})
+      : null;
+    if(amazonDeAcquisition?.classification==="CHALLENGE_PAGE_SUSPECTED" && !primarySearchError){
+      primarySearchError="Storefront blocked: amazon_de_challenge_page_suspected";
+      sourceAccessFailure="HTTP_200_BLOCK_PAGE";
+    }
     options.signal?.throwIfAborted();
     if (!htmlFirstOffers.length) {
       if (store.id === "ikea-sa") {
@@ -1764,6 +1774,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         primarySearchError,
         sourceAccessFailure,
         sourceObservation,
+        ...(amazonDeAcquisition?{amazonDeAcquisition}:{}),
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
           : links.slice(0,5).map((candidate)=>candidate.url)),

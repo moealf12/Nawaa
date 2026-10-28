@@ -75,3 +75,37 @@ test("wrong source identity, blank image and price prevent field pass",()=>{
 test("unknown merchant must not silently fall back",()=>{
   assert.throws(()=>summarizeEuropeanProbe("unknown",{}),/UNKNOWN_EUROPE_SOURCE/);
 });
+
+test("European reporting separates field completeness from PDP price parity",()=>{
+  const observed={...sample,sourceMeta:{priceEvidence:"PDP_OBSERVED_ONLY"}};
+  const result=summarizeEuropeanProbe("thomann-de",{candidates:3,offers:[observed]});
+  assert.equal(result.fieldsPass,1);
+  assert.deepEqual(result.priceEvidenceCounts,{
+    searchPdpParity:0,pdpObservedOnly:1,searchCardOnly:0,unknown:0,
+  });
+  assert.equal(result.activationApproved,false);
+  const parity=summarizeEuropeanProbe("thomann-de",{
+    candidates:2,offers:[{...sample,sourceMeta:{priceEvidence:"SEARCH_PDP_PRICE_PARITY"}}],
+  });
+  assert.equal(parity.priceEvidenceCounts.searchPdpParity,1);
+  assert.equal(parity.merchantAttested,false);
+  assert.equal(parity.saudiDeliveryVerified,false);
+});
+test("Amazon Germany only exposes allowlisted zero-yield diagnostics, no raw HTML",()=>{
+  const result=summarizeEuropeanProbe("amazon-de",{
+    candidates:0,offers:[],diagnostics:{
+      amazonDeAcquisition:{
+        classification:"ASIN_MARKERS_WITHOUT_PRICE_MARKERS",
+        sourceHtml:"secret raw page",cookie:"not allowed",
+      },
+    },
+  });
+  assert.equal(result.zeroYieldReason,"ASIN_MARKERS_WITHOUT_PRICE_MARKERS");
+  assert.equal(JSON.stringify(result).includes("secret raw page"),false);
+  const unknown=summarizeEuropeanProbe("amazon-de",{
+    candidates:0,offers:[],diagnostics:{
+      amazonDeAcquisition:{classification:"UNVERIFIED_UNKNOWN_STATE"},
+    },
+  });
+  assert.equal(unknown.zeroYieldReason,null);
+});

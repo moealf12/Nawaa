@@ -70,6 +70,25 @@ export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0
     if(inspected.fieldsPass)fieldsPass++;
     for(const reason of inspected.issues)reasons[reason]=(reasons[reason]||0)+1;
   }
+  // Preserve the distinction between field completeness and independent price
+  // parity. Only an exact search/PDP match may occupy the parity bucket.
+  const priceEvidenceCounts={searchPdpParity:0,pdpObservedOnly:0,searchCardOnly:0,unknown:0};
+  for(const offer of offers){
+    const level=offer?.sourceMeta?.priceEvidence;
+    if(level==="SEARCH_PDP_PRICE_PARITY")priceEvidenceCounts.searchPdpParity++;
+    else if(level==="PDP_OBSERVED_ONLY")priceEvidenceCounts.pdpObservedOnly++;
+    else if(level==="SEARCH_CARD_ONLY")priceEvidenceCounts.searchCardOnly++;
+    else priceEvidenceCounts.unknown++;
+  }
+  const amazonDiagnostic=storeId==="amazon-de"?result?.diagnostics?.amazonDeAcquisition:null;
+  const allowedAmazonClasses=new Set([
+    "HTML_NOT_OBSERVED","CHALLENGE_PAGE_SUSPECTED","NO_ASIN_MARKERS",
+    "EXTRACTED_PRICED_CARDS","ASIN_MARKERS_WITHOUT_PRICE_MARKERS",
+    "ASIN_MARKERS_WITH_UNEXTRACTED_PRICES",
+  ]);
+  const zeroYieldReason=storeId==="amazon-de" &&
+    allowedAmazonClasses.has(amazonDiagnostic?.classification)
+      ? amazonDiagnostic.classification:null;
   const candidates=integer(result?.candidates);
   const unpriced=integer(result?.diagnostics?.unpricedSamples?.length);
   const sourceFailure=error||result?.diagnostics?.primarySearchError||
@@ -86,6 +105,7 @@ export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0
   return {
     storeId,query:spec.query,status,candidates,offersReturned:offers.length,fieldsPass,
     unpricedSamples:unpriced,errors:failure,httpStatus,rejectionReasons:reasons,
+    zeroYieldReason,priceEvidenceCounts,
     durationMs:integer(durationMs),merchantAttested:false,saudiDeliveryVerified:false,
     activationApproved:false
   };
