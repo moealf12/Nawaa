@@ -3,7 +3,7 @@ import test from "node:test";
 import {searchFreeStorefrontById} from "../server/providers/free-storefronts.mjs";
 import {filterQueryOffers,queryMatchReasons} from "../src/search-query.mjs";
 import {inspectEuropeanOffer} from "../src/europe-source-yield.mjs";
-import {thomannVariantMatchesQuery} from "../src/thomann-product-truth.mjs";
+import {thomannVariantIdentity,thomannVariantMatchesQuery} from "../src/thomann-product-truth.mjs";
 
 const STORE="thomann-de";
 const QUERY="superlux hd 662";
@@ -92,4 +92,19 @@ test("LIVE: Thomann exact-model source yields one field-complete relevant offer"
   assert.ok(evidence.candidates>0,"No product candidates from the live query");
   assert.ok(evidence.modelMatches>0,"Exact-model result was filtered out or unpriced");
   assert.ok(evidence.fieldComplete>0,"No field-complete, model-relevant merchant offer");
+  for(const offer of result.offers){
+    const identity=thomannVariantIdentity(offer.title,offer.sourceUrl);
+    assert.equal(identity?.variant,"BASE","An F/B SKU was returned for an HD-662 base query");
+    assert.equal(offer.identityHash,identity.identityHash,"The PDP identity hash was not propagated");
+    assert.ok(["SEARCH_PDP_PRICE_PARITY","PDP_OBSERVED_ONLY"].includes(
+      offer.sourceMeta?.priceEvidence),"Missing PDP price evidence classification");
+  }
+  console.log("THOMANN_PHASE_F_EVIDENCE "+JSON.stringify({
+    productCount:result.offers.length,
+    exactVariantCount:result.offers.filter(x=>thomannVariantIdentity(x.title,x.sourceUrl)?.variant==="BASE").length,
+    searchPdpParity:result.offers.filter(x=>x.sourceMeta?.priceEvidence==="SEARCH_PDP_PRICE_PARITY").length,
+    pdpObservedOnly:result.offers.filter(x=>x.sourceMeta?.priceEvidence==="PDP_OBSERVED_ONLY").length,
+    variantRejected:result.diagnostics?.variantRejected||0,
+    parityDecisions:result.diagnostics?.pdpPriceParity||[],
+  }));
 });
