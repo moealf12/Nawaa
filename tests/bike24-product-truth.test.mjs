@@ -4,7 +4,7 @@ import {
   bike24PdpId,bike24GarminEdition,bike24Identity,bike24QueryEdition,bike24MatchesQuery,
   compareBike24SearchPdp,verifyBike24SearchCards,
 } from "../src/bike24-product-truth.mjs";
-import {extractBike24Product} from "../server/bike24-adapter.mjs";
+import {extractBike24Product,isBike24GarminEdge540Page} from "../server/bike24-adapter.mjs";
 import {extractionCandidates} from "../server/url-resolver.mjs";
 import {merchantRequestHeaders,productPageRequestHeaders,NAWAA_INDEXER_USER_AGENT}
   from "../src/source-http-profile.mjs";
@@ -96,4 +96,18 @@ test("Bounded verification fails closed on mismatched price and stops on 403",as
   assert.equal(calls,1);
   assert.equal(denied.accepted.length,0);
   assert.equal(denied.diagnostics[0].reason,"PDP_ACCESS_DENIED");
+});
+
+
+test("Phase G Garmin gate leaves other BIKE24 PDPs on existing resolver",()=>{
+  assert.equal(isBike24GarminEdge540Page(html(),URL),true);
+  const otherUrl="https://www.bike24.com/p2735533.html";
+  const other='<html><head><script type="application/ld+json">'+JSON.stringify({
+    "@context":"https://schema.org","@type":"Product",
+    name:"Garmin Forerunner 265 GPS Running Watch - black/light grey",
+    image:"https://www.bike24.com/images/forerunner265.jpg",
+    url:otherUrl,offers:{"@type":"Offer",price:279.82,priceCurrency:"EUR"}
+  })+'</script></head><body><h1>Garmin Forerunner 265 GPS Running Watch</h1></body></html>';
+  assert.equal(isBike24GarminEdge540Page(other,otherUrl),false);
+  assert.ok(extractionCandidates(other,otherUrl).some(x=>x.strategy==="jsonld"));
 });
