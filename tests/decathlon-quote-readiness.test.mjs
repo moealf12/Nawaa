@@ -100,3 +100,16 @@ test("RED v22.03: output is aggregate only with no source prices, identifiers or
     assert.equal(json.includes(secret),false,secret);
   }
 });
+
+
+test("v22.03: reversed or duplicated acquisition identifiers are not independent quote revalidation",()=>{
+  const reversed=evaluateDecathlonQuoteReadiness(params(snapshot(),snapshot(source(),80_000),130_000));
+  assert.equal(reversed.status,"QUOTE_SOURCE_REVALIDATION_REQUIRED");
+  blocked(reversed);
+  const duplicate=evaluateDecathlonQuoteReadiness(params(
+    snapshot(source(),100_000,{requestId:"same"}),
+    snapshot(source(),105_000,{requestId:"same"}),
+  ));
+  assert.equal(duplicate.status,"QUOTE_SOURCE_REVALIDATION_REQUIRED");
+  blocked(duplicate);
+});
