@@ -372,6 +372,20 @@ function explicitlyIncludedConsoleAccessory(normalizedTitle, rawTitle = normaliz
     (GAMING_ACCESSORY.test(normalizedTitle) || GAMING_ARABIC_ACCESSORY.test(normalizedTitle) || GAMING_STORAGE_ACCESSORY.test(normalizedTitle));
 }
 
+// A retail package can name the complete PS5 Slim/Pro Disc/Digital edition
+// without saying "console". Recognize only an unambiguous title-leading
+// chassis edition followed by an explicit included controller, never a
+// "Disc Drive", cover, SSD, game, hub or compatibility-only peripheral.
+const CONSOLE_EDITION_RETAIL_SUBJECT =
+  /^(?:sony )?ps5 (?:slim|pro) (?:digital|disc)(?: edition)?(?: \d+(?:gb|tb))?$/;
+function hasConsoleEditionWithIncludedController(title) {
+  const match=title.match(/^(.+?) (?:with|including|includes|plus) (.+)$/);
+  if(!match || !CONSOLE_EDITION_RETAIL_SUBJECT.test(match[1]))return false;
+  const included=match[2];
+  return /\b(?:dualsense|controllers?)\b/.test(included) &&
+    !/\b(?:dualsense (?:chargers?|charging stations?|docks?)|controller (?:holders?|stands?|chargers?|charging stations?))\b/.test(included);
+}
+
 
 // Strictly the two source-verified query intents. A generic search for a
 // controller or pack of controllers must remain accessory intent.
@@ -416,22 +430,25 @@ export function describeProduct(offer = {}) {
     /\b\d+(?:gb|tb)\b/.test(title) &&
     (/\b(?:digital|dig|disc)\b/.test(title) || corroboratedEditionFreeBundle) &&
     (/\b(?:bundle|including|includes|with)\b/.test(title) || /\s+\+\s+/.test(String(offer.title||"")));
+  const retailConsoleWithController=hasConsoleEditionWithIncludedController(title);
   const isBundle = /\bbundle\b/.test(title) ||
-    explicitlyIncludedConsoleAccessory(title, offer.title) || identifiedConsoleBundle;
+    explicitlyIncludedConsoleAccessory(title, offer.title) || identifiedConsoleBundle ||
+    retailConsoleWithController;
   let kind = "product";
   if (platform) {
     if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
     else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       GENUINE_CONSOLE_BUNDLE(title) ||
       identifiedConsoleBundle ||
+      retailConsoleWithController ||
       explicitlyIncludedConsoleAccessory(title, offer.title) ||
       (DISC_DRIVE_ACCESSORY.test(title) && CONSOLE_WITH_INCLUDED_DRIVE.test(title))
     )) kind = "accessory";
     else if ((GAMING_GAME_PRODUCT.test(title) ||
       GAMING_STANDALONE_GAME.test(title) ||
       /\/playstation-games(?:\/|$)/i.test(String(offer.sourceUrl || ""))) &&
-      !(isBundle && /\bconsole\b/.test(title))) kind = "game";
-    else if (/\bconsole\b/.test(title) || /^CFI[127]\d/i.test(sku) || /\b(?:digital|disc) edition\b/.test(title) || /\b(?:825gb|1tb|2tb)\b/.test(title)) kind = "console";
+      !(isBundle && (/\bconsole\b/.test(title) || retailConsoleWithController))) kind = "game";
+    else if (retailConsoleWithController || /\bconsole\b/.test(title) || /^CFI[127]\d/i.test(sku) || /\b(?:digital|disc) edition\b/.test(title) || /\b(?:825gb|1tb|2tb)\b/.test(title)) kind = "console";
     else if (/^(?:sony )?ps[45](?: slim| pro)?$/.test(title)) kind = "console";
     else kind = "game";
   }
