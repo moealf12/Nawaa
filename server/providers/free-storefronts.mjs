@@ -2,6 +2,7 @@ import { resolveProductUrl } from "../url-resolver.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
+import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1091,7 +1092,15 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
 
-async function fetchText(url,{signal}={}) {
+async function fetchText(url,{signal,storeId}={}) {
+  signal?.throwIfAborted();
+  // A merchant-specific Retry-After must be honored without querying alternate
+  // endpoints or inferring anything about inventory or sellable prices.
+  if(storeId && !sourceRateLimitGuard.canRequest(storeId).allowed){
+    const error=new Error("SOURCE_RATE_LIMIT_COOLDOWN");
+    error.failureClass="HTTP_429_RATE_LIMITED";
+    throw error;
+  }
   const response = await fetch(url, {
     headers:{
       accept:"text/html,application/xhtml+xml",
@@ -1107,7 +1116,11 @@ async function fetchText(url,{signal}={}) {
     redirect:"follow",
     signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),
   });
-  if (!response.ok) throw new Error("HTTP " + response.status);
+  if(response.status===429 && storeId)
+    sourceRateLimitGuard.record429(storeId,response.headers.get("retry-after"));
+  if(!response.ok) throw new SourceHttpError(response.status,{
+    retryAfterMs:response.status===429 ? parseRetryAfter(response.headers.get("retry-after")) : null,
+  });
   const type = response.headers.get("content-type") || "";
   if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("non-html response");
   const text = await response.text();
@@ -1116,8 +1129,11 @@ async function fetchText(url,{signal}={}) {
 }
 
 function isRetryableAmazonSearchError(error){
-  if(error?.name==="TimeoutError"||error?.name==="AbortError"||error instanceof TypeError)return true;
-  return /^HTTP (?:408|425|429|5\d\d)\b/.test(String(error?.message||error||""));
+  const status=Number(error?.status || String(error?.message||"").match(/^HTTP (\d{3})\b/)?.[1]);
+  // Access denials and merchant throttling must never schedule immediate retries.
+  if(status===403 || status===429 || error?.failureClass==="HTTP_429_RATE_LIMITED")return false;
+  if(error?.name==="TimeoutError" || error instanceof TypeError)return true;
+  return status===408 || status===425 || (status>=500 && status<600);
 }
 
 export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,deadlineMs=10000,signal,fetchPage=fetchText,wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
@@ -1143,7 +1159,7 @@ export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,
       ]);
     }finally{clearTimeout(timeoutId);}
   };
-  const first=await Promise.all(pageUrls.map(page=>settleBeforeDeadline(()=>fetchPage(page.url,{signal:fetchSignal}))));
+  const first=await Promise.all(pageUrls.map(page=>settleBeforeDeadline(()=>fetchPage(page.url,{signal:fetchSignal,storeId:"amazon-sa"}))));
   const results=first.map((result,index)=>({index,result}));
   const retryable=results.filter(({result})=>result.status==="rejected"&&isRetryableAmazonSearchError(result.reason));
   if(retryable.length&&Date.now()<deadlineAt){
@@ -1151,7 +1167,7 @@ export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,
       signal?.throwIfAborted();
       const delay=Math.min(200*(index+1),Math.max(0,deadlineAt-Date.now()));
       if(delay)await wait(delay);
-      return {index,result:await settleBeforeDeadline(()=>fetchPage(pageUrls[index].url,{signal:fetchSignal}))};
+      return {index,result:await settleBeforeDeadline(()=>fetchPage(pageUrls[index].url,{signal:fetchSignal,storeId:"amazon-sa"}))};
     }));
     signal?.throwIfAborted();
     for(const replacement of retried)results[replacement.index]=replacement;
@@ -1340,6 +1356,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     let searchDiagnostics = null;
     let primarySearchOffers = [];
     let primarySearchError = null;
+    let sourceAccessFailure = null;
     // HTML is the universal first acquisition layer. It is cheap, cache-friendly,
     // and often contains JSON-LD/SSR state with complete product cards.
     // Store-specific APIs are fallbacks only when the HTML path yields no offers.
@@ -1359,35 +1376,47 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           pagesFetched:fulfilled.length,
         };
       } else {
-        const page = await fetchText(searchUrl,{signal:options.signal});
+        const page = await fetchText(searchUrl,{signal:options.signal,storeId:store.id});
         html = page.html;
         searchPageFinalUrl = page.finalUrl || searchUrl;
         searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
       }
       htmlFirstAttempted = true;
-      if (searchDiagnostics?.blockedReason) primarySearchError = "Storefront blocked: " + searchDiagnostics.blockedReason;
+      if (searchDiagnostics?.blockedReason) {
+        primarySearchError = "Storefront blocked: " + searchDiagnostics.blockedReason;
+        sourceAccessFailure = "HTTP_200_BLOCK_PAGE";
+      }
     } catch (error) {
       if(options.signal?.aborted) throw options.signal.reason || error;
       htmlFirstAttempted = true;
       primarySearchError = error instanceof Error ? error.message : String(error);
+      sourceAccessFailure = classifySourceError(error).failureClass;
       // Virgin's generic search endpoint can reject server-side clients while its
       // public category catalog remains rendered and price-bearing. Fall back to a
       // deterministic family catalog before declaring the provider unavailable.
-      if (store.id === "virgin-ae") {
+      if(store.id === "virgin-ae" &&
+          sourceAccessFailure !== "HTTP_403_ACCESS_DENIED" &&
+          sourceAccessFailure !== "HTTP_429_RATE_LIMITED") {
         const catalogUrl = virginAeCatalogUrl(query);
         if (catalogUrl) {
           try {
-            const page = await fetchText(catalogUrl,{signal:options.signal});
+            const page = await fetchText(catalogUrl,{signal:options.signal,storeId:store.id});
             html = page.html;
             searchPageFinalUrl = page.finalUrl || catalogUrl;
             searchDiagnostics = { ...searchPageDiagnostics(html, catalogUrl, searchPageFinalUrl), acquisitionFallback:"virgin-category-catalog" };
             primarySearchError = null;
+            sourceAccessFailure = null;
           } catch (catalogError) {
             primarySearchError += " | category fallback: " + (catalogError instanceof Error ? catalogError.message : String(catalogError));
           }
         }
       }
     }
+    // Never probe another endpoint to work around an explicit access refusal,
+    // including IKEA and other sources with secondary API fallback strategies.
+    if(!html && (sourceAccessFailure === "HTTP_403_ACCESS_DENIED" ||
+                 sourceAccessFailure === "HTTP_429_RATE_LIMITED"))
+      throw new Error(primarySearchError || sourceAccessFailure);
     const aliexpressProductLinkTrust = {rejectedProductLinks:0,rejectionSamples:[]};
     const htmlFirstOffers =
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query, aliexpressProductLinkTrust) :
@@ -1445,7 +1474,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             pagesFetched:fulfilled.length,
           };
         } else {
-          const page = await fetchText(searchUrl,{signal:options.signal});
+          const page = await fetchText(searchUrl,{signal:options.signal,storeId:store.id});
           html = page.html;
           searchPageFinalUrl = page.finalUrl || searchUrl;
           searchDiagnostics = searchPageDiagnostics(html, searchUrl, searchPageFinalUrl);
@@ -1467,6 +1496,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           diagnostics:{
             searchPage:null,
             primarySearchError,
+            sourceAccessFailure,
             candidateSamples:[],
             failureSamples:[],
             unpricedSamples:[],
@@ -1575,11 +1605,17 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       : filteredOffers.slice(0, perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = resolutionLinks.length > 0 && offers.length === 0 && failures === resolutionLinks.length;
+    const sourceObservation=classifySourceObservation({
+      status:200,html,candidates:directSearchOffers.length || links.length,
+      pricedCandidates:offers.length,
+      blockedReason:searchDiagnostics?.blockedReason || null,
+    }).failureClass;
     // HTTP 200 is not healthy acquisition when an explicitly detected bot
     // challenge or failed primary search has yielded no verified product.
     // A genuinely empty parsed catalog is instead a valid zero-yield search.
     const acquisitionBlocked = offers.length === 0 &&
-      Boolean(searchDiagnostics?.blockedReason || primarySearchError);
+      Boolean(searchDiagnostics?.blockedReason || primarySearchError ||
+        sourceObservation==="HTTP_200_JS_SHELL");
     sourceReliability.record(store.id, {
       transportOk: !verificationBlocked && !acquisitionBlocked,
       offers: offers.length,
@@ -1605,6 +1641,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         productLinkTrust:store.id === "aliexpress-cn" ? aliexpressProductLinkTrust : null,
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
+        sourceAccessFailure,
+        sourceObservation,
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
           : links.slice(0,5).map((candidate)=>candidate.url)),
@@ -1708,6 +1746,8 @@ export async function searchFreeStorefronts(query, options = {}) {
       offers.push(...result.value.offers);
       diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
       if(result.value.diagnostics?.primarySearchError) errors.push({market:store.id,error:result.value.diagnostics.primarySearchError});
+      else if(result.value.diagnostics?.sourceObservation==="HTTP_200_JS_SHELL")
+        errors.push({market:store.id,error:"HTTP_200_JS_SHELL"});
       // Avoid double-counting one blocked search. Valid empty catalogs and
       // legitimate query filtering must not be reported as source outages.
       const filter = result.value.diagnostics?.queryFilter;
