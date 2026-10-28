@@ -154,7 +154,7 @@ export function compareDecathlonAjaxProductWithPdp({pdpHtml,pdpUrl,ajaxBody}={})
     productOwned:true,selectedVariantMatched:true,
   });
   const hasFlag=typeof chosen.available==="boolean";
-  return result(hasFlag?"AJAX_VARIANT_AVAILABLE_SIGNAL":"AJAX_VARIANT_AVAILABILITY_UNKNOWN",{
+  return result(hasFlag?(chosen.available?"AJAX_VARIANT_AVAILABLE_SIGNAL":"AJAX_VARIANT_UNAVAILABLE_SIGNAL"):"AJAX_VARIANT_AVAILABILITY_UNKNOWN",{
     productOwned:true,selectedVariantMatched:true,
     variantPriceCentsMatched:true,
     merchantAvailableSignal:hasFlag?chosen.available:null,
