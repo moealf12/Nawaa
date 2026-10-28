@@ -1294,9 +1294,13 @@ function virginAeCatalogUrl(query) {
 
 export function selectStorefrontRecoveryLinks({
   query, directOffers = [], links = [], pageLimit = Infinity, searchBlocked = false,
+  hadStructuredCards = false,
 } = {}) {
-  if(!directOffers.length) return {links,attempted:0,reason:"NO_DIRECT_OFFERS",pageBudget:0};
-  const relevant=filterQueryOffers(query,directOffers).offers;
+  // No raw priced cards: preserve the legacy bounded-per-store PDP path.
+  // Raw cards with unconvertible currencies are NOT an excuse for unbounded
+  // network fan-out: treat them as rejected candidates and cap recovery at 2.
+  if(!directOffers.length && !hadStructuredCards) return {links,attempted:0,reason:"NO_DIRECT_OFFERS",pageBudget:0};
+  const relevant=directOffers.length ? filterQueryOffers(query,directOffers).offers : [];
   if(relevant.length) return {links:[],attempted:0,reason:"DIRECT_MATCHES_RETAINED",pageBudget:0};
   const pageBudget=Math.max(0,Math.min(2,Number.isFinite(pageLimit) ? Math.floor(pageLimit) : 2));
   if(searchBlocked || !pageBudget) return {
@@ -1519,6 +1523,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }))).filter(Boolean);
     const recoveryPlan=selectStorefrontRecoveryLinks({
       query:matchingQuery,directOffers,links,pageLimit:perStore,
+      hadStructuredCards:directSearchOffers.length>0,
       searchBlocked:Boolean(searchDiagnostics?.blockedReason),
     });
     const resolutionLinks = recoveryPlan.links;
@@ -1591,8 +1596,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         queryFilter,
         intentRecovery:{
           reason:recoveryPlan.reason,
-          attempted:directOffers.length ? resolutionLinks.length : 0,
-          recovered:directOffers.length ? filteredOffers.filter(item=>resolvedOffers.includes(item)).length : 0,
+          attempted:directSearchOffers.length ? resolutionLinks.length : 0,
+          recovered:directSearchOffers.length ? filteredOffers.filter(item=>resolvedOffers.includes(item)).length : 0,
         },
         queryFilterSamples,
         // Keep bounded rejection reasons without replaying user-specific URL
