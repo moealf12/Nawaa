@@ -5,6 +5,7 @@ import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, normalizeAvailability, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
+import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
@@ -80,7 +81,7 @@ const PRODUCT_HEADERS = {
 async function fetchHtmlWithMockableFetch(target, redirects, signal) {
   const response = await fetch(target.parsed, {
     redirect: "manual",
-    headers: PRODUCT_HEADERS,
+    headers: productPageRequestHeaders(target.parsed.href, PRODUCT_HEADERS),
     signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
   });
   if ([301,302,303,307,308].includes(response.status)) {
@@ -119,7 +120,7 @@ function fetchHtmlPinned(target, redirects, signal) {
       path:target.parsed.pathname + target.parsed.search,
       method:"GET",
       servername:net.isIP(hostname) ? undefined : hostname,
-      headers:{...PRODUCT_HEADERS,host:target.parsed.host},
+      headers:{...productPageRequestHeaders(target.parsed.href,PRODUCT_HEADERS),host:target.parsed.host},
       agent:false,
       lookup:(_host,options,callback)=>{
         if(options?.all) callback(null,[{address:target.address,family:target.family}]);
