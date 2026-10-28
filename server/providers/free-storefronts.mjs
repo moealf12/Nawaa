@@ -1488,7 +1488,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       (() => {
         const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
-        const jsonLd = extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
+        const jsonLd = extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query)
+          // An embedded Product/Offer can be off-domain advertising or a
+          // marketplace recommendation. It never owns this EU merchant's price.
+          .filter(offer => !store.euSource ||
+            (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)));
         const merged = []; const seen = new Set();
         for (const offer of [...embedded, ...jsonLd]) {
           const key = canonicalizeCandidateUrl(offer.sourceUrl || "") + "|" + Number(offer.price) + "|" + String(offer.currency || "");
