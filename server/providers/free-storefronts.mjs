@@ -1292,6 +1292,40 @@ function virginAeCatalogUrl(query) {
   return null;
 }
 
+export function selectStorefrontRecoveryLinks({
+  query, directOffers = [], links = [], pageLimit = Infinity, searchBlocked = false,
+} = {}) {
+  if(!directOffers.length) return {links,attempted:0,reason:"NO_DIRECT_OFFERS",pageBudget:0};
+  const relevant=filterQueryOffers(query,directOffers).offers;
+  if(relevant.length) return {links:[],attempted:0,reason:"DIRECT_MATCHES_RETAINED",pageBudget:0};
+  const pageBudget=Math.max(0,Math.min(2,Number.isFinite(pageLimit) ? Math.floor(pageLimit) : 2));
+  if(searchBlocked || !pageBudget) return {
+    links:[],attempted:0,reason:searchBlocked?"ACQUISITION_BLOCKED":"BUDGET_DISABLED",pageBudget,
+  };
+  const intent=parseSearchIntent(query);
+  const known=new Set(directOffers.map(item=>canonicalizeCandidateUrl(item.sourceUrl||"")));
+  const eligible=[];
+  for(const candidate of links) {
+    if(eligible.length>=pageBudget) break;
+    if(!candidate?.url || known.has(candidate.url)) continue;
+    if(intent.model) {
+      let pathname;
+      try {pathname=decodeURIComponent(new URL(candidate.url).pathname).replace(/[-_/]+/g," ");}
+      catch {continue;}
+      const labelModel=parseSearchIntent(candidate.label||"").model;
+      const pathModel=parseSearchIntent(pathname).model;
+      // A visible label and source-owned PDP URL are independent evidence;
+      // either contradicting the requested model must disqualify the link.
+      if((labelModel && labelModel!==intent.model) ||
+         (pathModel && pathModel!==intent.model) ||
+         (labelModel!==intent.model && pathModel!==intent.model)) continue;
+    }
+    eligible.push(candidate);
+  }
+  return {links:eligible,attempted:eligible.length,
+    reason:eligible.length?"DIRECT_ALL_REJECTED":"NO_SAFE_CANDIDATES",pageBudget};
+}
+
 async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore, options = {}) {
   options.signal?.throwIfAborted();
   const started = Date.now();
@@ -1438,34 +1472,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }
     options.signal?.throwIfAborted();
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
-    const links = html ? extractProductLinks(html, searchUrl, store, query, candidateLimit) : [];
     const jsonLdOffers = html ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query) : [];
     const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
+    // Scan more links in the already loaded search HTML when structured cards
+    // exist, but never convert that wider discovery into PDP network fan-out.
+    const discoveryLimit=directSearchOffers.length
+      ? Math.max(4,Math.min(30,Number.isFinite(perStore)?Math.floor(perStore)*6:30))
+      : candidateLimit;
+    const links=html ? extractProductLinks(html,searchUrl,store,query,discoveryLimit) : [];
     // Search-result offers are already price-verified. Do not fan out into slow product pages.
-    const resolutionLinks = directSearchOffers.length ? [] : links;
-    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
-    const resolvedOffers = settled
-      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
-      .map((result) => ({
-        ...result.value,
-        provider:"free-storefronts",
-        providerMarket:store.id,
-        // The resolved app/CDN host is not the storefront's merchant identity.
-        merchant:store.name,
-        merchantCountryCode:store.countryCode,
-        merchantCountryNameAr:store.countryNameAr,
-        canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
-        isLocal:store.countryCode === "SA",
-        exactMatch:false,
-        matchConfidence:0,
-        sourceMeta:{
-          ...(result.value.sourceMeta || {}),
-          storefrontSearch:store.name,
-          resolvedMerchant:result.value.merchant || null,
-          freeDiscovery:true,
-          searchUrl,
-        },
-      }));
     const directOffers = (await Promise.all(directSearchOffers.map(async (item) => {
       const converted = await moneyToSAR(item.price, item.currency).catch(() => null);
       if (!converted) return null;
@@ -1502,6 +1517,34 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true },
       };
     }))).filter(Boolean);
+    const recoveryPlan=selectStorefrontRecoveryLinks({
+      query:matchingQuery,directOffers,links,pageLimit:perStore,
+      searchBlocked:Boolean(searchDiagnostics?.blockedReason),
+    });
+    const resolutionLinks = recoveryPlan.links;
+    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
+    const resolvedOffers = settled
+      .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
+      .map((result) => ({
+        ...result.value,
+        provider:"free-storefronts",
+        providerMarket:store.id,
+        // The resolved app/CDN host is not the storefront's merchant identity.
+        merchant:store.name,
+        merchantCountryCode:store.countryCode,
+        merchantCountryNameAr:store.countryNameAr,
+        canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
+        isLocal:store.countryCode === "SA",
+        exactMatch:false,
+        matchConfidence:0,
+        sourceMeta:{
+          ...(result.value.sourceMeta || {}),
+          storefrontSearch:store.name,
+          resolvedMerchant:result.value.merchant || null,
+          freeDiscovery:true,
+          searchUrl,
+        },
+      }));
     const allOffers = [...directOffers, ...resolvedOffers];
     const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, allOffers);
     const queryFilterSamples = allOffers
@@ -1526,7 +1569,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       ? filteredOffers
       : filteredOffers.slice(0, perStore);
     const failures = settled.filter((result) => result.status === "rejected").length;
-    const verificationBlocked = links.length > 0 && offers.length === 0 && failures === links.length;
+    const verificationBlocked = resolutionLinks.length > 0 && offers.length === 0 && failures === resolutionLinks.length;
     // HTTP 200 is not healthy acquisition when an explicitly detected bot
     // challenge or failed primary search has yielded no verified product.
     // A genuinely empty parsed catalog is instead a valid zero-yield search.
@@ -1546,6 +1589,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       failures,
       diagnostics:{
         queryFilter,
+        intentRecovery:{
+          reason:recoveryPlan.reason,
+          attempted:directOffers.length ? resolutionLinks.length : 0,
+          recovered:directOffers.length ? filteredOffers.filter(item=>resolvedOffers.includes(item)).length : 0,
+        },
         queryFilterSamples,
         // Keep bounded rejection reasons without replaying user-specific URL
         // query strings, credentials or merchant cookies into CI artifacts.
