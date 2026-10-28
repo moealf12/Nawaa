@@ -17,13 +17,20 @@ function safeUrl(raw){
 const allowedHosts=(list)=>new Set((Array.isArray(list)?list:[])
   .filter(x=>typeof x==="string"&&x.length<254).map(x=>x.trim().toLowerCase()).filter(Boolean));
 
-// Bind one impit session lazily only when the owner explicitly enables a
-// permitted source. impit is optional and not installed by default.
+// Standalone protocol-compatible HTTP client. No browser TLS/JA3 profile,
+// no proxy, no TLS validation disable, and no retry/fallback after a 403.
+// This remains optional and OFF until installed and intentionally enabled.
+// Do not use it as a PDP replacement without equivalent DNS/IP pinning.
 let impitSessionPromise;
 async function optionalImpitFetch(url,init){
   if(!impitSessionPromise){
     impitSessionPromise=import("impit").then(({Impit})=>{
-      const client=new Impit({browser:"chrome"});
+      const client=new Impit({
+        followRedirects:false,
+        vanillaFallback:false,
+        ignoreTlsErrors:false,
+        timeout:8000,
+      });
       return (input,options)=>client.fetch(input,options);
     }).catch(error=>{
       impitSessionPromise=null;
@@ -49,10 +56,18 @@ export function createApprovedSourceFetcher({
     const transport=chooseSourceTransport({sourceId,approvedSourceIds:approved,optIn});
     const hosts=allowedHosts(approvedSourceHosts[sourceId]);
     if(transport==="impit"){
-      // Host pinning is mandatory when impersonation is explicitly enabled;
-      // any cross-origin redirect is rejected, not silently followed.
+      // A strict public-host allowlist and no redirects are mandatory.
+      // This is host allowlisting, NOT DNS/IP pinning. PDP uses the
+      // existing pinned transport until equivalent socket pinning exists.
       if(!hosts.has(parsed.hostname.toLowerCase()))throw Error("HOST_NOT_ALLOWED");
-      return impitFetch(parsed.href,{...init,method:"GET",redirect:"error"});
+      const headers=sourceId==="bike24-de"
+        ? {
+            accept:"text/html,application/xhtml+xml;q=0.9",
+            "accept-language":"en-GB,en;q=0.9,de;q=0.4",
+            "user-agent":"NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)",
+          }
+        :init.headers;
+      return impitFetch(parsed.href,{...init,headers,method:"GET",redirect:"error"});
     }
     if(hosts.size&&!hosts.has(parsed.hostname.toLowerCase()))throw Error("HOST_NOT_ALLOWED");
     return fetchImpl(parsed.href,{...init,method:"GET"});
