@@ -132,3 +132,17 @@ export function extractAmazonDeScopedOffer(html, rawUrl) {
     },
   };
 }
+
+
+// Marketplace host/country do not prove seller location.
+// A seller name found in the Amazon offer is declared, not independently verified.
+export function amazonDeDeclaredSellerAttribution(product) {
+  if(product?.amazonDeOfferEvidence!=="SOURCE_DECLARED_SAME_ASIN_OFFER_NOT_ATTESTED"||
+     typeof product.sourceDeclaredSeller!=="string"||
+     !product.sourceDeclaredSeller.trim())return null;
+  return {
+    sellerName:product.sourceDeclaredSeller.trim(),
+    sellerCountryCode:"UN",sellerCountryNameAr:"غير معروف",
+    sellerIndependentlyVerified:false,marketplace:"Amazon Germany",
+  };
+}

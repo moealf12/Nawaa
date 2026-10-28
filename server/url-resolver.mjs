@@ -7,7 +7,7 @@ import { extractDomainProduct } from "./domain-adapters.mjs";
 import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
 import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
 import {isRetiredSourceUrl} from "../src/source-retirement.mjs";
-import {inspectAmazonDePdpHtml,extractAmazonDeScopedOffer} from "../src/amazon-de-pdp-identity.mjs";
+import {inspectAmazonDePdpHtml,extractAmazonDeScopedOffer,amazonDeDeclaredSellerAttribution} from "../src/amazon-de-pdp-identity.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
@@ -653,15 +653,17 @@ export async function resolveProductUrl(url, options = {}) {
     : null;
 
   const country = inferCountry(finalUrl, originalCurrency);
+  // The Amazon DE marketplace location cannot establish a third-party seller's country.
+  const amazonSeller=amazonDeDeclaredSellerAttribution(product);
   const rawCondition = product && product.itemCondition || "";
   const condition = normalizeCondition(rawCondition);
 
   return {
     provider: "url-resolver",
     providerMarket: new URL(finalUrl).hostname,
-    merchant: merchantName(finalUrl),
-    merchantCountryCode: country.countryCode,
-    merchantCountryNameAr: country.countryNameAr,
+    merchant: amazonSeller?.sellerName||merchantName(finalUrl),
+    merchantCountryCode: amazonSeller?.sellerCountryCode||country.countryCode,
+    merchantCountryNameAr: amazonSeller?.sellerCountryNameAr||country.countryNameAr,
     sourceUrl: offer && offer.url ? new URL(offer.url, finalUrl).href : finalUrl,
     resolvedPageUrl:finalUrl,
     image: image ? new URL(image, finalUrl).href : null,
@@ -736,6 +738,7 @@ export async function resolveProductUrl(url, options = {}) {
       amazonDeOfferEvidence:product?.amazonDeOfferEvidence||null,
       sourceDeclaredSeller:product?.sourceDeclaredSeller||null,
       sellerIndependentlyVerified:false,
+      amazonDeMarketplace:amazonSeller?.marketplace||null,
       shopifyProductFound: candidates.some(entry=>entry.product?.shopifyVariantEvidence === true) || (selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics))),
       structuredPriceFound: originalPrice !== null,
       structuredCurrencyFound: Boolean(originalCurrency)

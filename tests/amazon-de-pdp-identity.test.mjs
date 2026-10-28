@@ -111,3 +111,16 @@ test("Scoped Amazon DE offer path never alters other merchants",()=>{
   assert.equal(extractAmazonDeScopedOffer(html,"https://amazon.de.evil.example/dp/"+subjectAsin),null);
   assert.equal(extractAmazonDeScopedOffer(html,"https://www.amazon.de/s?k=watch"),null);
 });
+
+
+import {amazonDeDeclaredSellerAttribution} from "../src/amazon-de-pdp-identity.mjs";
+test("Amazon DE marketplace location must not be attributed to an unverified seller",()=>{
+  const scoped=extractAmazonDeScopedOffer(doc(productNode()),url);
+  assert.deepEqual(amazonDeDeclaredSellerAttribution(scoped.product),{
+    sellerName:"Declared sample seller",
+    sellerCountryCode:"UN",sellerCountryNameAr:"غير معروف",
+    sellerIndependentlyVerified:false,marketplace:"Amazon Germany",
+  });
+  assert.equal(amazonDeDeclaredSellerAttribution({sourceDeclaredSeller:"Amazon"}),null);
+  assert.equal(amazonDeDeclaredSellerAttribution(null),null);
+});
