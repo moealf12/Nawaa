@@ -47,6 +47,14 @@ export function authorizedBike24JsonConfig(env=process.env) {
   if(!/^[a-z0-9.-]+$/.test(approved)||approved==="localhost"||approved.endsWith(".local")||
      approved.endsWith(".internal")||approved.endsWith(".test")||
      /^[\d.]+$/.test(approved))throw Error("BIKE24_JSON_HOST_NOT_PUBLIC");
+  // BIKE24's published crawler rules (checked 2026-10-28) explicitly
+  // disallow its /api/* and search-related routes. An HTTP-accessible URL
+  // is not, by itself, an approved machine-data endpoint. Never infer an
+  // allowlisted JSON URL from a guessed GraphQL/Next.js/mobile path.
+  if(approved==="www.bike24.com"||approved==="bike24.com"){
+    const disallowed=/^\/(?:api\/|ajax\.php(?:\/|$)|search(?:\/|$)|search-result-v2(?:\/|$)|suche(?:\/|$)|cdn-cgi\/|checkout\/|header(?:\/|$))/i;
+    if(disallowed.test(u.pathname))throw Error("BIKE24_JSON_CRAWLER_ROUTE_DISALLOWED");
+  }
   return {url:u.href,hostname:approved};
 }
 
