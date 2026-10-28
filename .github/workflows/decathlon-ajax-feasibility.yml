@@ -1,0 +1,58 @@
+name: NAWAA Shopify Ajax Policy and Variant Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'server/decathlon-shopify-ajax-evidence.mjs'
+      - 'scripts/audit-decathlon-ajax-feasibility.mjs'
+      - 'tests/decathlon-shopify-ajax-evidence.test.mjs'
+      - 'tests/decathlon-ajax-feasibility.test.mjs'
+      - '.github/workflows/decathlon-ajax-feasibility.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-ajax-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  ajax-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Exact PR SHA checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Check exact revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Existing locked dependency set
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate robots policy, variant price and no-offer tests
+        env:
+          NAWAA_DECATHLON_AJAX_LIVE_PROBE: '0'
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node --test tests/decathlon-shopify-ajax-evidence.test.mjs tests/decathlon-ajax-feasibility.test.mjs
+      - name: One public product feasibility probe after robots policy (read-only)
+        env:
+          NAWAA_DECATHLON_AJAX_LIVE_PROBE: '1'
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/audit-decathlon-ajax-feasibility.mjs | tee decathlon-ajax-evidence.json
+      - name: Keep aggregate-only output briefly
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-ajax-evidence-${{ github.event.pull_request.head.sha }}
+          path: decathlon-ajax-evidence.json
+          if-no-files-found: ignore
+          retention-days: 7
