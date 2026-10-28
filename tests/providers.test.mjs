@@ -423,9 +423,7 @@ assert.ok(beautyGlobalRoutes.some((route) => route.store.id === "lookfantastic-g
 assert.ok(beautyGlobalRoutes.some((route) => route.store.id === "cultbeauty-global"));
 assert.ok(namshiRoute[0].reasons.includes("brand"));
 
-const decathlonRoute = routeFreeStorefronts("ديكاتلون running shoes", 8);
-assert.equal(decathlonRoute[0].store.id, "decathlon-sa");
-assert.ok(decathlonRoute[0].reasons.includes("brand"));
+assert.ok(!routeFreeStorefronts("ديكاتلون running shoes").some(({store}) => store.id === "decathlon-sa"));
 
 const niceOneRoute = routeFreeStorefronts("نايس ون عطر", 8);
 assert.equal(niceOneRoute[0].store.id, "niceone-sa");
@@ -439,13 +437,6 @@ const centrepointLinks = extractProductLinks(
 );
 assert.equal(centrepointLinks.length, 1);
 
-const decathlonLinks = extractProductLinks(
-  '<a href="/products/men-s-jogflow-100-1-running-shoes?variant=123">Running Shoes</a>',
-  "https://decathlon.com.sa/search?q=running",
-  { productPath:/\/products\/[^/?#]+(?:[/?#]|$)/i },
-  "running shoes", 5
-);
-assert.equal(decathlonLinks.length, 1);
 
 const niceOneLinks = extractProductLinks(
   '<a href="/en/chanel-n-5-for-women-eau-de-parfum-n11807">Chanel N5 perfume</a>',
@@ -458,7 +449,7 @@ assert.equal(niceOneLinks.length, 1);
 assert.ok(configuredFreeStorefronts().some((store) => store.id === "namshi-sa"));
 assert.ok(configuredFreeStorefronts().some((store) => store.id === "centrepoint-sa"));
 assert.ok(configuredFreeStorefronts().some((store) => store.id === "maxfashion-sa"));
-assert.ok(configuredFreeStorefronts().some((store) => store.id === "decathlon-sa"));
+assert.ok(!configuredFreeStorefronts().some((store) => store.id === "decathlon-sa"));
 assert.ok(configuredFreeStorefronts().some((store) => store.id === "niceone-sa"));
 
 console.log("NAWAA provider tests passed");
