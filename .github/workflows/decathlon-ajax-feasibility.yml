@@ -41,9 +41,9 @@ jobs:
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
         run: node --test tests/decathlon-shopify-ajax-evidence.test.mjs tests/decathlon-ajax-feasibility.test.mjs
-      - name: One public product feasibility probe after robots policy (read-only)
+      - name: Safe dry run - live access disabled after first non-JSON source response
         env:
-          NAWAA_DECATHLON_AJAX_LIVE_PROBE: '1'
+          NAWAA_DECATHLON_AJAX_LIVE_PROBE: '0'
           DATABASE_URL: ''
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
