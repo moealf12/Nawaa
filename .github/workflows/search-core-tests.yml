@@ -274,31 +274,6 @@ jobs:
           path: browser-artifacts/
           retention-days: 7
 
-  bike24-impit-one-shot:
-    # One human-authorized CI experiment, not a production/source enablement.
-    # Remove this one-shot job after capturing exact-HEAD evidence.
-    if: github.event_name == 'pull_request' && github.head_ref == 'feature/v21-98-bike24-amazon-de'
-    runs-on: ubuntu-latest
-    timeout-minutes: 4
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: npm ci --ignore-scripts
-      - name: Install pinned impit for isolated CI experiment only
-        run: npm install --no-save --ignore-scripts --package-lock=false --no-audit --no-fund impit@0.14.7
-      - name: One transparent BIKE24 impit request, no retries or redirects
-        env:
-          NAWAA_IMPIT_SOURCE_IDS: bike24-de
-          NAWAA_BIKE24_IMPIT_PROBE: '1'
-        run: node scripts/certify-bike24-impit-protocol.mjs
-
   main-release-readiness:
     # Independent fail-closed result for the SAME workflow run and main SHA.
     # Do not promote based on a skipped, cancelled or partially green job set.
