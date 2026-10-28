@@ -55,7 +55,7 @@ export function thomannVariantMatchesQuery(query,title,url) {
   const expected=thomannQueryVariant(query);
   if(expected==="UNSUPPORTED")return false;
   const path=sameMerchantProductUrl(url);
-  if(!path)return true; // Only constrain HD-662 family; preserve unrelated results.
+  if(!path)return expected===null; // Explicit HD-662 requests cannot accept unrelated PDP paths.
   const identity=thomannVariantIdentity(title,url);
   return Boolean(identity) && (!expected||identity.variant===expected);
 }
@@ -101,6 +101,7 @@ export async function verifyThomannSearchCards(items,{
       const parity=compareThomannSearchPdp(item,pdp);
       diagnostics.push({reason:parity.reason});
       if(parity.matched)accepted.push({...item,thomannIdentity:identity,
+        shippingContext:pdp.shippingContext || null,
         pdpPriceEvidence:"SEARCH_PDP_PRICE_PARITY"});
     }catch(error){
       const status=Number(error?.status||String(error?.message||"").match(/\b(?:HTTP|returned)\s+(\d{3})\b/i)?.[1]);
