@@ -1616,7 +1616,12 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         .filter(offer => !store.euSource ||
           (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)))
       : [];
-    const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
+    // A generic JSON-LD fallback could revive a recommendation's price after
+    // Noon-specific SKU/seller/variant binding rejected it. Keep this source
+    // strictly attached to its scoped first-party evidence adapter.
+    const directSearchOffers = store.id==="noon-sa" ? htmlFirstOffers :
+      htmlFirstOffers.length ? htmlFirstOffers :
+      primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
     // Only independently search-priced Thomann cards can earn a search/PDP
     // parity assertion. This path is bounded to two already-known PDP URLs.
     const thomannFamilyRequested=store.id==="thomann-de" &&
