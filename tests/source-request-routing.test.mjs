@@ -10,7 +10,7 @@ import {createApprovedSourceFetcher} from "../server/source-transport.mjs";
 test("source policy: no approved merchant silently uses a different network route",()=>{
   assert.equal(chooseSourceTransport({sourceId:"amazon-de",approvedSourceIds:[],optIn:true}),"native");
   assert.equal(chooseSourceTransport({sourceId:"amazon-de",approvedSourceIds:["amazon-de"],optIn:false}),"native");
-  assert.equal(chooseSourceTransport({sourceId:"amazon-de",approvedSourceIds:["amazon-de"],optIn:true}),"got-scraping");
+  assert.equal(chooseSourceTransport({sourceId:"amazon-de",approvedSourceIds:["amazon-de"],optIn:true}),"impit");
 });
 
 test("source policy: 403 and 429 never trigger alternate network or new-runner retries",()=>{
@@ -72,7 +72,7 @@ test("transport: native fetch remains default with exact failure propagation",as
     },
     approvedSourceIds:[],
     optIn:true,
-    gotImpl:async()=>{throw Error("must not invoke another network")},
+    impitFetch:async()=>{throw Error("must not invoke another network")},
   });
   const response=await wrapped("https://merchant.example/search",{method:"GET"},{sourceId:"merchant"});
   assert.equal(response.status,403);
@@ -80,23 +80,23 @@ test("transport: native fetch remains default with exact failure propagation",as
 });
 
 test("transport: explicit owner-approved source uses injected got adapter on first request only",async()=>{
-  let gotCalls=0,normalCalls=0;
+  let impitCalls=0,normalCalls=0;
   const wrapped=createApprovedSourceFetcher({
     fetchImpl:async()=>{normalCalls++;throw Error("native should not be selected")},
-    gotImpl:async(url,opts)=>{gotCalls++;return {statusCode:200,body:"<html>sample</html>",headers:{"content-type":"text/html"}}},
-    approvedSourceIds:["fixture-source"],optIn:true,
+    impitFetch:async(url,opts)=>{impitCalls++;return new Response("<html>sample</html>",{status:200,headers:{"content-type":"text/html"}})},
+    approvedSourceIds:["fixture-source"],approvedSourceHosts:{"fixture-source":["merchant.example"]},optIn:true,
   });
   const response=await wrapped("https://merchant.example/search",{method:"GET"},{sourceId:"fixture-source"});
   assert.equal(response.status,200);
   assert.equal(await response.text(),"<html>sample</html>");
-  assert.equal(gotCalls,1);assert.equal(normalCalls,0);
+  assert.equal(impitCalls,1);assert.equal(normalCalls,0);
 });
 
 test("transport: failed approved got client does not silently reroute; no arbitrary unsafe protocols",async()=>{
   const wrapped=createApprovedSourceFetcher({
     fetchImpl:async()=>{throw Error("unapproved reroute")},
-    gotImpl:async()=>{throw Error("UNAVAILABLE")},
-    approvedSourceIds:["fixture-source"],optIn:true,
+    impitFetch:async()=>{throw Error("UNAVAILABLE")},
+    approvedSourceIds:["fixture-source"],approvedSourceHosts:{"fixture-source":["merchant.example"]},optIn:true,
   });
   await assert.rejects(wrapped("https://merchant.example/search",{method:"GET"},{sourceId:"fixture-source"}),/UNAVAILABLE/);
   await assert.rejects(wrapped("http://merchant.example/search",{method:"GET"},{sourceId:"fixture-source"}),/HTTPS_REQUIRED/);
@@ -106,8 +106,8 @@ test("transport: failed approved got client does not silently reroute; no arbitr
 test("transport: configured got rejects cross-site URL, non-GET and credentials",async()=>{
   const wrapped=createApprovedSourceFetcher({
     fetchImpl:async()=>{throw Error("should not call fetch")},
-    gotImpl:async()=>{throw Error("should not call got")},
-    approvedSourceIds:["fixture-source"],optIn:true,
+    impitFetch:async()=>{throw Error("should not call got")},
+    approvedSourceIds:["fixture-source"],approvedSourceHosts:{"fixture-source":["merchant.example"]},optIn:true,
     approvedSourceHosts:{"fixture-source":["merchant.example"]},
   });
   await assert.rejects(wrapped("https://elsewhere.example/search",{method:"GET"},{sourceId:"fixture-source"}),/HOST_NOT_ALLOWED/);
