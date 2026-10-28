@@ -18,13 +18,11 @@ function sameMerchantProductUrl(value) {
 }
 
 function titleModel(title) {
+  // Do not silently merge B-Stock, BK Evo, an unknown model suffix or
+  // a sibling product into the exact HD-662 retail SKU.
   const source=String(title||"").replace(/[_–—]/g," ").trim();
-  if(!FAMILY.test(source))return null;
-  const hits=[...source.matchAll(new RegExp(MODEL.source,"gi"))];
-  if(hits.length!==1)return null;
-  const hit=hits[0],next=source.slice(hit.index+hit[0].length);
-  if(UNKNOWN_SUFFIX.test(next))return null;
-  return hit[1]?.toUpperCase()||"BASE";
+  const match=/^superlux\s+hd[\s-]*662(?:[\s-]*([fb]))?$/i.exec(source);
+  return match ? match[1]?.toUpperCase()||"BASE" : null;
 }
 
 export function thomannVariantIdentity(title,rawUrl) {
