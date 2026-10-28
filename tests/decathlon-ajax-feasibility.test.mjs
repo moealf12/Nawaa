@@ -33,16 +33,17 @@ const validate=report=>{
   for(const secret of ["49.00","SKU-ABC","12345","test-shoes","https://"])
     assert.equal(serialized.includes(secret),false,secret);
 };
-test("default OFF: no robots, PDP or Ajax calls",async()=>{
-  let robotsCount=0,pdpCount=0,ajaxCount=0;
+test("default OFF: zero sitemap, robots, PDP or Ajax calls",async()=>{
+  let sitemapCount=0,robotsCount=0,pdpCount=0,ajaxCount=0;
   const r=await auditDecathlonAjaxFeasibility({
-    liveProbeEnabled:false,fetchSitemap:async()=>sitemapResponse(),
+    liveProbeEnabled:false,
+    fetchSitemap:async()=>{sitemapCount++;return sitemapResponse();},
     fetchRobots:async()=>{robotsCount++;return respond(robots)},
     fetchPdp:async()=>{pdpCount++;return {html:page(),finalUrl:pdpUrl}},
     fetchAjax:async()=>{ajaxCount++;return respond(ajaxBody(),"application/json")},
   });
   assert.equal(r.ajaxStatus,"PROBE_EXPLICITLY_DISABLED");
-  assert.deepEqual([robotsCount,pdpCount,ajaxCount],[0,0,0]);validate(r);
+  assert.deepEqual([sitemapCount,robotsCount,pdpCount,ajaxCount],[0,0,0,0]);validate(r);
 });
 test("robots disallows Ajax endpoint: one policy read and zero PDP/Ajax calls",async()=>{
   let robot=0,pdp=0,ajax=0;
