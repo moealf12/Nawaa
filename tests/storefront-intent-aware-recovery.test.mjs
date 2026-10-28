@@ -121,3 +121,20 @@ test("negative: distinct S25 Plus and Edge versions must not consume base S25 re
   });
   assert.deepEqual(plan.links.map(x=>x.url),[s25.url]);
 });
+
+test("bounded recovery: unconvertible structured cards must not trigger 30 PDP requests",()=>{
+  const candidates=Array.from({length:15},(_,i)=>link(
+    "samsung-galaxy-s25-256gb-variant-"+i,"Samsung Galaxy S25 256GB variant "+i));
+  const result=selectStorefrontRecoveryLinks({
+    query:"galaxy s25 256gb",directOffers:[],hadStructuredCards:true,
+    links:candidates,pageLimit:Infinity,
+  });
+  assert.equal(result.links.length,2);
+  assert.equal(result.attempted,2);
+  assert.equal(result.reason,"DIRECT_ALL_REJECTED");
+  const noCards=selectStorefrontRecoveryLinks({
+    query:"galaxy s25 256gb",directOffers:[],hadStructuredCards:false,
+    links:candidates,pageLimit:Infinity,
+  });
+  assert.equal(noCards.links.length,15);
+});
