@@ -3,6 +3,7 @@ import test from "node:test";
 import {searchFreeStorefrontById} from "../server/providers/free-storefronts.mjs";
 import {filterQueryOffers,queryMatchReasons} from "../src/search-query.mjs";
 import {inspectEuropeanOffer} from "../src/europe-source-yield.mjs";
+import {thomannVariantMatchesQuery} from "../src/thomann-product-truth.mjs";
 
 const STORE="thomann-de";
 const QUERY="superlux hd 662";
@@ -13,6 +14,7 @@ const modelInTitle=title=>/\bsuperlux\b/i.test(String(title||"")) &&
 function evaluateExactModel(result){
   const offers=Array.isArray(result?.offers)?result.offers:[];
   const matches=offers.filter(offer=>modelInTitle(offer?.title) &&
+    thomannVariantMatchesQuery(QUERY,offer?.title,offer?.sourceUrl) &&
     queryMatchReasons(QUERY,offer).length===0);
   const checks=matches.map(offer=>inspectEuropeanOffer(STORE,offer));
   return {
@@ -41,6 +43,14 @@ test("Superlux HD-662 exact-model query keeps the relevant product",()=>{
     query:QUERY,candidates:1,offersReturned:1,modelMatches:1,
     fieldComplete:1,rejectionReasons:[],blocked:false
   });
+});
+
+test("Base-model acceptance rejects HD-662 F and B as different products",()=>{
+  const offers=["f","b"].map(suffix=>({
+    title:"Superlux HD-662 "+suffix.toUpperCase(),
+    sourceUrl:"https://www.thomann.de/de/superlux_hd662_"+suffix+".htm",
+  }));
+  assert.equal(evaluateExactModel({candidates:2,offers}).modelMatches,0);
 });
 
 test("The exact-model gate rejects irrelevant or unproven prices",()=>{
