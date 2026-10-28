@@ -872,7 +872,7 @@ export function extractIkeaSearchOffers(html, query) {
   return offers;
 }
 
-export export function parseAmazonMerchantPrice(text, currency = "SAR") {
+export function parseAmazonMerchantPrice(text, currency = "SAR") {
   const raw=decodeHtml(text).replace(/[\u00a0\u202f]/g," ").trim();
   if(currency==="EUR"){
     // German locale: 1.299,00 €; never infer EUR from a bare number.
