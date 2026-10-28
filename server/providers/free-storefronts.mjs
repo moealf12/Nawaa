@@ -49,6 +49,45 @@ const STORES = [
     search:(q)=>"https://www.amazon.ae/s?k="+encodeURIComponent(q),
     productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
   },
+  // EU search-first merchant sources: catalog price is not Saudi delivered cost.
+  // Retailer shipping policies and per-offer shipping eligibility remain distinct.
+  {
+    id:"amazon-uk", name:"Amazon UK", countryCode:"GB", countryNameAr:"بريطانيا", euSource:true,
+    saudiDelivery:"offer_dependent", categories:["*"],
+    search:q=>"https://www.amazon.co.uk/s?k="+encodeURIComponent(q),
+    productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
+  },
+  {
+    id:"amazon-de", name:"Amazon Germany", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
+    saudiDelivery:"offer_dependent", categories:["*"],
+    search:q=>"https://www.amazon.de/s?k="+encodeURIComponent(q),
+    productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
+  },
+  {
+    id:"mediamarkt-de", name:"MediaMarkt Germany", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
+    saudiDelivery:"no_direct", categories:["phone","laptop","desktop","monitor","audio","camera","appliance","tv","console","game","accessory"],
+    search:q=>"https://www.mediamarkt.de/de/search.html?query="+encodeURIComponent(q),
+    productPath:/\/de\/product\/_?[^/?#]+\.html(?:[?#]|$)/i,
+  },
+  {
+    id:"pccomponentes-es", name:"PcComponentes", countryCode:"ES", countryNameAr:"إسبانيا", euSource:true,
+    saudiDelivery:"no_direct", categories:["phone","laptop","desktop","monitor","audio","camera","console","game","accessory","network"],
+    search:q=>"https://www.pccomponentes.com/buscar/?query="+encodeURIComponent(q),
+    // A single product slug, never the search/catalog/account routes.
+    productPath:/^\/(?!buscar(?:\/|$)|search(?:\/|$)|category(?:\/|$)|configurador(?:\/|$))[a-z0-9-]{18,}(?:[?#]|$)/i,
+  },
+  {
+    id:"bike24-de", name:"BIKE24", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
+    saudiDelivery:"verified_market", categories:["sports","shoes","clothing","accessory"],
+    search:q=>"https://www.bike24.com/search?searchTerm="+encodeURIComponent(q),
+    productPath:/\/p\d+\.html(?:[?#]|$)/i,
+  },
+  {
+    id:"thomann-de", name:"Thomann", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
+    saudiDelivery:"offer_dependent", categories:["audio","accessory","other"],
+    search:q=>"https://www.thomann.de/intl/search_dir.html?sw="+encodeURIComponent(q),
+    productPath:/\/(?:de|gb|intl)\/[^/?#]+\.htm(?:[?#]|$)/i,
+  },
   {
     id:"noon-ae", name:"noon UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
     search:(q)=>"https://www.noon.com/uae-en/search?q="+encodeURIComponent(q),
@@ -833,7 +872,27 @@ export function extractIkeaSearchOffers(html, query) {
   return offers;
 }
 
-export function extractAmazonSearchOffers(html, query, origin = "https://www.amazon.sa") {
+export export function parseAmazonMerchantPrice(text, currency = "SAR") {
+  const raw=decodeHtml(text).replace(/[\u00a0\u202f]/g," ").trim();
+  if(currency==="EUR"){
+    // German locale: 1.299,00 €; never infer EUR from a bare number.
+    const valid=/(?:^€\s*(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{2})?$)|(?:(?:^\d+|^\d{1,3}(?:\.\d{3})+)(?:,\d{2})?\s*€$)/.test(raw);
+    if(!valid)return null;
+    const parsed=Number(raw.replace(/€/g,"").replace(/\s/g,"").replace(/\./g,"").replace(",","."));
+    return Number.isFinite(parsed)&&parsed>0?parsed:null;
+  }
+  if(currency==="GBP"){
+    // UK locale: £1,049.95; avoid cross-currency or ambiguous prices.
+    if(!/^£\s*(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{2})?$/.test(raw))return null;
+    const parsed=Number(raw.replace(/[£\s,]/g,""));
+    return Number.isFinite(parsed)&&parsed>0?parsed:null;
+  }
+  if(currency!=="SAR")return null;
+  const parsed=Number(raw.replace(/[^0-9.]/g,""));
+  return Number.isFinite(parsed)&&parsed>0?parsed:null;
+}
+
+export function extractAmazonSearchOffers(html, query, origin = "https://www.amazon.sa", currency = "SAR") {
   const source=String(html||"");
   const tokens=normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
   const offers=[]; const seen=new Set();
@@ -859,7 +918,7 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
     const priceMatch=block.match(/<span\b[^>]*class=["'](?=[^"']*\ba-price\b)(?![^"']*\ba-text-price\b)[^"']*["'][^>]*>/i);
     const priceBlock=priceMatch ? block.slice(priceMatch.index+priceMatch[0].length,priceMatch.index+2000) : "";
     const offscreen=stripHtml(priceBlock.match(/^\s*<span[^>]*class=["'][^"']*a-offscreen[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1]||"");
-    const price=Number(offscreen.replace(/[^0-9.]/g,""));
+    const price=parseAmazonMerchantPrice(offscreen,currency);
     if(title.length<3||!Number.isFinite(price)||price<=0)continue;
     const haystack=normalizeSearchQuery(title);const hits=tokens.filter(t=>haystack.includes(t)).length;
     if(tokens.length>1&&hits/tokens.length<0.2)continue;
@@ -870,7 +929,7 @@ export function extractAmazonSearchOffers(html, query, origin = "https://www.ama
       if(candidate.origin===new URL(origin).origin && !candidate.username && !candidate.password && candidate.pathname.match(/\/dp\/([A-Z0-9]{10})(?:\/|$)/i)?.[1].toUpperCase()===asin.toUpperCase()) sourceUrl=candidate.href;
     } catch {}
     seen.add(asin);
-    offers.push({productId:asin,title:stripHtml(title),image,price,currency:"SAR",sourceUrl});
+    offers.push({productId:asin,title:stripHtml(title),image,price,currency,sourceUrl});
   }
   return offers;
 }
@@ -1424,6 +1483,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
       store.id === "samsung-sa" ? extractSamsungSearchOffers(html, query) :
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
+      store.id === "amazon-uk" ? extractAmazonSearchOffers(html, query, "https://www.amazon.co.uk", "GBP") :
+      store.id === "amazon-de" ? extractAmazonSearchOffers(html, query, "https://www.amazon.de", "EUR") :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       (() => {
         const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
@@ -1506,7 +1567,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }
     options.signal?.throwIfAborted();
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
-    const jsonLdOffers = html ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query) : [];
+    const jsonLdOffers = html
+      ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query)
+        .filter(offer => !store.euSource ||
+          (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)))
+      : [];
     const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
     // Scan more links in the already loaded search HTML when structured cards
     // exist, but never convert that wider discovery into PDP network fan-out.
@@ -1524,7 +1589,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         merchant:store.name,
         merchantCountryCode:store.countryCode,
         merchantCountryNameAr:store.countryNameAr,
-        canShipToSaudi:store.countryCode === "SA" ? true : null,
+        canShipToSaudi:store.countryCode === "SA" ? true :
+          store.saudiDelivery === "no_direct" ? false : null,
         isLocal:store.countryCode === "SA",
         exactMatch:false,
         matchConfidence:0.9,
@@ -1568,7 +1634,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         merchant:store.name,
         merchantCountryCode:store.countryCode,
         merchantCountryNameAr:store.countryNameAr,
-        canShipToSaudi:store.countryCode === "SA" ? true : result.value.canShipToSaudi,
+        canShipToSaudi:store.countryCode === "SA" ? true :
+          store.saudiDelivery === "no_direct" ? false : result.value.canShipToSaudi,
         isLocal:store.countryCode === "SA",
         exactMatch:false,
         matchConfidence:0,
