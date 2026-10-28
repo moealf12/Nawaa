@@ -1035,9 +1035,10 @@ const server = http.createServer(async (req, res) => {
     });
     try {
       if (cached) {
-        send("snapshot",{...await canonicalResponse(cached,normalized),nextCursor});
+        const safeCached=await canonicalResponse(cached,normalized);
+        send("snapshot",{...safeCached,nextCursor});
         if (cached.cache?.mode === "fresh") {
-          send("done",{cache:"fresh",offers:cached.offers?.length || 0});
+          send("done",{cache:"fresh",offers:safeCached.offers?.length || 0});
           return res.end();
         }
       }
