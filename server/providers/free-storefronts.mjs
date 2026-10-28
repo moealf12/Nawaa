@@ -7,6 +7,7 @@ import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {bike24QueryEdition,bike24MatchesQuery,verifyBike24SearchCards} from "../../src/bike24-product-truth.mjs";
+import {searchAuthorizedBike24Json} from "../../src/bike24-authorized-json.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1427,8 +1428,29 @@ export function selectStorefrontRecoveryLinks({
 async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore, options = {}) {
   options.signal?.throwIfAborted();
   const started = Date.now();
-  const searchUrl = store.search(query);
+  const searchUrl = store.id==="bike24-de" ? null : store.search(query);
   try {
+    // BIKE24's HTML route is retired. A maintainer-approved JSON feed is the
+    // only acquisition path; unconfigured means 0 offers and no HTTP request.
+    if(store.id==="bike24-de"){
+      const feed=await searchAuthorizedBike24Json(matchingQuery,{
+        signal:options.signal,
+      });
+      if(feed.active)sourceReliability.record(store.id,{
+        transportOk:true,offers:feed.offers.length,
+        latencyMs:Date.now()-started,relevant:true,
+      });
+      return {
+        store,searchUrl:null,candidates:feed.candidates,
+        offers:feed.offers,failures:0,
+        diagnostics:{
+          ...feed.diagnostics,
+          primarySearchError:feed.active?null:"BIKE24_JSON_FEED_NOT_CONFIGURED",
+          sourceObservation:feed.active?"AUTHORIZED_JSON_FEED":"SOURCE_INACTIVE",
+          saudiShippingVerified:false,merchantAttested:false,
+        },
+      };
+    }
     let html = "";
     let searchPageFinalUrl = searchUrl;
     let searchDiagnostics = null;
