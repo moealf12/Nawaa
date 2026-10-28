@@ -2,6 +2,7 @@
 // Research-only evaluator. No feeds, contracts or credentials are installed.
 // No merchant prices/offers, grants, cookies, URLs or user identifiers in output.
 import {createHash,timingSafeEqual} from "node:crypto";
+import {verifyPartnerGrantSignature} from "./merchant-grant-signature.mjs";
 
 // An official affiliate programme in another country never constitutes
 // authorization for the Saudi merchant. This registry is denial by default.
@@ -100,8 +101,15 @@ export function assessAuthorizedMerchantFeed({
     return deny("MERCHANT_AUTHORIZATION_EXPIRED");
   const grantExpiry=Date.parse(trustedGrant.validUntil);
   if(!Number.isFinite(grantExpiry)||grantExpiry<=nowMs||
-     grantExpiry-nowMs>366*24*60*60*1000)
+     grantExpiry-nowMs>366*24*60*60*1000||
+     Date.parse(trustedGrant.validFrom)>nowMs)
     return deny("MERCHANT_AUTHORIZATION_EXPIRED");
+
+  // A caller-supplied INDEPENDENTLY_VERIFIED string is NOT authority.
+  // The operator-pinned signing key (absent by default) must verify the
+  // exact grant claims; the source payload cannot select that key.
+  if(!verifyPartnerGrantSignature(trustedGrant))
+    return deny("MERCHANT_SIGNED_GRANT_REQUIRED");
 
   if(typeof body!=="string"||Buffer.byteLength(body,"utf8")>MAX_BYTES||!body.trim())
     return deny("FEED_PAYLOAD_INVALID");

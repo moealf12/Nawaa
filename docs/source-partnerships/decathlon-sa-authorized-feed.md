@@ -53,3 +53,15 @@ We will not collect private customer data or perform checkout transactions, and 
 
 Thank you,
 NAWAA project team
+
+## v22.07 — signed grant authenticity and operator-owned key (research only)
+
+The v22.06 gate checked a caller-provided INDEPENDENTLY_VERIFIED string; that assertion can be forged. v22.07 now requires an Ed25519 signature over a canonical grant receipt, verified against a public key installed via the trusted server environment. The signing key must be held outside ChatGPT, the source repository, CI fixtures and customer inputs.
+
+- Trusted configuration: NAWAA_PARTNER_AUTHORITY_PUBLIC_KEY_SPKI_B64 (Ed25519 DER SPKI, Base64) and NAWAA_PARTNER_AUTHORITY_KEY_ID. No production authority key is currently installed; the default result is DENY.
+- Signed fields: key ID, approval ID, merchant source ID/host/region, verification claim, transport, evidence reference, permitted purposes, start and expiry, and approved feed SHA-256. Unexpected fields, modified scopes or dates, unpinned keys, and unsigned claims fail.
+- Test-generated signing keys are ephemeral and stored only in isolated test process memory; their successful signatures are NOT actual Decathlon Saudi approvals.
+- A verified signature establishes approval by the pinned key holder, NOT legality of a contract, authenticity of the source, present-day pricing, inventory, shipping or checkout. The independent operator must verify the actual Saudi agreement before issuing any receipt.
+- Production release additionally needs revocation/key-rotation lifecycle and secure issuance, a source-owned data transport and signed payloads, SKU and variant reconciliation, validated pricing and independently supported shipping/checkout. No source feed or user-visible offer is enabled in this PR.
+
+NO-GO for live source activation, any pricing badge, quote, merge or Render deployment. No partner message sent.

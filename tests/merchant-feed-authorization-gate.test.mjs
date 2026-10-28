@@ -1,10 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createHash} from "node:crypto";
+import {createHash,generateKeyPairSync,sign} from "node:crypto";
+import {buildPartnerGrantSigningPayload} from "../server/merchant-grant-signature.mjs";
 import {
   PARTNER_SOURCE_ACCESS,assessAuthorizedMerchantFeed,
 } from "../server/merchant-feed-authorization-gate.mjs";
 
+// Ephemeral in-memory test authority only. No real partner grant is installed.
+const pair=generateKeyPairSync("ed25519");
+process.env.NAWAA_PARTNER_AUTHORITY_PUBLIC_KEY_SPKI_B64=
+  pair.publicKey.export({type:"spki",format:"der"}).toString("base64");
+process.env.NAWAA_PARTNER_AUTHORITY_KEY_ID="fixture-authority-v1";
 const nowMs=Date.parse("2026-10-28T01:00:00Z");
 const sampleRow=()=>({
   productUrl:"https://decathlon.com.sa/products/merchant-approved-test-item",
@@ -18,17 +24,20 @@ const feed=dataObject=>JSON.stringify(dataObject);
 const digest=body=>createHash("sha256").update(body,"utf8").digest("hex");
 function fixture(input=data()){
   const body=feed(input);
-  return {
-    body,grant:{
-      sourceId:"decathlon-sa",verificationStatus:"INDEPENDENTLY_VERIFIED",
-      feedTransport:"MERCHANT_SUPPLIED_FILE",
-      evidenceReference:"FIXTURE_ONLY_APPROVAL_NOT_REAL",
-      permittedPurposes:["product_discovery","price_comparison"],
-      country:"SA",merchantHost:"decathlon.com.sa",
-      validUntil:"2026-11-01T00:00:00Z",
-      approvedPayloadSha256:digest(body),
-    },
+  const unsigned={
+    keyId:"fixture-authority-v1",
+    approvalId:"FIXTURE-ONLY-NOT-REAL",
+    sourceId:"decathlon-sa",verificationStatus:"INDEPENDENTLY_VERIFIED",
+    feedTransport:"MERCHANT_SUPPLIED_FILE",
+    evidenceReference:"FIXTURE_ONLY_APPROVAL_NOT_REAL",
+    permittedPurposes:["product_discovery","price_comparison"],
+    country:"SA",merchantHost:"decathlon.com.sa",
+    validFrom:"2026-10-27T00:00:00Z",
+    validUntil:"2026-11-01T00:00:00Z",
+    approvedPayloadSha256:digest(body),
   };
+  const signature=sign(null,buildPartnerGrantSigningPayload(unsigned),pair.privateKey).toString("base64");
+  return {body,grant:{...unsigned,signature}};
 }
 const run=(f,overrides={})=>assessAuthorizedMerchantFeed({
   trustedGrant:f.grant,body:f.body,nowMs,...overrides,
@@ -86,7 +95,7 @@ test("tampered feed payload or wrong approved SHA fails before parsing any row",
   assert.equal(a.status,"FEED_INTEGRITY_NOT_VERIFIED");
   assert.equal(a.feedProductsAccepted,0);noPromotion(a);
   const b=run(f,{trustedGrant:{...f.grant,approvedPayloadSha256:"0".repeat(64)}});
-  assert.equal(b.status,"FEED_INTEGRITY_NOT_VERIFIED");noPromotion(b);
+  assert.equal(b.status,"MERCHANT_SIGNED_GRANT_REQUIRED");noPromotion(b);
 });
 test("foreign product URLs, cross-currency and duplicate variant cannot become valid rows",()=>{
   const input=data();
