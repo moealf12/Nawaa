@@ -2,6 +2,10 @@ import {load} from "cheerio";
 import {bike24PdpId,bike24Identity} from "../src/bike24-product-truth.mjs";
 
 export const isBike24ProductUrl=value=>Boolean(bike24PdpId(value));
+export function isBike24GarminEdge540Page(html,url){
+  if(!isBike24ProductUrl(url)||typeof html!=="string"||html.length>5_000_000)return false;
+  return /^garmin\s+edge\s+540\b/i.test(String(load(html)("h1").first().text()||"").trim());
+}
 const clean=value=>String(value||"").replace(/[\u00a0\u202f]/g," ").replace(/\s+/g," ").trim();
 const euroText=/(?:^|[^\d.,])((?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?)\s*€/g;
 function eur(value){
