@@ -61,8 +61,15 @@ export function createApprovedSourceFetcher({
       // This is host allowlisting, NOT DNS/IP pinning. PDP uses the
       // existing pinned transport until equivalent socket pinning exists.
       if(!hosts.has(parsed.hostname.toLowerCase()))throw Error("HOST_NOT_ALLOWED");
+      // Only the BIKE24 isolated PDP JSON-LD experiment may request a
+      // structured representation. Negotiation does not guarantee JSON or
+      // imply access permission. Never forward spoofed caller UA headers.
+      const requestedAccept=init.headers?.accept || init.headers?.Accept;
+      const structuredAccept="application/ld+json, application/json, text/html";
       const headers=sourceId==="bike24-de"
-        ? merchantRequestHeaders(sourceId,init.headers)
+        ? {...merchantRequestHeaders(sourceId),
+           ...(context?.structuredPdp===true && requestedAccept===structuredAccept
+               ? {accept:structuredAccept} : {})}
         : init.headers;
       return impitFetch(parsed.href,{...init,headers,method:"GET",redirect:"error"});
     }
