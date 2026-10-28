@@ -1,4 +1,5 @@
 import {load} from "cheerio";
+import {thomannVariantIdentity} from "../src/thomann-product-truth.mjs";
 
 // Dedicated Thomann German PDP extractor. Only the primary visible offer
 // is eligible; recommendations, MSRP and B-Stock never create an offer.
@@ -71,5 +72,15 @@ export function extractThomannProduct(html,url){
   const price=primaryPrice(plain,title);
   if(price===null)return null;
   const sku=normalize(plain).match(/\bArtikelnummer\s+(\d{4,10})\b/i)?.[1]||null;
-  return {name:title,image,brand:null,sku,offers:{price,priceCurrency:"EUR",availability:""}};
+  // Reject HD-662 family pages if the title and canonical product URL
+  // do not agree on the exact F/B/base SKU. Other Thomann products keep
+  // their existing extraction path.
+  const identity=thomannVariantIdentity(title,url);
+  if(/^\/de\/superlux_hd662(?:_[a-z]+)?\.htm$/i.test(new URL(url).pathname) && !identity)return null;
+  return {
+    name:title,image,brand:identity?.brand||null,sku,
+    ...(identity?{mpn:identity.model,model:identity.model,variantId:identity.model,
+      identityHash:identity.identityHash}:{}),
+    offers:{price,priceCurrency:"EUR",availability:""}
+  };
 }
