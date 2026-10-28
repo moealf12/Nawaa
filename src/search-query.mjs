@@ -248,7 +248,7 @@ export function categoryLabel(key) {
   return PRODUCT_CATEGORIES.find(([id])=>id===key)?.[1] || ({console:'أجهزة ألعاب',game:'ألعاب',accessory:'ملحقات وإكسسوارات',other:'منتجات أخرى'})[key] || 'منتجات أخرى';
 }
 
-const MODEL_PATTERN = /\b(?:iphone (?:air|\d+)(?: pro(?: max)?| plus)?|galaxy s\d+(?: ultra| plus| fe)?|ps\d+(?: slim| pro)?|airpods(?: pro)?(?: \d+)?|dyson v\d+)\b/;
+const MODEL_PATTERN = /\b(?:iphone (?:air|\d+)(?: pro(?: max)?| plus)?|galaxy s\d+(?: ultra| plus| fe| edge)?|ps\d+(?: slim| pro)?|airpods(?: pro)?(?: \d+)?|dyson v\d+)\b/;
 
 function explicitModels(value) {
   // Preserve merchant line/option boundaries before punctuation normalization
@@ -586,11 +586,11 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // sellable exact match just because generic tokens and storage overlap.
   // Only model claims in the merchant's own retail title are considered here.
   // Missing evidence is NOT promoted into either a match or a conflict.
-  const requestedGalaxyModel=/^galaxy s\d+(?: ultra| plus| fe)?$/.test(intent.model||"")
+  const requestedGalaxyModel=/^galaxy s\d+(?: ultra| plus| fe| edge)?$/.test(intent.model||"")
     ? intent.model : null;
   const conflictingGalaxyModel=Boolean(requestedGalaxyModel &&
     explicitModels(offer?.title||"").some(model=>
-      /^galaxy s\d+(?: ultra| plus| fe)?$/.test(model) && model!==requestedGalaxyModel));
+      /^galaxy s\d+(?: ultra| plus| fe| edge)?$/.test(model) && model!==requestedGalaxyModel));
   if (conflictingGalaxyModel) confidence *= 0.2;
 
   // A real merchant carrier-specific plan variant (e.g. Best Buy (AT&T) or
