@@ -5,6 +5,7 @@ import { moneyToSAR } from "./fx.mjs";
 import { normalizeCondition, normalizeAvailability, parseMoney } from "./provider-utils.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
+import {extractBike24Product,isBike24ProductUrl} from "./bike24-adapter.mjs";
 import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
@@ -441,6 +442,10 @@ export function extractionCandidates(html, url = null) {
   if (url && isThomannProductUrl(url)) {
     const product=extractThomannProduct(html,url);
     return product ? [{strategy:"domain_adapter",product,confidence:0.96,adapterId:"thomann"}] : [];
+  }
+  if(url&&isBike24ProductUrl(url)){
+    const product=extractBike24Product(html,url);
+    return product?[{strategy:"domain_adapter",product,confidence:0.96,adapterId:"bike24"}]:[];
   }
   const nodes = extractJsonLd(html, url);
   const products = nodes.filter((node) => typeIncludesProduct(node && node["@type"]));
