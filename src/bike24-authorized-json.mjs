@@ -47,6 +47,11 @@ export function authorizedBike24JsonConfig(env=process.env) {
   if(!/^[a-z0-9.-]+$/.test(approved)||approved==="localhost"||approved.endsWith(".local")||
      approved.endsWith(".internal")||approved.endsWith(".test")||
      /^[\d.]+$/.test(approved))throw Error("BIKE24_JSON_HOST_NOT_PUBLIC");
+  // A BIKE24 product HTML page may embed JSON-LD, but it is NOT a JSON
+  // feed and must not be configured as one. Reject before network activity.
+  let decodedPath;
+  try{decodedPath=decodeURIComponent(u.pathname)}catch{throw Error("BIKE24_JSON_ENDPOINT_INVALID")}
+  if(/\.html?$/i.test(decodedPath))throw Error("BIKE24_JSON_HTML_ENDPOINT_REJECTED");
   // BIKE24's published crawler rules (checked 2026-10-28) explicitly
   // disallow its /api/* and search-related routes. An HTTP-accessible URL
   // is not, by itself, an approved machine-data endpoint. Never infer an
