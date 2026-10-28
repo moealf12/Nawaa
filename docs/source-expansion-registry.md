@@ -39,7 +39,6 @@ Adidas Saudi
 Puma Saudi
 New Balance Saudi
 Sun & Sand Sports
-Decathlon Saudi
 SHEIN Saudi
 Trendyol Saudi
 Nice One

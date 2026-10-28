@@ -2,6 +2,19 @@
 // "candidate" means the merchant/market is a discovery target, not yet an active adapter.
 // Saudi delivery must be verified per offer before an item can be ranked.
 
+
+/** First-party Decathlon merchant is excluded from all NAWAA discovery sources. */
+export function isExcludedMerchantSource(store) {
+  const id=String(store?.id || "").trim().toLowerCase();
+  const name=String(store?.name || "").trim().toLowerCase();
+  if (id==="decathlon" || id.startsWith("decathlon-") ||
+      name==="decathlon" || name.startsWith("decathlon ")) return true;
+  try {
+    const hostname=new URL(String(store?.baseUrl || store?.url || "")).hostname.toLowerCase();
+    return /(^|\.)decathlon\.[a-z0-9-]+(?:\.[a-z0-9-]+)?$/.test(hostname);
+  } catch { return false; }
+}
+
 export const WORLD_SOURCE_REGISTRY = [
   // Saudi Arabia / GCC
   { id: "amazon-sa", name: "Amazon.sa", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
@@ -22,7 +35,6 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "namshi-sa", name: "Namshi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
   { id: "centrepoint-sa", name: "Centrepoint", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
   { id: "maxfashion-sa", name: "Max Fashion", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
-  { id: "decathlon-sa", name: "Decathlon Saudi", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
   { id: "niceone-sa", name: "Nice One", countryCode: "SA", region: "MENA", status: "candidate", saudiDelivery: "native" },
 
   // North America
@@ -122,7 +134,7 @@ const SOURCE_ADAPTERS = {
   "adidas-sa": "free-storefronts:adidas-sa", "nike-sa": "free-storefronts:nike-sa",
   "sephora-sa": "free-storefronts:sephora-sa",
   "namshi-sa": "free-storefronts:namshi-sa", "centrepoint-sa": "free-storefronts:centrepoint-sa",
-  "maxfashion-sa": "free-storefronts:maxfashion-sa", "decathlon-sa": "free-storefronts:decathlon-sa",
+  "maxfashion-sa": "free-storefronts:maxfashion-sa",
   "niceone-sa": "free-storefronts:niceone-sa",
 };
 
@@ -139,12 +151,14 @@ export function buildSourceRegistry({configuredProviders = [], shopifyStores = [
   });
   const seen = new Set(sources.map(source => source.id));
   for(const store of storefronts) {
+    if(isExcludedMerchantSource(store)) continue;
     const adapter="free-storefronts:"+store.id;
     if(sources.some(source=>source.adapters?.includes(adapter)) || seen.has(store.id)) continue;
     seen.add(store.id);
     sources.push({id:store.id,name:store.name,countryCode:store.countryCode,region:"merchant_network",adapter,adapters:[adapter],status:configured.has(adapter)?"configured":"disabled",saudiDelivery:"offer_dependent"});
   }
   for(const store of shopifyStores) {
+    if(isExcludedMerchantSource(store)) continue;
     const id = `shopify:${store.id || store.name}`;
     if(seen.has(id) || !/^[A-Z]{2}$/.test(String(store.countryCode).toUpperCase())) continue;
     seen.add(id);

@@ -12,7 +12,7 @@ test('registry separates configured connectors, disabled adapters and discovery 
   'free-storefronts:bhphoto-us','free-storefronts:walmart-us','free-storefronts:bestbuy-us',
   'free-storefronts:adidas-sa','free-storefronts:nike-sa','free-storefronts:sephora-sa',
   'free-storefronts:namshi-sa','free-storefronts:centrepoint-sa','free-storefronts:maxfashion-sa',
-  'free-storefronts:decathlon-sa','free-storefronts:niceone-sa'
+  'free-storefronts:niceone-sa'
  ]});
  assert.equal(registry.find(s=>s.id==='ebay').status,'configured');
  assert.equal(registry.find(s=>s.id==='noon-sa').status,'disabled');
@@ -27,7 +27,7 @@ test('registry separates configured connectors, disabled adapters and discovery 
  assert.equal(registry.find(s=>s.id==='namshi-sa').status,'configured');
  assert.equal(registry.find(s=>s.id==='centrepoint-sa').status,'configured');
  assert.equal(registry.find(s=>s.id==='maxfashion-sa').status,'configured');
- assert.equal(registry.find(s=>s.id==='decathlon-sa').status,'configured');
+ assert.equal(registry.some(s=>s.id==='decathlon-sa'),false);
  assert.equal(registry.find(s=>s.id==='niceone-sa').status,'configured');
  const summary=sourceCoverageSummary(registry);
  assert.ok(summary.configuredSources >= 25);

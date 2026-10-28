@@ -1,3 +1,4 @@
+import {isExcludedMerchantSource} from "../../src/source-registry.mjs";
 import { moneyToSAR } from "../fx.mjs";
 import { normalizeSearchQuery, queryMatchReasons } from "../../src/search-query.mjs";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13,7 +14,7 @@ export function configuredShopifyStores() {
   const raw = process.env.SHOPIFY_STORES_JSON || "[]";
   let parsed = [];
   try { parsed = JSON.parse(raw); } catch { parsed = []; }
-  return Array.isArray(parsed) ? parsed.filter((s) => s?.baseUrl && s?.name && s?.countryCode) : [];
+  return Array.isArray(parsed) ? parsed.filter((s) => s?.baseUrl && s?.name && s?.countryCode && !isExcludedMerchantSource(s)) : [];
 }
 
 function cleanBaseUrl(value) {
