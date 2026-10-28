@@ -57,6 +57,10 @@ test("error classes and zero-yield states remain distinct",()=>{
   assert.equal(summarizeEuropeanProbe("thomann-de",{candidates:3,offers:[],diagnostics:{
     unpricedSamples:[{title:"AKG K-240 Studio"}]}}).status,"PRODUCTS_FOUND_PRICE_MISSING");
   assert.equal(summarizeEuropeanProbe("pccomponentes-es",null,new Error("HTTP 403")).status,"ACCESS_DENIED_OR_LIMITED");
+  assert.equal(summarizeEuropeanProbe("pccomponentes-es",null,new Error("HTTP 403")).httpStatus,403);
+  assert.equal(summarizeEuropeanProbe("mediamarkt-de",null,new Error("HTTP 429")).httpStatus,429);
+  assert.equal(summarizeEuropeanProbe("amazon-uk",null,new Error("HTTP 503")).httpStatus,503);
+  assert.equal(summarizeEuropeanProbe("amazon-de",{candidates:0,offers:[]}).httpStatus,null);
 });
 test("wrong source identity, blank image and price prevent field pass",()=>{
   for(const update of [
