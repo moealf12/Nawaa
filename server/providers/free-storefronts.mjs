@@ -5,7 +5,7 @@ import { moneyToSAR } from "../fx.mjs";
 import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
-import {thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
+import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1597,10 +1597,12 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
     // Only independently search-priced Thomann cards can earn a search/PDP
     // parity assertion. This path is bounded to two already-known PDP URLs.
-    const thomannCandidates = store.id === "thomann-de"
+    const thomannFamilyRequested=store.id==="thomann-de" &&
+      thomannQueryVariant(matchingQuery)!==null;
+    const thomannCandidates = thomannFamilyRequested
       ? directSearchOffers.filter(item => thomannVariantMatchesQuery(matchingQuery,item.title,item.sourceUrl))
       : directSearchOffers;
-    const thomannParity = store.id === "thomann-de"
+    const thomannParity = thomannFamilyRequested
       ? await verifyThomannSearchCards(thomannCandidates,{
           resolvePdp:url=>resolveProductUrl(url,{signal:options.signal}),
           limit:2,signal:options.signal,
@@ -1660,7 +1662,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     });
     // A priced search card that failed PDP parity cannot re-enter through
     // the fallback PDP-only discovery path and silently acquire trust.
-    const resolutionLinks = store.id === "thomann-de" && directSearchOffers.length
+    const resolutionLinks = thomannFamilyRequested && directSearchOffers.length
       ? [] : recoveryPlan.links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
     const resolvedOffers = settled
