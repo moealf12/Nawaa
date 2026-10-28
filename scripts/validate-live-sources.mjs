@@ -4,6 +4,11 @@ const CASES = [
   // Saudi/GCC certification batch: prioritize sources that can materially
   // increase shopper recall before the wider global validation matrix.
   ["amazon-sa","iphone 17"],["lulu-sa","iphone 17"],["samsung-sa","galaxy s25"],
+  // EU discovery pilots: a PROBED result is not proof of a sale, Saudi shipping,
+  // landed cost, or reliable ongoing source access.
+  ["amazon-uk","iphone 17"],["amazon-de","iphone 17"],
+  ["mediamarkt-de","iphone 17"],["pccomponentes-es","iphone 17"],
+  ["bike24-de","running shoes"],["thomann-de","studio headphones"],
   ["virgin-sa","airpods"],["amazon-ae","iphone 17"],["noon-ae","iphone 17"],
   ["sharafdg-ae","hp laptop"],["virgin-ae","iphone 17"],["virgin-ae","airpods"],["virgin-ae","apple watch"],["virgin-ae","macbook"],["virgin-ae","playstation 5"],["xcite-kw","hp laptop"],
   ["lulu-ae","iphone 17"],["carrefour-ae","iphone 17"],["microless-ae","iphone 17"],["jumbo-ae","iphone 17"],
