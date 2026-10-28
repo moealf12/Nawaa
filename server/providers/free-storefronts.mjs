@@ -5,6 +5,7 @@ import { moneyToSAR } from "../fx.mjs";
 import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
+import {thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1594,6 +1595,18 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)))
       : [];
     const directSearchOffers = htmlFirstOffers.length ? htmlFirstOffers : primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
+    // Only independently search-priced Thomann cards can earn a search/PDP
+    // parity assertion. This path is bounded to two already-known PDP URLs.
+    const thomannCandidates = store.id === "thomann-de"
+      ? directSearchOffers.filter(item => thomannVariantMatchesQuery(matchingQuery,item.title,item.sourceUrl))
+      : directSearchOffers;
+    const thomannParity = store.id === "thomann-de"
+      ? await verifyThomannSearchCards(thomannCandidates,{
+          resolvePdp:url=>resolveProductUrl(url,{signal:options.signal}),
+          limit:2,signal:options.signal,
+        })
+      : null;
+    const independentlyPricedOffers = thomannParity ? thomannParity.accepted : directSearchOffers;
     // Scan more links in the already loaded search HTML when structured cards
     // exist, but never convert that wider discovery into PDP network fan-out.
     const discoveryLimit=directSearchOffers.length
@@ -1601,7 +1614,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       : candidateLimit;
     const links=html ? extractProductLinks(html,searchUrl,store,query,discoveryLimit) : [];
     // Search-result offers are already price-verified. Do not fan out into slow product pages.
-    const directOffers = (await Promise.all(directSearchOffers.map(async (item) => {
+    const directOffers = (await Promise.all(independentlyPricedOffers.map(async (item) => {
       const converted = await moneyToSAR(item.price, item.currency).catch(() => null);
       if (!converted) return null;
       return {
@@ -1619,7 +1632,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         image:item.image,
         title:item.title,
         productType:item.productType || null,
-        specs:{ modelNumber:item.productId },
+        specs:{ modelNumber:item.thomannIdentity?.model || item.productId },
+        identityHash:item.thomannIdentity?.identityHash || null,
         condition:"new",
         availability:"unknown",
         productPrice:converted.value,
@@ -1635,7 +1649,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         observedAt:new Date().toISOString(),
         dataKind:"live",
         fx:{ rate:converted.rate, source:converted.source, observedAt:converted.observedAt },
-        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true },
+        sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true,
+          priceEvidence:item.pdpPriceEvidence || "SEARCH_CARD_ONLY" },
       };
     }))).filter(Boolean);
     const recoveryPlan=selectStorefrontRecoveryLinks({
@@ -1643,7 +1658,10 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       hadStructuredCards:directSearchOffers.length>0,
       searchBlocked:Boolean(searchDiagnostics?.blockedReason),
     });
-    const resolutionLinks = recoveryPlan.links;
+    // A priced search card that failed PDP parity cannot re-enter through
+    // the fallback PDP-only discovery path and silently acquire trust.
+    const resolutionLinks = store.id === "thomann-de" && directSearchOffers.length
+      ? [] : recoveryPlan.links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
     const resolvedOffers = settled
       .filter((result) => result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
@@ -1666,10 +1684,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           resolvedMerchant:result.value.merchant || null,
           freeDiscovery:true,
           searchUrl,
+          ...(store.id==="thomann-de"?{priceEvidence:"PDP_OBSERVED_ONLY"}:{}),
         },
       }));
     const allOffers = [...directOffers, ...resolvedOffers];
-    const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, allOffers);
+    const variantEligible = store.id==="thomann-de"
+      ? allOffers.filter(offer=>thomannVariantMatchesQuery(matchingQuery,offer.title,offer.sourceUrl))
+      : allOffers;
+    const variantRejected = allOffers.length - variantEligible.length;
+    const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, variantEligible);
     const queryFilterSamples = allOffers
       .filter((offer) => !filteredOffers.includes(offer))
       .slice(0,5)
@@ -1718,6 +1741,10 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       failures,
       diagnostics:{
         queryFilter,
+        ...(store.id==="thomann-de"?{
+          variantRejected,
+          pdpPriceParity:thomannParity?.diagnostics || [],
+        }:{}),
         intentRecovery:{
           reason:recoveryPlan.reason,
           attempted:directSearchOffers.length ? resolutionLinks.length : 0,
