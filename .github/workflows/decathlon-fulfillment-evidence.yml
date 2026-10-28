@@ -1,0 +1,63 @@
+name: NAWAA Decathlon Variant Availability and Delivery Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'server/shopify-page-variant.mjs'
+      - 'server/decathlon-fulfillment-evidence.mjs'
+      - 'server/decathlon-shadow-gate.mjs'
+      - 'scripts/audit-decathlon-fulfillment-evidence.mjs'
+      - 'tests/decathlon-fulfillment-evidence.test.mjs'
+      - 'tests/decathlon-fulfillment-shadow.test.mjs'
+      - '.github/workflows/decathlon-fulfillment-evidence.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-decathlon-fulfillment-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  source-fulfillment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Check exact revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install already locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Source-owned variant and fulfillment negative tests
+        env:
+          NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node --test tests/decathlon-fulfillment-evidence.test.mjs tests/decathlon-fulfillment-shadow.test.mjs tests/decathlon-shadow-search-gate.test.mjs
+      - name: Read-only one-product Decathlon variant signal inspection
+        env:
+          NAWAA_DECATHLON_PRICE_EVIDENCE_SHADOW: '0'
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/audit-decathlon-fulfillment-evidence.mjs | tee decathlon-fulfillment-evidence.json
+      - name: Preserve sanitized evidence briefly
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decathlon-fulfillment-${{ github.event.pull_request.head.sha }}
+          path: decathlon-fulfillment-evidence.json
+          if-no-files-found: ignore
+          retention-days: 7
