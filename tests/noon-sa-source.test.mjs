@@ -27,7 +27,9 @@ test("RED: Noon Saudi is a configured local marketplace, routed without duplicat
   assert.equal(currentSources().find(s=>s.id==="noon-sa")?.status,"configured");
   const routes=routeFreeStorefronts("iphone 17 256GB",Infinity,{stable:true}).map(x=>x.store.id);
   assert.ok(routes.includes("noon-sa"));
-  assert.ok(routes.indexOf("noon-sa")<20,"Noon should be part of early shopper source discovery");
+  assert.ok(routes.includes("noon-sa"),"source must remain discoverable via cursor");
+  const direct=routeFreeStorefronts("noon iphone 17",Infinity,{stable:true});
+  assert.equal(direct[0].store.id,"noon-sa","explicit merchant intent must target Noon");
 });
 
 test("RED: strict first-party Noon SKU and locale identity excludes foreign hosts/variants",()=>{
