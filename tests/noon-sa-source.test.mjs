@@ -110,3 +110,20 @@ test("RED: Noon 403 denied response stops without secondary fetches",{
     assert.deepEqual(result.offers,[]);
   }finally{globalThis.fetch=old}
 });
+
+
+test("A rejected Noon JSON-LD sibling cannot come back through the generic fallback",{
+ concurrency:false
+},async()=>{
+  const old=globalThis.fetch;
+  let calls=0;
+  const foreign=product({url:other,sku:"N70211665V",
+    offers:{...product().offers,url:other,price:"49"}});
+  try{
+    globalThis.fetch=async()=>{calls++;
+      return new Response(html(foreign),{status:200,headers:{"content-type":"text/html"}})};
+    const result=await searchFreeStorefrontById("noon-sa","iphone 17 256gb",{perStore:2});
+    assert.deepEqual(result.offers,[]);
+    assert.equal(calls,1,"rejected record cannot trigger PDP fallback requests");
+  }finally{globalThis.fetch=old}
+});
