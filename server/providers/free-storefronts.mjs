@@ -1641,6 +1641,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         productPrice:converted.value,
         originalProductPrice:item.price,
         shipping:null,
+        ...(item.shippingContext?{shippingContext:item.shippingContext}:{}),
         importCost:null,
         tax:null,
         mandatoryFees:0,
