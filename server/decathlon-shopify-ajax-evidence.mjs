@@ -80,10 +80,10 @@ export function evaluateDecathlonRobotsPolicy(robotsText,ajaxUrl,{
   })).filter(g=>g.spec>=0);
   if(!matched.length)return denied("ROBOTS_AGENT_NOT_COVERED");
   const highest=Math.max(...matched.map(g=>g.spec));
-  const rules=matched.filter(g=>g.spec===highest).flatMap(g=>g.rules);
+  const applicableRules=matched.filter(g=>g.spec===highest).flatMap(g=>g.rules);
   const path=new URL(ajaxUrl).pathname;
   let winner=null;
-  for(const rule of rules){
+  for(const rule of applicableRules){
     if(!rule.path||!ruleMatches(path,rule.path))continue;
     const specificity=rule.path.replace(/\*/g,"").replace(/\$$/,"").length;
     if(!winner||specificity>winner.specificity||
