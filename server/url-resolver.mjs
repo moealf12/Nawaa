@@ -651,6 +651,9 @@ export async function resolveProductUrl(url, options = {}) {
     productPrice: (priceSAR && priceSAR.value) ?? null,
     originalProductPrice: originalPrice,
     shipping: null,
+    // Strictly scoped structured-data context is informational only; no
+    // checkout or ship-to-Saudi claim is inferred from a PDP schema node.
+    shippingContext: product?.shippingContext || null,
     importCost: null,
     tax: null,
     mandatoryFees: 0,
