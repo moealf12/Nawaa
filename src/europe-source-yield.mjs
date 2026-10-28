@@ -1,3 +1,4 @@
+import {observedSourceHttpStatus} from "./source-http-profile.mjs";
 // Evidence-only probe configuration. Not an activation or merchant certification.
 export const EUROPE_SOURCES = Object.freeze({
   "amazon-uk": {query:"iphone 17",host:"www.amazon.co.uk",country:"GB",currency:"GBP",path:/\/(?:dp|gp\/product)\/[A-Z0-9]{10}(?:\/|$)/i},
@@ -64,8 +65,10 @@ export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0
   }
   const candidates=integer(result?.candidates);
   const unpriced=integer(result?.diagnostics?.unpricedSamples?.length);
-  const failure=sourceErrorClass(error||result?.diagnostics?.primarySearchError||
-    (result?.diagnostics?.sourceObservation==="HTTP_200_JS_SHELL"?"js shell":""));
+  const sourceFailure=error||result?.diagnostics?.primarySearchError||
+    (result?.diagnostics?.sourceObservation==="HTTP_200_JS_SHELL"?"js shell":"");
+  const failure=sourceErrorClass(sourceFailure);
+  const httpStatus=observedSourceHttpStatus(sourceFailure);
   const status=fieldsPass>0?"FIELD_COMPLETE_NOT_ATTESTED":
     failure==="ACCESS_DENIED_OR_LIMITED"?"ACCESS_DENIED_OR_LIMITED":
     failure?"SOURCE_REQUEST_FAILED":
@@ -75,7 +78,7 @@ export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0
     "NO_CANDIDATES";
   return {
     storeId,query:spec.query,status,candidates,offersReturned:offers.length,fieldsPass,
-    unpricedSamples:unpriced,errors:failure,rejectionReasons:reasons,
+    unpricedSamples:unpriced,errors:failure,httpStatus,rejectionReasons:reasons,
     durationMs:integer(durationMs),merchantAttested:false,saudiDeliveryVerified:false,
     activationApproved:false
   };
