@@ -3,7 +3,7 @@ import { ebayConfigured } from "./providers/ebay.mjs";
 import { shopifyConfigured, configuredShopifyStores } from "./providers/shopify.mjs";
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets } from "./providers/amazon-creators.mjs";
 import { configuredFreeStorefronts } from "./providers/free-storefronts.mjs";
-import { noonConfigured } from "./providers/noon.mjs";
+import {legacyNoonProviderActive} from "./noon-source-policy.mjs";
 import { carrefourConfigured } from "./providers/carrefour.mjs";
 
 export function configuredProviders() {
@@ -11,7 +11,7 @@ export function configuredProviders() {
     ...(amazonCreatorsConfigured() ? configuredAmazonCreatorMarkets().map(market=>"amazon-creators:"+market.id) : []),
     ...configuredFreeStorefronts().map(store=>"free-storefronts:"+store.id),
     ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
-    ...(noonConfigured() ? ["noon-catalog"] : []),
+    ...(legacyNoonProviderActive() ? ["noon-catalog"] : []),
     ...(ebayConfigured() ? ["ebay"] : []),
     ...(shopifyConfigured() ? ["shopify"] : [])];
 }
