@@ -63,6 +63,8 @@ test("NAWAA local TLS + ALPN negotiation selects h2 with a validated certificate
       negotiatedProtocol:"h2",tlsVersion:client.socket.getProtocol(),
       certificateValidated:client.socket.authorized,
       announcedUserAgent:observed[0].userAgent,requests:observed.length,
+      runtime:{platform:process.platform,arch:process.arch,
+        node:process.version,openssl:process.versions.openssl},
       externalSourceAccessTested:false,
     }));
   }finally{
