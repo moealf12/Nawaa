@@ -20,69 +20,6 @@ permissions:
   contents: read
 
 jobs:
-  amazon-de-user-pdp-one-shot:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feature/europe-five-sources-retire-bike24-20261028'
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Direct bounded GET for verified Amazon DE ASIN
-        run: |
-          node --input-type=module <<'JS'
-          import https from 'node:https';
-          import {writeFileSync} from 'node:fs';
-          const url='https://www.amazon.de/dp/B0FQFW3423';
-          const evidence=await new Promise(resolve=>{
-           const req=https.request(url,{method:'GET',timeout:7500,headers:{
-            'accept':'text/html,application/xhtml+xml',
-            'accept-encoding':'identity',
-            'user-agent':'NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)',
-           }},r=>{
-            const chunks=[];let total=0,oversize=false;const status=r.statusCode;
-            const type=String(r.headers['content-type']||'').slice(0,65);
-            r.on('data',chunk=>{total+=chunk.length;
-             if(total>1500000){oversize=true;r.destroy();return;}
-             chunks.push(chunk);
-            });
-            const done=()=>{
-             const html=Buffer.concat(chunks).toString('utf8');
-             const titleMatch=/<title[^>]*>([^<]{1,240})<\/title>/i.exec(html);
-             const title=titleMatch?titleMatch[1].replace(/\s+/g,' ').trim().slice(0,180):null;
-             const asinPresent=html.includes('B0FQFW3423');
-             const likelyChallenge=/(robot check|\/errors\/validatecaptcha|enter the characters you see below)/i.test(title||'');
-             resolve({httpStatus:status,contentType:type,bytesReceived:total,bodyOversize:oversize,
-               titleObserved:title,asinPresentInHtml:asinPresent,challengeSuspected:likelyChallenge,
-               productPriceVerified:false,variantVerified:false,saudiShippingVerified:false,
-               oneRequest:true,redirectFollowed:false,observedAt:new Date().toISOString()});
-            };
-            r.on('end',done);
-            r.on('close',()=>{if(oversize)done();});
-           });
-           req.on('timeout',()=>req.destroy(Error('PDP_TIMEOUT')));
-           req.on('error',e=>resolve({httpStatus:null,errorCode:e.code||'NETWORK_ERROR',oneRequest:true,
-             redirectFollowed:false,productPriceVerified:false,observedAt:new Date().toISOString()}));
-           req.end();
-          });
-          writeFileSync('amazon-de-user-pdp-evidence.json',JSON.stringify(evidence,null,2)+'\n');
-          console.log('AMAZON_DE_USER_PDP_EVIDENCE '+JSON.stringify(evidence));
-          JS
-      - name: Save sanitized one-shot PDP evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: amazon-de-user-pdp-evidence
-          path: amazon-de-user-pdp-evidence.json
-          if-no-files-found: warn
-          retention-days: 7
-
   test:
     runs-on: ubuntu-latest
     steps:

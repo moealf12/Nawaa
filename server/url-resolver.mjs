@@ -7,6 +7,7 @@ import { extractDomainProduct } from "./domain-adapters.mjs";
 import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
 import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
 import {isRetiredSourceUrl} from "../src/source-retirement.mjs";
+import {inspectAmazonDePdpHtml} from "../src/amazon-de-pdp-identity.mjs";
 import { reconcileProductCandidates } from "./product-reconciliation.mjs";
 import { conflictSummary, detectCandidateConflicts } from "./conflict-resolution.mjs";
 import { annotateCandidateFreshness, freshnessSummary } from "./freshness.mjs";
@@ -561,6 +562,14 @@ function declaredSchemaProductType(product) {
 
 export async function extractProductDocument(url, options = {}) {
   const fetched = await fetchHtmlSafe(url, 0, options);
+  // An HTML 200 that lacks the product's requested Amazon DE ASIN is not
+  // valid product evidence, even if generic meta or cross-sell content exists.
+  const amazonIdentity=inspectAmazonDePdpHtml(fetched.html,fetched.finalUrl);
+  if(amazonIdentity?.status==="PDP_ASIN_NOT_OBSERVED"){
+    const failure=new Error("AMAZON_DE_PDP_IDENTITY_NOT_OBSERVED");
+    failure.failureClass="UNVERIFIED_PRODUCT_DOCUMENT";
+    throw failure;
+  }
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
   return {
     finalUrl:fetched.finalUrl,
@@ -572,6 +581,10 @@ export async function extractProductDocument(url, options = {}) {
         .filter((entry) => entry.strategy === "domain_adapter" && entry.adapterId)
         .map((entry) => entry.adapterId),
       htmlBytes:new TextEncoder().encode(fetched.html).byteLength,
+      ...(amazonIdentity?{amazonDeIdentity:{
+        status:amazonIdentity.status,requestedProductIdentityAttested:false,
+        priceVerified:false,
+      }}:{}),
     },
   };
 }
