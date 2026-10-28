@@ -154,3 +154,34 @@ test("bike24: approved non-browser client retains explicit indexer identity with
     {sourceId:"thomann-de"});
   assert.equal(nativeCalls,1);
 });
+
+
+test("bike24 content negotiation keeps honest UA and exact opt-in only",async()=>{
+  const requests=[];
+  const fetcher=createApprovedSourceFetcher({
+    approvedSourceIds:["bike24-de"],
+    approvedSourceHosts:{"bike24-de":["www.bike24.com"]},
+    optIn:true,
+    impitFetch:async (url,init)=>{
+      requests.push({url,init});
+      return new Response("denied",{status:403});
+    },
+  });
+  const url="https://www.bike24.com/p2735527.html";
+  const expected="application/ld+json, application/json, text/html";
+  const first=await fetcher(url,{method:"GET",headers:{
+    Accept:expected,"user-agent":"Chrome/999",
+  }},{sourceId:"bike24-de",structuredPdp:true});
+  assert.equal(first.status,403);
+  assert.equal(requests.length,1);
+  assert.equal(requests[0].init.headers.accept,expected);
+  assert.equal(requests[0].init.headers["user-agent"],
+    "NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)");
+  assert.equal(requests[0].init.redirect,"error");
+  await fetcher(url,{headers:{accept:expected}},{sourceId:"bike24-de"});
+  assert.equal(requests[1].init.headers.accept,"text/html,application/xhtml+xml;q=0.9");
+  await fetcher(url,{headers:{accept:"text/html,application/ld+json"}},{
+    sourceId:"bike24-de",structuredPdp:true
+  });
+  assert.equal(requests[2].init.headers.accept,"text/html,application/xhtml+xml;q=0.9");
+});
