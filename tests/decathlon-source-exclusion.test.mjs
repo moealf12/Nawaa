@@ -27,6 +27,7 @@ test("Stale configured providers and direct storefront/Shopify records cannot re
   });
   assert.equal(sources.some(s=>s.id==="decathlon-sa" || s.id==="shopify:decathlon-sa"),false);
   assert.equal(isExcludedMerchantSource({id:"another-id",name:"Another Shop",baseUrl:"https://shop.decathlon.co.uk"}),true);
+  assert.equal(isExcludedMerchantSource({name:"Generic Seller",baseUrl:"https://decathlon.com.sa/products/x"}),true);
   assert.equal(isExcludedMerchantSource({id:"sports-shop",name:"Sports Shop",baseUrl:"https://example.com"}),false);
 });
 

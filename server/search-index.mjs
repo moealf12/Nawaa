@@ -1,3 +1,4 @@
+import {isExcludedMerchantSource} from "../src/source-registry.mjs";
 // A searchable copy is NOT a new merchant observation. Do not mint fresh
 // price/stock timestamps on reindexing, cache warmup, or process restart.
 // Customer cache currently uses a 45-second fresh window. Keep the index
@@ -30,7 +31,9 @@ async function writeOffers(offers=[]){
   const target=await index();
   if(!target||!offers.length)return {configured:Boolean(target),indexed:0};
   const now=Date.now();
-  const docs=offers.filter(o=>o?.sourceUrl&&o?.title).flatMap(o=>{
+  const docs=offers.filter(o=>o?.sourceUrl&&o?.title&&!isExcludedMerchantSource({
+    id:o.providerMarket||o.sourceId,name:o.merchant,baseUrl:o.sourceUrl,
+  })).flatMap(o=>{
     const observedAt=validSourceObservation(o.observedAt,now);
     if(!observedAt)return []; // Unknown source time must not become "fresh".
     return [{
@@ -90,6 +93,8 @@ export async function searchIndexedOffers(query,{limit=80,now=Date.now()}={}){
       "condition","availability","matchConfidence","exactMatch","observedAt",
       "sourceMeta","specs"]});
   const offers=(result.hits||[]).filter(hit=>{
+    // Exclusion must hold for pre-existing Meilisearch documents as well.
+    if(isExcludedMerchantSource({name:hit.merchant,baseUrl:hit.sourceUrl}))return false;
     const timestamp=Date.parse(hit.observedAt);
     const age=now-timestamp;
     return Number.isFinite(timestamp)&&age>=-60_000&&age<=INDEXED_OFFER_FRESH_MS;
