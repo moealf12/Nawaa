@@ -18,7 +18,7 @@ function source({sku="KAL-10",variant="12345",recordSku=sku,recordVariant=varian
     '<script>wpmLoader({ initData: '+JSON.stringify(variantData)+' });</script></body></html>';
 }
 function snapshot(html=source(),at=100_000,override={}){
-  return {url,finalUrl:url,html,receivedAtMs:at,httpStatus:200,...override};
+  return {url,finalUrl:url,html,receivedAtMs:at,httpStatus:200,requestId:"request-"+at,...override};
 }
 const params=(search=snapshot(),quote=snapshot(source(),105_000),nowMs=106_000)=>({
   search,quote,nowMs,
