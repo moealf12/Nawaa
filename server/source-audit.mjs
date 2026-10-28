@@ -13,6 +13,10 @@ const DEFAULT_QUERIES = {
   "namshi-sa":"nike shoes", "centrepoint-sa":"dress", "maxfashion-sa":"dress",
   "decathlon-sa":"running shoes", "niceone-sa":"dior perfume",
   "amazon-sa":"hp laptop", "amazon-ae":"hp laptop", "noon-ae":"iphone",
+  // Product-intent probes, not the seller's name. These certify no Saudi delivery.
+  "amazon-uk":"iphone 17", "amazon-de":"iphone 17", "mediamarkt-de":"iphone 17",
+  "pccomponentes-es":"iphone 17", "bike24-de":"running shoes",
+  "thomann-de":"studio headphones",
   "sharafdg-ae":"hp laptop", "virgin-ae":"iphone", "xcite-kw":"hp laptop", "lulu-ae":"iphone",
   "lulu-sa":"iphone 17", "samsung-sa":"galaxy s25", "carrefour-ae":"iphone 17",
   "microless-ae":"iphone 17", "jumbo-ae":"iphone 17",
@@ -107,7 +111,10 @@ export async function auditFreeStorefronts({ storeId = null, query = null, direc
     const started = Date.now();
     let resultItem;
     try {
-      const result = await searchFreeStorefrontById(store.id, probeQuery, { perStore:100 });
+      // Initial EU probes: cap PDP resolution on unproven merchant adapters.
+      const isEuropeanPilot = ["amazon-uk","amazon-de","mediamarkt-de",
+        "pccomponentes-es","bike24-de","thomann-de"].includes(store.id);
+      const result = await searchFreeStorefrontById(store.id, probeQuery, { perStore:isEuropeanPilot ? 3 : 100 });
       const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
         ? "FAILING"
         : classify(result);
