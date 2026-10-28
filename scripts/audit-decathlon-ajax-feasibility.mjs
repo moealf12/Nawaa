@@ -56,6 +56,12 @@ export async function auditDecathlonAjaxFeasibility({
   signal,
 }={}){
   const report=out(),candidates=[];
+  // Default disabled means ZERO network calls, including sitemap and robots.
+  // After the one-shot live source returned non-JSON, CI must not auto-repeat.
+  if(!liveProbeEnabled){
+    report.ajaxStatus="PROBE_EXPLICITLY_DISABLED";
+    return report;
+  }
   const source=await auditDecathlonSitemap({
     fetchPage:fetchSitemap,signal,
     onProductSample:list=>{for(const url of list.slice(0,1))candidates.push(url);},
@@ -67,9 +73,6 @@ export async function auditDecathlonAjaxFeasibility({
     return report;
   const productUrl=candidates[0],ajaxUrl=deriveDecathlonAjaxUrl(productUrl);
   if(!ajaxUrl){report.ajaxStatus="INVALID_AJAX_TARGET";return report;}
-  if(!liveProbeEnabled){
-    report.ajaxStatus="PROBE_EXPLICITLY_DISABLED";return report;
-  }
   report.robotsRequests=1;
   let policy;
   try{
