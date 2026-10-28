@@ -62,6 +62,33 @@ jobs:
           node --check scripts/audit-worker.mjs
           node --check scripts/audit-matrix.mjs
 
+  protocol-alpn-runner-matrix:
+    # Phase G.3: OS + TLS library diversity on a self-owned loopback server.
+    # No BIKE24 HTTP requests, proxies, IP rotation, source activation or
+    # claimed retailer access evidence. Public repo standard runners are free.
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/v21-98-bike24-amazon-de'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify local-only TLS ALPN compatibility
+        run: |
+          node -p '"RUNNER_TLS_ENV "+JSON.stringify({platform:process.platform,arch:process.arch,node:process.version,openssl:process.versions.openssl})'
+          openssl version
+          node --test tests/protocol-alpn-loopback.test.mjs
+
   disposable-postgres-provenance:
     # Dedicated isolated PostgreSQL 16 service; never accesses production.
     runs-on: ubuntu-latest
