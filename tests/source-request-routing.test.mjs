@@ -114,3 +114,43 @@ test("transport: configured got rejects cross-site URL, non-GET and credentials"
   await assert.rejects(wrapped("https://merchant.example/search",{method:"POST"},{sourceId:"fixture-source"}),/GET_ONLY/);
   await assert.rejects(wrapped("https://user:pass@merchant.example/search",{method:"GET"},{sourceId:"fixture-source"}),/CREDENTIALS_FORBIDDEN/);
 });
+
+
+test("bike24: approved non-browser client retains explicit indexer identity without fallbacks",async()=>{
+  const requests=[];
+  let nativeCalls=0;
+  const approved=createApprovedSourceFetcher({
+    fetchImpl:async()=>{nativeCalls++;throw Error("NATIVE_RETRY_FORBIDDEN");},
+    impitFetch:async(url,options)=>{
+      requests.push({url,options});
+      return new Response("Forbidden",{status:403});
+    },
+    approvedSourceIds:["bike24-de"],
+    approvedSourceHosts:{"bike24-de":["www.bike24.com"]},
+    optIn:true,
+  });
+  const response=await approved("https://www.bike24.com/p2735527.html",{method:"GET",
+    headers:{"user-agent":"DO_NOT_TRUST_CALLER","sec-fetch-site":"same-origin"}},
+    {sourceId:"bike24-de"});
+  assert.equal(response.status,403);
+  assert.equal(requests.length,1);
+  assert.equal(nativeCalls,0);
+  assert.equal(requests[0].options.redirect,"error");
+  assert.equal(requests[0].options.headers["user-agent"],
+    "NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)");
+  assert.equal(requests[0].options.headers["sec-fetch-site"],undefined);
+  assert.equal(requests[0].options.headers["accept-language"],"en-GB,en;q=0.9,de;q=0.4");
+  await assert.rejects(
+    approved("https://other.example/p2735527.html",{method:"GET"},{sourceId:"bike24-de"}),
+    /HOST_NOT_ALLOWED/
+  );
+  const nonApproved=createApprovedSourceFetcher({
+    fetchImpl:async()=>{nativeCalls++;return new Response("native");},
+    impitFetch:async()=>{throw Error("IMPERSONATION_NOT_ALLOWED")},
+    approvedSourceIds:["bike24-de"],
+    approvedSourceHosts:{"bike24-de":["www.bike24.com"]},optIn:true,
+  });
+  await nonApproved("https://www.thomann.de/de/x.htm",{},
+    {sourceId:"thomann-de"});
+  assert.equal(nativeCalls,1);
+});
