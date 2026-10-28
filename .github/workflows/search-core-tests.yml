@@ -20,6 +20,58 @@ permissions:
   contents: read
 
 jobs:
+  amazon-de-user-link-one-shot:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/europe-five-sources-retire-bike24-20261028'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Single direct HEAD for user-provided amzn.eu link
+        run: |
+          node --input-type=module <<'JS'
+          import https from 'node:https';
+          import {writeFileSync} from 'node:fs';
+          const source='https://amzn.eu/d/0j121o7e';
+          const result=await new Promise(resolve=>{
+           const req=https.request(source,{method:'HEAD',timeout:7000,headers:{'user-agent':'NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)'}},response=>{
+            const status=response.statusCode,location=response.headers.location;response.resume();
+            let classification='NO_DIRECT_ASIN',asin=null,canonicalUrl=null,destinationHost=null;
+            if([301,302,303,307,308].includes(status)&&location){
+             try{const u=new URL(location,source);destinationHost=u.hostname.toLowerCase();
+              if(u.protocol==='https:'&&!u.username&&!u.password&&(!u.port||u.port==='443')&&['amazon.de','www.amazon.de'].includes(destinationHost)){
+               const match=/^\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i.exec(u.pathname);
+               if(match){asin=match[1].toUpperCase();canonicalUrl='https://www.amazon.de/dp/'+asin;classification='CANONICAL_AMAZON_DE_ASIN';}
+               else classification='AMAZON_DE_OTHER_PATH';
+              }else classification='UNVERIFIED_REDIRECT_HOST';
+             }catch{classification='MALFORMED_REDIRECT';}
+            }else if(status===403||status===429)classification='ACCESS_DENIED';
+            else if(status===405)classification='HEAD_NOT_SUPPORTED';
+            resolve({httpStatus:status,classification,asin,canonicalUrl,destinationHost,requestMethod:'HEAD',redirectFollowed:false,priceVerified:false,shippingVerified:false,observedAt:new Date().toISOString()});
+           });
+           req.on('timeout',()=>req.destroy(Error('HEAD_TIMEOUT')));
+           req.on('error',e=>resolve({httpStatus:null,classification:'NETWORK_ERROR',errorCode:e.code||null,asin:null,canonicalUrl:null,requestMethod:'HEAD',redirectFollowed:false,priceVerified:false,shippingVerified:false,observedAt:new Date().toISOString()}));
+           req.end();
+          });
+          writeFileSync('amazon-de-shortlink-evidence.json',JSON.stringify(result,null,2)+'\n');
+          console.log('AMAZON_DE_SHORTLINK_EVIDENCE '+JSON.stringify(result));
+          JS
+      - name: Save bounded response evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amazon-de-user-link-evidence
+          path: amazon-de-shortlink-evidence.json
+          if-no-files-found: warn
+          retention-days: 7
+
   test:
     runs-on: ubuntu-latest
     steps:
