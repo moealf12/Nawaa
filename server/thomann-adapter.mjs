@@ -58,7 +58,16 @@ export function extractThomannProduct(html,url){
   if(!image)return null;
   $("script,style,noscript,template,nav,footer,aside,[hidden],[aria-hidden='true']").remove();
   $("[class*='recommend'],[class*='accessor'],[class*='cross-sell'],[class*='upsell']").remove();
-  const main=$("main").first(),plain=(main.length?main:$("body")).text();
+  const main=$("main").first();
+  const root=main.length?main:$("body");
+  // Cheerio .text() joins neighboring block nodes WITHOUT separators:
+  // "Artikelnummer 153257" + "69 €" would look like "15325769 €".
+  // Insert boundaries only for block-level elements, preserving inline price spans.
+  root.find("p,div,section,article,li,dl,dt,dd,h1,h2,h3,h4,br").each((_,node)=>{
+    $(node).prepend(" ");
+    $(node).append(" ");
+  });
+  const plain=root.text();
   const price=primaryPrice(plain,title);
   if(price===null)return null;
   const sku=normalize(plain).match(/\bArtikelnummer\s+(\d{4,10})\b/i)?.[1]||null;
