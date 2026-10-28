@@ -1,0 +1,48 @@
+name: NAWAA Live Source Failure Matrix
+on:
+  pull_request:
+    paths:
+      - 'src/source-failure-attribution.mjs'
+      - 'tests/source-failure-attribution.test.mjs'
+      - 'scripts/measure-live-source-failures.mjs'
+      - '.github/workflows/live-source-failure-matrix.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-source-failure-matrix-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  live-source-failure-attribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify diagnostics and security boundaries
+        run: |
+          node --check scripts/measure-live-source-failures.mjs
+          node --test tests/source-failure-attribution.test.mjs
+      - name: One read-only client request per live product intent (no paid provider)
+        env:
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          FIRECRAWL_API_KEY: ''
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/measure-live-source-failures.mjs
+      - name: Preserve source evidence and visual report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-live-failure-matrix-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            live-source-failure-matrix.json
+            live-source-failure-report.html
+          retention-days: 7
+          if-no-files-found: warn
