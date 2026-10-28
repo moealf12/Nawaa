@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 jobs:
-  amazon-de-user-link-get-one-shot:
+  amazon-de-user-pdp-one-shot:
     if: github.event_name == 'pull_request' && github.head_ref == 'feature/europe-five-sources-retire-bike24-20261028'
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -34,41 +34,52 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Single direct GET for user-provided amzn.eu link (headers only)
+      - name: Direct bounded GET for verified Amazon DE ASIN
         run: |
           node --input-type=module <<'JS'
           import https from 'node:https';
           import {writeFileSync} from 'node:fs';
-          const source='https://amzn.eu/d/0j121o7e';
-          const result=await new Promise(resolve=>{
-           const req=https.request(source,{method:'GET',timeout:7000,headers:{'user-agent':'NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)'}},response=>{
-            const status=response.statusCode,location=response.headers.location;response.destroy();
-            let classification='NO_DIRECT_ASIN',asin=null,canonicalUrl=null,destinationHost=null;
-            if([301,302,303,307,308].includes(status)&&location){
-             try{const u=new URL(location,source);destinationHost=u.hostname.toLowerCase();
-              if(u.protocol==='https:'&&!u.username&&!u.password&&(!u.port||u.port==='443')&&['amazon.de','www.amazon.de'].includes(destinationHost)){
-               const match=/^\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i.exec(u.pathname);
-               if(match){asin=match[1].toUpperCase();canonicalUrl='https://www.amazon.de/dp/'+asin;classification='CANONICAL_AMAZON_DE_ASIN';}
-               else classification='AMAZON_DE_OTHER_PATH';
-              }else classification='UNVERIFIED_REDIRECT_HOST';
-             }catch{classification='MALFORMED_REDIRECT';}
-            }else if(status===403||status===429)classification='ACCESS_DENIED';
-            else if(status===405)classification='HEAD_NOT_SUPPORTED';
-            resolve({httpStatus:status,classification,asin,canonicalUrl,destinationHost,requestMethod:'GET',redirectFollowed:false,priceVerified:false,shippingVerified:false,observedAt:new Date().toISOString()});
+          const url='https://www.amazon.de/dp/B0FQFW3423';
+          const evidence=await new Promise(resolve=>{
+           const req=https.request(url,{method:'GET',timeout:7500,headers:{
+            'accept':'text/html,application/xhtml+xml',
+            'accept-encoding':'identity',
+            'user-agent':'NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)',
+           }},r=>{
+            const chunks=[];let total=0,oversize=false;const status=r.statusCode;
+            const type=String(r.headers['content-type']||'').slice(0,65);
+            r.on('data',chunk=>{total+=chunk.length;
+             if(total>1500000){oversize=true;r.destroy();return;}
+             chunks.push(chunk);
+            });
+            const done=()=>{
+             const html=Buffer.concat(chunks).toString('utf8');
+             const titleMatch=/<title[^>]*>([^<]{1,240})<\/title>/i.exec(html);
+             const title=titleMatch?titleMatch[1].replace(/\s+/g,' ').trim().slice(0,180):null;
+             const asinPresent=html.includes('B0FQFW3423');
+             const likelyChallenge=/(robot check|\/errors\/validatecaptcha|enter the characters you see below)/i.test(title||'');
+             resolve({httpStatus:status,contentType:type,bytesReceived:total,bodyOversize:oversize,
+               titleObserved:title,asinPresentInHtml:asinPresent,challengeSuspected:likelyChallenge,
+               productPriceVerified:false,variantVerified:false,saudiShippingVerified:false,
+               oneRequest:true,redirectFollowed:false,observedAt:new Date().toISOString()});
+            };
+            r.on('end',done);
+            r.on('close',()=>{if(oversize)done();});
            });
-           req.on('timeout',()=>req.destroy(Error('HEAD_TIMEOUT')));
-           req.on('error',e=>resolve({httpStatus:null,classification:'NETWORK_ERROR',errorCode:e.code||null,asin:null,canonicalUrl:null,requestMethod:'GET',redirectFollowed:false,priceVerified:false,shippingVerified:false,observedAt:new Date().toISOString()}));
+           req.on('timeout',()=>req.destroy(Error('PDP_TIMEOUT')));
+           req.on('error',e=>resolve({httpStatus:null,errorCode:e.code||'NETWORK_ERROR',oneRequest:true,
+             redirectFollowed:false,productPriceVerified:false,observedAt:new Date().toISOString()}));
            req.end();
           });
-          writeFileSync('amazon-de-shortlink-get-evidence.json',JSON.stringify(result,null,2)+'\n');
-          console.log('AMAZON_DE_SHORTLINK_EVIDENCE '+JSON.stringify(result));
+          writeFileSync('amazon-de-user-pdp-evidence.json',JSON.stringify(evidence,null,2)+'\n');
+          console.log('AMAZON_DE_USER_PDP_EVIDENCE '+JSON.stringify(evidence));
           JS
-      - name: Save bounded response evidence
+      - name: Save sanitized one-shot PDP evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: amazon-de-user-link-get-evidence
-          path: amazon-de-shortlink-get-evidence.json
+          name: amazon-de-user-pdp-evidence
+          path: amazon-de-user-pdp-evidence.json
           if-no-files-found: warn
           retention-days: 7
 
