@@ -70,8 +70,8 @@ export function summarizeEuropeanProbe(storeId, result, error=null, durationMs=0
     failure==="ACCESS_DENIED_OR_LIMITED"?"ACCESS_DENIED_OR_LIMITED":
     failure?"SOURCE_REQUEST_FAILED":
     unpriced>0?"PRODUCTS_FOUND_PRICE_MISSING":
-    candidates>0?"CANDIDATES_WITHOUT_VALID_OFFER":
     offers.length>0?"OFFERS_REJECTED_BY_PROVENANCE":
+    candidates>0?"CANDIDATES_WITHOUT_VALID_OFFER":
     "NO_CANDIDATES";
   return {
     storeId,query:spec.query,status,candidates,offersReturned:offers.length,fieldsPass,
