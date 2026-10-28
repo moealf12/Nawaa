@@ -25,7 +25,7 @@ test("Thomann search profile identifies NAWAA, not a browser or botnet", () => {
 });
 
 test("Non-Thomann source headers are left unchanged", () => {
-  for (const id of ["amazon-de","amazon-sa","bike24-de",null,undefined]) {
+  for (const id of ["amazon-sa","jarir","extra",null,undefined]) {
     assert.deepEqual(merchantRequestHeaders(id,fallback),fallback);
   }
 });
@@ -42,7 +42,7 @@ test("PDP profile applies only to the exact public Thomann HTTPS host", () => {
     "https://www.thomann.de.evil.example/de/akg.htm",
     "http://www.thomann.de/de/akg.htm",
     "https://evil@www.thomann.de/de/akg.htm",
-    "https://www.amazon.de/dp/B012345678",
+    "https://www.amazon.de.evil.test/dp/B012345678",
     "not-a-url",
   ]) assert.deepEqual(productPageRequestHeaders(url,fallback),fallback,url);
 });
