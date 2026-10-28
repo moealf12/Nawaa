@@ -85,7 +85,7 @@ const STORES = [
   {
     id:"thomann-de", name:"Thomann", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
     saudiDelivery:"offer_dependent", categories:["audio","accessory","other"],
-    search:q=>"https://www.thomann.de/intl/search_dir.html?sw="+encodeURIComponent(q),
+    search:q=>"https://www.thomann.de/de/search_dir.html?sw="+encodeURIComponent(q),
     productPath:/\/(?:de|gb|intl)\/[^/?#]+\.htm(?:[?#]|$)/i,
   },
   {
