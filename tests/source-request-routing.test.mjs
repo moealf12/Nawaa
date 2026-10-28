@@ -116,72 +116,52 @@ test("transport: configured got rejects cross-site URL, non-GET and credentials"
 });
 
 
-test("bike24: approved non-browser client retains explicit indexer identity without fallbacks",async()=>{
-  const requests=[];
-  let nativeCalls=0;
-  const approved=createApprovedSourceFetcher({
-    fetchImpl:async()=>{nativeCalls++;throw Error("NATIVE_RETRY_FORBIDDEN");},
-    impitFetch:async(url,options)=>{
-      requests.push({url,options});
-      return new Response("Forbidden",{status:403});
-    },
-    approvedSourceIds:["bike24-de"],
-    approvedSourceHosts:{"bike24-de":["www.bike24.com"]},
-    optIn:true,
+test("bike24 legacy source route cannot reopen direct HTML on any transport",async()=>{
+  let calls=0;
+  const forbidden=async()=>{calls++;throw Error("NETWORK_SHOULD_NOT_BE_CALLED");};
+  for(const optIn of [false,true]){
+    const fetcher=createApprovedSourceFetcher({
+      fetchImpl:forbidden,impitFetch:forbidden,
+      approvedSourceIds:["bike24-de"],
+      approvedSourceHosts:{"bike24-de":["www.bike24.com"]},optIn,
+    });
+    for(const context of [
+      {sourceId:"bike24-de"},
+      {sourceId:"bike24-de",structuredPdp:true},
+    ]){
+      await assert.rejects(
+        fetcher("https://www.bike24.com/p2735527.html",{
+          method:"GET",headers:{Accept:"application/ld+json, application/json, text/html"},
+        },context),
+        /BIKE24_DIRECT_HTML_DISABLED/,
+      );
+    }
+  }
+  assert.equal(calls,0);
+  // Other configured merchants are unaffected.
+  const normal=createApprovedSourceFetcher({
+    fetchImpl:async()=>{calls++;return new Response("ok",{status:200});},
+    approvedSourceIds:[],optIn:false,
   });
-  const response=await approved("https://www.bike24.com/p2735527.html",{method:"GET",
-    headers:{"user-agent":"DO_NOT_TRUST_CALLER","sec-fetch-site":"same-origin"}},
-    {sourceId:"bike24-de"});
-  assert.equal(response.status,403);
-  assert.equal(requests.length,1);
-  assert.equal(nativeCalls,0);
-  assert.equal(requests[0].options.redirect,"error");
-  assert.equal(requests[0].options.headers["user-agent"],
-    "NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)");
-  assert.equal(requests[0].options.headers["sec-fetch-site"],undefined);
-  assert.equal(requests[0].options.headers["accept-language"],"en-GB,en;q=0.9,de;q=0.4");
-  await assert.rejects(
-    approved("https://other.example/p2735527.html",{method:"GET"},{sourceId:"bike24-de"}),
-    /HOST_NOT_ALLOWED/
-  );
-  const nonApproved=createApprovedSourceFetcher({
-    fetchImpl:async()=>{nativeCalls++;return new Response("native");},
-    impitFetch:async()=>{throw Error("IMPERSONATION_NOT_ALLOWED")},
-    approvedSourceIds:["bike24-de"],
-    approvedSourceHosts:{"bike24-de":["www.bike24.com"]},optIn:true,
-  });
-  await nonApproved("https://www.thomann.de/de/x.htm",{},
-    {sourceId:"thomann-de"});
-  assert.equal(nativeCalls,1);
+  assert.equal((await normal("https://www.thomann.de/de/guitar.htm",{},{
+    sourceId:"thomann-de",
+  })).status,200);
+  assert.equal(calls,1);
 });
 
-
-test("bike24 content negotiation keeps honest UA and exact opt-in only",async()=>{
-  const requests=[];
-  const fetcher=createApprovedSourceFetcher({
+test("bike24 transparent Accept or impit opt-in cannot bypass retired route",async()=>{
+  const forbidden=async()=>{throw Error("NETWORK_SHOULD_NOT_BE_CALLED");};
+  const approved=createApprovedSourceFetcher({
+    fetchImpl:forbidden,impitFetch:forbidden,
     approvedSourceIds:["bike24-de"],
     approvedSourceHosts:{"bike24-de":["www.bike24.com"]},
     optIn:true,
-    impitFetch:async (url,init)=>{
-      requests.push({url,init});
-      return new Response("denied",{status:403});
-    },
   });
-  const url="https://www.bike24.com/p2735527.html";
-  const expected="application/ld+json, application/json, text/html";
-  const first=await fetcher(url,{method:"GET",headers:{
-    Accept:expected,"user-agent":"Chrome/999",
-  }},{sourceId:"bike24-de",structuredPdp:true});
-  assert.equal(first.status,403);
-  assert.equal(requests.length,1);
-  assert.equal(requests[0].init.headers.accept,expected);
-  assert.equal(requests[0].init.headers["user-agent"],
-    "NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)");
-  assert.equal(requests[0].init.redirect,"error");
-  await fetcher(url,{headers:{accept:expected}},{sourceId:"bike24-de"});
-  assert.equal(requests[1].init.headers.accept,"text/html,application/xhtml+xml;q=0.9");
-  await fetcher(url,{headers:{accept:"text/html,application/ld+json"}},{
-    sourceId:"bike24-de",structuredPdp:true
-  });
-  assert.equal(requests[2].init.headers.accept,"text/html,application/xhtml+xml;q=0.9");
+  await assert.rejects(
+    approved("https://www.bike24.com/p2735527.html",{
+      headers:{"User-Agent":"NAWAA-PublicSourceIndexer/1.0",
+        Accept:"application/ld+json, application/json, text/html"},
+    },{sourceId:"bike24-de",structuredPdp:true}),
+    /BIKE24_DIRECT_HTML_DISABLED/,
+  );
 });
