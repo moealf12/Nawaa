@@ -60,7 +60,7 @@ test("RED v22.03: alternate SKU or selected variant cannot borrow earlier price"
 test("RED v22.03: stale search snapshot or stale quote replay cannot be presented as a current quote",()=>{
   for(const args of [
     params(snapshot(source(),10_000),snapshot(source(),105_000),106_000),
-    params(snapshot(),snapshot(source(),80_000),130_000),
+    params(snapshot(source(),70_000),snapshot(source(),80_000),130_000),
     params(snapshot(),snapshot(source(),107_000),106_000),
   ]){
     const r=evaluateDecathlonQuoteReadiness(args);
