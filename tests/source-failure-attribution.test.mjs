@@ -66,10 +66,12 @@ test("atomic storefront failures keep real merchant IDs and explicit source evid
 test("real storefront classification never invents a successful price or shop status",async()=>{
   const {storefrontSourceFailure}=await import("../src/storefront-error-evidence.mjs");
   const e=storefrontSourceFailure("ikea-sa","generic backend exception");
-  assert.equal(e.failureClass,"SOURCE_TRANSPORT_FAILURE");
+  assert.equal(e.failureClass,"UNKNOWN");
   assert.equal(Object.hasOwn(e,"productPrice"),false);
   assert.equal(Object.hasOwn(e,"availability"),false);
-  assert.equal(classifyFailure(e),"SOURCE_TRANSPORT_FAILURE");
+  const network=storefrontSourceFailure("ikea-sa","fetch failed: ECONNRESET");
+  assert.equal(network.failureClass,"SOURCE_TRANSPORT_FAILURE");
+  assert.equal(classifyFailure(e),"UNKNOWN");
   assert.throws(()=>storefrontSourceFailure("https://foo.test/?token=secret","HTTP 403"),/INVALID_STOREFRONT_ID/);
   assert.throws(()=>storefrontSourceFailure("X-INVALID","HTTP 403"),/INVALID_STOREFRONT_ID/);
 });
