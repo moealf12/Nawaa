@@ -46,3 +46,16 @@ test('v17.4: malformed merchant confidence cannot stall selection or fabricate s
  assert.equal(result[1].merchant,'Malformed');
  assert.equal(result[2].merchant,'NaN');
 });
+
+test("Read-side merchant diversification cannot revive stale Amazon DE prices",()=>{
+  const stale=offer("free-storefronts","Amazon Germany",3,.99);
+  stale.providerMarket="amazon-de";
+  stale.sourceUrl="https://www.amazon.de/dp/B0FQFW3423";
+  stale.productPrice=1;
+  stale.sourceMeta={priceEvidence:"VERIFIED",trustBadge:true,buyerVisiblePriceParity:true};
+  const forged=offer("custom-provider","Forged merchant",4,.99);
+  forged.sourceUrl="https://www.amazon.de/dp/B0FQFW3423";
+  forged.productPrice=1;
+  const safe=offer("jarir-direct","Jarir",2,.96);
+  assert.deepEqual(selectDiverseOffers([stale,forged,safe],Infinity),[safe]);
+});

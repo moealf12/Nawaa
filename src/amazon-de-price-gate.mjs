@@ -50,3 +50,14 @@ export function compareAmazonDeDeclaredVsBuybox(declared,buybox) {
     saudiShippingVerified:false,
   });
 }
+
+
+// Customer read-side: includes previously indexed, cached and externally
+// injected provider records. Neither asserted sourceMeta flags nor a claimed
+// VERIFIED field can override this unpromoted Amazon DE pilot gate.
+export function filterAmazonDeUnattestedCustomerOffers(offers=[]) {
+  if(!Array.isArray(offers))return [];
+  return offers.filter(offer=>amazonDeCustomerPriceDecision({
+    sourceId:offer?.providerMarket,sourceUrl:offer?.sourceUrl,
+  }).customerPublishable);
+}

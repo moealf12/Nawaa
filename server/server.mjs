@@ -3,6 +3,7 @@ import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
 import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
+import {enforceCustomerOfferPublication} from "./customer-offer-output.mjs";
 import http from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -50,6 +51,9 @@ async function canonicalCandidates(offers,acceptLive=false){
   return (await import('./omega-canonical-index.mjs')).canonicalReadBoundary(offers,{acceptLive});
 }
 async function canonicalResponse(result,query){
+  // Always enforce read-side source holds, including cache/index snapshots,
+  // before JSON/SSE emits any prices. Test-only canonical mode is no exception.
+  result=enforceCustomerOfferPublication(result);
   if(!OMEGA_CANONICAL)return result;
   const offers=selectDiverseOffers(retainRelatedOffers(query,await canonicalCandidates(result.offers||[])),Infinity);
   return {...result,offers,coverage:{...result.coverage,returnedOffers:offers.length,
