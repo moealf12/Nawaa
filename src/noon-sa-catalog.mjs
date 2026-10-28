@@ -74,6 +74,18 @@ export function extractNoonSaudiCatalogCards(html,query,limit=32){
     const title=typeof product.name==="string"?product.name.trim():"";
     const normalized=normalizeSearchQuery(title);
     if(title.length<4||title.length>260||!normalized)continue;
+    // Slug and headline belong to the SAME retail package. An apparent
+    // matching Product node may contain the price of a sibling SKU/variant.
+    // If the official SKU URL explicitly names a different model/storage,
+    // never promote its Offer as the title's own price.
+    const slug=new URL(identity.canonicalUrl).pathname
+      .replace(/^\/saudi-en\//,"").split("/")[0].replace(/-/g," ");
+    const slugIntent=parseSearchIntent(slug);
+    const titleIntent=parseSearchIntent(title);
+    if((slugIntent.model && titleIntent.model && slugIntent.model!==titleIntent.model) ||
+       (slugIntent.storage && titleIntent.storage && slugIntent.storage!==titleIntent.storage) ||
+       (slugIntent.color && titleIntent.color && slugIntent.color!==titleIntent.color))
+      continue;
     // A priced cross-sell without the shopper's model/storage is NOT a hit.
     if(intent.model){
       const subject=parseSearchIntent(title);
