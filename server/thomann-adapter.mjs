@@ -33,6 +33,51 @@ function primaryPrice(text,title){
   const distinct=[...new Set(values)];
   return distinct.length===1?distinct[0]:null;
 }
+function scopedSchemaEvidence($,identity){
+  if(!identity)return {price:null,shipping:null};
+  const values=[],shipping=[];
+  const nodes=[];
+  for(const script of $('script[type="application/ld+json"]').toArray().slice(0,12)){
+    const raw=$(script).html()||"";
+    if(raw.length>200000)continue;
+    try{
+      const entry=JSON.parse(raw);
+      const group=Array.isArray(entry)?entry:[entry];
+      for(const node of group) {
+        if(Array.isArray(node?.["@graph"]))nodes.push(...node["@graph"]);
+        nodes.push(node);
+      }
+    }catch{}
+  }
+  for(const node of nodes){
+    if(!node||typeof node!=="object"||!String(node["@type"]||"").toLowerCase().split(" ").includes("product"))continue;
+    const declared=thomannVariantIdentity(node.name,node.url||"");
+    if(!declared||declared.identityHash!==identity.identityHash)continue;
+    const offers=Array.isArray(node.offers)?node.offers:[node.offers];
+    if(offers.length!==1||!offers[0]||typeof offers[0]!=="object")continue;
+    const offer=offers[0];
+    if(String(offer["@type"]||"").toLowerCase()==="aggregateoffer")continue;
+    if(String(offer.priceCurrency||"").toUpperCase()==="EUR"){
+      const n=Number(offer.price);
+      if(Number.isFinite(n)&&n>0)values.push(Math.round(n*100));
+    }
+    const ship=Array.isArray(offer.shippingDetails)?offer.shippingDetails:[offer.shippingDetails];
+    for(const details of ship){
+      if(!details||typeof details!=="object")continue;
+      const destination=details.shippingDestination?.addressCountry;
+      const country=typeof destination==="string"?destination:destination?.name;
+      const rate=details.shippingRate;
+      const amount=Number(rate?.value);
+      if(country==="SA"&&String(rate?.currency||"").toUpperCase()==="EUR"&&
+        Number.isFinite(amount)&&amount>=0)
+        shipping.push({country:"SA",amountEUR:amount,source:"PDP_JSON_LD",checkoutVerified:false});
+    }
+  }
+  const distinct=[...new Set(values)];
+  return {price:distinct.length===1?distinct[0]/100:null,
+    priceConflict:distinct.length>1,shipping:shipping.length===1?shipping[0]:null};
+}
+
 function imageFromMerchant($){
   const imgs=[
     $('meta[property="og:image"]').attr("content"),
@@ -76,11 +121,15 @@ export function extractThomannProduct(html,url){
   // do not agree on the exact F/B/base SKU. Other Thomann products keep
   // their existing extraction path.
   const identity=thomannVariantIdentity(title,url);
+  const evidence=identity?scopedSchemaEvidence(load(html),identity):{price:null,shipping:null};
+  if(evidence.priceConflict ||
+     (evidence.price!==null&&Math.round(evidence.price*100)!==Math.round(price*100)))return null;
   if(/^\/de\/superlux_hd662(?:_[a-z]+)?\.htm$/i.test(new URL(url).pathname) && !identity)return null;
   return {
     name:title,image,brand:identity?.brand||null,sku,
     ...(identity?{mpn:identity.model,model:identity.model,variantId:identity.model,
-      identityHash:identity.identityHash}:{}),
+      identityHash:identity.identityHash,
+      ...(evidence.shipping?{shippingContext:evidence.shipping}:{})}:{}),
     offers:{price,priceCurrency:"EUR",availability:""}
   };
 }
