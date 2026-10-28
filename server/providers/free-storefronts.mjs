@@ -6,6 +6,7 @@ import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceOb
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
+import {bike24QueryEdition,bike24MatchesQuery,verifyBike24SearchCards} from "../../src/bike24-product-truth.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1608,7 +1609,19 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           limit:2,signal:options.signal,
         })
       : null;
-    const independentlyPricedOffers = thomannParity ? thomannParity.accepted : directSearchOffers;
+    const bike24FamilyRequested=store.id==="bike24-de" &&
+      bike24QueryEdition(matchingQuery)!==null;
+    const bike24Candidates=bike24FamilyRequested
+      ? directSearchOffers.filter(item=>bike24MatchesQuery(matchingQuery,item))
+      : directSearchOffers;
+    const bike24Parity=bike24FamilyRequested
+      ? await verifyBike24SearchCards(bike24Candidates,{
+          resolvePdp:url=>resolveProductUrl(url,{signal:options.signal}),
+          limit:2,signal:options.signal,
+        })
+      : null;
+    const independentlyPricedOffers=thomannParity?thomannParity.accepted:
+      bike24Parity?bike24Parity.accepted:directSearchOffers;
     // Scan more links in the already loaded search HTML when structured cards
     // exist, but never convert that wider discovery into PDP network fan-out.
     const discoveryLimit=directSearchOffers.length
@@ -1634,8 +1647,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         image:item.image,
         title:item.title,
         productType:item.productType || null,
-        specs:{ modelNumber:item.thomannIdentity?.model || item.productId },
-        identityHash:item.thomannIdentity?.identityHash || null,
+        specs:{ modelNumber:item.thomannIdentity?.model || item.bike24Identity?.model || item.productId },
+        identityHash:item.thomannIdentity?.identityHash || item.bike24Identity?.identityHash || null,
         condition:"new",
         availability:"unknown",
         productPrice:converted.value,
@@ -1663,7 +1676,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     });
     // A priced search card that failed PDP parity cannot re-enter through
     // the fallback PDP-only discovery path and silently acquire trust.
-    const resolutionLinks = thomannFamilyRequested && directSearchOffers.length
+    const resolutionLinks = (thomannFamilyRequested||bike24FamilyRequested) && directSearchOffers.length
       ? [] : recoveryPlan.links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
     const resolvedOffers = settled
@@ -1687,12 +1700,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           resolvedMerchant:result.value.merchant || null,
           freeDiscovery:true,
           searchUrl,
-          ...(store.id==="thomann-de"?{priceEvidence:"PDP_OBSERVED_ONLY"}:{}),
+          ...(["thomann-de","bike24-de"].includes(store.id)?{priceEvidence:"PDP_OBSERVED_ONLY"}:{}),
         },
       }));
     const allOffers = [...directOffers, ...resolvedOffers];
-    const variantEligible = store.id==="thomann-de"
+    const variantEligible=store.id==="thomann-de"
       ? allOffers.filter(offer=>thomannVariantMatchesQuery(matchingQuery,offer.title,offer.sourceUrl))
+      : store.id==="bike24-de"
+      ? allOffers.filter(offer=>bike24MatchesQuery(matchingQuery,offer))
       : allOffers;
     const variantRejected = allOffers.length - variantEligible.length;
     const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, variantEligible);
@@ -1744,9 +1759,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       failures,
       diagnostics:{
         queryFilter,
-        ...(store.id==="thomann-de"?{
+        ...(["thomann-de","bike24-de"].includes(store.id)?{
           variantRejected,
-          pdpPriceParity:thomannParity?.diagnostics || [],
+          pdpPriceParity:thomannParity?.diagnostics || bike24Parity?.diagnostics || [],
         }:{}),
         intentRecovery:{
           reason:recoveryPlan.reason,
