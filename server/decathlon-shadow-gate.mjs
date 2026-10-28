@@ -2,6 +2,7 @@
 // Does not alter or emit offers, current prices, product IDs, stock, shipping,
 // or merchant request volume. No database writes, cache, or logging.
 import {attestDecathlonVariantPrice} from "./decathlon-variant-price-ownership.mjs";
+import {evaluateDecathlonFulfillmentReadiness} from "./decathlon-fulfillment-evidence.mjs";
 
 const HOST="decathlon.com.sa";
 const OBSERVATION_AGE_LIMIT_MS=15_000;
@@ -25,6 +26,9 @@ export function isDecathlonShadowEnabled(value=process.env.NAWAA_DECATHLON_PRICE
 const report=(status,variantPriceOwned=false)=>({
   status,
   variantPriceOwned,
+  availabilitySignalStatus:"NOT_EVALUATED",
+  merchantAvailableSignal:null,
+  checkoutVerified:false,
   observationAgeWithinWindow:true,
   sourceFreshnessCertified:false,
   // Price ownership != current buyability, inventory or checkout verification.
@@ -57,6 +61,16 @@ export function observeDecathlonSearchEvidence({
     try{
       const attested=attestDecathlonVariantPrice(html,finalUrl);
       result=report(attested.status,attested.variantPriceOwned===true);
+      if(attested.variantPriceOwned===true){
+        const fulfillment=evaluateDecathlonFulfillmentReadiness(html,finalUrl);
+        result.availabilitySignalStatus=fulfillment.status;
+        result.merchantAvailableSignal=fulfillment.merchantAvailableSignal;
+        // Merchant-presented availability is never a binding stock or delivery promise.
+        result.inventoryVerified=false;
+        result.shippingVerified=false;
+        result.checkoutVerified=false;
+        result.trustedOfferEligible=false;
+      }
     }catch{
       result=report("SOURCE_EVIDENCE_UNAVAILABLE");
     }
