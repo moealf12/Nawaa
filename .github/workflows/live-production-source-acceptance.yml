@@ -1,0 +1,46 @@
+name: NAWAA Live Production Source Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-live-production-sources.mjs'
+      - '.github/workflows/live-production-source-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-live-production-sources-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  read-only-production-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate read-only diagnostic syntax
+        run: node --check scripts/verify-live-production-sources.mjs
+      - name: Test actual deployed Render revision, source ownership and live shopper searches
+        env:
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          FIRECRAWL_API_KEY: ''
+        run: node scripts/verify-live-production-sources.mjs
+      - name: Preserve sanitized public-production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-live-production-source-acceptance-${{ github.event.pull_request.head.sha || github.sha }}
+          path: live-production-source-acceptance.json
+          retention-days: 7
+          if-no-files-found: warn
