@@ -53,24 +53,28 @@ const STORES = [
   // Retailer shipping policies and per-offer shipping eligibility remain distinct.
   {
     id:"amazon-uk", name:"Amazon UK", countryCode:"GB", countryNameAr:"بريطانيا", euSource:true,
+    brands:["amazon uk","amazon co uk"],
     saudiDelivery:"offer_dependent", categories:["*"],
     search:q=>"https://www.amazon.co.uk/s?k="+encodeURIComponent(q),
     productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
   },
   {
     id:"amazon-de", name:"Amazon Germany", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
+    brands:["amazon germany","amazon de"],
     saudiDelivery:"offer_dependent", categories:["*"],
     search:q=>"https://www.amazon.de/s?k="+encodeURIComponent(q),
     productPath:/\/dp\/[A-Z0-9]{10}(?:[/?#]|$)|\/gp\/product\/[A-Z0-9]{10}(?:[/?#]|$)/i,
   },
   {
     id:"mediamarkt-de", name:"MediaMarkt Germany", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
+    brands:["mediamarkt","media markt"],
     saudiDelivery:"no_direct", categories:["phone","laptop","desktop","monitor","audio","camera","appliance","tv","console","game","accessory"],
     search:q=>"https://www.mediamarkt.de/de/search.html?query="+encodeURIComponent(q),
     productPath:/\/de\/product\/_?[^/?#]+\.html(?:[?#]|$)/i,
   },
   {
     id:"pccomponentes-es", name:"PcComponentes", countryCode:"ES", countryNameAr:"إسبانيا", euSource:true,
+    brands:["pccomponentes"],
     saudiDelivery:"no_direct", categories:["phone","laptop","desktop","monitor","audio","camera","console","game","accessory","network"],
     search:q=>"https://www.pccomponentes.com/buscar/?query="+encodeURIComponent(q),
     // A single product slug, never the search/catalog/account routes.
@@ -78,12 +82,14 @@ const STORES = [
   },
   {
     id:"bike24-de", name:"BIKE24", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
+    brands:["bike24"],
     saudiDelivery:"verified_market", categories:["sports","shoes","clothing","accessory"],
     search:q=>"https://www.bike24.com/search?searchTerm="+encodeURIComponent(q),
     productPath:/\/p\d+\.html(?:[?#]|$)/i,
   },
   {
     id:"thomann-de", name:"Thomann", countryCode:"DE", countryNameAr:"ألمانيا", euSource:true,
+    brands:["thomann"],
     saudiDelivery:"offer_dependent", categories:["audio","accessory","other"],
     search:q=>"https://www.thomann.de/de/search_dir.html?sw="+encodeURIComponent(q),
     productPath:/\/(?:de|gb|intl)\/[^/?#]+\.htm(?:[?#]|$)/i,
@@ -1302,6 +1308,10 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
         ...base,
         score: base.score + healthAdjustment,
         reliability: health,
+        // New EU merchants yielded no trusted live offers in the first audit.
+        // Incubate them behind established merchants until real catalog yield is observed;
+        // stable routing deliberately ignores mutable process-local yield.
+        pilotUnproven:Boolean(store.euSource) && (stable || health.offers===0),
         skippedForCooldown:false,
       };
     })
@@ -1310,6 +1320,9 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
       // An explicitly named merchant is the shopper's strongest routing signal.
       // Preserve that intent before applying the local-marketplace safety net.
       (Number(b.explicitBrand) - Number(a.explicitBrand)) ||
+      // Zero-yield EU pilots remain available through cursors and explicit merchant
+      // queries, but cannot silently displace established first-wave sources.
+      (Number(a.pilotUnproven) - Number(b.pilotUnproven)) ||
       // Category specialists remain ahead of broad marketplaces. The safety net
       // prevents Amazon Saudi from falling behind lower-relevance sources; it
       // does not replace stores purpose-built for the requested category.
