@@ -1,0 +1,20 @@
+name: NAWAA Live Multi-Source Customer Acceptance
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/customer-multisource-live-acceptance.yml"
+      - "scripts/customer-multisource-live-acceptance.mjs"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-customer-search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe production search JSON across distinct product families
+        run: node scripts/customer-multisource-live-acceptance.mjs
