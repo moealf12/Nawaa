@@ -105,6 +105,24 @@ def test_multi_offer_or_variant_ambiguity():
     _,offer,reason=extract_html(html,item(sku="SOLAR"))
     assert offer.price == Decimal("1200")
 
+def test_no_cross_sku_price_enrichment():
+    mismatch='<script type="application/ld+json">'+json.dumps({
+        "@type":"Product","name":"Garmin Edge 540",
+        "model":"Edge 540","sku":"EDGE-540",
+        "offers":{"@type":"Offer","sku":"EDGE-540-SOLAR",
+                  "price":"1599.00","priceCurrency":"SAR"}
+    })+'</script>'
+    product,offer,reason=extract_html(mismatch,item(model="Edge 540"))
+    assert product.sku=="EDGE-540"
+    assert offer is None and reason=="OFFER_PRODUCT_SKU_MISMATCH"
+    mismatch2='<script type="application/ld+json">'+json.dumps({
+        "@type":"Product","name":"Edge 540", "model":"Edge 540",
+        "offers":{"@type":"Offer","sku":"OTHER-SKU",
+                  "price":"1500","priceCurrency":"SAR"}
+    })+'</script>'
+    _,offer,reason=extract_html(mismatch2,item(model="Edge 540",sku="EXPECTED-SKU"))
+    assert offer is None and reason=="OFFER_EXPECTED_SKU_MISMATCH"
+
 def test_pydantic_strict_schema_and_unknown_fields():
     raw={"schemaVersion":VERSION,"requestId":"t1","sourceId":"jarir-sa",
          "operation":"extract_html",
