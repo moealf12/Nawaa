@@ -307,7 +307,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
     const remaining=overallDeadlineMs-(Date.now()-startedAt);
     if(remaining>=1000){
       const observed=await enrichExtraOffersWithPython(offers,matchingQuery,{
-        approvedSku,approvedUrl,signal,timeoutMs:Math.min(generalEnabled?4000:3000,remaining),
+        approvedSku,approvedUrl,signal,timeoutMs:Math.min(generalEnabled?5500:3000,remaining),
         scope:generalEnabled?"all":"canary",maxAttempts:generalEnabled?2:1,
         extract:pythonExtract
       });
