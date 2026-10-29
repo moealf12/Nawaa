@@ -96,7 +96,7 @@ def page_fingerprint(html):
     source = html[:MAX_HTML]
     lower = source.lower()
     return {"html_chars": len(source), "has_next_data": "__NEXT_DATA__" in source,
-            "product_id_marker": bool(SKU_PATH.search(source)),
+            "product_id_marker": bool(re.search(r"/(?:N\\d{8}[AV]|Z[A-Z0-9]{20}Z)/p/?", source, re.I)),
             "has_noon_price_marker": "plp-product-box-price" in source,
             "has_product_card_marker": "plp-product-box-name" in source,
             "possible_challenge": any(x in lower for x in ("captcha", "access denied", "verify you are human"))}
@@ -159,21 +159,46 @@ def curl_probe(url):
                 "elapsed_ms": int((time.monotonic() - started) * 1000)}
 
 
+def browser_error_category(exc):
+    raw = str(exc)
+    netcode = re.search(r"net::ERR_[A-Z0-9_]+", raw)
+    if netcode:
+        return netcode.group(0)
+    for marker, label in (
+        ("ERR_HTTP2_PROTOCOL_ERROR", "HTTP2_PROTOCOL"),
+        ("ERR_SSL_PROTOCOL_ERROR", "TLS_PROTOCOL"),
+        ("ERR_CERT_AUTHORITY_INVALID", "TLS_CERTIFICATE"),
+        ("Target page, context or browser has been closed", "BROWSER_CLOSED"),
+        ("frame was detached", "FRAME_DETACHED"),
+        ("Timeout", "TIMEOUT"),
+        ("net::", "NETWORK_ERROR"),
+        ("Invalid locale", "INVALID_LOCALE"),
+    ):
+        if marker.lower() in raw.lower():
+            return label
+    return "OTHER_BROWSER_ERROR"
+
+
 def chromium_probe(url):
     started = time.monotonic()
+    stage = "LAUNCH"
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             try:
+                stage = "NEW_CONTEXT"
                 context = browser.new_context(locale="en-SA", viewport={"width": 1366, "height": 768})
                 try:
+                    stage = "NEW_PAGE"
                     page = context.new_page()
+                    stage = "GOTO"
                     response = page.goto(url, wait_until="domcontentloaded", timeout=20000)
                     http_status = response.status if response else None
                     data = {"http_status": http_status, "elapsed_ms": int((time.monotonic()-started)*1000)}
                     if http_status != 200:
                         data["status"] = "HTTP_" + str(http_status) if http_status else "NO_HTTP_RESPONSE"
                         return data
+                    stage = "RENDER"
                     page.wait_for_timeout(1200)
                     html = page.content()
                     data["status"] = "HTTP_200"
@@ -186,6 +211,7 @@ def chromium_probe(url):
                 browser.close()
     except Exception as exc:
         return {"status": "BROWSER_EXCEPTION", "class": type(exc).__name__,
+                "stage": stage, "reason": browser_error_category(exc),
                 "elapsed_ms": int((time.monotonic() - started) * 1000)}
 
 
