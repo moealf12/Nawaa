@@ -29,3 +29,17 @@ jobs:
           NODE_ENV: 'test'
           NAWAA_BROWSER_QUERY: 'سماعات بلوتوث'
         run: node scripts/browser-customer-journey.mjs published
+  postrelease-exact-api-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read only exact release health + source-owned Arabic JSON and independent SSE
+        env:
+          NAWAA_EXPECT_LIVE_SHA: '1fc1a1380e8a83845a0c11ff9dbd3499fec21de0'
+        run: node scripts/postrelease-arabic-bluetooth-acceptance.mjs
