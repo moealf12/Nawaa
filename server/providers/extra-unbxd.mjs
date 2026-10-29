@@ -204,7 +204,7 @@ function normalizeProduct(product) {
   };
 }
 
-export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal, probeFields,pythonExtract} = {}) {
+export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal, probeFields,pythonExtract,pythonBudgetMs} = {}) {
   const cap = limit === Infinity ? Infinity : Math.max(1, Number(limit) || 12);
   const fetchCap = cap === Infinity ? 100 : Math.min(100, cap);
   const url = new URL(EXTRA_SEARCH_BASE);
@@ -305,18 +305,52 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
     normalizeSearchQuery(canaryQuery)===normalizeSearchQuery(matchingQuery) &&
     approvedExtraPdp(approvedUrl,approvedSku);
   const pythonEnabled=generalEnabled||canaryEnabled;
+  // Merchant search results are the primary product evidence. Python PDP is
+  // optional enrichment and must NEVER delay returning already acquired eXtra
+  // offers until the provider's 8s deadline expires.
   let finalOffers=offers,pythonDiagnostics=null;
   if(pythonEnabled&&offers.length&&!signal?.aborted){
-    // Stay inside the provider's original 7200 ms acquisition budget.
-    const remaining=overallDeadlineMs-(Date.now()-startedAt);
-    if(remaining>=1000){
-      const observed=await enrichExtraOffersWithPython(offers,matchingQuery,{
-        approvedSku,approvedUrl,signal,timeoutMs:Math.min(generalEnabled?5500:3000,remaining),
-        scope:generalEnabled?"all":"canary",maxAttempts:generalEnabled?2:1,
-        extract:pythonExtract
+    // UNBXD can consume ~3s; reserve 450ms for normalization/return and
+    // provider aggregation. Cap enrichment independently of Python's own
+    // worker timeout, including in tests with a non-cooperative extractor.
+    const remaining=overallDeadlineMs-(Date.now()-startedAt)-450;
+    const maxOptionalMs=Number.isInteger(pythonBudgetMs)
+      ? Math.max(0,Math.min(3200,pythonBudgetMs)) : 3200;
+    const enrichmentMs=Math.max(0,Math.min(maxOptionalMs,remaining));
+    if(enrichmentMs>=1000){
+      const controller=new AbortController();
+      const parentAbort=()=>controller.abort(signal?.reason || Error("PYTHON_EXTRA_ABORTED"));
+      signal?.addEventListener("abort",parentAbort,{once:true});
+      let cutoffTimer;
+      const cutoff=new Promise(resolve=>{
+        cutoffTimer=setTimeout(()=>{
+          controller.abort(Error("PYTHON_EXTRA_OPTIONAL_DEADLINE"));
+          resolve(null);
+        },Math.ceil(enrichmentMs)+30);
       });
-      finalOffers=observed.offers;
-      pythonDiagnostics=observed.diagnostics;
+      try {
+        const enrichment=Promise.resolve().then(()=>enrichExtraOffersWithPython(
+          offers,matchingQuery,{
+            approvedSku,approvedUrl,signal:controller.signal,
+            timeoutMs:enrichmentMs,scope:generalEnabled?"all":"canary",
+            // A second PDP must never hold back all other merchant offers.
+            maxAttempts:1,extract:pythonExtract
+          }
+        )).catch(()=>null);
+        const observed=await Promise.race([enrichment,cutoff]);
+        if(observed){
+          finalOffers=observed.offers;
+          pythonDiagnostics=observed.diagnostics;
+        }else{
+          // Even if an injected extractor ignores abort, its eventual result
+          // cannot mutate this published offer array or its source price.
+          pythonDiagnostics={attempted:1,accepted:0,rejected:0,failed:1,
+            failureClasses:["PYTHON_EXTRA_OPTIONAL_DEADLINE"]};
+        }
+      } finally {
+        clearTimeout(cutoffTimer);
+        signal?.removeEventListener("abort",parentAbort);
+      }
     }else{
       pythonDiagnostics={attempted:0,accepted:0,rejected:0,failed:0,
         failureClasses:["PYTHON_EXTRA_BUDGET_EXHAUSTED"]};
