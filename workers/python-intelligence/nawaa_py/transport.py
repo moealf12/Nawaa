@@ -91,14 +91,24 @@ async def fetch_public_html(url: str, source_id: str, timeout_ms: int, max_bytes
     ) as client:
         # Fail closed on inaccessible robots policy; no attempt to bypass it.
         robots_url = f"https://{host}/robots.txt"
-        robots, robots_status, _ = await _bounded_get(client, robots_url, MAX_ROBOTS_BYTES)
+        try:
+            robots, robots_status, _ = await _bounded_get(client, robots_url, MAX_ROBOTS_BYTES)
+        except FetchFailure as exc:
+            if exc.code == "RESPONSE_TOO_LARGE":
+                raise FetchFailure("ROBOTS_RESPONSE_TOO_LARGE") from exc
+            raise
         if robots_status != 200:
             raise FetchFailure("ROBOTS_UNAVAILABLE")
         rules = RobotFileParser()
         rules.parse(robots.decode("utf-8", errors="replace").splitlines())
         if not rules.can_fetch(USER_AGENT.split("/", 1)[0], url):
             raise FetchFailure("ROBOTS_DISALLOW")
-        content, status, content_type = await _bounded_get(client, url, max_bytes)
+        try:
+            content, status, content_type = await _bounded_get(client, url, max_bytes)
+        except FetchFailure as exc:
+            if exc.code == "RESPONSE_TOO_LARGE":
+                raise FetchFailure("PRODUCT_PAGE_RESPONSE_TOO_LARGE") from exc
+            raise
         if status != 200:
             raise FetchFailure("SOURCE_RESOURCE_NOT_FOUND")
         if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
