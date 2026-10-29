@@ -308,6 +308,17 @@ export function extraPythonWarmStatus(){
   return {enabled:extraWarmEnabled(),ready:Boolean(extraWarm?.ready),
     busy:Boolean(extraWarm?.pending),completed:extraWarm?.requests??0};
 }
+export function shutdownExtraPythonWarmWorker(){
+  if(warmRestartTimer){clearTimeout(warmRestartTimer);warmRestartTimer=null;}
+  const state=extraWarm;
+  extraWarm=null;
+  if(state&&!state.dead){
+    state.dead=true;
+    clearTimeout(state.bootTimer);
+    finishWarmRequest(state,Error("PYTHON_EXTRA_ABORTED"));
+    try{state.child.stdin.end();state.child.kill("SIGTERM");}catch{}
+  }
+}
 function runExtraWarmRequest(input,requestId,timeoutMs,signal){
   if(signal?.aborted)throw Error("PYTHON_EXTRA_ABORTED");
   const state=extraWarm;
