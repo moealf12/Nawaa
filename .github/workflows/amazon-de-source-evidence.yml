@@ -5,6 +5,7 @@ on:
     paths:
       - "server/amazon-de-*.mjs"
       - "scripts/verify-amazon-de-source-readonly.mjs"
+      - "server/providers/amazon-de-universal.mjs"
       - "scripts/audit-amazon-de-offer-evidence.mjs"
       - "tests/amazon-de-*.test.mjs"
       - ".github/workflows/amazon-de-source-evidence.yml"
@@ -27,6 +28,6 @@ jobs:
           node-version: "22"
       - run: npm ci --ignore-scripts
       - name: Run deterministic Amazon DE evidence boundary tests
-        run: node --test tests/amazon-de-bulk-url-health.test.mjs tests/amazon-de-offer-evidence.test.mjs tests/amazon-de-pdp-identity.test.mjs tests/amazon-de-price-gate.test.mjs
-      - name: One source search plus at most one Amazon DE PDP, no customer publication
+        run: node --test tests/amazon-de-bulk-url-health.test.mjs tests/amazon-de-universal-search.test.mjs tests/amazon-de-offer-evidence.test.mjs tests/amazon-de-pdp-identity.test.mjs tests/amazon-de-price-gate.test.mjs
+      - name: Diverse dynamic consumer searches and bounded product evidence; no publication
         run: node scripts/verify-amazon-de-source-readonly.mjs
