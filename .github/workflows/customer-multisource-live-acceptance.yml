@@ -1,0 +1,30 @@
+name: NAWAA Live Multi-Source Customer Acceptance
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/customer-multisource-live-acceptance.yml"
+      - "scripts/customer-multisource-live-acceptance.mjs"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-customer-search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Bind to actual current main SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Could not resolve main SHA" >&2
+            exit 1
+          fi
+          echo "NAWAA_EXPECT_LIVE_SHA=$SHA" >> "$GITHUB_ENV"
+      - name: Probe the real Render API, bounded by request and response budgets
+        run: node scripts/customer-multisource-live-acceptance.mjs
