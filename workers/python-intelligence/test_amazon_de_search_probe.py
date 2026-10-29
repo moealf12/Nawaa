@@ -7,6 +7,7 @@ from amazon_de_search_probe import canonical_pdp, parse_eur, parse_search_html
 
 CARD = """<div data-component-type="s-search-result" data-asin="B0ABC12345">
 <h2><a href="/Some-Phone/dp/B0ABC12345/ref=sr_1"><span>Smartphone 256 GB</span></a></h2>
+<img class="s-image" src="https://m.media-amazon.com/images/I/example.jpg"/>
 <span class="a-price-whole">1.299,</span><span class="a-price-fraction">99</span>
 </div>"""
 
@@ -27,6 +28,10 @@ class AmazonDeProbeTests(unittest.TestCase):
         self.assertEqual(result["offers"][0]["price_eur"], "1299.99")
         self.assertEqual(result["offers"][0]["availability"], "UNKNOWN")
         self.assertFalse(result["offers"][0]["customer_publishable"])
+        self.assertEqual(result["offers"][0]["currency"], "EUR")
+        self.assertTrue(result["offers"][0]["image"].startswith("https://m.media-amazon.com/"))
+        self.assertNotIn("seller", result["offers"][0])
+        self.assertNotIn("shipping", result["offers"][0])
     def test_duplicate_asin(self):
         self.assertEqual(len(parse_search_html(CARD + CARD)["offers"]), 1)
     def test_block_page(self):
