@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from hashlib import sha256
 from urllib.parse import urlencode, urlsplit
 
 from bs4 import BeautifulSoup
@@ -100,7 +101,10 @@ def inspect(label, url):
                     "elapsed_ms":milliseconds}
         shape=html_shape(response.text)
         output={"page":label,"status":"HTTP_200","http_status":status,
-                "elapsed_ms":milliseconds,"shape":shape}
+                "elapsed_ms":milliseconds,"shape":shape,
+                "body_sha256_12":sha256(response.content).hexdigest()[:12],
+                "content_type_html":"text/html" in response.headers.get("content-type","").lower(),
+                "pdp_sku_present_in_html": SKU in response.text if label=="matebook_d16_pdp" else None}
         if label=="search_laptop":
             search=parse_html(response.text)
             offers=search.get("items",[])
