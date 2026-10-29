@@ -1,4 +1,5 @@
 import { searchFreeStorefrontById, configuredFreeStorefronts } from "./providers/free-storefronts.mjs";
+import {classifySourceError} from "../src/source-access-intelligence.mjs";
 import { searchExtraUnbxd } from "./providers/extra-unbxd.mjs";
 import { searchJarir } from "./providers/jarir.mjs";
 import { searchSharafDG } from "./providers/sharafdg.mjs";
@@ -114,7 +115,10 @@ export async function auditFreeStorefronts({ storeId = null, query = null, direc
       // Initial EU probes: cap PDP resolution on unproven merchant adapters.
       const isEuropeanPilot = ["amazon-uk","amazon-de","mediamarkt-de",
         "pccomponentes-es","bike24-de","thomann-de"].includes(store.id);
-      const result = await searchFreeStorefrontById(store.id, probeQuery, { perStore:isEuropeanPilot ? 3 : 100 });
+      const result = await searchFreeStorefrontById(store.id, probeQuery, {
+        perStore:isEuropeanPilot ? 3 : 100,
+        noonSearchCardDiagnostics:store.id==="noon-sa",
+      });
       const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
         ? "FAILING"
         : classify(result);
@@ -129,10 +133,17 @@ export async function auditFreeStorefronts({ storeId = null, query = null, direc
         })),
       };
     } catch (error) {
+      const failure=classifySourceError(error);
+      const failureClass=typeof failure?.failureClass==="string"
+        ? failure.failureClass : "SOURCE_FAILURE";
       resultItem = {
         id:store.id, name:store.name, countryCode:store.countryCode, query:probeQuery, status:"FAILING",
         candidates:0, verifiedOffers:0, failures:1, durationMs:Date.now()-started,
-        error:error instanceof Error ? error.message : String(error),
+        // A denied source has unknown availability, never zero real inventory.
+        ...(store.id==="noon-sa" ? {
+          failureClass,productAvailability:"unknown",customerPublishable:false,
+          error:"noon_source_"+failureClass.toLowerCase(),
+        } : {error:error instanceof Error ? error.message : String(error)}),
       };
     }
   
