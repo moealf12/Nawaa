@@ -54,10 +54,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Test actual Render postinstall provisioning with checksum-verified uv
+        env:
+          RENDER: "true"
+          RENDER_SERVICE_ID: "srv-dau4olo93c1s73cnj9a0"
+          NAWAA_PYTHON_PREPARE: "1"
+        run: node scripts/provision-render-python.mjs
+      - name: Check feature-disabled postinstall does not provision
+        env:
+          RENDER: "true"
+          RENDER_SERVICE_ID: "srv-dau4olo93c1s73cnj9a0"
+          NAWAA_PYTHON_PREPARE: "0"
+        run: node scripts/provision-render-python.mjs
       - name: Run production offline Python bridge benchmark
         run: node scripts/benchmark-render-python-runtime.mjs
       - name: Verify startup self-check uses the managed environment
         env:
           RENDER: "true"
           RENDER_SERVICE_ID: "srv-dau4olo93c1s73cnj9a0"
-        run: node scripts/verify-render-python-runtime.mjs
+        run: |
+          node scripts/verify-render-python-runtime.mjs | tee /tmp/nawaa-python-readiness.txt
+          grep -q '"ready":true' /tmp/nawaa-python-readiness.txt
