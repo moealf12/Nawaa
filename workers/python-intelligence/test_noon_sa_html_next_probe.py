@@ -30,7 +30,27 @@ class NoonHtmlNextTests(unittest.TestCase):
         self.assertEqual(response["status"], "PAGE_SEARCH_DATA")
         self.assertEqual(len(response["items"]), 1)
     def test_absent_next_data(self):
-        self.assertEqual(parse_html("<html><body>Noon</body></html>")["status"],"NEXT_DATA_ABSENT")
+        self.assertEqual(parse_html("<html><body>Noon</body></html>")["status"],"HTML_200_NO_CATALOG_MARKERS")
+    def test_flight_without_next_data_is_not_an_offer(self):
+        result=parse_html('<html><script>self.__next_f.push([1,"payload"])</script></html>')
+        self.assertEqual(result["status"], "HTML_200_NEXT_FLIGHT_WITHOUT_NEXT_DATA")
+        self.assertEqual(result["items"], [])
+    def test_jsonld_marker_does_not_create_search_offers(self):
+        result=parse_html('<html><script type="application/ld+json">{"@type":"ItemList"}</script></html>')
+        self.assertEqual(result["status"], "HTML_200_JSONLD_WITHOUT_NEXT_DATA")
+        self.assertEqual(result["items"], [])
+    def test_product_dom_without_schema(self):
+        result=parse_html('<html><div data-testid="product-card"></div></html>')
+        self.assertEqual(result["status"], "HTML_200_PRODUCT_DOM_WITHOUT_NEXT_DATA")
+        self.assertEqual(result["items"], [])
+    def test_js_shell_without_search_products(self):
+        result=parse_html('<html><script src="/_next/static/chunk.js"></script></html>')
+        self.assertEqual(result["status"], "HTML_200_JS_SHELL_WITHOUT_NEXT_DATA")
+        self.assertEqual(result["items"], [])
+    def test_http_200_challenge_is_diagnostic(self):
+        result=parse_html('<html><title>Access Denied</title><script>self.__next_f.push(1)</script></html>')
+        self.assertEqual(result["status"], "HTML_200_CHALLENGE_PAGE")
+        self.assertEqual(result["items"], [])
     def test_invalid_json(self):
         self.assertEqual(parse_html('<script id="__NEXT_DATA__">invalid</script>')["status"], "NEXT_DATA_INVALID_JSON")
     def test_shape_drift(self):
