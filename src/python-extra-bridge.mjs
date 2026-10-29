@@ -3,6 +3,7 @@
 import {spawn} from "node:child_process";
 import {randomUUID} from "node:crypto";
 import {StringDecoder} from "node:string_decoder";
+import {existsSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {join} from "node:path";
 
@@ -38,7 +39,8 @@ export function approvedExtraIndexUrl(rawUrl,sku){
 
 export async function runExtraPythonPdp({url,expectedSku},{
   timeoutMs=3000,signal,
-  pythonBin=process.env.RENDER==="true" ? join(CWD,".venv/bin/python") : "python3"
+  pythonBin=process.env.RENDER==="true" || existsSync(join(CWD,".venv/bin/python"))
+    ? join(CWD,".venv/bin/python") : "python3"
 }={}){
   if(!approvedExtraPdp(url,expectedSku))throw Error("PYTHON_EXTRA_URL_SKU_REJECTED");
   if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>10000)
