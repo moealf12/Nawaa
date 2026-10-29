@@ -6,7 +6,7 @@ import {StringDecoder} from "node:string_decoder";
 import {fileURLToPath} from "node:url";
 
 const CWD=fileURLToPath(new URL("../workers/python-intelligence/",import.meta.url));
-const VERSION="nawaa.jarir.experimental.v1";
+const VERSION="nawaa.jarir.pdp.v1";
 const MAX_OUT=96_000,MAX_ERR=8_192;
 const SUFFIX=/^\/sa-en\/[a-z0-9-]+-(\d{5,8})\.html$/;
 
