@@ -80,8 +80,11 @@ def test_jsonld_graph_products_ambiguous():
     assert x.price==Decimal("100")
 
 def test_mocked_fetch_and_hash():
+    url="https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666784.html"
     html=ld({"@type":"Product","sku":"666784","name":"iPhone 17",
-             "offers":{"price":"3799","priceCurrency":"SAR"}})
+             "url":url,
+             "offers":{"price":"3799","priceCurrency":"SAR","url":url,
+                       "seller":{"@type":"Organization","name":"Jarir Bookstore"}}})
     import hashlib
     expected_hash=hashlib.sha256(html.encode("utf-8")).hexdigest()
     with patch.object(JarirScraperEngine,"_download",return_value=(html,"https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666784.html",expected_hash)):
@@ -109,3 +112,24 @@ def test_property_other_sku_never_accepted(sku):
              "offers":{"price":"100","priceCurrency":"SAR"}})
     e=JarirScraperEngine.parse_html(html,JarirOfferEvidence(),"666784")
     assert e.price is None
+
+def test_live_merchant_owner_and_offer_url_must_match():
+    url="https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666784.html"
+    for seller,offer_url in (
+        ("Third-party",url),
+        ("Jarir Bookstore","https://www.jarir.com/sa-en/other-123456.html"),
+        (None,url),
+        ("Jarir Bookstore",None),
+    ):
+        offer={"@type":"Offer","price":"3799","priceCurrency":"SAR"}
+        if seller is not None:
+            offer["seller"]={"@type":"Organization","name":seller}
+        if offer_url is not None:
+            offer["url"]=offer_url
+        html=ld({"@type":"Product","sku":"666784","name":"iPhone 17","url":url,
+                 "offers":offer})
+        evidence=JarirScraperEngine.parse_html(
+            html,JarirOfferEvidence(requested_url=url),"666784"
+        )
+        assert evidence.price is None
+        assert "OFFER_MERCHANT_URL_UNATTESTED" in evidence.issues
