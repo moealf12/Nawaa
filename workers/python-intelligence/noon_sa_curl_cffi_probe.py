@@ -38,8 +38,10 @@ def search(query: str, limit: int = 50) -> dict:
         "dir": "desc",
     }
     start = time.monotonic()
+    stage = "SESSION_INIT"
     try:
         with requests.Session(impersonate="chrome120", timeout=15.0) as session:
+            stage = "HTTP_REQUEST"
             response = session.get(API, params=params, headers=HEADERS, timeout=15.0, allow_redirects=False)
         elapsed = round((time.monotonic() - start) * 1000)
         status = int(response.status_code)
@@ -67,8 +69,22 @@ def search(query: str, limit: int = 50) -> dict:
             "samples": samples, "customer_publishable": False,
         }
     except Exception as exc:
-        # Log the exception *class* rather than ignoring it or publishing fabricated offers.
+        # Only stable, non-sensitive diagnostics; do not emit proxy URLs or error messages.
+        message = str(exc).lower()
+        reason = (
+            "UNSUPPORTED_IMPERSONATION" if "impersonat" in message and "support" in message else
+            "PROXY_ERROR" if "proxy" in message or "tunnel" in message else
+            "TLS_CERTIFICATE" if "ssl certificate" in message or "certificate verify" in message else
+            "DNS_ERROR" if "resolve host" in message or "resolve proxy" in message else
+            "CONNECTION_FAILURE" if "connect" in message else
+            "TIMEOUT" if "timeout" in message or "timed out" in message else
+            "UNCLASSIFIED"
+        )
+        curl_code = getattr(exc, "code", None)
+        if not isinstance(curl_code, int):
+            curl_code = None
         return {"status": "REQUEST_EXCEPTION", "exception_class": type(exc).__name__,
+                "stage": stage, "error_category": reason, "curl_code": curl_code,
                 "elapsed_ms": round((time.monotonic() - start) * 1000),
                 "items": 0, "priced": 0, "customer_publishable": False}
 
