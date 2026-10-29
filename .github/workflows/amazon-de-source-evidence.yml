@@ -1,0 +1,32 @@
+name: NAWAA Amazon DE Evidence Pilot (read-only)
+
+on:
+  pull_request:
+    paths:
+      - "server/amazon-de-*.mjs"
+      - "scripts/verify-amazon-de-source-readonly.mjs"
+      - "scripts/audit-amazon-de-offer-evidence.mjs"
+      - "tests/amazon-de-*.test.mjs"
+      - ".github/workflows/amazon-de-source-evidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Run deterministic Amazon DE evidence boundary tests
+        run: node --test tests/amazon-de-bulk-url-health.test.mjs tests/amazon-de-offer-evidence.test.mjs tests/amazon-de-pdp-identity.test.mjs tests/amazon-de-price-gate.test.mjs
+      - name: One source search plus at most one Amazon DE PDP, no customer publication
+        run: node scripts/verify-amazon-de-source-readonly.mjs
