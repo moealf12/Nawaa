@@ -1,0 +1,51 @@
+name: Noon Render Production Read-Only Probe
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/noon-render-production-audit.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check exact live Render revision
+        run: |
+          python - <<'PY'
+          import json, urllib.request
+          url="https://nawaa-search-api.onrender.com/health"
+          try:
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"Accept":"application/json"}),timeout=24) as r:
+                  obj=json.load(r)
+                  print(json.dumps({"http_status":r.status,"revision":obj.get("revision"),
+                                    "healthy":obj.get("ok"),"noon_legacy_active":obj.get("liveProviders",{}).get("noon"),
+                                    "noon_sa_configured":"noon-sa" in obj.get("liveProviders",{}).get("freeStorefronts",[])},sort_keys=True))
+          except Exception as e:
+              print(json.dumps({"status":"HEALTH_UNAVAILABLE","error_class":type(e).__name__}))
+          PY
+      - name: Check availability of pre-existing gated source audit without modifying settings
+        run: |
+          python - <<'PY'
+          import json, urllib.request, urllib.error
+          url="https://nawaa-search-api.onrender.com/api/source-audit?store=noon-sa&q=laptop"
+          try:
+              with urllib.request.urlopen(urllib.request.Request(url,headers={"Accept":"application/json"}),timeout=27) as r:
+                  obj=json.load(r)
+                  for item in obj.get("results",[])[:1]:
+                      d=item.get("diagnostics") or {}
+                      print(json.dumps({"source":"noon-sa","http_status":r.status,
+                          "status":item.get("status"),"candidates":item.get("candidates"),
+                          "verifiedOffers":item.get("verifiedOffers"),"durationMs":item.get("durationMs"),
+                          "sourceObservation":d.get("sourceObservation"),
+                          "sourceAccessFailure":d.get("sourceAccessFailure"),
+                          "searchPage":d.get("searchPage"),
+                          "noonSearchCards":d.get("noonSearchCards"),
+                          "primarySearchErrorClass":"PRESENT" if d.get("primarySearchError") else "NONE"},sort_keys=True))
+                  if not obj.get("results"): print(json.dumps({"http_status":r.status,"result":"NO_SOURCE_RESULTS"}))
+          except urllib.error.HTTPError as e:
+              print(json.dumps({"audit_endpoint":"NOT_AVAILABLE","http_status":e.code}))
+          except Exception as e:
+              print(json.dumps({"audit_endpoint":"UNAVAILABLE","error_class":type(e).__name__}))
+          PY
