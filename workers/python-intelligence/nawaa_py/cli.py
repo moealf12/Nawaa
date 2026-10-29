@@ -82,6 +82,7 @@ def run_worker() -> int:
             sys.stdout.write(json.dumps(_error({}, "INPUT_TOO_LARGE_OR_UNFRAMED")) + "\n")
             sys.stdout.flush()
             return 2
+        parsed = None
         try:
             parsed = json.loads(raw, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
             result = asyncio.run(process(parsed))
