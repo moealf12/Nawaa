@@ -32,7 +32,7 @@ export function approvedExtraIndexUrl(rawUrl,sku){
     const u=new URL(rawUrl);
     return u.protocol==="https:"&&u.host==="www.extra.com"&&
       !u.username&&!u.password&&!u.search&&!u.hash&&
-      u.pathname===\`/en-sa/p/\${sku}\`&&u.href===rawUrl;
+      u.pathname==="/en-sa/p/"+sku&&u.href===rawUrl;
   }catch{return false;}
 }
 
