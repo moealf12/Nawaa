@@ -21,7 +21,7 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
 logging.basicConfig(stream=sys.stderr,level=logging.INFO,format="[JarirScraper] %(levelname)s: %(message)s")
-VERSION="nawaa.jarir.experimental.v1"
+VERSION="nawaa.jarir.pdp.v1"
 USER_AGENT="NAWAA-Research/0.1 (+https://github.com/moealf12/Nawaa)"
 MAX_BODY_BYTES=8_000_000
 MAX_JSONL_BYTES=4096
