@@ -221,7 +221,7 @@ test("non-cooperative slow Python must never erase already acquired eXtra offers
   // Simulates a hung child/third-party extractor that does not honor AbortSignal.
   const started=performance.now();
   const out=await searchExtraUnbxd(QUERY,12,QUERY,{
-    pythonBudgetMs:1000,
+    pythonBudgetMs:1300,
     pythonExtract:()=>new Promise(()=>{})
   });
   const elapsed=performance.now()-started;
