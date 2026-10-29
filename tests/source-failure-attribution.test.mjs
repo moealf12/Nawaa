@@ -71,6 +71,9 @@ test("real storefront classification never invents a successful price or shop st
   assert.equal(Object.hasOwn(e,"availability"),false);
   const network=storefrontSourceFailure("ikea-sa","fetch failed: ECONNRESET");
   assert.equal(network.failureClass,"SOURCE_TRANSPORT_FAILURE");
+  const unsupported=storefrontSourceFailure("ikea-sa","generic failure",
+    {observedFailureClass:"SOURCE_TRANSPORT_FAILURE"});
+  assert.equal(unsupported.failureClass,"UNKNOWN");
   assert.equal(classifyFailure(e),"UNKNOWN");
   assert.throws(()=>storefrontSourceFailure("https://foo.test/?token=secret","HTTP 403"),/INVALID_STOREFRONT_ID/);
   assert.throws(()=>storefrontSourceFailure("X-INVALID","HTTP 403"),/INVALID_STOREFRONT_ID/);
