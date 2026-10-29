@@ -5,6 +5,12 @@ on:
       - "workers/python-intelligence/nawaa_py/extra_pdp.py"
       - "workers/python-intelligence/nawaa_py/extra_live_trial.py"
       - "workers/python-intelligence/tests/test_extra_pdp.py"
+      - "src/python-extra-bridge.mjs"
+      - "server/python-extra-enrichment.mjs"
+      - "server/providers/extra-unbxd.mjs"
+      - "tests/python-extra-admission.test.mjs"
+      - "tests/extra-python-provider-flag.test.mjs"
+      - "scripts/verify-extra-python-integration.mjs"
       - ".github/workflows/extra-python-pdp-trial.yml"
   workflow_dispatch:
 permissions:
@@ -32,6 +38,17 @@ jobs:
         run: |
           cd workers/python-intelligence
           .venv/bin/python -m pytest tests/test_extra_pdp.py -q -ra
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install existing Node dependencies without activating Render postinstall
+        run: npm ci --ignore-scripts
+      - name: Check and run Node / Python integration and source ownership tests
+        run: |
+          node --check src/python-extra-bridge.mjs
+          node --check server/python-extra-enrichment.mjs
+          node --check server/providers/extra-unbxd.mjs
+          node --test tests/python-extra-admission.test.mjs tests/extra-python-provider-flag.test.mjs
       - name: Exercise genuine JSON Lines eXtra Python CLI with safe rejected URL
         run: |
           cd workers/python-intelligence
@@ -56,6 +73,11 @@ jobs:
       - name: Install locked Python eXtra extractor dependencies
         run: |
           uv sync --project workers/python-intelligence --locked --no-dev --python 3.12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Node source dependencies for real provider canary
+        run: npm ci --ignore-scripts
       - name: One respectful public eXtra product-page trial with no writes
         env:
           HTTP_PROXY: ""
@@ -65,3 +87,10 @@ jobs:
         run: |
           cd workers/python-intelligence
           .venv/bin/python -m nawaa_py.extra_live_trial
+      - name: "Live UNBXD provider to Python PDP bounded canary (read only)"
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: node scripts/verify-extra-python-integration.mjs
