@@ -29,7 +29,7 @@ test("Noon live HTML: two distinct Saudi product offers become price-observed re
     });
     assert.equal(requests.length,1);
     assert.equal(requests[0],"https://www.noon.com/saudi-en/search/?q=Laptop");
-    assert.equal(result.offers.length,2);
+    assert.equal(result.offers.length,2,JSON.stringify({diagnostics:result.diagnostics,retained:result.offers.map(x=>({name:x.title,price:x.productPrice}))}));
     assert.deepEqual(result.offers.map(o=>o.productPrice),[2489,3299]);
     assert.deepEqual(result.offers.map(o=>o.specs.modelNumber),[sku1,sku2]);
     assert.equal(result.offers[0].sourceUrl,
