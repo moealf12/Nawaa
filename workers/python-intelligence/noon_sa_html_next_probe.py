@@ -43,21 +43,41 @@ def locate_hits(data):
     return "HITS_SCHEMA_NOT_FOUND", None
 
 def html_shape(html: str):
-    """Only summary flags, never log or persist merchant HTML or embedded scripts."""
+    """Bounded markup-only evidence. No raw content, cookies or user tokens logged."""
     text = html[:8_000_000] if isinstance(html, str) else ""
     lower = text.lower()
+    soup = BeautifulSoup(text, "lxml")
+    title = soup.title.get_text(" ", strip=True).lower() if soup.title else ""
+    block_title = any(word in title for word in (
+        "captcha", "robot check", "access denied", "verify you are human"
+    ))
+    # These markers diagnose a rendering strategy; they do not establish offers.
     return {
         "html_chars": len(text),
-        "script_count": lower.count("<script"),
-        "jsonld_markers": lower.count("application/ld+json"),
-        "next_data_marker": "__next_data__" in lower,
+        "script_count": len(soup.find_all("script")),
+        "jsonld_script_count": len(soup.find_all("script", type="application/ld+json")),
+        "next_data_marker": bool(soup.find("script", id="__NEXT_DATA__")),
         "next_f_marker": "self.__next_f.push" in lower,
-        "react_root_marker": 'id="__next"' in lower or 'id="root"' in lower,
-        "product_dom_marker": "data-testid" in lower and "product" in lower,
-        "challenge_marker": "<title>robot check</title>" in lower
-            or "<title>captcha</title>" in lower
-            or "/errors/validatecaptcha" in lower,
+        "next_asset_count": len(soup.select('script[src*="/_next/"], link[href*="/_next/"]')),
+        "product_dom_marker": bool(soup.select('[data-testid*="product"], [data-qa*="product"]')),
+        "itemlist_marker": '"@type":"itemlist"' in lower or '"@type": "itemlist"' in lower,
+        "challenge_marker": block_title or "/errors/validatecaptcha" in lower,
     }
+
+
+def absent_next_data_status(shape: dict) -> str:
+    """No offer is created from guessed JS state or a successful HTTP status."""
+    if shape["challenge_marker"]:
+        return "HTML_200_CHALLENGE_PAGE"
+    if shape["next_f_marker"]:
+        return "HTML_200_NEXT_FLIGHT_WITHOUT_NEXT_DATA"
+    if shape["jsonld_script_count"]:
+        return "HTML_200_JSONLD_WITHOUT_NEXT_DATA"
+    if shape["product_dom_marker"]:
+        return "HTML_200_PRODUCT_DOM_WITHOUT_NEXT_DATA"
+    if shape["script_count"] or shape["next_asset_count"]:
+        return "HTML_200_JS_SHELL_WITHOUT_NEXT_DATA"
+    return "HTML_200_NO_CATALOG_MARKERS"
 
 
 def parse_html(html: str):
@@ -66,7 +86,7 @@ def parse_html(html: str):
     soup = BeautifulSoup(html, "lxml")
     next_tag = soup.find("script", id="__NEXT_DATA__")
     if not next_tag:
-        return {"status": "NEXT_DATA_ABSENT", "items": [], "raw_hits": None}
+        return {"status": absent_next_data_status(html_shape(html)), "items": [], "raw_hits": None}
     try:
         data = json.loads(next_tag.string or next_tag.get_text() or "")
     except (json.JSONDecodeError, ValueError):
