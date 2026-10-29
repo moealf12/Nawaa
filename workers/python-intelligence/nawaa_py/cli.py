@@ -29,7 +29,7 @@ def process(request: dict) -> dict:
 
 def main() -> int:
     raw = sys.stdin.buffer.readline(MAX_BYTES + 1)
-    if not raw or len(raw) > MAX_BYTES or not raw.endswith(b"\\n"):
+    if not raw or len(raw) > MAX_BYTES or not raw.endswith(b"\n"):
         print(json.dumps({"error": "INPUT_SIZE_OR_FRAMING_INVALID"}), file=sys.stderr)
         return 2
     try:
@@ -38,7 +38,7 @@ def main() -> int:
     except (ValueError, TypeError, json.JSONDecodeError):
         print(json.dumps({"error": "INPUT_VALIDATION_FAILED"}), file=sys.stderr)
         return 2
-    sys.stdout.write(json.dumps(result, separators=(",", ":")) + "\\n")
+    sys.stdout.write(json.dumps(result, separators=(",", ":")) + "\n")
     return 0
 
 
