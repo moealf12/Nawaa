@@ -84,7 +84,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Three live Jarir products: Node subprocess -> Python JSONL -> strict admission (no DB writes)
+      - name: "Three live Jarir products - Node subprocess to Python JSONL to strict admission (no DB writes)"
         env:
           HTTP_PROXY: ""
           HTTPS_PROXY: ""
