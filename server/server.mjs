@@ -5,6 +5,7 @@ import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import {enforceCustomerOfferPublication} from "./customer-offer-output.mjs";
 import http from "node:http";
+import {beginProcessPressure,endProcessPressure} from "./search-process-pressure.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -560,6 +561,7 @@ async function searchAll(query, { depth = 0 } = {}) {
   if (Number(depth) > 0) return searchExpansion(query, Number(depth));
   // Measure internal boundaries only. No query text, URLs, SKUs or prices in logs.
   const pipelineStarted = performance.now();
+  const pipelinePressure = beginProcessPressure();
   query = normalizeSearchQuery(query);
   if(OMEGA_INDEX_ONLY){
     const indexed=await searchIndexedOffers(query);
@@ -735,6 +737,7 @@ async function searchAll(query, { depth = 0 } = {}) {
   const selectedOffers = allSelectedOffers.slice(0, plan.returnLimit);
   const pipelineMs = performance.now() - pipelineStarted;
   // Emit one bounded, low-cardinality event only for a slow acquisition.
+  // Process CPU and event-loop utilization include concurrent requests; no per-query CPU attribution.
   // These spans include async waits, not CPU timings; no shopper query is logged.
   if (pipelineMs >= 10500) {
     console.info("NAWAA_SEARCH_JSON_PIPELINE "+JSON.stringify({
@@ -742,6 +745,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       preSelectionMs:Math.round(preSelectionMs),
       finalizationMs:Math.round(Math.max(0,pipelineMs-primaryAcquiredMs-preSelectionMs)),
       totalMs:Math.round(pipelineMs),
+      ...endProcessPressure(pipelinePressure),
       selectedOffers:selectedOffers.length,
       deadlineExceeded,
       fallbackUsed:Boolean(fallbackQuery),
@@ -1085,6 +1089,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/search") {
     const responseStarted = performance.now();
+    const responsePressure = beginProcessPressure();
     const q = String(url.searchParams.get("q") || "").trim();
     const productUrl = String(url.searchParams.get("url") || "").trim();
     const cursorToken = String(url.searchParams.get("cursor") || "").trim();
@@ -1131,6 +1136,7 @@ const server = http.createServer(async (req, res) => {
           canonicalizedMs:Math.round(canonicalizedMs),
           responseEnqueueMs:Math.round(Math.max(0,totalMs-cacheWaitMs-canonicalizedMs)),
           totalMs:Math.round(totalMs),
+          ...endProcessPressure(responsePressure),
           cacheMode:["fresh","miss","stale","stale-if-error"].includes(result.cache?.mode)
             ?result.cache.mode:"unknown",
           selectedOffers:Array.isArray(result.offers)?result.offers.length:0,
