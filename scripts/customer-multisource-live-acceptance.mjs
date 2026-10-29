@@ -51,6 +51,7 @@ function sourceFailureClass(entry){
   if(/(?:^|\D)403(?:\D|$)|access.denied/i.test(raw))return "HTTP_403";
   if(/(?:^|\D)429(?:\D|$)|rate.limit/i.test(raw))return "HTTP_429";
   if(/(?:^|\D)5\d\d(?:\D|$)/i.test(raw))return "HTTP_5XX";
+  if(/fetch failed|network|econnreset|enotfound|eai_again|socket/i.test(raw))return "TRANSPORT_FAILURE";
   if(/invalid|malformed|parse/i.test(raw))return "INVALID_RESPONSE";
   return "UNKNOWN";
 }
@@ -70,6 +71,13 @@ function summarize(query,response){
   const errors=Array.isArray(body.errors)?body.errors:[];
   return {
     query,status:response.status,requestMs:response.elapsedMs,
+    serverDurationMs:Number.isFinite(Number(body.durationMs)) ? Number(body.durationMs) : null,
+    cacheMode:["fresh","miss","stale","stale-if-error"].includes(body.cache?.mode)
+      ?body.cache.mode:"unknown",
+    serverDeadlineMs:Number.isFinite(Number(body.coverage?.requestDeadlineMs))
+      ?Number(body.coverage.requestDeadlineMs):null,
+    serverDeadlineExceeded:body.coverage?.deadlineExceeded===true,
+    fallbackUsed:body.coverage?.fallbackUsed===true,
     schemaRecognized:Array.isArray(offers),
     publishedOfferCount:offers?.length??0,
     structurallyEligible:eligible.length,
