@@ -22,6 +22,8 @@ class VariantClassifier:
             elif got != want:
                 conflicts.append(field)
 
+        if not any(getattr(expected, field) is not None for field in _FIELDS):
+            missing.append("expectedIdentity")
         decision = (
             IdentityDecision.REJECT if conflicts else
             IdentityDecision.INSUFFICIENT if missing else
