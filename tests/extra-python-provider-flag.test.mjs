@@ -251,3 +251,21 @@ test("Python may update only an existing exact-SKU offer within the source-first
   assert.equal(out.offers[0].sourceMeta.indexPrice,3499);
   assert.equal(out.diagnostics.pythonExtraPdp.accepted,1);
 });
+
+test("UNBXD source fetch surviving a 3.1s network delay still returns eXtra offers",async t=>{
+  originalEnv(t);
+  delete process.env.NAWAA_EXTRA_PYTHON_PDP;
+  let aborted=false;
+  globalThis.fetch=async(_url,{signal}={})=>{
+    await new Promise(resolve=>setTimeout(resolve,3130));
+    aborted=Boolean(signal?.aborted);
+    if(aborted)throw signal.reason||Error("FETCH_ABORTED");
+    return Response.json(originalPayload);
+  };
+  const out=await searchExtraUnbxd(QUERY,12,QUERY);
+  assert.equal(aborted,false,"the old 3s source cap must not abort before 3.1s");
+  assert.equal(out.offers.length,1);
+  assert.equal(out.offers[0].merchant,"eXtra");
+  assert.equal(out.offers[0].sourceMeta.productId,SKU);
+  assert.equal(out.offers[0].productPrice,3499);
+});
