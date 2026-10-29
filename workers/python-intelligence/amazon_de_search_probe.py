@@ -26,11 +26,11 @@ OUT_OF_STOCK = re.compile(r"derzeit nicht auf lager|derzeit nicht verfügbar", r
 
 def parse_eur(value: str | None) -> str | None:
     text = str(value or "").strip().replace("\u00a0", " ")
-    match = re.search(r"\d[\d.]*,\d{2}", text)
-    if not match or not PRICE.fullmatch(match.group()):
+    number_text = re.sub(r"[^\d,.]", "", text)
+    if not PRICE.fullmatch(number_text):
         return None
     try:
-        number = Decimal(match.group().replace(".", "").replace(",", "."))
+        number = Decimal(number_text.replace(".", "").replace(",", "."))
         return str(number) if 0 < number <= 10000000 else None
     except InvalidOperation:
         return None
