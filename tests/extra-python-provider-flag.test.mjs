@@ -269,3 +269,38 @@ test("UNBXD source fetch surviving a 3.1s network delay still returns eXtra offe
   assert.equal(out.offers[0].sourceMeta.productId,SKU);
   assert.equal(out.offers[0].productPrice,3499);
 });
+
+test("one transient UNBXD timeout can recover the exact merchant offer inside 7.2s",async t=>{
+  originalEnv(t);
+  delete process.env.NAWAA_EXTRA_PYTHON_PDP;
+  let calls=0;
+  globalThis.fetch=async()=>{
+    calls++;
+    if(calls===1){
+      await new Promise(resolve=>setTimeout(resolve,4050));
+      throw new DOMException("timed out","TimeoutError");
+    }
+    return Response.json(originalPayload);
+  };
+  const start=performance.now();
+  const out=await searchExtraUnbxd(QUERY,12,QUERY);
+  const elapsed=performance.now()-start;
+  assert.equal(calls,2,"only one bounded retry after timeout");
+  assert.ok(elapsed<7200,"direct retry must stay inside original provider budget");
+  assert.equal(out.offers.length,1);
+  assert.equal(out.offers[0].sourceMeta.productId,SKU);
+  assert.equal(out.offers[0].merchant,"eXtra");
+  assert.equal(out.offers[0].productPrice,3499);
+});
+
+test("UNBXD HTTP 429 denial is never retried or circumvented",async t=>{
+  originalEnv(t);
+  delete process.env.NAWAA_EXTRA_PYTHON_PDP;
+  let calls=0;
+  globalThis.fetch=async()=>{
+    calls++;
+    return new Response("",{status:429});
+  };
+  await assert.rejects(searchExtraUnbxd(QUERY,12,QUERY),/extra-unbxd: HTTP 429/);
+  assert.equal(calls,1);
+});
