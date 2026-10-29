@@ -1,0 +1,26 @@
+name: NAWAA Live Python Jarir Customer Canary
+on:
+  pull_request:
+    paths:
+      - "scripts/smoke-live-jarir-python-canary.mjs"
+      - ".github/workflows/production-python-jarir-acceptance.yml"
+permissions:
+  contents: read
+jobs:
+  live-jarir-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify source is read-only, independent of project credentials
+        run: node --check scripts/smoke-live-jarir-python-canary.mjs
+      - name: Observe customer-visible Jarir Python PDP in real Render JSON
+        env:
+          NAWAA_EXPECTED_MAIN_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/smoke-live-jarir-python-canary.mjs
