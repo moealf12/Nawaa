@@ -71,6 +71,43 @@ test("Noon long Saudi-en laptop PDP URL keeps exact SKU and strips untrusted nav
   assert.deepEqual(extractNoonSaudiCatalogCards(html(wrongOffer),"laptop"),[]);
 });
 
+test("Noon homepage archive proves two additional Saudi product ID families, without certifying price",()=>{
+  const source=configuredFreeStorefronts().find(s=>s.id==="noon-sa");
+  const samples=[
+    ["https://www.noon.com/saudi-en/hala-facial-tissues-pack-of-10-boxes-140-sheets-x-2ply-package-design-may-vary-white/N42536578A/p/?o=e277c0cbd8be5a4c","N42536578A"],
+    ["https://www.noon.com/saudi-en/x11-wireless-gaming-mouse-paw3311-sensor-lightweight-rgb-charging-dock-22-000-dpi-tri-mode-connectivity-bt-2-4ghz-wired-5-programmable-buttons-for-pc-mac-white/Z442D4EDF6FE68F9C7210Z/p/?o=z442d4edf6fe68f9c7210z-1","Z442D4EDF6FE68F9C7210Z"],
+    ["https://www.noon.com/saudi-en/matebook-d16-upgraded-version-laptop-with-16-inch-full-hd-1920x1080-display-core-i5-12450h-processor-16gb-ram-ddr5-512gb-ssd-windows-11-pro-with-microsoft-office-english-arabic-mystic-silver-english-arabic-mystic-silver/N70312362V/p/?o=f428b90c38b7fb5b","N70312362V"],
+  ];
+  for(const [url,expectedSku] of samples){
+    const id=noonSaudiProductIdentity(url);
+    assert.equal(id?.sku,expectedSku);
+    assert.equal(id?.canonicalUrl,new URL(url).origin+new URL(url).pathname);
+    assert.equal(source.productPath.test(new URL(url).pathname),true,url);
+    assert.equal(noonSaudiProductIdentity(url.replace("saudi-en","uae-en")),null);
+    assert.equal(noonSaudiProductIdentity(url.replace("www.noon.com","www.noon.com.evil.test")),null);
+  }
+  for(const bad of ["N12345678X","N1234567A","Z123Z","Z12345678901234567890X"]){
+    const url="https://www.noon.com/saudi-en/some-product/"+bad+"/p/";
+    assert.equal(noonSaudiProductIdentity(url),null);
+    assert.equal(source.productPath.test(new URL(url).pathname),false);
+  }
+});
+
+test("First-party JSON-LD offers with N...A / Z...Z remain exact-SKU and single-offer bound",()=>{
+  for(const sku of ["N42536578A","Z442D4EDF6FE68F9C7210Z"]){
+    const url="https://www.noon.com/saudi-en/gaming-mouse/"+sku+"/p/";
+    const node={"@type":"Product",name:"Gaming Mouse",sku,url,
+      image:"https://f.nooncdn.com/p/test.jpg",
+      offers:{"@type":"Offer",price:"199.00",priceCurrency:"SAR",url}};
+    const accepted=extractNoonSaudiCatalogCards(html(node),"gaming mouse");
+    assert.equal(accepted.length,1);
+    assert.equal(accepted[0].productId,sku);
+    assert.equal(accepted[0].price,199);
+    const wrong={...node,offers:{...node.offers,sku:"N70211519V"}};
+    assert.deepEqual(extractNoonSaudiCatalogCards(html(wrong),"gaming mouse"),[]);
+  }
+});
+
 test("RED: one exact Noon product record yields source-stated SAR price, no delivery certification",()=>{
   const records=extractNoonSaudiCatalogCards(html(product()),"iphone 17 256gb");
   assert.equal(records.length,1);
