@@ -12,6 +12,15 @@ When accepted, Python updates the existing Jarir offer slot, not an additional s
 ## Availability and limits
 
 - OFF by default. No customer input can turn it on.
+- The live shopper canary requires **all three** operator-managed settings:
+  `NAWAA_JARIR_PYTHON_PDP=1`,
+  `NAWAA_JARIR_PYTHON_CANARY_QUERY=iPhone 17 256GB`, and
+  `NAWAA_JARIR_PYTHON_CANARY_SKU=666784`.
+  Only the exact normalized query is eligible, and only its matching SKU is
+  fetched. The first flag by itself is inert; unrelated searches retain
+  original fast progressive SSE behavior. Do not expand scope without evidence.
+- Render logs only show source, SKU, counts and rejection classes under
+  `NAWAA_JARIR_PYTHON_CANARY`; they contain no raw pages, prices or visitor IDs.
 - At most one existing PDP per provider call; strict URL/SKU allowlist; child process output, stderr and execution time are bounded.
 - With the flag OFF, the original progressive Jarir pipeline is untouched.
 - With it ON, early raw Jarir pages are withheld until final same-SKU updates so SSE never emits two differently priced versions of that slot.
