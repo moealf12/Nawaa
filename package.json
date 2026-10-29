@@ -10,7 +10,9 @@
     "audit:source": "node scripts/audit-source.mjs",
     "audit:matrix": "node scripts/audit-matrix.mjs",
     "benchmark:search": "node scripts/search-quality-benchmark.mjs",
-    "validate:sources": "node scripts/validate-live-sources.mjs"
+    "validate:sources": "node scripts/validate-live-sources.mjs",
+    "postinstall": "node scripts/provision-render-python.mjs",
+    "prestart": "node scripts/verify-render-python-runtime.mjs"
   },
   "engines": {
     "node": ">=22"
