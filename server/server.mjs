@@ -26,6 +26,7 @@ import { searchSharafDG } from "./providers/sharafdg.mjs";
 import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarovski.mjs";
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonCreators } from "./providers/amazon-creators.mjs";
 import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontById } from "./providers/free-storefronts.mjs";
+import { searchAmazonDeUniversal } from "./providers/amazon-de-universal.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
 import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
 import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
@@ -136,6 +137,12 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   // must not collapse the whole public API into an instant empty response.
   add("extra-unbxd", (signal) => searchExtraUnbxd(providerQuery, 100, matchingQuery, {signal}), { explicit:true, deadlineMs:8000 });
   add("jarir-direct", (signal) => searchJarir(providerQuery, plan.jarirLimit, matchingQuery, {signal, onOffers}), { explicit:true, deadlineMs:8000 });
+  // Search Amazon Germany for every nonempty shopper query (not a fixed ASIN).
+  // This is a bounded, parallel discovery diagnostic. It cannot publish prices,
+  // and must not hold up already valid Saudi/GCC provider offers.
+  add("free-storefronts:amazon-de", (signal) => searchAmazonDeUniversal(providerQuery, {
+    signal,
+  }), { explicit:true, deadlineMs:6500 });
   // Virgin UAE is a certified core comparison source. Run it explicitly in the
   // first wave so Jarir cannot be the only merchant visible to the shopper.
   add("virgin-ae", (signal) => searchFreeStorefrontById("virgin-ae", providerQuery, {
@@ -153,7 +160,7 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
     add("free-storefronts", (signal) => searchFreeStorefronts(providerQuery, {
       signal,
       matchingQuery,
-      excludeStoreIds:["amazon-sa"],
+      excludeStoreIds:["amazon-sa","amazon-de"],
       storeOffset:plan.storefrontOffset,
       storeLimit:plan.storefrontLimit,
       stableRouting:true,
@@ -327,7 +334,7 @@ async function searchExpansion(query, depth) {
   const storefrontPromise = plan.storefrontLimit > 0
     ? searchFreeStorefronts(providerQuery, {
         matchingQuery:query,
-        excludeStoreIds:["amazon-sa"],
+        excludeStoreIds:["amazon-sa","amazon-de"],
         storeOffset:plan.storefrontOffset,
         storeLimit:plan.storefrontLimit,
         stableRouting:true,
