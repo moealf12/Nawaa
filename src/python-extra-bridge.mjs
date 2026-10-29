@@ -10,6 +10,9 @@ import {join} from "node:path";
 const CWD=fileURLToPath(new URL("../workers/python-intelligence/",import.meta.url));
 const VERSION="nawaa.extra.pdp.v1";
 const MAX_STDOUT_BYTES=128_000,MAX_STDERR_BYTES=8_192;
+// Protect the shared free Render Node instance from simultaneous Python process floods.
+let activeExtraPython=0;
+const MAX_ACTIVE_EXTRA_PYTHON=2;
 const PDP=/^\/en-sa\/(?:[a-z0-9-]+\/)+p\/(\d{5,12})\/?$/;
 
 export function approvedExtraPdp(rawUrl,sku){
@@ -57,6 +60,9 @@ export async function runExtraPythonPdp({url,expectedSku},{
   })+"\n";
   if(Buffer.byteLength(input)>4096)throw Error("PYTHON_EXTRA_INPUT_LIMIT");
 
+  if(activeExtraPython>=MAX_ACTIVE_EXTRA_PYTHON)
+    throw Error("PYTHON_EXTRA_BUSY");
+  activeExtraPython++;
   return new Promise((resolve,reject)=>{
     let child;
     try{
@@ -66,6 +72,7 @@ export async function runExtraPythonPdp({url,expectedSku},{
              PYTHONUNBUFFERED:"1",PYTHONDONTWRITEBYTECODE:"1"}
       });
     }catch{
+      activeExtraPython--;
       reject(Error("PYTHON_EXTRA_SPAWN_FAILED"));return;
     }
     let finished=false,stdout="",bytes=0,errBytes=0;
@@ -74,6 +81,7 @@ export async function runExtraPythonPdp({url,expectedSku},{
     const finish=(error,value)=>{
       if(finished)return;
       finished=true;
+      activeExtraPython--;
       clearTimeout(timer);
       signal?.removeEventListener("abort",abort);
       if(error){if(!child.killed)child.kill("SIGKILL");reject(error);}
