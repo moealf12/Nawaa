@@ -34,7 +34,7 @@ def matching_pdp_identity(raw):
     try:
         u = urlsplit(str(raw or ""))
         return u.scheme == "https" and u.hostname in ("noon.com", "www.noon.com") and u.path.startswith("/saudi-en/") and (
-            re.search(r"/(N\\d{8}V)/p/?$", u.path, re.I) is not None
+            re.search(r"/(N\d{8}V)/p/?$", u.path, re.I) is not None
         ) and u.path.rsplit("/", 3)[-3].upper() == SKU
     except (ValueError, IndexError):
         return False
@@ -77,7 +77,7 @@ def exact_sku_pdp_jsonld(html):
         if offers.get("priceCurrency") != "SAR" or not matching_pdp_identity(offers.get("url")):
             continue
         raw = str(offers.get("price", ""))
-        if not re.fullmatch(r"\\d{1,7}(?:\\.\\d{1,2})?", raw):
+        if not re.fullmatch(r"\d{1,7}(?:\.\d{1,2})?", raw):
             continue
         if float(raw) > 0:
             exact.append(raw)
