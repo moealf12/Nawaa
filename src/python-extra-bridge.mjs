@@ -10,6 +10,20 @@ import {join} from "node:path";
 const CWD=fileURLToPath(new URL("../workers/python-intelligence/",import.meta.url));
 const VERSION="nawaa.extra.pdp.v1";
 const MAX_STDOUT_BYTES=128_000,MAX_STDERR_BYTES=8_192;
+const SAFE_STAGES=new Set(["worker_ready","dns_start","dns_done","robots_start",
+  "robots_done","pdp_start","pdp_done","parse_done","reply"]);
+// Strictly parse only fixed stage names and bounded integers. Never log raw
+// stderr, URLs, prices, identity, request IDs or Python exception messages.
+export function parseExtraWorkerPhase(line){
+  if(typeof line!=="string"||!line.startsWith("NAWAA_EXTRA_PHASE ")||line.length>200)return null;
+  try{
+    const value=JSON.parse(line.slice("NAWAA_EXTRA_PHASE ".length));
+    if(!value||Object.keys(value).sort().join(",")!=="sinceBootMs,stage"||
+      !SAFE_STAGES.has(value.stage)||!Number.isInteger(value.sinceBootMs)||
+      value.sinceBootMs<0||value.sinceBootMs>120000)return null;
+    return {stage:value.stage,sinceBootMs:value.sinceBootMs};
+  }catch{return null;}
+}
 // Protect the shared free Render Node instance from simultaneous Python process floods.
 let activeExtraPython=0;
 const MAX_ACTIVE_EXTRA_PYTHON=2;
@@ -75,6 +89,8 @@ export async function runExtraPythonPdp({url,expectedSku},{
       activeExtraPython--;
       reject(Error("PYTHON_EXTRA_SPAWN_FAILED"));return;
     }
+    const started=performance.now();
+    let lastStage="spawn",lastPythonMs=null,readyMs=null,stderrBuffer="";
     let finished=false,stdout="",bytes=0,errBytes=0;
     const decoder=new StringDecoder("utf8");
     let timer;
@@ -83,6 +99,15 @@ export async function runExtraPythonPdp({url,expectedSku},{
       finished=true;
       activeExtraPython--;
       clearTimeout(timer);
+      const elapsedMs=Math.max(0,Math.round(performance.now()-started));
+      if(error && process.env.RENDER==="true" &&
+        ["PYTHON_EXTRA_TIMEOUT","PYTHON_EXTRA_SOURCE_HTTP_TIMEOUT",
+         "PYTHON_EXTRA_EXIT_NONZERO"].includes(error.message)){
+        console.info("NAWAA_EXTRA_PYTHON_PHASE "+JSON.stringify({
+          outcome:error.message,stage:lastStage,elapsedMs,
+          pythonBootMs:lastPythonMs,readyMs
+        }));
+      }
       signal?.removeEventListener("abort",abort);
       if(error){if(!child.killed)child.kill("SIGKILL");reject(error);}
       else resolve(value);
@@ -98,7 +123,17 @@ export async function runExtraPythonPdp({url,expectedSku},{
     });
     child.stderr.on("data",chunk=>{
       errBytes+=chunk.byteLength;
-      if(errBytes>MAX_STDERR_BYTES)finish(Error("PYTHON_EXTRA_STDERR_LIMIT"));
+      if(errBytes>MAX_STDERR_BYTES)return finish(Error("PYTHON_EXTRA_STDERR_LIMIT"));
+      const lines=(stderrBuffer+chunk.toString("utf8")).split(/\r?\n/);
+      stderrBuffer=lines.pop().slice(-256);
+      for(const line of lines){
+        const event=parseExtraWorkerPhase(line);
+        if(event && event.stage!=="reply"){
+          lastStage=event.stage;
+          lastPythonMs=event.sinceBootMs;
+          if(event.stage==="worker_ready")readyMs=Math.round(performance.now()-started);
+        }
+      }
     });
     child.stdin.on("error",()=>finish(Error("PYTHON_EXTRA_STDIN_FAILURE")));
     child.on("close",code=>{
