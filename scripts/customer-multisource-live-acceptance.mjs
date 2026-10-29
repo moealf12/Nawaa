@@ -68,6 +68,62 @@ function summarize(query,response){
   };
 }
 
+// A single independently sampled SSE request checks completed customer transport.
+// This is not JSON/SSE parity: merchant state may change between independent requests.
+async function observeCompletedSse(query){
+  const controller=new AbortController();
+  const started=Date.now();
+  const deadline=setTimeout(()=>controller.abort(Error("SSE_PROBE_DEADLINE")),18000);
+  let httpStatus=null,snapshots=0,completeEvent=false,errorEvents=0,bytes=0;
+  let lastOffers=[],coverage=null,buffer="";
+  try{
+    const response=await fetch(new URL("/api/search/stream?q="+encodeURIComponent(query),origin),{
+      headers:{accept:"text/event-stream"},redirect:"error",signal:controller.signal,
+    });
+    httpStatus=response.status;
+    if(httpStatus!==200)throw Error("SSE_HTTP_"+httpStatus);
+    if(!(response.headers.get("content-type")||"").includes("text/event-stream"))
+      throw Error("SSE_CONTENT_TYPE");
+    const decoder=new TextDecoder();
+    for await(const chunk of response.body){
+      bytes+=chunk.byteLength;
+      if(bytes>MAX_RESPONSE_BYTES)throw Error("SSE_RESPONSE_LIMIT");
+      buffer+=decoder.decode(chunk,{stream:true}).replace(/\r\n/g,"\n");
+      let end;
+      while((end=buffer.indexOf("\n\n"))>=0){
+        const frame=buffer.slice(0,end);buffer=buffer.slice(end+2);
+        const event=frame.match(/^event:\s*(.*)$/m)?.[1];
+        if(event==="done"){completeEvent=true;break;}
+        if(event==="error"){errorEvents++;continue;}
+        if(event!=="snapshot")continue;
+        const data=frame.split("\n").filter(x=>x.startsWith("data:"))
+          .map(x=>x.slice(5).trimStart()).join("\n");
+        const snapshot=JSON.parse(data);
+        if(!Array.isArray(snapshot.offers))throw Error("SSE_SNAPSHOT_SCHEMA");
+        snapshots++;
+        lastOffers=snapshot.offers;
+        coverage=snapshot.coverage||coverage;
+      }
+      if(completeEvent)break;
+    }
+    const invalid=lastOffers.filter(offer=>!validOffer(offer)).length;
+    const merchants=[...new Set(lastOffers.map(x=>bounded(x?.merchant)).filter(Boolean))];
+    return {query,httpStatus,snapshots,completeEvent,errorEvents,
+      finalOffers:lastOffers.length,invalidFinalOffers:invalid,merchants,
+      extraFinalOffers:lastOffers.filter(x=>bounded(x?.merchant).toLowerCase()==="extra").length,
+      coveragePartial:coverage?.partial??(coverage?.complete===false),
+      elapsedMs:Date.now()-started,
+      passed:completeEvent&&snapshots>0&&invalid===0};
+  }catch(error){
+    return {query,httpStatus,snapshots,completeEvent,errorEvents,
+      elapsedMs:Date.now()-started,passed:false,
+      errorClass:bounded(error?.name||error?.message)};
+  }finally{
+    clearTimeout(deadline);
+    controller.abort();
+  }
+}
+
 const startedAt=new Date().toISOString();
 const baseline={kind:"BASELINE",observedAtUtc:startedAt,expected,origin,checks:[]};
 let healthOk=false;
@@ -106,12 +162,19 @@ const valid=output.filter(x=>x.status===200&&x.schemaRecognized&&x.structurallyI
 const multi=valid.filter(x=>Object.keys(x.merchantCounts).length>=2);
 const single=valid.filter(x=>Object.keys(x.merchantCounts).length===1);
 const empty=valid.filter(x=>x.publishedOfferCount===0);
+const extraJsonQueries=valid.filter(x=>Object.keys(x.merchantCounts)
+  .some(merchant=>merchant.toLowerCase()==="extra")).length;
+const sse=healthOk?await observeCompletedSse("سماعات بلوتوث"):null;
+if(sse)console.log(JSON.stringify({kind:"SSE",...sse}));
 const summary={kind:"SUMMARY",observedAtUtc:new Date().toISOString(),
   sampledQueries:queries.length,attemptedQueries:output.length,
   http200ValidSchema:valid.length,multiMerchantQueries:multi.length,
   singleMerchantQueries:single.length,emptyQueries:empty.length,
+  extraJsonContributingQueries:extraJsonQueries,
+  sseComplete:sse?.completeEvent??false,ssePassed:sse?.passed??false,
   invalidOrFailedQueries:output.length-valid.length,
-  result:healthOk&&valid.length===queries.length&&multi.length>=1?"PASS":"FAIL",
-  limitation:"Read-only small live smoke; structured validity is not independent price verification."};
+  result:healthOk&&valid.length===queries.length&&multi.length>=1&&
+    extraJsonQueries>=1&&sse?.passed===true?"PASS":"FAIL",
+  limitation:"Read-only small live smoke; independent JSON/SSE requests are not parity evidence and structural validity is not price attestation."};
 console.log(JSON.stringify(summary));
 if(summary.result!=="PASS")process.exitCode=1;
