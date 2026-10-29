@@ -67,11 +67,13 @@ try {
   check("SOURCE_REGISTRY_HTTP_200",sources.status===200&&Array.isArray(sources.payload?.sources));
   check("ONE_NOON_SOURCE_RECORD",evidence.sourceRegistry.noonCount===1);
 
-  for(const query of ["iPhone 17 256GB","PS5","Samsung Galaxy S25"]){
+  for(const query of ["iPhone 17 256GB","PS5","Samsung Galaxy S25","Apple iPhone 17e 512GB Soft Pink"]){
     const res=await get("/api/search?q="+encodeURIComponent(query),{timeoutMs:45000});
     const data=res.payload||{};
     const offers=Array.isArray(data.offers)?data.offers:[];
     const invalid=offers.filter(x=>!validOffer(x));
+    const extra=offers.filter(x=>x.merchant==="eXtra");
+    const extraSkus=extra.map(x=>String(x.sourceMeta?.productId||"")).filter(Boolean);
     const result={
       query,
       status:res.status,
@@ -79,6 +81,10 @@ try {
       totalOffers:offers.length,
       structurallyValidOffers:offers.length-invalid.length,
       invalidOffers:invalid.length,
+      extraOffers:extra.length,
+      extraExpectedSkuPresent:extraSkus.includes("100462492"),
+      extraDuplicateSkus:extraSkus.length-new Set(extraSkus).size,
+      extraPythonPdpEvidence:extra.filter(x=>x.sourceMeta?.priceSource==="extra-python-pdp").length,
       exactMatches:offers.filter(x=>x.exactMatch===true).length,
       merchants:[...new Set(offers.map(x=>x?.merchant).filter(Boolean))].slice(0,12),
       providerYields:(Array.isArray(data.providers)?data.providers:[])
@@ -93,6 +99,12 @@ try {
     if(invalid.length) evidence.checks.push({name:"INVALID_OFFERS_"+query,result:"FAIL",count:invalid.length});
     console.log("NAWAA_LIVE_SEARCH "+JSON.stringify(result));
   }
+  const extraCheck=evidence.searches.find(x=>x.query==="Apple iPhone 17e 512GB Soft Pink");
+  check("EXTRA_SOURCE_VISIBLE_ON_PRODUCTION",extraCheck?.extraOffers>0 &&
+    extraCheck.extraExpectedSkuPresent===true);
+  check("EXTRA_NO_DUPLICATE_SKU_OFFERS",extraCheck?.extraDuplicateSkus===0);
+  // Public output may intentionally remove internal price evidence metadata;
+  // acceptance of actual Python PDP evidence must be verified in Render app logs.
   check("ALL_SEARCH_REQUESTS_200",evidence.searches.every(x=>x.status===200));
   check("NO_MALFORMED_PUBLISHED_OFFERS",evidence.searches.every(x=>x.invalidOffers===0));
   check("LIVE_PRODUCT_YIELD_PRESENT",evidence.searches.some(x=>x.structurallyValidOffers>0));
