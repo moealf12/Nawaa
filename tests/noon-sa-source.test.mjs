@@ -52,7 +52,7 @@ test("Noon long Saudi-en laptop PDP URL keeps exact SKU and strips untrusted nav
   assert.deepEqual(noonSaudiProductIdentity(decorated),{
     sku:"N70312362V",canonicalUrl:url
   });
-  assert.equal(noonSaudiProductIdentity(url.replace("N70312362V","N70312362A")),null);
+  assert.equal(noonSaudiProductIdentity(url.replace("N70312362V","N70312362X")),null);
   assert.equal(noonSaudiProductIdentity(url.replace("saudi-en","uae-en")),null);
   assert.equal(noonSaudiProductIdentity(url.replace("www.noon.com","www.noon.com.evil.example")),null);
   const title="Huawei MateBook D16 Upgraded Version Laptop 16 Inch Core i5-12450H 16GB RAM 512GB SSD";
@@ -72,7 +72,8 @@ test("Noon long Saudi-en laptop PDP URL keeps exact SKU and strips untrusted nav
 });
 
 test("Noon homepage archive proves two additional Saudi product ID families, without certifying price",()=>{
-  const source=configuredFreeStorefronts().find(s=>s.id==="noon-sa");
+  const source=routeFreeStorefronts("noon gaming mouse",Infinity,{stable:true}).find(x=>x.store.id==="noon-sa")?.store;
+  assert.ok(source?.productPath);
   const samples=[
     ["https://www.noon.com/saudi-en/hala-facial-tissues-pack-of-10-boxes-140-sheets-x-2ply-package-design-may-vary-white/N42536578A/p/?o=e277c0cbd8be5a4c","N42536578A"],
     ["https://www.noon.com/saudi-en/x11-wireless-gaming-mouse-paw3311-sensor-lightweight-rgb-charging-dock-22-000-dpi-tri-mode-connectivity-bt-2-4ghz-wired-5-programmable-buttons-for-pc-mac-white/Z442D4EDF6FE68F9C7210Z/p/?o=z442d4edf6fe68f9c7210z-1","Z442D4EDF6FE68F9C7210Z"],
