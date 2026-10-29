@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlsplit
+from urllib.robotparser import RobotFileParser
 
 import httpx
 from bs4 import BeautifulSoup
@@ -65,6 +66,17 @@ class JarirScraperEngine:
                      "Accept":"text/html,application/xhtml+xml"},
             timeout=timeout,follow_redirects=False,trust_env=False,
         ) as client:
+            # Respect public robots.txt before attempting the product fetch.
+            with client.stream("GET","https://www.jarir.com/robots.txt") as robots_response:
+                if robots_response.status_code!=200:raise ValueError("ROBOTS_UNAVAILABLE")
+                robots_body=bytearray()
+                for part in robots_response.iter_bytes():
+                    robots_body.extend(part)
+                    if len(robots_body)>128_000:raise ValueError("ROBOTS_TOO_LARGE")
+            rules=RobotFileParser()
+            rules.parse(robots_body.decode("utf-8",errors="replace").splitlines())
+            if not rules.can_fetch("NAWAA-Research",url):
+                raise ValueError("ROBOTS_DISALLOW")
             with client.stream("GET",url) as response:
                 if response.is_redirect:raise ValueError("REDIRECT_BLOCKED")
                 response.raise_for_status()
