@@ -5,7 +5,7 @@ import {searchFreeStorefrontById} from "../server/providers/free-storefronts.mjs
 const IMAGE="https://f.nooncdn.com/p/test.jpg";
 const sku1="N70312362V", sku2="Z20CCB8056BB8E89E0B67Z";
 const link1="https://www.noon.com/saudi-en/huawei-matebook-d16-laptop/"+sku1+"/p/?o=offer-one&nav_ctx=private-session";
-const link2="https://www.noon.com/saudi-en/asus-laptop-16gb/"+sku2+"/p/?o=offer-two";
+const link2="https://www.noon.com/saudi-en/asus-zenbook-14-laptop-16gb/"+sku2+"/p/?o=offer-two";
 const card=(url,title,price)=>
   '<a href="'+url+'"><h2 data-qa="plp-product-box-name">'+title+'</h2>'+
   '<div data-qa="plp-product-box-price"><strong class="amount">'+price+'</strong>'+
@@ -21,7 +21,7 @@ test("Noon live HTML: two distinct Saudi product offers become price-observed re
       requests.push(String(input));
       return new Response(search(
         card(link1,"Huawei MateBook D16 Laptop 16GB 512GB","2,489"),
-        card(link2,"ASUS Laptop 16GB 1TB SSD","3,299")
+        card(link2,"ASUS Zenbook 14 OLED Laptop 16GB 1TB SSD Intel Core i5","3,299")
       ),{status:200,headers:{"content-type":"text/html"}});
     };
     const result=await searchFreeStorefrontById("noon-sa","Laptop",{
