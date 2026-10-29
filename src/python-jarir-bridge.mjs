@@ -4,6 +4,7 @@ import {spawn} from "node:child_process";
 import {randomUUID} from "node:crypto";
 import {StringDecoder} from "node:string_decoder";
 import {fileURLToPath} from "node:url";
+import {join} from "node:path";
 
 const CWD=fileURLToPath(new URL("../workers/python-intelligence/",import.meta.url));
 const VERSION="nawaa.jarir.pdp.v1";
@@ -22,7 +23,8 @@ export function approvedJarirPdp(rawUrl,sku){
 }
 
 export async function runJarirPythonPdp({url,expectedSku},{
-  timeoutMs=5500,signal,pythonBin="python3"
+  timeoutMs=5500,signal,
+  pythonBin=process.env.RENDER==="true" ? join(CWD,".venv/bin/python") : "python3"
 }={}){
   if(!approvedJarirPdp(url,expectedSku))throw Error("PYTHON_JARIR_URL_SKU_REJECTED");
   if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>12000)

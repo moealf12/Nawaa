@@ -2,3 +2,7 @@ node_modules/
 .env
 .env.*
 *.log
+
+# Managed portable Python runtime and download cache
+.render-python/
+workers/python-intelligence/.venv/
