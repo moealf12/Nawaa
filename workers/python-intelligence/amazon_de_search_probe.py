@@ -70,8 +70,8 @@ def parse_search_html(html: str, page: int = 1) -> dict:
         whole = card.select_one(".a-price-whole")
         fraction = card.select_one(".a-price-fraction")
         # German price "1.299,00" or separate "1.299," + "00".
-        price_text = (whole.get_text(" ", strip=True) if whole else "") + (
-            fraction.get_text(" ", strip=True) if fraction else ""
+        price_text = (whole.get_text("", strip=True) if whole else "") + (
+            fraction.get_text("", strip=True) if fraction else ""
         )
         price = parse_eur(price_text)
         image_el = card.select_one("img.s-image[src]")
