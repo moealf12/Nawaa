@@ -10,6 +10,7 @@ on:
       - "server/providers/extra-unbxd.mjs"
       - "tests/python-extra-admission.test.mjs"
       - "tests/extra-python-provider-flag.test.mjs"
+      - "tests/extra-python-phase-diagnostics.test.mjs"
       - "scripts/verify-extra-python-integration.mjs"
       - "scripts/audit-extra-pdp-links.mjs"
       - "scripts/verify-extra-python-general-live.mjs"
@@ -50,7 +51,7 @@ jobs:
           node --check src/python-extra-bridge.mjs
           node --check server/python-extra-enrichment.mjs
           node --check server/providers/extra-unbxd.mjs
-          node --test tests/python-extra-admission.test.mjs tests/extra-python-provider-flag.test.mjs
+          node --test tests/python-extra-admission.test.mjs tests/extra-python-provider-flag.test.mjs tests/extra-python-phase-diagnostics.test.mjs
       - name: Exercise genuine JSON Lines eXtra Python CLI with safe rejected URL
         run: |
           cd workers/python-intelligence
