@@ -42,6 +42,24 @@ def locate_hits(data):
         return "PAGE_SEARCH_DATA", search_data["hits"]
     return "HITS_SCHEMA_NOT_FOUND", None
 
+def html_shape(html: str):
+    """Only summary flags, never log or persist merchant HTML or embedded scripts."""
+    text = html[:8_000_000] if isinstance(html, str) else ""
+    lower = text.lower()
+    return {
+        "html_chars": len(text),
+        "script_count": lower.count("<script"),
+        "jsonld_markers": lower.count("application/ld+json"),
+        "next_data_marker": "__next_data__" in lower,
+        "next_f_marker": "self.__next_f.push" in lower,
+        "react_root_marker": 'id="__next"' in lower or 'id="root"' in lower,
+        "product_dom_marker": "data-testid" in lower and "product" in lower,
+        "challenge_marker": "<title>robot check</title>" in lower
+            or "<title>captcha</title>" in lower
+            or "/errors/validatecaptcha" in lower,
+    }
+
+
 def parse_html(html: str):
     if not isinstance(html, str) or len(html) > 8_000_000:
         return {"status": "HTML_INVALID_OR_TOO_LARGE", "items": [], "raw_hits": None}
@@ -75,10 +93,12 @@ def probe(query: str):
         if status != 200:
             return {"status": "SOURCE_HTTP_" + str(status), "http_status": status,
                     "elapsed_ms": elapsed}
+        shape = html_shape(response.text)
         parsed = parse_html(response.text)
         items = parsed["items"]
         return {
             "status": parsed["status"], "http_status": status, "elapsed_ms": elapsed,
+            "html_shape": shape,
             "raw_hits": parsed["raw_hits"], "items": len(items),
             "priced": sum(x["price_sar"] is not None for x in items),
             "with_image": sum(x["image"] is not None for x in items),
