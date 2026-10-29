@@ -6,6 +6,7 @@ on:
       - "workers/python-intelligence/nawaa_py/extra_live_trial.py"
       - "workers/python-intelligence/tests/test_extra_pdp.py"
       - "src/python-extra-bridge.mjs"
+      - "scripts/verify-extra-python-warm-worker.mjs"
       - "server/python-extra-enrichment.mjs"
       - "server/providers/extra-unbxd.mjs"
       - "tests/python-extra-admission.test.mjs"
@@ -111,3 +112,14 @@ jobs:
           ALL_PROXY: ""
           NO_PROXY: "*"
         run: node scripts/verify-extra-python-general-live.mjs
+      - name: "Exercise single prewarmed Python JSONL worker without a second product fetch"
+        env:
+          RENDER: "true"
+          RENDER_SERVICE_ID: "srv-dau4olo93c1s73cnj9a0"
+          NAWAA_EXTRA_PYTHON_PDP: "1"
+          NAWAA_EXTRA_PYTHON_WARM: "1"
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: node scripts/verify-extra-python-warm-worker.mjs

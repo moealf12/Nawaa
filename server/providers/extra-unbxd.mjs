@@ -3,8 +3,11 @@ const EXTRA_SITE_KEY = "ss-unbxd-auk-extra-saudi-en-prod11541714990488";
 const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE_KEY}/search`;
 
 import { filterQueryOffers,normalizeSearchQuery } from "../../src/search-query.mjs";
-import {approvedExtraPdp} from "../../src/python-extra-bridge.mjs";
+import {approvedExtraPdp,warmExtraPythonPdp} from "../../src/python-extra-bridge.mjs";
 import {enrichExtraOffersWithPython} from "../python-extra-enrichment.mjs";
+// Worker is pre-imported only on the approved Render service with the explicit
+// warm flag; client queries cannot activate it. Never blocks HTTP startup.
+warmExtraPythonPdp();
 
 // Verified against full Unbxd responses (3 queries, 6 paired rounds):
 // only requested product attributes are returned; validated output offers,
