@@ -1,6 +1,9 @@
 const EXTRA_API_KEY = "21705619e273429e5767eea44ccb1ad5";
 const EXTRA_SITE_KEY = "ss-unbxd-auk-extra-saudi-en-prod11541714990488";
 const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE_KEY}/search`;
+// Avoid request storms when a cloud egress intermittently stalls. Shared
+// 5s cooldown; one retry per request, only following a genuine timeout.
+let lastExtraTimeoutRetryAt=0;
 
 import { filterQueryOffers,normalizeSearchQuery } from "../../src/search-query.mjs";
 import {approvedExtraPdp,warmExtraPythonPdp} from "../../src/python-extra-bridge.mjs";
@@ -229,7 +232,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
   // source response before optional Python enrichment started. The direct
   // fetch stays inside the existing 7.2s source and 8s provider deadlines.
   const overallDeadlineMs = 7200;
-  let start = 0, total = null, complete = false;
+  let start = 0, total = null, complete = false,timeoutRetryUsed=false;
   while(products.length < fetchCap) {
     signal?.throwIfAborted();
     url.searchParams.set("start", String(start));
@@ -285,6 +288,22 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       if(Date.now() - startedAt >= overallDeadlineMs) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
     } catch(error) {
       if(signal?.aborted) throw signal.reason || error;
+      // One respectful direct retry ONLY for transient timeouts, never HTTP
+      // denial/rate-limits, malformed responses or shopper cancellation.
+      // No proxy/impersonation, no retry storm, no new global time budget.
+      const remainingForRetry=overallDeadlineMs-(Date.now()-startedAt);
+      const retryNow=Date.now();
+      if(!products.length&&!timeoutRetryUsed&&!signal?.aborted&&
+        ["TimeoutError","AbortError"].includes(error?.name)&&
+        remainingForRetry>=1100&&retryNow-lastExtraTimeoutRetryAt>=5000){
+        timeoutRetryUsed=true;
+        lastExtraTimeoutRetryAt=retryNow;
+        console.info("NAWAA_EXTRA_SOURCE_DIAG "+JSON.stringify({
+          outcome:"retry",stage:"unbxd",failureClass:"TIMEOUT",
+          remainingMs:Math.floor(remainingForRetry)
+        }));
+        continue;
+      }
       if(!products.length){
         // Source failure is not a Python price-verification failure.
         // Emit bounded, low-cardinality diagnostics; never log shopper query,
@@ -308,7 +327,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
   const {offers,queryFilter}=filterQueryOffers(matchingQuery,products);
   if(process.env.NAWAA_EXTRA_SOURCE_TRACE==="1"){
     console.info("NAWAA_EXTRA_SOURCE_DIAG "+JSON.stringify({
-      outcome:"fetched",stage:"unbxd",
+      outcome:"fetched",stage:"unbxd",timeoutRetryUsed,
       rawRecords:start,normalized:products.length,
       matched:offers.length,elapsedMs:Date.now()-startedAt
     }));
