@@ -3,6 +3,7 @@
 // customer price publication remains blocked until independent offer truth.
 // No static ASINs, products, queries, paid API, proxy, or private data.
 import { normalizeSearchQuery } from "../../src/search-query.mjs";
+import { classifySourceError } from "../../src/source-access-intelligence.mjs";
 import { searchFreeStorefrontById } from "./free-storefronts.mjs";
 import { normalizeAmazonDeProductUrl } from "../amazon-de-bulk-url-health.mjs";
 import { probeAmazonDeOffer } from "../amazon-de-offer-evidence.mjs";
@@ -113,8 +114,10 @@ export async function searchAmazonDeUniversal(query, {
       errors: [], searchedMarkets: [{ id: "amazon-de",countryCode: "DE" }],
       diagnostics,
     };
-  } catch {
-    return empty(signal?.aborted ? "ABORTED" : "SOURCE_SEARCH_UNAVAILABLE");
+  } catch (error) {
+    return empty(signal?.aborted ? "ABORTED" : "SOURCE_SEARCH_UNAVAILABLE", {
+      failureClass: classifySourceError(error).failureClass,
+    });
   } finally {
     activeSearches--;
   }
