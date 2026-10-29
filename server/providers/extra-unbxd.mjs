@@ -6,7 +6,7 @@ const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE
 let lastExtraTimeoutRetryAt=0;
 
 import { filterQueryOffers,normalizeSearchQuery } from "../../src/search-query.mjs";
-import {approvedExtraPdp,warmExtraPythonPdp} from "../../src/python-extra-bridge.mjs";
+import {approvedExtraPdp,warmExtraPythonPdp,extraPythonWarmStatus} from "../../src/python-extra-bridge.mjs";
 import {enrichExtraOffersWithPython} from "../python-extra-enrichment.mjs";
 import {normalizeExtraUrl} from "../extra-url-health.mjs";
 // Worker is pre-imported only on the approved Render service with the explicit
@@ -207,7 +207,7 @@ function normalizeProduct(product) {
   };
 }
 
-export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal, probeFields,pythonExtract,pythonBudgetMs} = {}) {
+export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal, probeFields,pythonExtract,pythonBudgetMs,pythonWarmStatus=extraPythonWarmStatus} = {}) {
   const cap = limit === Infinity ? Infinity : Math.max(1, Number(limit) || 12);
   const fetchCap = cap === Infinity ? 100 : Math.min(100, cap);
   const url = new URL(EXTRA_SEARCH_BASE);
@@ -349,11 +349,21 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
     normalizeSearchQuery(canaryQuery)===normalizeSearchQuery(matchingQuery) &&
     approvedExtraPdp(approvedUrl,approvedSku);
   const pythonEnabled=generalEnabled||canaryEnabled;
+  // The warm Python worker is a singleton. Never begin optional enrichment
+  // when it is already known to be starting, occupied, or at the 8-request
+  // recycle boundary. No waiting, queue, new process, or added merchant fetch.
+  // Cold-worker mode and successfully ready warm workers remain unchanged.
+  const warm=pythonEnabled&&offers.length&&!signal?.aborted
+    ? pythonWarmStatus() : null;
+  const warmSkipReason=!warm?.enabled ? null
+    : !warm.ready ? "PYTHON_EXTRA_WARM_NOT_READY"
+    : warm.busy ? "PYTHON_EXTRA_WARM_BUSY"
+    : warm.completed>=8 ? "PYTHON_EXTRA_WARM_EXHAUSTED" : null;
   // Merchant search results are the primary product evidence. Python PDP is
   // optional enrichment and must NEVER delay returning already acquired eXtra
   // offers until the provider's 8s deadline expires.
   let finalOffers=offers,pythonDiagnostics=null;
-  if(pythonEnabled&&offers.length&&!signal?.aborted){
+  if(pythonEnabled&&offers.length&&!signal?.aborted&&!warmSkipReason){
     // UNBXD can consume ~3s; reserve 450ms for normalization/return and
     // provider aggregation. Cap enrichment independently of Python's own
     // worker timeout, including in tests with a non-cooperative extractor.
@@ -399,6 +409,13 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       pythonDiagnostics={attempted:0,accepted:0,rejected:0,failed:0,
         failureClasses:["PYTHON_EXTRA_BUDGET_EXHAUSTED"]};
     }
+  }else if(pythonEnabled&&offers.length&&warmSkipReason){
+    // The eligible UNBXD offer remains publishable under its own provenance.
+    // A skipped OPTIONAL PDP is not a failed primary merchant acquisition.
+    pythonDiagnostics={attempted:0,accepted:0,rejected:0,failed:0,
+      failureClasses:[],skippedReason:warmSkipReason};
+  }
+  if(pythonDiagnostics){
     // Never log source prices, visitor identities, page HTML or source bodies.
     console.info("NAWAA_EXTRA_PYTHON_CANARY "+JSON.stringify({
       sourceId:"extra-sa",mode:generalEnabled?"all":"canary",
@@ -406,7 +423,8 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       accepted:pythonDiagnostics.accepted,
       rejected:pythonDiagnostics.rejected,
       failed:pythonDiagnostics.failed,
-      failureClasses:pythonDiagnostics.failureClasses
+      failureClasses:pythonDiagnostics.failureClasses,
+      ...(pythonDiagnostics.skippedReason?{skippedReason:pythonDiagnostics.skippedReason}:{}),
     }));
   }
   return {provider:"extra-unbxd",ok:finalOffers.length>0,
