@@ -187,7 +187,7 @@ test("general switch cannot bypass disabled base feature",async t=>{
   assert.equal(out.offers[0].productPrice,3499);
 });
 
-test("general mode allows bounded Render cold Python startup without exceeding search budget",async t=>{
+test("general mode reserves source return time ahead of optional Python enrichment",async t=>{
   originalEnv(t);
   process.env.NAWAA_EXTRA_PYTHON_PDP="1";
   process.env.NAWAA_EXTRA_PYTHON_ALL="1";
@@ -205,6 +205,49 @@ test("general mode allows bounded Render cold Python startup without exceeding s
   });
   assert.equal(out.diagnostics.pythonExtraPdp.accepted,1);
   assert.equal(timers.length,1);
-  assert.ok(timers[0]>4000 && timers[0]<=5000,
-    "Render subprocess must receive a 4-5s startup+network budget");
+  assert.ok(timers[0]>=1000 && timers[0]<=3200,
+    "Optional PDP must never consume the entire eXtra provider deadline");
+});
+
+test("non-cooperative slow Python must never erase already acquired eXtra offers",async t=>{
+  originalEnv(t);
+  process.env.NAWAA_EXTRA_PYTHON_PDP="1";
+  process.env.NAWAA_EXTRA_PYTHON_ALL="1";
+  globalThis.fetch=async()=>Response.json({
+    response:{numberOfProducts:1,products:[{
+      ...originalPayload.response.products[0],productUrl:PDP
+    }]}
+  });
+  // Simulates a hung child/third-party extractor that does not honor AbortSignal.
+  const started=performance.now();
+  const out=await searchExtraUnbxd(QUERY,12,QUERY,{
+    pythonBudgetMs:1000,
+    pythonExtract:()=>new Promise(()=>{})
+  });
+  const elapsed=performance.now()-started;
+  assert.ok(elapsed<2400,"Original UNBXD offers must be returned before the provider timeout");
+  assert.equal(out.offers.length,1);
+  assert.equal(out.offers[0].productPrice,3499);
+  assert.equal(out.offers[0].sourceUrl,"https://www.extra.com/en-sa/p/"+SKU);
+  assert.equal(out.diagnostics.pythonExtraPdp.accepted,0);
+  assert.ok(out.diagnostics.pythonExtraPdp.failureClasses.includes(
+    "PYTHON_EXTRA_OPTIONAL_DEADLINE"));
+});
+
+test("Python may update only an existing exact-SKU offer within the source-first budget",async t=>{
+  originalEnv(t);
+  process.env.NAWAA_EXTRA_PYTHON_PDP="1";
+  process.env.NAWAA_EXTRA_PYTHON_ALL="1";
+  globalThis.fetch=async()=>Response.json({
+    response:{numberOfProducts:1,products:[{
+      ...originalPayload.response.products[0],productUrl:PDP
+    }]}
+  });
+  const out=await searchExtraUnbxd(QUERY,12,QUERY,{
+    pythonExtract:async()=>evidence()
+  });
+  assert.equal(out.offers.length,1);
+  assert.equal(out.offers[0].productPrice,3299);
+  assert.equal(out.offers[0].sourceMeta.indexPrice,3499);
+  assert.equal(out.diagnostics.pythonExtraPdp.accepted,1);
 });
