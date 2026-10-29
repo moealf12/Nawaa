@@ -12,6 +12,7 @@ import json
 import re
 import socket
 import sys
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -54,6 +55,7 @@ class ExtraOfferEvidence(StrictModel):
     final_url: str | None = None
     parser_version: str = "1.1.0"
     response_sha256: str | None = None
+    fetched_at: str | None = None
     field_evidence: dict[str, EvidenceTrace] = Field(default_factory=dict)
     issues: list[str] = Field(default_factory=list)
 
@@ -234,6 +236,26 @@ class ExtraScraperEngine:
                     elif offer_sku and offer_sku != expected_sku:
                         result.issues.append("OFFER_SKU_MISMATCH")
                     else:
+                        # A structured Offer or Product URL must remain on
+                        # the same eXtra Saudi product SKU. An explicit
+                        # competing merchant cannot provide this retail price.
+                        offered_url = offer.get("url")
+                        product_url = chosen.get("url")
+                        seller = offer.get("seller")
+                        seller_name = seller.get("name") if isinstance(seller, dict) else seller
+                        if (
+                            (isinstance(offered_url, str) and
+                             not approved_url(offered_url, expected_sku))
+                            or (isinstance(product_url, str) and
+                                not approved_url(product_url, expected_sku))
+                            or (isinstance(seller_name, str) and
+                                seller_name.strip().casefold() not in
+                                {"extra", "eXtra".casefold(), "extra stores", "extra saudi"})
+                        ):
+                            result.issues.append("OFFER_MERCHANT_OR_URL_MISMATCH")
+                            result.price = None
+                            result.currency = None
+                            return result
                         amount = _price(offer.get("price"))
                         currency = offer.get("priceCurrency")
                         if amount is None:
@@ -361,7 +383,9 @@ class ExtraScraperEngine:
                 raise ExtraFetchError("NON_HTML_RESPONSE")
             sha = hashlib.sha256(body).hexdigest()
             html = body.decode("utf-8", errors="replace")
-            return cls.parse_html(html, expected_sku, requested_url=url, response_sha256=sha)
+            evidence = cls.parse_html(html, expected_sku, requested_url=url, response_sha256=sha)
+            evidence.fetched_at = datetime.now(timezone.utc).isoformat()
+            return evidence
 
 def process(request: dict[str, Any]) -> dict[str, Any]:
     req = ExtraRequest.model_validate(request)
