@@ -52,7 +52,11 @@ export const EXTRA_PROJECTION_FIELDS = Object.freeze([
   "barCode",
   "nameAr",
   "collectFromStoreEnabled",
-  "isOnlineOnly"
+  "isOnlineOnly",
+  "url",
+  "productUrl",
+  "productPageUrl",
+  "pdpUrl"
 ]);
 
 function firstFinite(...values) {
@@ -82,6 +86,17 @@ function boolish(value) {
   if (typeof value === "boolean") return value;
   const s = String(value || "").toLowerCase();
   return s === "true" || s === "1" || s === "yes";
+}
+
+// Merchant-supplied direct PDP only. Never synthesize slugs from product titles.
+function sourceOwnedPdp(product,sku) {
+  for (const key of ["url","productUrl","productPageUrl","pdpUrl"]) {
+    const raw=product?.[key];
+    if(typeof raw!=="string")continue;
+    const full=raw.startsWith("/en-sa/") ? "https://www.extra.com"+raw : raw;
+    if(approvedExtraPdp(full,sku))return full;
+  }
+  return null;
 }
 
 function normalizeProduct(product) {
@@ -173,6 +188,7 @@ function normalizeProduct(product) {
     },
     sourceMeta: {
       productId: id,
+      pdpUrl:sourceOwnedPdp(product,id),
       nameAr: firstString(product?.nameAr),
       color: firstString(product?.featureEnColor),
       storage: firstString(product?.featureEnMemoryInternal),
@@ -272,22 +288,27 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
     timings.filterMs = performance.now() - filterStart;
     console.log("EXTRA_PHASE_TIMING "+JSON.stringify({queryLength:String(query).length,offers:offers.length,products:products.length,...timings}));
   }
-  // No existing shopper query may enable Python directly. Three explicit
-  // operator-side settings must match this exact search and a validated PDP.
+  // General mode applies to all queries/visitors, but only to source-owned
+  // exact-SKU PDP URLs. A missing merchant URL keeps the UNBXD offer intact.
+  // The original operator-selected SKU mode remains independently supported.
   const approvedSku=String(process.env.NAWAA_EXTRA_PYTHON_CANARY_SKU||"");
   const approvedUrl=String(process.env.NAWAA_EXTRA_PYTHON_CANARY_URL||"");
   const canaryQuery=String(process.env.NAWAA_EXTRA_PYTHON_CANARY_QUERY||"");
-  const pythonEnabled=process.env.NAWAA_EXTRA_PYTHON_PDP==="1" &&
+  const baseEnabled=process.env.NAWAA_EXTRA_PYTHON_PDP==="1";
+  const generalEnabled=baseEnabled&&process.env.NAWAA_EXTRA_PYTHON_ALL==="1";
+  const canaryEnabled=baseEnabled &&
     canaryQuery.length>=5&&canaryQuery.length<=128 &&
     normalizeSearchQuery(canaryQuery)===normalizeSearchQuery(matchingQuery) &&
     approvedExtraPdp(approvedUrl,approvedSku);
+  const pythonEnabled=generalEnabled||canaryEnabled;
   let finalOffers=offers,pythonDiagnostics=null;
   if(pythonEnabled&&offers.length&&!signal?.aborted){
     // Stay inside the provider's original 7200 ms acquisition budget.
     const remaining=overallDeadlineMs-(Date.now()-startedAt);
     if(remaining>=1000){
       const observed=await enrichExtraOffersWithPython(offers,matchingQuery,{
-        approvedSku,approvedUrl,signal,timeoutMs:Math.min(3000,remaining),
+        approvedSku,approvedUrl,signal,timeoutMs:Math.min(generalEnabled?4000:3000,remaining),
+        scope:generalEnabled?"all":"canary",maxAttempts:generalEnabled?2:1,
         extract:pythonExtract
       });
       finalOffers=observed.offers;
@@ -298,7 +319,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
     }
     // Never log source prices, visitor identities, page HTML or source bodies.
     console.info("NAWAA_EXTRA_PYTHON_CANARY "+JSON.stringify({
-      sourceId:"extra-sa",sku:approvedSku,
+      sourceId:"extra-sa",mode:generalEnabled?"all":"canary",
       attempted:pythonDiagnostics.attempted,
       accepted:pythonDiagnostics.accepted,
       rejected:pythonDiagnostics.rejected,

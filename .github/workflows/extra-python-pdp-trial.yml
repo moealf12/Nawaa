@@ -11,6 +11,8 @@ on:
       - "tests/python-extra-admission.test.mjs"
       - "tests/extra-python-provider-flag.test.mjs"
       - "scripts/verify-extra-python-integration.mjs"
+      - "scripts/audit-extra-pdp-links.mjs"
+      - "scripts/verify-extra-python-general-live.mjs"
       - ".github/workflows/extra-python-pdp-trial.yml"
   workflow_dispatch:
 permissions:
@@ -94,3 +96,17 @@ jobs:
           ALL_PROXY: ""
           NO_PROXY: "*"
         run: node scripts/verify-extra-python-integration.mjs
+      - name: "Audit real eXtra UNBXD product URL coverage (read-only, diagnostic)"
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: node scripts/audit-extra-pdp-links.mjs
+      - name: "Prove all-visitor mode through real UNBXD and Python (read-only)"
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: node scripts/verify-extra-python-general-live.mjs
