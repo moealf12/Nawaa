@@ -45,6 +45,15 @@ def local_stealth_compatibility():
             except Exception as exc:
                 result["proposed_call"]="ERROR"
                 result["error_class"]=type(exc).__name__
+            if result["has_apply_stealth_sync"]:
+                try:
+                    obj.apply_stealth_sync(page)
+                    result["supported_page_call"]="PASS"
+                except Exception as exc:
+                    result["supported_page_call"]="ERROR"
+                    result["supported_page_error_class"]=type(exc).__name__
+            else:
+                result["supported_page_call"]="METHOD_MISSING"
             page.set_content("<html><h1>Local fixture</h1></html>")
             result["local_chromium"]=(
                 "PASS" if page.locator("h1").inner_text()=="Local fixture"
