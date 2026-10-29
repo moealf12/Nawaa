@@ -1,0 +1,22 @@
+name: curl_cffi Python Installation Validation
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/curl-cffi-install-check.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-curl-cffi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install curl_cffi from PyPI
+        run: python -m pip install --disable-pip-version-check curl_cffi
+      - name: Verify import and Python compatibility
+        run: |
+          python -c "import sys, curl_cffi; from curl_cffi import requests; assert sys.version_info[:2] == (3,12); print('CURL_CFFI_IMPORT_OK', curl_cffi.__version__)"
