@@ -82,9 +82,11 @@ def test_jsonld_graph_products_ambiguous():
 def test_mocked_fetch_and_hash():
     html=ld({"@type":"Product","sku":"666784","name":"iPhone 17",
              "offers":{"price":"3799","priceCurrency":"SAR"}})
-    with patch.object(JarirScraperEngine,"_download",return_value=(html,"https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666784.html")):
+    import hashlib
+    expected_hash=hashlib.sha256(html.encode("utf-8")).hexdigest()
+    with patch.object(JarirScraperEngine,"_download",return_value=(html,"https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666784.html",expected_hash)):
         e=JarirScraperEngine.extract_jarir_product("https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666784.html","666784")
-    assert e.response_sha256 and len(e.response_sha256)==64
+    assert e.response_sha256==expected_hash and len(e.response_sha256)==64
     assert e.fetched_at and e.price==Decimal("3799")
 
 def test_malformed_inputs_fail_closed():
