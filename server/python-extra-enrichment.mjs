@@ -139,7 +139,7 @@ export async function enrichExtraOffersWithPython(offers,matchingQuery,{
   if(!all&&!approvedExtraPdp(approvedUrl,approvedSku))
     return {offers:next,diagnostics};
   const cap=Math.max(1,Math.min(2,Number.isInteger(maxAttempts)?maxAttempts:1));
-  const budget=Math.max(0,Math.min(4000,Number(timeoutMs)||0));
+  const budget=Math.max(0,Math.min(all?5500:4000,Number(timeoutMs)||0));
   const started=Date.now(),seen=new Set();
   for(let index=0;index<originals.length;index++){
     if(signal?.aborted||diagnostics.attempted>=cap)break;
@@ -160,7 +160,7 @@ export async function enrichExtraOffersWithPython(offers,matchingQuery,{
     diagnostics.attempted++;
     try{
       const evidence=await extract(
-        {url,expectedSku:sku},{timeoutMs:Math.min(remaining,all?2000:3000),signal}
+        {url,expectedSku:sku},{timeoutMs:Math.min(remaining,all?5000:3000),signal}
       );
       const decision=admitExtraPythonObservation(
         candidate,evidence,matchingQuery,{pdpUrl:url}
