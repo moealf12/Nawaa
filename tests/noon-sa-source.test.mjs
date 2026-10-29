@@ -195,3 +195,52 @@ test("A rejected Noon JSON-LD sibling cannot come back through the generic fallb
     assert.equal(calls,1,"rejected record cannot trigger PDP fallback requests");
   }finally{globalThis.fetch=old}
 });
+
+
+test("Noon live HTML search surfaces only opt-in card diagnostic counts, never unverified shopper prices",{
+ concurrency:false
+},async()=>{
+  const old=globalThis.fetch;
+  let calls=0;
+  const pdp="https://www.noon.com/saudi-en/matebook-d16-laptop/N70312362V/p/?o=sample";
+  const card='<html><h1>Laptop</h1><a href="'+pdp+'">'+
+    '<h2 data-qa="plp-product-box-name">Huawei MateBook D16 Laptop</h2>'+
+    '<div data-qa="plp-product-box-price"><strong class="amount">2,489</strong></div>'+
+    '<img src="https://f.nooncdn.com/p/fixture.jpg"></a></html>';
+  try{
+    globalThis.fetch=async()=>{calls++;return new Response(card,{status:200,headers:{"content-type":"text/html"}});};
+    const withDiagnostics=await searchFreeStorefrontById("noon-sa","laptop",{
+      perStore:3,noonSearchCardDiagnostics:true
+    });
+    assert.equal(calls,1,"no extra network fetch is allowed");
+    assert.deepEqual(withDiagnostics.offers,[],"noon PLP advertised price is not a verified customer offer");
+    assert.deepEqual(withDiagnostics.diagnostics.noonSearchCards,{
+      status:"SEARCH_CARD_EVIDENCE",
+      parsedCards:1,uniqueOfferCandidates:1,conflictingOffers:0,customerPublishable:false
+    });
+    assert.ok(!JSON.stringify(withDiagnostics.diagnostics.noonSearchCards).includes("2489"),
+      "diagnostic metadata must not leak the saved offer amount");
+    const withoutDiagnostics=await searchFreeStorefrontById("noon-sa","laptop",{perStore:3});
+    assert.equal(calls,2);
+    assert.equal(withoutDiagnostics.diagnostics.noonSearchCards,undefined);
+    assert.deepEqual(withoutDiagnostics.offers,[]);
+  }finally{globalThis.fetch=old;}
+});
+
+test("Noon wrong-page search HTML is not mistaken for the requested live catalog",{
+ concurrency:false
+},async()=>{
+  const old=globalThis.fetch;
+  const html='<html><h1>iPhone</h1><a href="https://www.noon.com/saudi-en/laptop/N70312362V/p/">'+
+    '<h2 data-qa="plp-product-box-name">Laptop</h2>'+
+    '<div data-qa="plp-product-box-price"><strong class="amount">2,489</strong></div>'+
+    '<img src="https://f.nooncdn.com/p/fixture.jpg"></a></html>';
+  try{
+    globalThis.fetch=async()=>new Response(html,{status:200,headers:{"content-type":"text/html"}});
+    const result=await searchFreeStorefrontById("noon-sa","laptop",{
+      perStore:2,noonSearchCardDiagnostics:true});
+    assert.equal(result.diagnostics.noonSearchCards.status,"SEARCH_CONTEXT_NOT_ATTESTED");
+    assert.equal(result.diagnostics.noonSearchCards.uniqueOfferCandidates,0);
+    assert.deepEqual(result.offers,[]);
+  }finally{globalThis.fetch=old;}
+});
