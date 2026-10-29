@@ -24,8 +24,12 @@ export function storefrontSourceFailure(storeId,error,{observedFailureClass=null
   const transportObserved=/\b(?:fetch failed|network error|econnreset|enotfound|eai_again|dns|socket hang up|econnrefused)\b/i.test(message);
   const safeInference=inferred==="SOURCE_TRANSPORT_FAILURE" && !transportObserved
     ? "UNKNOWN" : inferred;
-  const failureClass=FAILURE_CLASSES.has(observedFailureClass)?observedFailureClass:
-    FAILURE_CLASSES.has(safeInference)?safeInference:"UNKNOWN";
+  const observed=FAILURE_CLASSES.has(observedFailureClass)?observedFailureClass:null;
+  // An upstream generic transport fallback is not itself network evidence.
+  const confirmedObserved=observed==="SOURCE_TRANSPORT_FAILURE" && !transportObserved
+    ? null : observed;
+  const failureClass=confirmedObserved ??
+    (FAILURE_CLASSES.has(safeInference)?safeInference:"UNKNOWN");
   return {
     market:storeId,
     sourceId:storeId,
