@@ -50,7 +50,7 @@ class ExtractionRequest(StrictModel):
     request_id: str = Field(alias="requestId", min_length=1, max_length=128,
                             pattern=r"^[A-Za-z0-9._:-]+$")
     source_id: str = Field(alias="sourceId", pattern=r"^[a-z0-9][a-z0-9-]{1,79}$")
-    operation: Literal["classify", "extract_html", "fetch_extract"]
+    operation: Literal["classify", "extract_html", "fetch_extract", "extract_and_classify"]
     input_data: ExtractionInput = Field(alias="input")
     limits: Limits = Field(default_factory=Limits)
 
@@ -63,6 +63,8 @@ class ExtractionRequest(StrictModel):
             raise ValueError("HTML_REQUIRED_WITHOUT_URL")
         if self.operation == "fetch_extract" and (data.url is None or data.html is not None):
             raise ValueError("URL_REQUIRED_WITHOUT_HTML")
+        if self.operation == "extract_and_classify" and (data.observed is not None or (data.html is None) == (data.url is None)):
+            raise ValueError("EXTRACT_REQUIRES_EXACTLY_ONE_INPUT")
         if self.operation != "classify" and (data.price is not None or data.currency is not None):
             raise ValueError("PRICE_ONLY_VALID_IN_CLASSIFY")
         return self
