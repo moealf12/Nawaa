@@ -96,7 +96,7 @@ def page_fingerprint(html):
     source = html[:MAX_HTML]
     lower = source.lower()
     return {"html_chars": len(source), "has_next_data": "__NEXT_DATA__" in source,
-            "product_id_marker": bool(re.search(r"/(?:N\\d{8}[AV]|Z[A-Z0-9]{20}Z)/p/?", source, re.I)),
+            "product_id_marker": bool(re.search(r"/(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)/p/?", source, re.I)),
             "has_noon_price_marker": "plp-product-box-price" in source,
             "has_product_card_marker": "plp-product-box-name" in source,
             "possible_challenge": any(x in lower for x in ("captcha", "access denied", "verify you are human"))}
