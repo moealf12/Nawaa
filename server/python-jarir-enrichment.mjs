@@ -78,7 +78,7 @@ export function admitJarirPythonObservation(existing,evidence,matchingQuery){
 }
 
 export async function enrichJarirOffersWithPython(offers,matchingQuery,{
-  signal,maxCandidates=1,timeoutMs=5500,extract=runJarirPythonPdp
+  signal,maxCandidates=1,timeoutMs=5500,extract=runJarirPythonPdp,allowedSku=null
 }={}){
   const originals=Array.isArray(offers)?offers:[];
   const next=originals.slice();
@@ -90,6 +90,7 @@ export async function enrichJarirOffersWithPython(offers,matchingQuery,{
   for(let index=0;index<originals.length&&diagnostics.attempted<limit;index++){
     if(signal?.aborted)break;
     const candidate=originals[index],sku=String(candidate?.sourceMeta?.productId||"");
+    if(allowedSku!==null && sku!==allowedSku)continue;
     if(candidate?.provider!=="jarir-direct"||candidate?.merchant!=="Jarir"||
       !approvedJarirPdp(candidate?.sourceUrl,sku))continue;
     const unique=JSON.stringify([candidate.sourceUrl,sku]);
