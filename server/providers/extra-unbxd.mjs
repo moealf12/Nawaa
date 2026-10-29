@@ -2,7 +2,9 @@ const EXTRA_API_KEY = "21705619e273429e5767eea44ccb1ad5";
 const EXTRA_SITE_KEY = "ss-unbxd-auk-extra-saudi-en-prod11541714990488";
 const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE_KEY}/search`;
 
-import { filterQueryOffers } from "../../src/search-query.mjs";
+import { filterQueryOffers,normalizeSearchQuery } from "../../src/search-query.mjs";
+import {approvedExtraPdp} from "../../src/python-extra-bridge.mjs";
+import {enrichExtraOffersWithPython} from "../python-extra-enrichment.mjs";
 
 // Verified against full Unbxd responses (3 queries, 6 paired rounds):
 // only requested product attributes are returned; validated output offers,
@@ -182,7 +184,7 @@ function normalizeProduct(product) {
   };
 }
 
-export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal, probeFields} = {}) {
+export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query, {signal, probeFields,pythonExtract} = {}) {
   const cap = limit === Infinity ? Infinity : Math.max(1, Number(limit) || 12);
   const fetchCap = cap === Infinity ? 100 : Math.min(100, cap);
   const url = new URL(EXTRA_SEARCH_BASE);
@@ -270,7 +272,43 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
     timings.filterMs = performance.now() - filterStart;
     console.log("EXTRA_PHASE_TIMING "+JSON.stringify({queryLength:String(query).length,offers:offers.length,products:products.length,...timings}));
   }
-  return {provider:"extra-unbxd",ok:offers.length>0,
+  // No existing shopper query may enable Python directly. Three explicit
+  // operator-side settings must match this exact search and a validated PDP.
+  const approvedSku=String(process.env.NAWAA_EXTRA_PYTHON_CANARY_SKU||"");
+  const approvedUrl=String(process.env.NAWAA_EXTRA_PYTHON_CANARY_URL||"");
+  const canaryQuery=String(process.env.NAWAA_EXTRA_PYTHON_CANARY_QUERY||"");
+  const pythonEnabled=process.env.NAWAA_EXTRA_PYTHON_PDP==="1" &&
+    canaryQuery.length>=5&&canaryQuery.length<=128 &&
+    normalizeSearchQuery(canaryQuery)===normalizeSearchQuery(matchingQuery) &&
+    approvedExtraPdp(approvedUrl,approvedSku);
+  let finalOffers=offers,pythonDiagnostics=null;
+  if(pythonEnabled&&offers.length&&!signal?.aborted){
+    // Stay inside the provider's original 7200 ms acquisition budget.
+    const remaining=overallDeadlineMs-(Date.now()-startedAt);
+    if(remaining>=1000){
+      const observed=await enrichExtraOffersWithPython(offers,matchingQuery,{
+        approvedSku,approvedUrl,signal,timeoutMs:Math.min(3000,remaining),
+        extract:pythonExtract
+      });
+      finalOffers=observed.offers;
+      pythonDiagnostics=observed.diagnostics;
+    }else{
+      pythonDiagnostics={attempted:0,accepted:0,rejected:0,failed:0,
+        failureClasses:["PYTHON_EXTRA_BUDGET_EXHAUSTED"]};
+    }
+    // Never log source prices, visitor identities, page HTML or source bodies.
+    console.info("NAWAA_EXTRA_PYTHON_CANARY "+JSON.stringify({
+      sourceId:"extra-sa",sku:approvedSku,
+      attempted:pythonDiagnostics.attempted,
+      accepted:pythonDiagnostics.accepted,
+      rejected:pythonDiagnostics.rejected,
+      failed:pythonDiagnostics.failed,
+      failureClasses:pythonDiagnostics.failureClasses
+    }));
+  }
+  return {provider:"extra-unbxd",ok:finalOffers.length>0,
     searchedMarkets:[{id:"extra-sa",countryCode:"SA",countryNameAr:"السعودية"}],
-    offers, errors, diagnostics:{queryFilter,pagination:{fetched:start,total,complete}}};
+    offers:finalOffers,errors,
+    diagnostics:{queryFilter,pagination:{fetched:start,total,complete},
+      ...(pythonDiagnostics?{pythonExtraPdp:pythonDiagnostics}:{})}};
 }
