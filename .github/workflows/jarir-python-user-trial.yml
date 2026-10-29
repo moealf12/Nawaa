@@ -3,6 +3,12 @@ on:
   pull_request:
     paths:
       - "workers/python-intelligence/experiments/**"
+      - "workers/python-intelligence/nawaa_py/jarir_pdp.py"
+      - "src/python-jarir-bridge.mjs"
+      - "server/python-jarir-enrichment.mjs"
+      - "server/providers/jarir.mjs"
+      - "tests/python-jarir-admission.test.mjs"
+      - "scripts/verify-jarir-python-integration.mjs"
       - "workers/python-intelligence/tests/test_jarir_user_waterfall.py"
       - ".github/workflows/jarir-python-user-trial.yml"
   workflow_dispatch:
@@ -34,6 +40,16 @@ jobs:
         run: |
           cd workers/python-intelligence
           python -m pytest tests/test_classifier.py -q -ra
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify Node Jarir admission, product identity and duplicate guards
+        run: node --test tests/python-jarir-admission.test.mjs
+      - name: Syntax check Python/Node Jarir bridge and provider
+        run: |
+          node --check src/python-jarir-bridge.mjs
+          node --check server/python-jarir-enrichment.mjs
+          node --check server/providers/jarir.mjs
       - name: JSON Lines real CLI error-frame smoke
         run: |
           cd workers/python-intelligence
@@ -64,3 +80,13 @@ jobs:
         run: |
           cd workers/python-intelligence
           python -m experiments.run_jarir_user_trial
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Live Node subprocess -> Python JSONL -> strict Jarir admission (no DB writes)
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: node scripts/verify-jarir-python-integration.mjs
