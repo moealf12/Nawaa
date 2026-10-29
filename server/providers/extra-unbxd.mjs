@@ -225,7 +225,10 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
   // Response.json() unmodified. Prove parity with deterministic mock Responses.
   const splitJsonTiming = timingEnabled && process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON === "1";
   if (splitJsonTiming) Object.assign(timings,{bodyReadDecodeMs:0,jsonParseMs:0});
-  // A 3s UNBXD connection cap caused legitimate iPhone source requests to\n  // time out before Python was ever reached. Allow 4.2s for merchant fetch,\n  // bounded by the same 7.2s overall acquisition and 8s provider deadlines.\n  const overallDeadlineMs = 7200;
+  // The earlier 3s UNBXD connection timeout could abort a legitimate
+  // source response before optional Python enrichment started. The direct
+  // fetch stays inside the existing 7.2s source and 8s provider deadlines.
+  const overallDeadlineMs = 7200;
   let start = 0, total = null, complete = false;
   while(products.length < fetchCap) {
     signal?.throwIfAborted();
