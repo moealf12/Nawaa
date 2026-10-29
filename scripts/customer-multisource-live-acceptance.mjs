@@ -48,9 +48,9 @@ function bounded(s){return String(s??"unknown").replace(/[^a-zA-Z0-9 ._-]/g,"").
 function sourceFailureClass(entry){
   const raw=String(entry?.code??entry?.errorCode??entry?.error??entry?.message??"");
   if(/timeout|timed? out|abort/i.test(raw))return "TIMEOUT";
-  if(/(?:^|\\D)403(?:\\D|$)|access.denied/i.test(raw))return "HTTP_403";
-  if(/(?:^|\\D)429(?:\\D|$)|rate.limit/i.test(raw))return "HTTP_429";
-  if(/(?:^|\\D)5\\d\\d(?:\\D|$)/i.test(raw))return "HTTP_5XX";
+  if(/(?:^|\D)403(?:\D|$)|access.denied/i.test(raw))return "HTTP_403";
+  if(/(?:^|\D)429(?:\D|$)|rate.limit/i.test(raw))return "HTTP_429";
+  if(/(?:^|\D)5\d\d(?:\D|$)/i.test(raw))return "HTTP_5XX";
   if(/invalid|malformed|parse/i.test(raw))return "INVALID_RESPONSE";
   return "UNKNOWN";
 }
