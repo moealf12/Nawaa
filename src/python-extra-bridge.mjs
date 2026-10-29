@@ -304,6 +304,10 @@ function startExtraPythonWarmWorker(){
 export function warmExtraPythonPdp(){
   if(extraWarmEnabled())startExtraPythonWarmWorker();
 }
+export function extraPythonWarmStatus(){
+  return {enabled:extraWarmEnabled(),ready:Boolean(extraWarm?.ready),
+    busy:Boolean(extraWarm?.pending),completed:extraWarm?.requests??0};
+}
 function runExtraWarmRequest(input,requestId,timeoutMs,signal){
   if(signal?.aborted)throw Error("PYTHON_EXTRA_ABORTED");
   const state=extraWarm;
