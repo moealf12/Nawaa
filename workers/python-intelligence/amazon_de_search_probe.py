@@ -1,4 +1,7 @@
-"""Amazon.de public search-card diagnostic only. Never emits customer-approved offers.
+"""Amazon.de product discovery with indicative EUR search-card price only.
+
+Do not collect or require seller identity, shipping price, or Saudi delivery data.
+Still no customer-price publication until separate presentation is explicitly scoped.
 
 Run: python workers/python-intelligence/amazon_de_search_probe.py --query "iPhone 17"
 No proxy rotation, access-control retries, or trust/status elevation.
@@ -71,16 +74,28 @@ def parse_search_html(html: str, page: int = 1) -> dict:
             fraction.get_text(" ", strip=True) if fraction else ""
         )
         price = parse_eur(price_text)
+        image_el = card.select_one("img.s-image[src]")
+        image = image_el.get("src") if image_el else None
+        if image:
+            img_url = urlsplit(image)
+            if img_url.scheme != "https" or not img_url.hostname or not (
+                img_url.hostname == "images-na.ssl-images-amazon.com"
+                or img_url.hostname.endswith(".media-amazon.com")
+                or img_url.hostname == "m.media-amazon.com"
+            ):
+                image = None
         availability_text = card.get_text(" ", strip=True)
         seen.add(asin)
         offers.append({
             "asin": asin, "title": title, "price_eur": price,
+            "currency": "EUR", "image": image,
             "url": url, "is_sponsored": bool(card.select_one(
                 "a.puis-sponsored-label-text, [data-component-type='sp-sponsored-result']"
             )),
             "availability": "OUT_OF_STOCK" if OUT_OF_STOCK.search(availability_text) else "UNKNOWN",
             "page": page, "customer_publishable": False,
-            "source_status": "SEARCH_CARD_UNATTESTED",
+            "source_status": "SEARCH_CARD_INDICATIVE_PRICE",
+            "price_label": "سعر معروض على بطاقة البحث - غير مؤكد عند الشراء",
         })
     return {"status": "SEARCH_CARDS_FOUND" if offers else "NO_CARDS", "offers": offers}
 
