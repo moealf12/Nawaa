@@ -35,6 +35,11 @@ UV="$TEMP/uv-x86_64-unknown-linux-gnu/uv"
 # It conflicts with our explicitly requested portable --python-preference.
 # This override is scoped to this opt-in build script, never server runtime.
 unset UV_NO_MANAGED_PYTHON
+# Render's native Node build additionally disables uv-managed interpreter
+# downloads. This exact opt-in Python build must download Python 3.12 into
+# the deployment artifact, independent of Render's inherited uv defaults.
+unset UV_NO_PYTHON_DOWNLOADS
+export UV_PYTHON_DOWNLOADS=automatic
 export UV_PYTHON_INSTALL_DIR="$ROOT/.render-python/python"
 export UV_CACHE_DIR="$ROOT/.render-python/uv-cache"
 export UV_LINK_MODE=copy
