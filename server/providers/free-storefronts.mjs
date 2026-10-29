@@ -11,6 +11,7 @@ import {diagnoseAmazonGermanyHtml} from "../../src/europe-source-diagnostics.mjs
 import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../src/amazon-de-price-gate.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
+import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1538,6 +1539,24 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       })();
     // Source-specific, bounded diagnostic only. No additional merchant fetch.
     // A legitimate empty catalog and an unparsed HTML response are different.
+    // Optional, source-scoped HTML diagnostics. These counts never become offers.
+    // Keep the live publication path unchanged, with no additional fetch or
+    // retained product prices, offer URLs, raw HTML, or user tracking params.
+    const noonDiagnosticsEnabled = store.id==="noon-sa" &&
+      (options.noonSearchCardDiagnostics===true ||
+       process.env.NAWAA_NOON_SEARCH_CARD_DIAGNOSTICS==="1");
+    const noonSearchCardDiagnostics = noonDiagnosticsEnabled
+      ? (() => {
+          if (!html || searchDiagnostics?.blockedReason) {
+            return {status:"SOURCE_HTML_UNAVAILABLE",parsedCards:0,
+              uniqueOfferCandidates:0,conflictingOffers:0,customerPublishable:false};
+          }
+          const evidence=extractNoonSaudiSearchCardEvidence(html,query,{limit:50});
+          return {status:evidence.status,parsedCards:evidence.parsedCards,
+            uniqueOfferCandidates:evidence.candidates.length,
+            conflictingOffers:evidence.conflicts.length,customerPublishable:false};
+        })()
+      : null;
     const amazonDeAcquisition = store.id==="amazon-de"
       ? diagnoseAmazonGermanyHtml(html,{extractedCards:htmlFirstOffers.length})
       : null;
@@ -1788,6 +1807,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       failures,
       diagnostics:{
         queryFilter,
+        ...(noonSearchCardDiagnostics?{noonSearchCards:noonSearchCardDiagnostics}:{}),
         ...(store.id==="thomann-de"?{
           variantRejected,
           pdpPriceParity:thomannParity?.diagnostics || [],
