@@ -6,6 +6,7 @@ import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import {enforceCustomerOfferPublication} from "./customer-offer-output.mjs";
 import http from "node:http";
 import {beginProcessPressure,endProcessPressure,processPressureBetween} from "./search-process-pressure.mjs";
+import {observedDeadlineExceeded} from "./search-deadline-status.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -737,6 +738,9 @@ async function searchAll(query, { depth = 0 } = {}) {
   const sources = currentSources();
   const allSelectedOffers = selectDiverseOffers(offers, Infinity);
   const selectedOffers = allSelectedOffers.slice(0, plan.returnLimit);
+  // A busy event loop can delay timer callbacks beyond the nominal 12s budget.
+  // Mark the actual observed overrun without dropping any completed valid offers.
+  deadlineExceeded = observedDeadlineExceeded(deadlineExceeded, requestDeadlineAt);
   const pipelineMs = performance.now() - pipelineStarted;
   const afterFinalizationPressure = beginProcessPressure();
   // Emit one bounded, low-cardinality event only for a slow acquisition.
