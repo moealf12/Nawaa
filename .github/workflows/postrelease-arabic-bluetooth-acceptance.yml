@@ -1,0 +1,24 @@
+name: NAWAA Postrelease Arabic Bluetooth Acceptance
+on:
+  pull_request:
+    paths:
+      - 'scripts/postrelease-arabic-bluetooth-acceptance.mjs'
+      - '.github/workflows/postrelease-arabic-bluetooth-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  exact-live-sha-arabic-search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify deployed merge SHA, Arabic shopper JSON and SSE
+        env:
+          NAWAA_EXPECT_LIVE_SHA: '9f7d15ba9d80d7b729fa530ff878e3fd652c3d83'
+        run: node scripts/postrelease-arabic-bluetooth-acceptance.mjs
