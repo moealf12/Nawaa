@@ -27,3 +27,17 @@ export function endProcessPressure(snapshot) {
     performance.eventLoopUtilization(snapshot.eventLoop)
   );
 }
+
+/**
+ * Compare two explicit process snapshots without including later activity.
+ * CPU and event-loop utilization are process-wide across concurrent requests.
+ * The result is descriptive, not CPU attribution to a particular request.
+ */
+export function processPressureBetween(start, end) {
+  const cpuDelta={
+    user:Math.max(0, end.cpu.user-start.cpu.user),
+    system:Math.max(0, end.cpu.system-start.cpu.system),
+  };
+  const loopDelta=performance.eventLoopUtilization(end.eventLoop,start.eventLoop);
+  return normalizeProcessPressure(cpuDelta,loopDelta);
+}

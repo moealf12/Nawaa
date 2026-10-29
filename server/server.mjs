@@ -5,7 +5,7 @@ import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import {enforceCustomerOfferPublication} from "./customer-offer-output.mjs";
 import http from "node:http";
-import {beginProcessPressure,endProcessPressure} from "./search-process-pressure.mjs";
+import {beginProcessPressure,endProcessPressure,processPressureBetween} from "./search-process-pressure.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -659,6 +659,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     ),
   ]);
   const primaryAcquiredMs = performance.now() - pipelineStarted;
+  const afterPrimaryPressure = beginProcessPressure();
   let providers = primary.providers;
   let errors = primary.errors;
   const amazonSourceId="free-storefronts:amazon-sa";
@@ -718,6 +719,7 @@ async function searchAll(query, { depth = 0 } = {}) {
   }
 
   const preSelectionMs = performance.now() - pipelineStarted - primaryAcquiredMs;
+  const afterPreSelectionPressure = beginProcessPressure();
   offers=await canonicalCandidates(offers,true);
   const amazonUrls = new Set(amazonValidated.map((offer) => offer.sourceUrl).filter(Boolean));
   const rescoredOffers = dedupeNormalizedOffers(offers)
@@ -736,6 +738,7 @@ async function searchAll(query, { depth = 0 } = {}) {
   const allSelectedOffers = selectDiverseOffers(offers, Infinity);
   const selectedOffers = allSelectedOffers.slice(0, plan.returnLimit);
   const pipelineMs = performance.now() - pipelineStarted;
+  const afterFinalizationPressure = beginProcessPressure();
   // Emit one bounded, low-cardinality event only for a slow acquisition.
   // Process CPU and event-loop utilization include concurrent requests; no per-query CPU attribution.
   // These spans include async waits, not CPU timings; no shopper query is logged.
@@ -745,7 +748,12 @@ async function searchAll(query, { depth = 0 } = {}) {
       preSelectionMs:Math.round(preSelectionMs),
       finalizationMs:Math.round(Math.max(0,pipelineMs-primaryAcquiredMs-preSelectionMs)),
       totalMs:Math.round(pipelineMs),
-      ...endProcessPressure(pipelinePressure),
+      ...processPressureBetween(pipelinePressure,afterFinalizationPressure),
+      phasePressure:{
+        primary:processPressureBetween(pipelinePressure,afterPrimaryPressure),
+        preSelection:processPressureBetween(afterPrimaryPressure,afterPreSelectionPressure),
+        finalization:processPressureBetween(afterPreSelectionPressure,afterFinalizationPressure),
+      },
       selectedOffers:selectedOffers.length,
       deadlineExceeded,
       fallbackUsed:Boolean(fallbackQuery),
