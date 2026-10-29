@@ -3,6 +3,7 @@ import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryO
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
+import {storefrontSourceFailure} from "../../src/storefront-error-evidence.mjs";
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
 import {retiredSourceRecord} from "../../src/source-retirement.mjs";
@@ -1915,18 +1916,18 @@ export async function searchFreeStorefronts(query, options = {}) {
     if (result.status === "fulfilled") {
       offers.push(...result.value.offers);
       diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
-      if(result.value.diagnostics?.primarySearchError) errors.push({market:store.id,error:result.value.diagnostics.primarySearchError});
+      if(result.value.diagnostics?.primarySearchError) errors.push(storefrontSourceFailure(store.id,result.value.diagnostics.primarySearchError,{observedFailureClass:result.value.diagnostics.sourceAccessFailure}));
       else if(result.value.diagnostics?.sourceObservation==="HTTP_200_JS_SHELL")
-        errors.push({market:store.id,error:"HTTP_200_JS_SHELL"});
+        errors.push(storefrontSourceFailure(store.id,"HTTP_200_JS_SHELL",{observedFailureClass:"HTTP_200_JS_SHELL"}));
       // Avoid double-counting one blocked search. Valid empty catalogs and
       // legitimate query filtering must not be reported as source outages.
       const filter = result.value.diagnostics?.queryFilter;
       const filteredByIntent = Number(filter?.input) > 0 && Number(filter?.retained) === 0;
       if (!result.value.offers.length && !result.value.diagnostics?.primarySearchError &&
           result.value.candidates > 0 && !filteredByIntent)
-        errors.push({ market:store.id, error:"No verified structured-price product pages found" });
+        errors.push(storefrontSourceFailure(store.id,"No verified structured-price product pages found",{observedFailureClass:"NO_VERIFIED_STRUCTURED_PRICE_PDP"}));
     } else {
-      errors.push({ market:store.id, error:result.reason?.message || String(result.reason) });
+      errors.push(storefrontSourceFailure(store.id,result.reason));
       diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:0, verifiedOffers:0, failures:1 });
     }
   });
