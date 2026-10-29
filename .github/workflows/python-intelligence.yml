@@ -54,7 +54,7 @@ jobs:
       - name: Package complete Python source, tests, Node bridge and instructions
         if: always()
         run: |
-          tar --exclude='__pycache__' --exclude='.pytest_cache' --exclude='*.pyc' \
+          tar --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.hypothesis' --exclude='*.pyc' \
             -czf nawaa-python-intelligence-source.tar.gz \
             workers/python-intelligence src/python-worker-bridge.mjs \
             .github/workflows/python-intelligence.yml
