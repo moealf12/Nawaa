@@ -43,7 +43,7 @@ test("200 JS shell cannot be called an accessible priced Noon catalog",{
   }finally{globalThis.fetch=previous;}
 });
 
-test("Source audit can count source-owned PLP cards without promoting advertised price",{
+test("Source audit distinguishes live HTML advertised prices from independently verified offers",{
   concurrency:false
 },async()=>{
   const previous=globalThis.fetch;
@@ -58,7 +58,11 @@ test("Source audit can count source-owned PLP cards without promoting advertised
     assert.equal(result.diagnostics?.noonSearchCards?.parsedCards,1);
     assert.equal(result.diagnostics?.noonSearchCards?.uniqueOfferCandidates,1);
     assert.equal(result.diagnostics?.noonSearchCards?.customerPublishable,false);
+    assert.equal(result.status,"LIVE_HTML_PRICE_OBSERVED");
+    assert.equal(result.advertisedHtmlOffers,1);
     assert.equal(result.verifiedOffers,0);
+    assert.equal(result.sampleOffers.length,1);
+    assert.equal(result.sampleOffers[0].price,2489);
     assert.ok(!JSON.stringify(result.diagnostics.noonSearchCards).includes("2489"));
   }finally{globalThis.fetch=previous;}
 });
