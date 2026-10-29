@@ -51,6 +51,21 @@ jobs:
             '{"schemaVersion":"nawaa.python.extract.v1","requestId":"ci-1","sourceId":"jarir-sa","operation":"classify","input":{"expected":{"model":"PS5 Digital"},"observed":{"model":"PS5 Disc"}}}' \
             '{"schemaVersion":"nawaa.python.extract.v1","requestId":"ci-2","sourceId":"jarir-sa","operation":"classify","input":{"expected":{"model":"Edge 540"},"observed":{"model":"Edge 540 Solar"}}}' \
             | python -m nawaa_py.cli
+      - name: Package complete Python source, tests, Node bridge and instructions
+        if: always()
+        run: |
+          tar --exclude='__pycache__' --exclude='.pytest_cache' --exclude='*.pyc' \
+            -czf nawaa-python-intelligence-source.tar.gz \
+            workers/python-intelligence src/python-worker-bridge.mjs \
+            .github/workflows/python-intelligence.yml
+      - name: Upload complete implementation archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-python-intelligence-source
+          path: nawaa-python-intelligence-source.tar.gz
+          retention-days: 7
+          if-no-files-found: warn
   python-public-source-trial:
     needs: python-integration
     runs-on: ubuntu-latest
