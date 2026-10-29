@@ -67,7 +67,7 @@ try {
   check("SOURCE_REGISTRY_HTTP_200",sources.status===200&&Array.isArray(sources.payload?.sources));
   check("ONE_NOON_SOURCE_RECORD",evidence.sourceRegistry.noonCount===1);
 
-  for(const query of ["iPhone 17 256GB","PS5","Samsung Galaxy S25"]){
+  for(const query of ["iPhone","iPhone 17 256GB","PS5","PlayStation 5","Samsung Galaxy S25"]){
     const res=await get("/api/search?q="+encodeURIComponent(query),{timeoutMs:45000});
     const data=res.payload||{};
     const offers=Array.isArray(data.offers)?data.offers:[];
@@ -81,6 +81,8 @@ try {
       invalidOffers:invalid.length,
       exactMatches:offers.filter(x=>x.exactMatch===true).length,
       merchants:[...new Set(offers.map(x=>x?.merchant).filter(Boolean))].slice(0,12),
+      extraOffers:offers.filter(x=>x?.merchant==="eXtra").length,
+      extraProviderYield:(Array.isArray(data.providers)?data.providers:[]).filter(x=>String(x?.sourceId||x?.provider||"").includes("extra")).map(x=>({id:x.sourceId||x.provider,returnedOffers:x.returnedOffers||0})),
       providerYields:(Array.isArray(data.providers)?data.providers:[])
         .filter(x=>Number(x?.returnedOffers)>0)
         .map(x=>({id:String(x.sourceId||x.provider||"unknown").slice(0,80),
