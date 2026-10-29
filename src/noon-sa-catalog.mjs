@@ -10,7 +10,7 @@ export function noonSaudiProductIdentity(raw) {
        (url.port&&url.port!=="443")||
        !["www.noon.com","noon.com"].includes(url.hostname.toLowerCase()))return null;
     // Product URLs are distinct from categories/search and UAE market pages.
-    const m=/^\/saudi-en\/(?:[a-z0-9-]{2,320}\/)?(N\d{8}V)\/p\/?$/i.exec(url.pathname);
+    const m=/^\/saudi-en\/(?:[a-z0-9-]{2,320}\/)?((?:N\d{8}[A-Z]|Z[A-Z0-9]{20}Z))\/p\/?$/i.exec(url.pathname);
     if(!m)return null;
     return {sku:m[1].toUpperCase(),canonicalUrl:
       "https://www.noon.com"+url.pathname};
