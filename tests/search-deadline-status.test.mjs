@@ -14,7 +14,7 @@ test("JSON deadline status is true for observed post-budget completion even when
 test("JSON completion checks actual deadline before coverage flags without clearing offers",()=>{
   const text=readFileSync(new URL("../server/server.mjs",import.meta.url),"utf8");
   const begin=text.indexOf("async function searchAll(");
-  const end=text.indexOf("const cachedSearch=",begin);
+  const end=text.indexOf("const cachedSearch =",begin);
   assert.ok(begin>=0 && end>begin,"JSON search implementation boundaries");
   const code=text.slice(begin,end);
   assert.match(code,/deadlineExceeded = observedDeadlineExceeded\(deadlineExceeded, requestDeadlineAt\)/);
