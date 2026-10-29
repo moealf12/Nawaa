@@ -1,0 +1,96 @@
+name: NAWAA eXtra Python PDP Direct Trial
+on:
+  pull_request:
+    paths:
+      - "workers/python-intelligence/nawaa_py/extra_pdp.py"
+      - "workers/python-intelligence/nawaa_py/extra_live_trial.py"
+      - "workers/python-intelligence/tests/test_extra_pdp.py"
+      - "src/python-extra-bridge.mjs"
+      - "server/python-extra-enrichment.mjs"
+      - "server/providers/extra-unbxd.mjs"
+      - "tests/python-extra-admission.test.mjs"
+      - "tests/extra-python-provider-flag.test.mjs"
+      - "scripts/verify-extra-python-integration.mjs"
+      - ".github/workflows/extra-python-pdp-trial.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python-extra-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.0"
+          enable-cache: false
+      - name: Install exact locked Python libraries and pytest/Hypothesis
+        run: |
+          uv sync --project workers/python-intelligence --locked --extra test --python 3.12
+      - name: Run eXtra direct parser, strict money, source identity and HTTPX MockTransport tests
+        run: |
+          cd workers/python-intelligence
+          .venv/bin/python -m pytest tests/test_extra_pdp.py -q -ra
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install existing Node dependencies without activating Render postinstall
+        run: npm ci --ignore-scripts
+      - name: Check and run Node / Python integration and source ownership tests
+        run: |
+          node --check src/python-extra-bridge.mjs
+          node --check server/python-extra-enrichment.mjs
+          node --check server/providers/extra-unbxd.mjs
+          node --test tests/python-extra-admission.test.mjs tests/extra-python-provider-flag.test.mjs
+      - name: Exercise genuine JSON Lines eXtra Python CLI with safe rejected URL
+        run: |
+          cd workers/python-intelligence
+          printf '%s\n' '{"schemaVersion":"nawaa.extra.pdp.v1","requestId":"cli-test","sourceId":"extra-sa","url":"https://127.0.0.1/en-sa/p/100462492","expected_sku":"100462492"}' | .venv/bin/python -m nawaa_py.extra_pdp
+  extra-public-product-httpx:
+    needs: python-extra-offline
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.0"
+          enable-cache: false
+      - name: Install locked Python eXtra extractor dependencies
+        run: |
+          uv sync --project workers/python-intelligence --locked --no-dev --python 3.12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Node source dependencies for real provider canary
+        run: npm ci --ignore-scripts
+      - name: One respectful public eXtra product-page trial with no writes
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: |
+          cd workers/python-intelligence
+          .venv/bin/python -m nawaa_py.extra_live_trial
+      - name: "Live UNBXD provider to Python PDP bounded canary (read only)"
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: node scripts/verify-extra-python-integration.mjs
