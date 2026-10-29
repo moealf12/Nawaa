@@ -43,6 +43,34 @@ test("RED: strict first-party Noon SKU and locale identity excludes foreign host
   ]) if(url!==other)assert.equal(noonSaudiProductIdentity(url),null,url);
 });
 
+test("Noon long Saudi-en laptop PDP URL keeps exact SKU and strips untrusted navigation query",()=>{
+  // User supplied real URL structure. Synthetic JSON-LD amount below is a fixture, NOT a live price.
+  const longSlug="matebook-d16-upgraded-version-laptop-with-16-inch-full-hd-1920x1080-display-core-i5-12450h-processor-16gb-ram-ddr5-512gb-ssd-windows-11-pro-with-microsoft-office-english-arabic-mystic-silver-english-arabic-mystic-silver";
+  const url="https://www.noon.com/saudi-en/"+longSlug+"/N70312362V/p/";
+  const decorated=url+"?nav_ctx=test-navigation-data&o=f428b90c38b7fb5b";
+  assert.equal(longSlug.length,219);
+  assert.deepEqual(noonSaudiProductIdentity(decorated),{
+    sku:"N70312362V",canonicalUrl:url
+  });
+  assert.equal(noonSaudiProductIdentity(url.replace("N70312362V","N70312362A")),null);
+  assert.equal(noonSaudiProductIdentity(url.replace("saudi-en","uae-en")),null);
+  assert.equal(noonSaudiProductIdentity(url.replace("www.noon.com","www.noon.com.evil.example")),null);
+  const title="Huawei MateBook D16 Upgraded Version Laptop 16 Inch Core i5-12450H 16GB RAM 512GB SSD";
+  const candidate={
+    "@type":"Product",name:title,sku:"N70312362V",url:decorated,
+    image:"https://f.nooncdn.com/p/test.jpg",
+    offers:{"@type":"Offer",price:"2199.00",priceCurrency:"SAR",url:decorated}
+  };
+  const records=extractNoonSaudiCatalogCards(html(candidate),"laptop");
+  assert.equal(records.length,1);
+  assert.equal(records[0].productId,"N70312362V");
+  assert.equal(records[0].sourceUrl,url);
+  assert.equal(records[0].price,2199);
+  // Different offer SKU must remain rejected even when the long slug is valid.
+  const wrongOffer={...candidate,offers:{...candidate.offers,sku:"N70211519V"}};
+  assert.deepEqual(extractNoonSaudiCatalogCards(html(wrongOffer),"laptop"),[]);
+});
+
 test("RED: one exact Noon product record yields source-stated SAR price, no delivery certification",()=>{
   const records=extractNoonSaudiCatalogCards(html(product()),"iphone 17 256gb");
   assert.equal(records.length,1);
