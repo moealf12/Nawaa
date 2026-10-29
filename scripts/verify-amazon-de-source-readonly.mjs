@@ -1,47 +1,56 @@
-// One read-only Amazon.de search from GitHub CI + up to one same-host PDP.
-// This reports whether source evidence is obtainable; it NEVER approves prices.
-import assert from "node:assert/strict";
-import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
-import { normalizeAmazonDeProductUrl } from "../server/amazon-de-bulk-url-health.mjs";
-import { probeAmazonDeOffer } from "../server/amazon-de-offer-evidence.mjs";
+// General Amazon.de live search diagnosis with configurable shopper-like queries.
+// CI examples exercise diverse categories; runtime adapter accepts ANY query.
+// This produces no offers, seller/price values, customer badges, or DB writes.
+import { searchAmazonDeUniversal } from "../server/providers/amazon-de-universal.mjs";
 
-const report = {
-  sourceId: "amazon-de", environment: "CI_READ_ONLY",
-  customerPublishable: false,
-  writesToProduction: false, requestsByShoppers: false,
-  search: null, pdp: null,
-};
-try {
-  const found = await searchFreeStorefrontById("amazon-de", "iphone 17", { perStore: 2 });
-  const policy = found?.diagnostics?.customerPublicationGate;
-  assert.equal(policy?.customerPublishable, false, "AMAZON_DE_PUBLICATION_GATE_BYPASSED");
-  assert.equal(found.offers?.length, 0, "AMAZON_DE_PRICED_OFFERS_MUST_STAY_HELD");
-  const candidates = found?.diagnostics?.candidateSamples ?? [];
-  report.search = {
-    status: found.diagnostics?.sourceObservation || "UNKNOWN",
-    candidateCount: found.candidates ?? 0,
-    gate: policy.status,
-    classification: found.diagnostics?.amazonDeAcquisition?.classification || null,
-  };
-  for (const raw of candidates.slice(0, 5)) {
-    let asin = null;
-    try {
-      const path = new URL(raw).pathname;
-      asin = /^\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})(?:\/|$)/i.exec(path)?.[1]?.toUpperCase() || null;
-    } catch {}
-    if (!asin || !normalizeAmazonDeProductUrl(raw, asin)) continue;
-    const evidence = await probeAmazonDeOffer({asin,url:raw,timeoutMs:6000});
-    report.pdp = { status: evidence.status, samePageParityObserved: evidence.samePageParityObserved,
-      buyboxIndependentlyAttested: evidence.buyboxIndependentlyAttested };
-    assert.equal(evidence.customerPublishable, false);
-    break;
-  }
-  report.outcome = report.pdp ? "PDP_DIAGNOSTIC_COMPLETE" : "NO_SAFE_PDP_CANDIDATE_OBSERVED";
-} catch (error) {
-  // Only hard-fail on actual publication guard regression. Source 403, empty
-  // catalog and challenges are honest diagnostics, never fabricated yield.
-  if (/AMAZON_DE_.*(?:BYPASSED|MUST_STAY_HELD)/.test(String(error?.message || ""))) throw error;
-  report.outcome = "ACQUISITION_UNAVAILABLE";
-  report.failureClass = error?.name === "TimeoutError" ? "TIMEOUT" : "SOURCE_FETCH_OR_PARSE_FAILURE";
+const defaultQueries = [
+  "iPhone 17", "PlayStation 5", "سماعات بلوتوث",
+  "robot vacuum", "running shoes",
+];
+const queries = process.argv.slice(2).length
+  ? process.argv.slice(2) : defaultQueries;
+if (queries.length > 8 || queries.some(q => typeof q !== "string" || q.length > 180)) {
+  throw new Error("INVALID_QUERY_BATCH");
 }
-console.log("NAWAA_AMAZON_DE_CI_EVIDENCE " + JSON.stringify(report));
+const report = {
+  sourceId:"amazon-de", mode:"QUERY_DRIVEN_CI_READ_ONLY",
+  queriesChecked:queries.length,
+  results:[], customerPublishable:false, productionWrites:false,
+  totalSearchCandidates:0, totalSafeAsinCandidates:0,
+  sourceAccessObserved:false, samePageParityCandidates:0,
+};
+for (const [index,query] of queries.entries()) {
+  const r = await searchAmazonDeUniversal(query,{
+    inspectProducts:true,maxPdpChecks:2,
+  });
+  const d=r.diagnostics;
+  const checked = Array.isArray(d.productChecks) ? d.productChecks : [];
+  report.results.push({
+    queryIndex:index,
+    status:d.status,
+    sourceObservation:d.sourceObservation || "UNKNOWN",
+    acquisitionClass:d.acquisitionClass || null,
+    rawCandidates:d.discoveryCount || 0,
+    safeAsinCandidates:d.eligibleCandidateCount || 0,
+    pdpChecks:checked.map(x=>x.status),
+    samePageParityCandidates:checked.filter(x=>x.samePageParityObserved).length,
+    pricePublicationHeld:d.pricePublicationHeld,
+  });
+  if (r.offers.length || d.customerPublishable !== false ||
+      d.pricePublicationHeld !== true) {
+    throw Error("AMAZON_DE_CUSTOMER_PRICE_GATE_BROKEN");
+  }
+  report.totalSearchCandidates += d.discoveryCount || 0;
+  report.totalSafeAsinCandidates += d.eligibleCandidateCount || 0;
+  report.samePageParityCandidates += checked.filter(x=>x.samePageParityObserved).length;
+  report.sourceAccessObserved ||= d.status === "SOURCE_SEARCH_COMPLETED" &&
+    d.sourceObservation !== "HTTP_200_BLOCK_PAGE";
+}
+report.status = report.totalSafeAsinCandidates > 0
+  ? "LIVE_CANDIDATES_OBSERVED_NOT_ATTESTED"
+  : "NO_LIVE_SOURCE_ASIN_CANDIDATES";
+console.log("NAWAA_AMAZON_DE_UNIVERSAL_EVIDENCE " + JSON.stringify(report));
+// An Amazon-only acceptance cannot be called successful if none of the
+// broad, real queries yields even a source-owned exact ASIN URL.
+// Do not fail because independent buybox/SA shipping is still intentionally held.
+if (report.totalSafeAsinCandidates === 0) process.exitCode = 2;
