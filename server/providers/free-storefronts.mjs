@@ -1512,6 +1512,25 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     if(!html && (sourceAccessFailure === "HTTP_403_ACCESS_DENIED" ||
                  sourceAccessFailure === "HTTP_429_RATE_LIMITED"))
       throw new Error(primarySearchError || sourceAccessFailure);
+    // Real, first-party HTML search cards are Noon's primary source path.
+    // Bind them to the exact requested search URL; a redirect to the homepage
+    // is not evidence for the submitted query. No other endpoints are fetched.
+    const noonHtmlSearchContextValid = (() => {
+      if (store.id !== "noon-sa" || !html || searchDiagnostics?.blockedReason) return false;
+      try {
+        const expected = new URL(searchUrl);
+        const actual = new URL(searchPageFinalUrl);
+        const searchPath = path => path.replace(/\\/$/, "");
+        return actual.protocol === "https:" &&
+          actual.hostname === expected.hostname &&
+          searchPath(actual.pathname) === searchPath(expected.pathname) &&
+          normalizeSearchQuery(actual.searchParams.get("q") || "") ===
+            normalizeSearchQuery(query);
+      } catch { return false; }
+    })();
+    const noonLiveHtmlCards = store.id === "noon-sa" && noonHtmlSearchContextValid
+      ? extractNoonSaudiSearchCardEvidence(html,query,{limit:100})
+      : null;
     const aliexpressProductLinkTrust = {rejectedProductLinks:0,rejectionSamples:[]};
     const htmlFirstOffers =
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query, aliexpressProductLinkTrust) :
@@ -1521,7 +1540,21 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       store.id === "amazon-uk" ? extractAmazonSearchOffers(html, query, "https://www.amazon.co.uk", "GBP") :
       store.id === "amazon-de" ? extractAmazonSearchOffers(html, query, "https://www.amazon.de", "EUR") :
-      store.id === "noon-sa" ? extractNoonSaudiCatalogCards(html, query) :
+      store.id === "noon-sa" ? (() => {
+        // Existing exact-SKU JSON-LD remains valid first-party HTML evidence.
+        // If a search page does not embed JSON-LD, use its visible DOM cards
+        // and keep the exact source offer code. Never import archived snapshots.
+        const structured=extractNoonSaudiCatalogCards(html,query);
+        if(structured.length) return structured;
+        return (noonLiveHtmlCards?.candidates || [])
+          .filter(card => Boolean(card.offerCode))
+          .map(card => ({
+            productId:card.productId,title:card.title,
+            sourceUrl:card.offerUrl,image:card.image,price:card.price,
+            currency:"SAR",sellerDeclared:null,
+            pdpPriceEvidence:"LIVE_HTML_SEARCH_CARD_ONLY",
+          }));
+      })() :
       store.id === "ikea-sa" ? extractIkeaSearchOffers(html, query) :
       (() => {
         const embedded = extractEmbeddedSearchOffers(html, searchPageFinalUrl || searchUrl, store, query);
@@ -1551,7 +1584,10 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             return {status:"SOURCE_HTML_UNAVAILABLE",parsedCards:0,
               uniqueOfferCandidates:0,conflictingOffers:0,customerPublishable:false};
           }
-          const evidence=extractNoonSaudiSearchCardEvidence(html,query,{limit:50});
+          const evidence=noonLiveHtmlCards;
+          if(!evidence) return {status:"SEARCH_CONTEXT_NOT_ATTESTED",
+            parsedCards:0,uniqueOfferCandidates:0,conflictingOffers:0,
+            customerPublishable:false};
           return {status:evidence.status,parsedCards:evidence.parsedCards,
             uniqueOfferCandidates:evidence.candidates.length,
             conflictingOffers:evidence.conflicts.length,customerPublishable:false};
