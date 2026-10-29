@@ -31,6 +31,10 @@ UV="$TEMP/uv-x86_64-unknown-linux-gnu/uv"
   { echo "NAWAA_PYTHON_UV_VERSION_MISMATCH"; exit 1; }
 
 # Both standalone Python itself and its venv belong to the deploy artifact.
+# Render's Node native build currently exports UV_NO_MANAGED_PYTHON.
+# It conflicts with our explicitly requested portable --python-preference.
+# This override is scoped to this opt-in build script, never server runtime.
+unset UV_NO_MANAGED_PYTHON
 export UV_PYTHON_INSTALL_DIR="$ROOT/.render-python/python"
 export UV_CACHE_DIR="$ROOT/.render-python/uv-cache"
 export UV_LINK_MODE=copy
