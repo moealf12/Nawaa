@@ -263,7 +263,6 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   const merchantThreshold = broad ? 2 : 1;
 
   const chunks=[];
-  let relevant=[];
   const remaining=[...ordered];
   const inFlight=new Map();
   const launch=(task)=>{
@@ -274,7 +273,6 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   // Providers already enforce their own deadlines. Start every eligible
   // provider immediately so a slow source never sits in front of a fast source.
   // This changes scheduling only: no provider or offer is removed.
-  const initial=remaining.length;
   while(remaining.length) launch(remaining.shift());
 
   while(inFlight.size){
@@ -289,13 +287,13 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
     }
     if(trace) trace({stage:"providerCallbackReturned",sourceId:settled.task.id,
       offers:settled.chunk.offers?.length||0,callbackMs:Math.max(0,performance.now()-dispatchAt)});
-    relevant = retainRelatedOffers(matchingQuery, chunks.flatMap(chunk=>chunk.offers || []));
-    const merchants=new Set(relevant.map(offerMerchantKey)).size;
-    const enough=relevant.length>=usefulThreshold && merchants>=merchantThreshold;
-
-
   }
 
+  // No early-stop decision consumes intermediate relevance: all eligible tasks
+  // already launch concurrently. Evaluate the *final* set once, avoiding
+  // repeated dedupe/scoring of accumulated offers for each settled provider.
+  const relevant=retainRelatedOffers(matchingQuery,chunks.flatMap(chunk=>chunk.offers || []));
+  const merchantCount=new Set(relevant.map(offerMerchantKey)).size;
   const merged=mergeProviderChunks(chunks);
   return {
     ...merged,
@@ -305,7 +303,7 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
       launched:chunks.map((chunk,index)=>chunk.provider?.sourceId || ordered[index]?.id).filter(Boolean),
       skipped:[],
       exhaustiveEligibleProviders:true,
-      usefulCoverageReached:relevant.length>=usefulThreshold && new Set(relevant.map(offerMerchantKey)).size>=merchantThreshold,
+      usefulCoverageReached:relevant.length>=usefulThreshold && merchantCount>=merchantThreshold,
       relevantOffers:relevant.length,
     },
   };
