@@ -186,3 +186,25 @@ test("general switch cannot bypass disabled base feature",async t=>{
   assert.equal(out.diagnostics.pythonExtraPdp,undefined);
   assert.equal(out.offers[0].productPrice,3499);
 });
+
+test("general mode allows bounded Render cold Python startup without exceeding search budget",async t=>{
+  originalEnv(t);
+  process.env.NAWAA_EXTRA_PYTHON_PDP="1";
+  process.env.NAWAA_EXTRA_PYTHON_ALL="1";
+  globalThis.fetch=async()=>Response.json({
+    response:{numberOfProducts:1,products:[{
+      ...originalPayload.response.products[0],productUrl:PDP
+    }]}
+  });
+  const timers=[];
+  const out=await searchExtraUnbxd(QUERY,12,QUERY,{
+    pythonExtract:async (req,options)=>{
+      timers.push(options.timeoutMs);
+      return evidence();
+    }
+  });
+  assert.equal(out.diagnostics.pythonExtraPdp.accepted,1);
+  assert.equal(timers.length,1);
+  assert.ok(timers[0]>4000 && timers[0]<=5000,
+    "Render subprocess must receive a 4-5s startup+network budget");
+});
