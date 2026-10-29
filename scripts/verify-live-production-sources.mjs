@@ -73,7 +73,7 @@ try {
     const offers=Array.isArray(data.offers)?data.offers:[];
     const invalid=offers.filter(x=>!validOffer(x));
     const extra=offers.filter(x=>x.merchant==="eXtra");
-    const extraSkus=extra.map(x=>String(x.sourceMeta?.productId||String(x.sourceUrl||"").match(/\\/p\\/(\\d{5,12})/)?.[1]||"")).filter(Boolean);
+    const extraSkus=extra.map(x=>String(x.sourceMeta?.productId||String(x.sourceUrl||"").split("/").at(-1))).filter(Boolean);
     const result={
       query,
       status:res.status,
