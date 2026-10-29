@@ -1,0 +1,63 @@
+name: NAWAA Render Python 3.12 Portable Runtime
+on:
+  pull_request:
+    paths:
+      - "scripts/provision-render-python.*"
+      - "scripts/verify-render-python-runtime.mjs"
+      - "scripts/benchmark-render-python-runtime.mjs"
+      - "workers/python-intelligence/pyproject.toml"
+      - "workers/python-intelligence/uv.lock"
+      - "src/python-jarir-bridge.mjs"
+      - "package.json"
+      - ".github/workflows/render-python-runtime.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python-lock-and-portability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: \${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.0"
+          enable-cache: false
+      - name: Verify lockfile or emit new locked project resolution
+        run: |
+          set -euo pipefail
+          if test -f workers/python-intelligence/uv.lock; then
+            uv lock --project workers/python-intelligence --check
+            echo "NAWAA_UV_LOCK_PRESENT"
+          else
+            uv lock --project workers/python-intelligence
+            echo "NAWAA_UV_LOCK_BASE64_START"
+            base64 -w0 workers/python-intelligence/uv.lock
+            echo
+            echo "NAWAA_UV_LOCK_BASE64_END"
+          fi
+      - name: Exercise pinned Python 3.12 managed and hashed project dependencies
+        run: |
+          set -euo pipefail
+          export UV_PYTHON_INSTALL_DIR="$PWD/.render-python/python"
+          export UV_CACHE_DIR="$PWD/.render-python/uv-cache"
+          uv sync --project workers/python-intelligence --python 3.12 --python-preference only-managed --no-dev --no-editable --locked
+          workers/python-intelligence/.venv/bin/python -I -c 'import sys,httpx,bs4,lxml,pydantic,rapidfuzz,nawaa_py.jarir_pdp; assert sys.version_info[:2] == (3,12); print("NAWAA_PORTABLE_PYTHON_312_DEPENDENCIES_PASS")'
+          test -x workers/python-intelligence/.venv/bin/python
+          echo "NAWAA_MANAGED_PYTHON_LOCATION $(readlink -f workers/python-intelligence/.venv/bin/python)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run production offline Python bridge benchmark
+        run: node scripts/benchmark-render-python-runtime.mjs
+      - name: Verify startup self-check uses the managed environment
+        env:
+          RENDER: "true"
+          RENDER_SERVICE_ID: "srv-dau4olo93c1s73cnj9a0"
+        run: node scripts/verify-render-python-runtime.mjs
