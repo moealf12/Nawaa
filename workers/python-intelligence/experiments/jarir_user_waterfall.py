@@ -57,7 +57,7 @@ class JarirScraperEngine:
         return url
 
     @staticmethod
-    def _download(url: str,timeout: float) -> tuple[str,str]:
+    def _download(url: str,timeout: float) -> tuple[str,str,str]:
         """Bounded single public GET; no WAF bypass, redirects, retries or proxy."""
         JarirScraperEngine._safe_url(url)
         if timeout<1 or timeout>20:raise ValueError("TIMEOUT_OUT_OF_RANGE")
@@ -86,7 +86,8 @@ class JarirScraperEngine:
                     if len(buffer)>MAX_BODY_BYTES:raise ValueError("RESPONSE_TOO_LARGE")
                 # Read the precise bytes for response hashing, not a re-encoded string.
                 raw=bytes(buffer)
-                return raw.decode(response.encoding or "utf-8",errors="replace"),str(response.url)
+                return (raw.decode(response.encoding or "utf-8",errors="replace"),
+                        str(response.url), hashlib.sha256(raw).hexdigest())
 
     @classmethod
     def extract_jarir_product(cls,url:str,expected_sku:Optional[str]=None,timeout:float=15.0)->JarirOfferEvidence:
@@ -95,9 +96,9 @@ class JarirScraperEngine:
             evidence.issues.append("EXPECTED_SKU_INVALID")
             return evidence
         try:
-            html_content,final_url=cls._download(url,timeout)
+            html_content,final_url,raw_sha256=cls._download(url,timeout)
             evidence.final_url=final_url
-            evidence.response_sha256=hashlib.sha256(html_content.encode("utf-8")).hexdigest()
+            evidence.response_sha256=raw_sha256
         except (httpx.HTTPError,ValueError,OSError) as error:
             code=("HTTP_"+str(error.response.status_code)) if isinstance(error,httpx.HTTPStatusError) else type(error).__name__
             if isinstance(error,ValueError):code=str(error)
