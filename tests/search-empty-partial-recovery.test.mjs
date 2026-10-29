@@ -60,3 +60,39 @@ test("fresh eligible JSON offers retain their original merchant and price withou
   assert.equal(merged.offers[0].independentlyAttested,undefined);
   assert.equal(merged.coverage.partial,true);
 });
+
+
+test("mixed timeout and explicit core refusal does not repeat denied merchant acquisition",()=>{
+  const mixed={offers:[],coverage:{partial:true},errors:[
+    {sourceId:"jarir-direct",error:"HTTP 403 Forbidden"},
+    {sourceId:"extra-unbxd",error:"request timeout"}]};
+  assert.equal(needsEmptyPartialRecovery(mixed),false);
+  assert.equal(mergeEmptyPartialRecovery(mixed,{query,offers:[jarir]},query),mixed);
+});
+
+test("recovered source ownership is anchored to provider, merchant, market and URL",()=>{
+  const original={offers:[],coverage:{partial:true},errors:[
+    {sourceId:"extra-unbxd",error:"timeout"}]};
+  for(const invalid of [
+    {...jarir,merchant:"eXtra"},
+    {...jarir,providerMarket:"extra-sa"},
+    {...jarir,sourceUrl:"https://www.jarir.com.evil.example/sa-en/item.html"},
+    {...jarir,sourceUrl:"https://user@www.jarir.com/sa-en/item.html"},
+    {...extra,sourceUrl:"https://www.extra.com.evil.example/en-sa/p/100462492"},
+    {...extra,sourceMeta:{productId:"999999999"}},
+    {...extra,currency:"USD"},
+  ]){
+    assert.equal(mergeEmptyPartialRecovery(original,{query,offers:[invalid]},query),original);
+  }
+});
+
+test("recovery preserves Bluetooth-headphone meaning and rejects speaker-only audio",()=>{
+  const original={offers:[],coverage:{partial:true},errors:[
+    {sourceId:"jarir-direct",error:"deadline exceeded"}]};
+  const speaker={...jarir,title:"JBL Bluetooth Portable Speaker"};
+  const wired={...jarir,title:"JBL Wired Over-Ear Headphones"};
+  const merged=mergeEmptyPartialRecovery(original,{query,offers:[speaker,wired,jarir]},query);
+  assert.deepEqual(merged.offers,[jarir]);
+  assert.equal(merged.coverage.complete,false);
+  assert.equal(merged.coverage.partial,true);
+});
