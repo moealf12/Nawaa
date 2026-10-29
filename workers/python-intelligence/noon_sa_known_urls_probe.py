@@ -33,7 +33,7 @@ URLS = [
 def matching_pdp_identity(raw):
     try:
         u = urlsplit(str(raw or ""))
-        return u.scheme == "https" and u.hostname in ("noon.com", "www.noon.com") and (
+        return u.scheme == "https" and u.hostname in ("noon.com", "www.noon.com") and u.path.startswith("/saudi-en/") and (
             re.search(r"/(N\\d{8}V)/p/?$", u.path, re.I) is not None
         ) and u.path.rsplit("/", 3)[-3].upper() == SKU
     except (ValueError, IndexError):
