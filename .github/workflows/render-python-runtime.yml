@@ -61,7 +61,14 @@ jobs:
           NAWAA_PYTHON_PREPARE: "1"
           # Reproduce the exact Render Node native-runtime conflict from build logs.
           UV_NO_MANAGED_PYTHON: "1"
-        run: node scripts/provision-render-python.mjs
+          UV_PYTHON_DOWNLOADS: "never"
+          UV_NO_PYTHON_DOWNLOADS: "1"
+        run: |
+          # The previous step installed managed Python. Remove it so the
+          # production-like provisioning MUST download 3.12 from scratch.
+          rm -rf .render-python/python workers/python-intelligence/.venv
+          node scripts/provision-render-python.mjs
+          workers/python-intelligence/.venv/bin/python -I -c 'import sys; assert sys.version_info[:2]==(3,12)'
       - name: Check feature-disabled postinstall does not provision
         env:
           RENDER: "true"
