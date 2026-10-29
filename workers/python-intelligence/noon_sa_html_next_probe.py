@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 from noon_sa_catalog_probe import parse_payload
 
-BASE = "https://www.noon.com/saudi-ar/search"
+BASE = "https://www.noon.com/saudi-ar/search/"
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
