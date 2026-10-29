@@ -466,16 +466,33 @@ export async function searchJarir(query, limit = 24, matchingQuery = query, {sig
   const capped=Math.max(1,Math.min(96,Math.floor(Number(limit)||24))), errors=[];
   // Explicit opt-in only. Default shopper search, first-offer latency and all
   // existing Jarir providers remain unchanged without this exact flag.
-  const pythonGate=process.env.NAWAA_JARIR_PYTHON_PDP==="1";
+  // Live opt-in requires a single explicit operator-selected SKU AND query;
+  // a bare activation flag never slows general customer searches.
+  const canarySku=String(process.env.NAWAA_JARIR_PYTHON_CANARY_SKU||"");
+  const canaryQuery=String(process.env.NAWAA_JARIR_PYTHON_CANARY_QUERY||"");
+  const pythonGate=process.env.NAWAA_JARIR_PYTHON_PDP==="1" &&
+    /^\d{5,8}$/.test(canarySku) &&
+    canaryQuery.length>=5 && canaryQuery.length<=128 &&
+    normalizeSearchQuery(canaryQuery)===normalizeSearchQuery(matchingQuery);
   const withPython=async result=>{
     if(!pythonGate||!Array.isArray(result?.offers)||!result.offers.length)return result;
     const tested=await enrichJarirOffersWithPython(result.offers,matchingQuery,{
-      signal,maxCandidates:1,timeoutMs:5500,extract:pythonExtract
+      signal,maxCandidates:1,timeoutMs:5500,extract:pythonExtract,allowedSku:canarySku
     });
     const offers=tested.offers.map(offer=>({
       ...offer,...assessOfferMatch(matchingQuery,offer),category:productCategory(offer)
     })).sort((a,b)=>Number(b.exactMatch)-Number(a.exactMatch)||
       b.matchConfidence-a.matchConfidence||a.productPrice-b.productPrice);
+    // Only public SKU and diagnostic classes are logged, never source HTML,
+    // prices, headers or user identifiers. Suitable for Render canary checks.
+    console.info("NAWAA_JARIR_PYTHON_CANARY "+JSON.stringify({
+      sourceId:"jarir-sa",sku:canarySku,
+      attempted:tested.diagnostics.attempted,
+      accepted:tested.diagnostics.accepted,
+      rejected:tested.diagnostics.rejected,
+      failed:tested.diagnostics.failed,
+      failureClasses:tested.diagnostics.failureClasses
+    }));
     // An opt-in request emits the final same-SKU replacement once. Never
     // stream the old index price and then add a second Python-derived offer.
     signal?.throwIfAborted();
