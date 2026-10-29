@@ -1,0 +1,19 @@
+name: Noon Real Offer Source Comparison
+on:
+  pull_request:
+    paths:
+      - "scripts/compare-noon-real-offers.mjs"
+      - ".github/workflows/noon-real-offers.yml"
+  workflow_dispatch:
+jobs:
+  compare-noon-offers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Read-only Noon live source diagnostic
+        run: node scripts/compare-noon-real-offers.mjs
