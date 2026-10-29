@@ -13,7 +13,7 @@ import {
   buildOfferIntelligence,
   offerVariantDimensions,
 } from "./search-core.mjs";
-import {selectSearchStreamResult,needsExtraSourceRecovery,mergeExtraSourceRecovery} from "./search-stream.mjs";
+import {selectSearchStreamResult,needsExtraSourceRecovery,mergeExtraSourceRecovery,needsEmptyPartialRecovery,mergeEmptyPartialRecovery} from "./search-stream.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
 import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
 
@@ -1393,14 +1393,17 @@ async function runSearch(rawQuery) {
         );
       }
 
-      // SSE can finish with Jarir-only offers when the independent UNBXD
-      // transport times out. One ordinary same-origin JSON read may recover
-      // fresh eXtra offers without creating guessed prices or repeating on 429.
-      // Keep already rendered cards visible while this bounded call runs.
-      if(needsExtraSourceRecovery(data)){
+      // Exactly ONE bounded ordinary customer JSON request may recover eligible
+      // offers when an SSE stream completed empty/partial due to a core timeout.
+      // Existing Jarir-only -> eXtra recovery retains its original guard.
+      // No replay for denied sources (403/429), clean empty results, or a new query.
+      const emptyPartialRecovery=needsEmptyPartialRecovery(data);
+      if(emptyPartialRecovery || needsExtraSourceRecovery(data)){
         const recoveryController=new AbortController();
         state.extraRecoveryController=recoveryController;
-        els.status.textContent="ظهرت نتائج أولية · نعيد التحقق من عروض eXtra…";
+        els.status.textContent=emptyPartialRecovery
+          ? "تعثر أحد المصادر · نتحقق من العروض المتاحة مجددًا…"
+          : "ظهرت نتائج أولية · نعيد التحقق من عروض eXtra…";
         try{
           const response=await fetch(
             apiBase + "/api/search?q=" + encodeURIComponent(query),{
@@ -1414,7 +1417,9 @@ async function runSearch(rawQuery) {
           if(response.ok&&requestId===state.requestId){
             const refresh=await response.json();
             if(requestId===state.requestId)
-              data=mergeExtraSourceRecovery(data,refresh);
+              data=emptyPartialRecovery
+                ? mergeEmptyPartialRecovery(data,refresh,query)
+                : mergeExtraSourceRecovery(data,refresh);
           }
         }catch{
           // A failed recovery does not erase valid offers from the SSE feed.
