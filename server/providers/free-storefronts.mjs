@@ -56,7 +56,7 @@ const STORES = [
     id:"noon-sa", name:"Noon Saudi", countryCode:"SA", countryNameAr:"السعودية",
     brands:["noon","نون"],categories:["*"],
     search:q=>"https://www.noon.com/saudi-en/search/?q="+encodeURIComponent(q),
-    productPath:/^\/saudi-en\/(?:[a-z0-9-]{2,320}\/)?(?:N\d{8}[A-Z]|Z[A-Z0-9]{20}Z)\/p\/?(?:[?#]|$)/i,
+    productPath:/^\/saudi-en\/(?:[a-z0-9-]{2,320}\/)?(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)\/p\/?(?:[?#]|$)/i,
   },
   {
     id:"amazon-ae", name:"Amazon UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
