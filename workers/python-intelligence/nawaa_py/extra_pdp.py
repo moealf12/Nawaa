@@ -49,7 +49,7 @@ def _phase(stage: str) -> None:
         ms = min(120_000, max(0, round((time.perf_counter() - _BOOT_TIME) * 1000)))
         sys.stderr.write("NAWAA_EXTRA_PHASE " + json.dumps(
             {"stage": stage, "sinceBootMs": ms}, separators=(",", ":")
-        ) + "\\n")
+        ) + "\n")
         sys.stderr.flush()
 
 
