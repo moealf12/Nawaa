@@ -5,6 +5,8 @@ on:
       - "workers/python-intelligence/noon_sa_html_next_probe.py"
       - "workers/python-intelligence/noon_sa_known_urls_probe.py"
       - "workers/python-intelligence/test_noon_sa_known_urls_probe.py"
+      - "workers/python-intelligence/noon_sa_snapshot_inspector.py"
+      - "workers/python-intelligence/test_noon_sa_snapshot_inspector.py"
       - "workers/python-intelligence/test_noon_sa_html_next_probe.py"
       - ".github/workflows/noon-sa-html-next-trial.yml"
   workflow_dispatch:
@@ -25,5 +27,7 @@ jobs:
         run: python -m unittest discover -s workers/python-intelligence -p test_noon_sa_html_next_probe.py -v
       - name: Validate supplied Noon URLs and exact SKU fixtures
         run: python -m unittest discover -s workers/python-intelligence -p test_noon_sa_known_urls_probe.py -v
+      - name: Validate saved HTML source snapshots locally
+        run: python -m unittest discover -s workers/python-intelligence -p test_noon_sa_snapshot_inspector.py -v
       - name: Inspect user-provided Saudi-en home, laptop search and PDP once each
         run: python workers/python-intelligence/noon_sa_known_urls_probe.py
