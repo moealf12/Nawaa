@@ -24,5 +24,7 @@ jobs:
         continue-on-error: true
         run: python workers/python-intelligence/noon_sa_catalog_probe.py --query "ايفون 15"
       - name: Probe same catalog with curl_cffi Chrome120
-        run: python workers/python-intelligence/noon_sa_curl_cffi_probe.py --query "ايفون 15" --limit 50
+        run: python workers/python-intelligence/noon_sa_curl_cffi_probe.py --query "ايفون 15" --limit 50 --http-version v2
+      - name: Check curl_cffi Chrome120 with HTTP 1.1 after H2 stream error
+        run: python workers/python-intelligence/noon_sa_curl_cffi_probe.py --query "ايفون 15" --limit 50 --http-version v1
 
