@@ -25,4 +25,4 @@ jobs:
       - name: CLI smoke test
         run: |
           cd workers/python-intelligence
-          printf '%s\\n' '{"schemaVersion":"nawaa.python.classify.v1","requestId":"ci","operation":"classify","expected":{"model":"PS5 Digital"},"observed":{"model":"PS5 Disc"}}' | PYTHONPATH=. python -m nawaa_py.cli
+          printf '%s\n' '{"schemaVersion":"nawaa.python.classify.v1","requestId":"ci","operation":"classify","expected":{"model":"PS5 Digital"},"observed":{"model":"PS5 Disc"}}' | PYTHONPATH=. python -m nawaa_py.cli
