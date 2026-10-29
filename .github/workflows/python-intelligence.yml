@@ -1,0 +1,28 @@
+name: NAWAA Python Intelligence P1
+on:
+  pull_request:
+    paths:
+      - "workers/python-intelligence/**"
+      - ".github/workflows/python-intelligence.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline Python classifier tests (no pip install, no network)
+        run: |
+          cd workers/python-intelligence
+          PYTHONPATH=. python -m unittest discover -s tests -v
+      - name: CLI smoke test
+        run: |
+          cd workers/python-intelligence
+          printf '%s\\n' '{"schemaVersion":"nawaa.python.classify.v1","requestId":"ci","operation":"classify","expected":{"model":"PS5 Digital"},"observed":{"model":"PS5 Disc"}}' | PYTHONPATH=. python -m nawaa_py.cli
