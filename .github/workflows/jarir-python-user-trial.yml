@@ -53,7 +53,7 @@ jobs:
       - name: JSON Lines real CLI error-frame smoke
         run: |
           cd workers/python-intelligence
-          printf '%s\n' '{"schemaVersion":"nawaa.jarir.experimental.v1","requestId":"smoke","url":"https://example.com/"}' | python -m experiments.jarir_user_waterfall
+          printf '%s\n' '{"schemaVersion":"nawaa.jarir.pdp.v1","requestId":"smoke","url":"https://example.com/"}' | python -m experiments.jarir_user_waterfall
   jarir-real-public-page:
     needs: jarir-offline-validation
     if: github.event_name == 'pull_request'
