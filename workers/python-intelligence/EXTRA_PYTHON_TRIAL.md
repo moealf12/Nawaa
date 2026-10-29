@@ -60,3 +60,53 @@ path, and path-SKU are accepted.
 
 A passing GitHub Actions workflow **does not mean** an eXtra price was found;
 consult `NAWAA_EXTRA_PYTHON_LIVE` in job logs for the observed outcome.
+
+## Existing UNBXD provider integration (controlled read path)
+
+The Python observation is now connected to the existing
+`server/providers/extra-unbxd.mjs` search provider, **not** registered as an
+additional merchant/source. The provider calls
+`server/python-extra-enrichment.mjs` via
+`src/python-extra-bridge.mjs` only for one explicitly selected SKU and
+exact operator-defined normalized query, and only when an existing eXtra
+index offer already has the same source product ID.
+
+Required environment settings (unset/OFF by default):
+
+```sh
+NAWAA_EXTRA_PYTHON_PDP=1
+NAWAA_EXTRA_PYTHON_CANARY_SKU=100462492
+NAWAA_EXTRA_PYTHON_CANARY_QUERY="Apple iPhone 17e 512GB Soft Pink"
+NAWAA_EXTRA_PYTHON_CANARY_URL="https://www.extra.com/en-sa/mobiles-tablets/mobiles/smartphone/apple-iphone-17e-5g-6-1-512gb-soft-pink/p/100462492"
+```
+
+The **single** approved PDP must resolve on `www.extra.com`, terminate with
+the same numeric SKU and have no query, credentials or fragment. No shopper
+input can modify the four admin settings. A bare `NAWAA_EXTRA_PYTHON_PDP=1`
+cannot start Python. Other queries retain the original fast UNBXD path.
+
+Node verifies merchant and source ownership, index alias URL, exact SKU,
+matching source host and PDP path, fresh response SHA-256, positive Decimal
+price in SAR, matching field-level price/currency provenance, explicit model
+suffix, storage, brand and color, query relevance, and reasonable price delta.
+It updates only the original offer slot **and preserves the original
+canonical URL, SKU, offer identity and existing city stock information**.
+It never creates a second eXtra offer, makes a trust badge, or lets Python
+write to Postgres. Failures or 403 retain the original UNBXD price.
+
+New deterministic tests:
+
+```sh
+node --test tests/python-extra-admission.test.mjs tests/extra-python-provider-flag.test.mjs
+```
+
+The dedicated CI workflow also executes
+`node scripts/verify-extra-python-integration.mjs` against live UNBXD.
+A reported `LIVE_UNBXD_PYTHON_ADMITTED` means Python evidence reached the
+existing Node offer admission code, but the CI-only result is **not persisted
+or customer-visible**. Other outcomes honestly report missing matching SKU,
+network denial, or retention of the original index price.
+
+**Production policy:** Do not set the four flags on Render before checking
+Python `ready=true` on the exact deployed SHA and testing the query's
+customer SSE/JSON latency and source evidence. No new paid service is used.
