@@ -1814,6 +1814,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           },
         }:{}),
         ...(amazonDeAcquisition?{amazonDeAcquisition}:{}),
+        // Query-driven product candidates for Amazon Germany. These URLs come
+        // from the actual search page for this request, not a static ASIN list.
+        // Keep them diagnostic-only: no price, seller, stock or checkout claims.
+        ...(store.id==="amazon-de"?{
+          amazonDeCandidateSamples:[...new Set([
+            ...directSearchOffers.map(item=>item?.sourceUrl),
+            ...links.map(item=>item?.url),
+          ].filter(url=>typeof url==="string"&&url.length<2000))].slice(0,20),
+        }:{}),
         candidateSamples:(directSearchOffers.length
           ? directSearchOffers.slice(0,5).map((item)=>item.sourceUrl)
           : links.slice(0,5).map((candidate)=>candidate.url)),
