@@ -8,7 +8,7 @@ import httpx
 
 API = "https://www.noon.com/_svc/catalog/api/search"
 SKU = re.compile(r"^[A-Za-z0-9_-]{5,64}$")
-PRICE = re.compile(r"^\\d{1,8}(?:\\.\\d{1,2})?$")
+PRICE = re.compile(r"^\d{1,8}(?:\.\d{1,2})?$")
 
 def price_value(raw):
     if type(raw) not in (str, int, float, Decimal):
