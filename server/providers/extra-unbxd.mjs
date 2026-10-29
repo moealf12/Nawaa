@@ -5,6 +5,7 @@ const EXTRA_SEARCH_BASE = `https://search.unbxd.io/${EXTRA_API_KEY}/${EXTRA_SITE
 import { filterQueryOffers,normalizeSearchQuery } from "../../src/search-query.mjs";
 import {approvedExtraPdp,warmExtraPythonPdp} from "../../src/python-extra-bridge.mjs";
 import {enrichExtraOffersWithPython} from "../python-extra-enrichment.mjs";
+import {normalizeExtraUrl} from "../extra-url-health.mjs";
 // Worker is pre-imported only on the approved Render service with the explicit
 // warm flag; client queries cannot activate it. Never blocks HTTP startup.
 warmExtraPythonPdp();
@@ -96,8 +97,8 @@ function sourceOwnedPdp(product,sku) {
   for (const key of ["url","productUrl","productPageUrl","pdpUrl"]) {
     const raw=product?.[key];
     if(typeof raw!=="string")continue;
-    const full=raw.startsWith("/en-sa/") ? "https://www.extra.com"+raw : raw;
-    if(approvedExtraPdp(full,sku))return full;
+    const normalized=normalizeExtraUrl(raw);
+    if(normalized && approvedExtraPdp(normalized,sku))return normalized;
   }
   return null;
 }
