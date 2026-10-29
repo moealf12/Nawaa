@@ -11,7 +11,7 @@ const originalPayload={response:{numberOfProducts:1,products:[{
   featureEnColor:"Soft Pink",inStock:[]}
 ]}};
 function originalEnv(t){
-  const keys=["NAWAA_EXTRA_PYTHON_PDP","NAWAA_EXTRA_PYTHON_CANARY_QUERY",
+  const keys=["NAWAA_EXTRA_PYTHON_PDP","NAWAA_EXTRA_PYTHON_ALL","NAWAA_EXTRA_PYTHON_CANARY_QUERY",
     "NAWAA_EXTRA_PYTHON_CANARY_SKU","NAWAA_EXTRA_PYTHON_CANARY_URL"];
   const before=Object.fromEntries(keys.map(x=>[x,process.env[x]]));
   const fetch=globalThis.fetch;
@@ -123,4 +123,66 @@ test("other SKU in existing source cannot be enriched with a canary offer",async
   });
   assert.equal(out.diagnostics.pythonExtraPdp.attempted,0);
   assert.equal(out.diagnostics.pythonExtraPdp.accepted,0);
+});
+
+test("general rollout accepts exact merchant PDP on every query without canary flags",async t=>{
+  originalEnv(t);
+  process.env.NAWAA_EXTRA_PYTHON_PDP="1";
+  process.env.NAWAA_EXTRA_PYTHON_ALL="1";
+  delete process.env.NAWAA_EXTRA_PYTHON_CANARY_SKU;
+  delete process.env.NAWAA_EXTRA_PYTHON_CANARY_QUERY;
+  delete process.env.NAWAA_EXTRA_PYTHON_CANARY_URL;
+  globalThis.fetch=async()=>Response.json({
+    response:{numberOfProducts:1,products:[{
+      ...originalPayload.response.products[0],productUrl:PDP
+    }]}
+  });
+  const calls=[];
+  const out=await searchExtraUnbxd(QUERY,12,QUERY,{
+    pythonExtract:async req=>{calls.push(req);return evidence();}
+  });
+  assert.equal(out.offers.length,1);
+  assert.equal(out.offers[0].sourceUrl,"https://www.extra.com/en-sa/p/"+SKU);
+  assert.equal(out.offers[0].productPrice,3299);
+  assert.equal(out.diagnostics.pythonExtraPdp.attempted,1);
+  assert.equal(out.diagnostics.pythonExtraPdp.accepted,1);
+  assert.deepEqual(calls,[{url:PDP,expectedSku:SKU}]);
+});
+
+test("general mode never guesses PDP URLs or trusts wrong host and SKU",async t=>{
+  originalEnv(t);
+  process.env.NAWAA_EXTRA_PYTHON_PDP="1";
+  process.env.NAWAA_EXTRA_PYTHON_ALL="1";
+  for(const url of [undefined,
+    "https://www.extra.com.evil.test/en-sa/mobiles/p/"+SKU,
+    PDP.replace(SKU,"100462493"),
+    "https://www.extra.com/en-sa/p/"+SKU,
+    PDP+"?utm_source=untrusted"]){
+    globalThis.fetch=async()=>Response.json({
+      response:{numberOfProducts:1,products:[{
+        ...originalPayload.response.products[0],productUrl:url
+      }]}
+    });
+    const out=await searchExtraUnbxd(QUERY,12,QUERY,{
+      pythonExtract:async()=>{throw Error("unapproved PDP must not be fetched");}
+    });
+    assert.equal(out.offers[0].productPrice,3499);
+    assert.equal(out.diagnostics.pythonExtraPdp.attempted,0,String(url));
+  }
+});
+
+test("general switch cannot bypass disabled base feature",async t=>{
+  originalEnv(t);
+  delete process.env.NAWAA_EXTRA_PYTHON_PDP;
+  process.env.NAWAA_EXTRA_PYTHON_ALL="1";
+  globalThis.fetch=async()=>Response.json({
+    response:{numberOfProducts:1,products:[{
+      ...originalPayload.response.products[0],productUrl:PDP
+    }]}
+  });
+  const out=await searchExtraUnbxd(QUERY,12,QUERY,{
+    pythonExtract:async()=>{throw Error("disabled base flag must not spawn");}
+  });
+  assert.equal(out.diagnostics.pythonExtraPdp,undefined);
+  assert.equal(out.offers[0].productPrice,3499);
 });
