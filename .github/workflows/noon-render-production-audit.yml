@@ -42,7 +42,14 @@ jobs:
                           "sourceAccessFailure":d.get("sourceAccessFailure"),
                           "searchPage":d.get("searchPage"),
                           "noonSearchCards":d.get("noonSearchCards"),
-                          "primarySearchErrorClass":"PRESENT" if d.get("primarySearchError") else "NONE"},sort_keys=True))
+                          "primarySearchErrorClass":"PRESENT" if d.get("primarySearchError") else "NONE",
+                          "errorCategory": ("HTTP_403" if "403" in str(item.get("error") or "") else
+                                            "HTTP_429" if "429" in str(item.get("error") or "") else
+                                            "HTTP_200_SHELL" if "HTTP_200_JS_SHELL" in str(item.get("error") or "") else
+                                            "TIMEOUT" if "timeout" in str(item.get("error") or "").lower() else
+                                            "DNS" if "ENOTFOUND" in str(item.get("error") or "") else
+                                            "TLS" if "certificate" in str(item.get("error") or "").lower() else
+                                            "UNCLASSIFIED" if item.get("error") else "NONE")},sort_keys=True))
                   if not obj.get("results"): print(json.dumps({"http_status":r.status,"result":"NO_SOURCE_RESULTS"}))
           except urllib.error.HTTPError as e:
               print(json.dumps({"audit_endpoint":"NOT_AVAILABLE","http_status":e.code}))
