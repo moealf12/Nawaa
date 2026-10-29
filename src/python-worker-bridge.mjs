@@ -2,7 +2,7 @@
 // No shell, shared database, trust promotion, or user-controlled executable path.
 import {spawn} from "node:child_process";
 import {fileURLToPath} from "node:url";
-import {resolve} from "node:path";
+import {StringDecoder} from "node:string_decoder";
 
 const WORKDIR=fileURLToPath(new URL("../workers/python-intelligence/",import.meta.url));
 const VERSION="nawaa.python.extract.v1";
@@ -42,6 +42,7 @@ export async function runPythonExtraction(payload,{
       });
     }catch{rejectResult(Error("PYTHON_SPAWN_FAILED"));return;}
     let done=false,stdout="",stderrBytes=0,stdoutBytes=0;
+    const decoder=new StringDecoder("utf8");
     let timer;
     const abort=()=>finish(Error("PYTHON_ABORTED"));
     const finish=(error,value)=>{
@@ -60,7 +61,7 @@ export async function runPythonExtraction(payload,{
     child.stdout.on("data",chunk=>{
       stdoutBytes+=chunk.length;
       if(stdoutBytes>MAX_OUTPUT_BYTES){finish(Error("PYTHON_OUTPUT_TOO_LARGE"));return;}
-      stdout+=chunk.toString("utf8");
+      stdout+=decoder.write(chunk);
     });
     child.stderr.on("data",chunk=>{
       stderrBytes+=chunk.length;
@@ -69,6 +70,7 @@ export async function runPythonExtraction(payload,{
     child.stdin.on("error",()=>finish(Error("PYTHON_STDIN_FAILED")));
     child.on("close",code=>{
       if(done)return;
+      stdout+=decoder.end();
       if(code!==0){finish(Error("PYTHON_WORKER_EXIT_NONZERO"));return;}
       const lines=stdout.split(/\r?\n/).filter(x=>x.length>0);
       if(lines.length!==1){finish(Error("PYTHON_JSONL_FRAMING_INVALID"));return;}
@@ -91,6 +93,7 @@ export async function runPythonExtraction(payload,{
           !Array.isArray(result.identity.conflicts)||!Array.isArray(result.identity.missing)||
           (result.offerEvidence!==null&&result.offerEvidence!==undefined&&
             (!/^\d+(?:\.\d{1,2})?$/.test(String(result.offerEvidence.price))||
+              !(Number(result.offerEvidence.price)>0)||
               !/^[A-Z]{3}$/.test(result.offerEvidence.currency)))){
           finish(Error("PYTHON_EVIDENCE_CONTRACT_INVALID"));return;
         }
