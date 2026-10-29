@@ -197,7 +197,7 @@ test("A rejected Noon JSON-LD sibling cannot come back through the generic fallb
 });
 
 
-test("Noon live HTML search surfaces only opt-in card diagnostic counts, never unverified shopper prices",{
+test("Noon live HTML search feeds live displayed source prices without claiming PDP buybox",{
  concurrency:false
 },async()=>{
   const old=globalThis.fetch;
@@ -213,7 +213,14 @@ test("Noon live HTML search surfaces only opt-in card diagnostic counts, never u
       perStore:3,noonSearchCardDiagnostics:true
     });
     assert.equal(calls,1,"no extra network fetch is allowed");
-    assert.deepEqual(withDiagnostics.offers,[],"noon PLP advertised price is not a verified customer offer");
+    assert.equal(withDiagnostics.offers.length,1,"the real live source card is an eligible advertised price");
+    assert.equal(withDiagnostics.offers[0].productPrice,2489);
+    assert.equal(withDiagnostics.offers[0].sourceUrl,pdp);
+    assert.equal(withDiagnostics.offers[0].sourceMeta.priceEvidence,"LIVE_HTML_SEARCH_CARD_ONLY");
+    assert.equal(withDiagnostics.offers[0].sourceMeta.buyboxVerified,false);
+    assert.equal(withDiagnostics.offers[0].sourceMeta.deliveryVerified,false);
+    assert.equal(withDiagnostics.offers[0].canShipToSaudi,null);
+    assert.equal(withDiagnostics.offers[0].availability,"unknown");
     assert.deepEqual(withDiagnostics.diagnostics.noonSearchCards,{
       status:"SEARCH_CARD_EVIDENCE",
       parsedCards:1,uniqueOfferCandidates:1,conflictingOffers:0,customerPublishable:false
@@ -223,7 +230,8 @@ test("Noon live HTML search surfaces only opt-in card diagnostic counts, never u
     const withoutDiagnostics=await searchFreeStorefrontById("noon-sa","laptop",{perStore:3});
     assert.equal(calls,2);
     assert.equal(withoutDiagnostics.diagnostics.noonSearchCards,undefined);
-    assert.deepEqual(withoutDiagnostics.offers,[]);
+    assert.equal(withoutDiagnostics.offers.length,1,"HTML parsing runs without diagnostic flags");
+    assert.equal(withoutDiagnostics.offers[0].sourceMeta.priceEvidence,"LIVE_HTML_SEARCH_CARD_ONLY");
   }finally{globalThis.fetch=old;}
 });
 

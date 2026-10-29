@@ -119,12 +119,19 @@ export async function auditFreeStorefronts({ storeId = null, query = null, direc
         perStore:isEuropeanPilot ? 3 : 100,
         noonSearchCardDiagnostics:store.id==="noon-sa",
       });
+      const advertisedHtmlOnly = store.id==="noon-sa" &&
+        result.offers.length>0 &&
+        result.offers.every(offer=>
+          offer.sourceMeta?.priceEvidence==="LIVE_HTML_SEARCH_CARD_ONLY");
       const status = result?.diagnostics?.primarySearchError && !result?.offers?.length
         ? "FAILING"
-        : classify(result);
+        : advertisedHtmlOnly ? "LIVE_HTML_PRICE_OBSERVED" : classify(result);
       resultItem = {
         id:store.id, name:store.name, countryCode:store.countryCode, query:probeQuery, status,
-        candidates:result.candidates, verifiedOffers:result.offers.length, failures:result.failures,
+        candidates:result.candidates,
+        verifiedOffers:advertisedHtmlOnly ? 0 : result.offers.length,
+        ...(advertisedHtmlOnly?{advertisedHtmlOffers:result.offers.length}:{}),
+        failures:result.failures,
         durationMs:Date.now()-started,
         diagnostics:result.diagnostics || null,
         sampleOffers:result.offers.slice(0,3).map(offer=>({
