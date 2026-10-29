@@ -282,12 +282,34 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       if(Date.now() - startedAt >= overallDeadlineMs) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
     } catch(error) {
       if(signal?.aborted) throw signal.reason || error;
-      if(!products.length) throw error;
+      if(!products.length){
+        // Source failure is not a Python price-verification failure.
+        // Emit bounded, low-cardinality diagnostics; never log shopper query,
+        // source URL, credentials, response body, SKU or price.
+        const message=String(error?.message||"");
+        const http=/^extra-unbxd: HTTP ([45][0-9]{2})$/.exec(message);
+        const failureClass=http ? "HTTP_"+http[1] :
+          error?.name==="TimeoutError" || error?.name==="AbortError" ? "TIMEOUT" :
+          /Malformed product response/.test(message) ? "INVALID_RESPONSE" :
+          "FETCH_OR_PARSE_FAILURE";
+        console.info("NAWAA_EXTRA_SOURCE_DIAG "+JSON.stringify({
+          outcome:"failed",stage:"unbxd",failureClass,
+          elapsedMs:Date.now()-startedAt
+        }));
+        throw error;
+      }
       errors.push({market:"extra-sa",error:error.message}); break;
     }
   }
   const filterStart = timingEnabled ? performance.now() : 0;
   const {offers,queryFilter}=filterQueryOffers(matchingQuery,products);
+  if(process.env.NAWAA_EXTRA_SOURCE_TRACE==="1"){
+    console.info("NAWAA_EXTRA_SOURCE_DIAG "+JSON.stringify({
+      outcome:"fetched",stage:"unbxd",
+      rawRecords:start,normalized:products.length,
+      matched:offers.length,elapsedMs:Date.now()-startedAt
+    }));
+  }
   if (timings) {
     timings.filterMs = performance.now() - filterStart;
     console.log("EXTRA_PHASE_TIMING "+JSON.stringify({queryLength:String(query).length,offers:offers.length,products:products.length,...timings}));
