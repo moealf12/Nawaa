@@ -24,7 +24,9 @@ HEADERS = {
 }
 
 
-def search(query: str, limit: int = 50) -> dict:
+def search(query: str, limit: int = 50, http_version: str = "v2") -> dict:
+    if http_version not in ("v1", "v2"):
+        raise ValueError("unsupported HTTP version")
     if not isinstance(query, str) or not 2 <= len(query.strip()) <= 180:
         raise ValueError("invalid search query")
     if not isinstance(limit, int) or not 1 <= limit <= 50:
@@ -42,7 +44,8 @@ def search(query: str, limit: int = 50) -> dict:
     try:
         with requests.Session(impersonate="chrome120", timeout=15.0) as session:
             stage = "HTTP_REQUEST"
-            response = session.get(API, params=params, headers=HEADERS, timeout=15.0, allow_redirects=False)
+            response = session.get(API, params=params, headers=HEADERS, timeout=15.0, allow_redirects=False,
+                                   http_version=http_version)
         elapsed = round((time.monotonic() - start) * 1000)
         status = int(response.status_code)
         endpoint_host = urlsplit(str(response.url)).hostname
@@ -93,5 +96,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--query", default="ايفون 15")
     parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument("--http-version", choices=["v1", "v2"], default="v2")
     args = parser.parse_args()
-    print(json.dumps(search(args.query, args.limit), ensure_ascii=False))
+    outcome = search(args.query, args.limit, args.http_version)
+    print(json.dumps({"http_version_requested": args.http_version, **outcome}, ensure_ascii=False))
