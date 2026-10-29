@@ -17,8 +17,11 @@ test("provider routing computes final relevance once, not once per completed sou
   const calls=[...body.matchAll(/retainRelatedOffers\(matchingQuery,/g)];
   assert.equal(calls.length,1,"all settled chunks must be scored exactly once");
   const scoreAt=calls[0].index;
-  assert.ok(scoreAt>body.indexOf("const merged=mergeProviderChunks")-500,
-    "final scoring must occur after the provider settle loop");
+  const settleLoopEnd=body.indexOf("\\n  }\\n",body.indexOf("while(inFlight.size)"));
+  assert.ok(settleLoopEnd>=0,"provider completion loop must be identifiable");
+  assert.ok(scoreAt>settleLoopEnd,"final scoring must occur after the provider settle loop");
+  assert.ok(scoreAt<body.indexOf("const merged=mergeProviderChunks"),
+    "final routing coverage must use the entire settled chunk set");
   assert.match(body,/usefulCoverageReached:relevant\.length>=usefulThreshold && merchantCount>=merchantThreshold/);
   assert.match(body,/relevantOffers:relevant\.length/);
 });
