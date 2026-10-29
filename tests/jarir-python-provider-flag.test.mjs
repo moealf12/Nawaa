@@ -11,6 +11,15 @@ const constructorPayload={
       metadata:{name:"Apple iPhone 17 256GB Black",brand:"Apple"}}
   }]}
 };
+function restoreCanaryEnv(t){
+  const keys=["NAWAA_JARIR_PYTHON_PDP","NAWAA_JARIR_PYTHON_CANARY_QUERY",
+              "NAWAA_JARIR_PYTHON_CANARY_SKU"];
+  const before=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+  t.after(()=>{for(const k of keys){
+    if(before[k]===undefined)delete process.env[k];
+    else process.env[k]=before[k];
+  }});
+}
 const liveEvidence=()=>({
   price:"4299.00",currency:"SAR",availability:"IN_STOCK",
   sku:"666784",product_title:"Apple iPhone 17 256GB Black",
@@ -21,13 +30,12 @@ const liveEvidence=()=>({
 });
 
 test("opt-in provider emits one same-SKU enriched Jarir offer, never two price versions",async t=>{
-  const prevFetch=globalThis.fetch,prevFlag=process.env.NAWAA_JARIR_PYTHON_PDP;
-  t.after(()=>{
-    globalThis.fetch=prevFetch;
-    if(prevFlag===undefined)delete process.env.NAWAA_JARIR_PYTHON_PDP;
-    else process.env.NAWAA_JARIR_PYTHON_PDP=prevFlag;
-  });
+  const prevFetch=globalThis.fetch;
+  restoreCanaryEnv(t);
+  t.after(()=>{globalThis.fetch=prevFetch;});
   process.env.NAWAA_JARIR_PYTHON_PDP="1";
+  process.env.NAWAA_JARIR_PYTHON_CANARY_QUERY="iPhone 17 256GB";
+  process.env.NAWAA_JARIR_PYTHON_CANARY_SKU="666784";
   const requested=[],published=[];
   globalThis.fetch=async url=>{
     requested.push(String(url));
@@ -54,12 +62,9 @@ test("opt-in provider emits one same-SKU enriched Jarir offer, never two price v
 });
 
 test("feature disabled: injected extractor is never called; existing price retained",async t=>{
-  const prevFetch=globalThis.fetch,prevFlag=process.env.NAWAA_JARIR_PYTHON_PDP;
-  t.after(()=>{
-    globalThis.fetch=prevFetch;
-    if(prevFlag===undefined)delete process.env.NAWAA_JARIR_PYTHON_PDP;
-    else process.env.NAWAA_JARIR_PYTHON_PDP=prevFlag;
-  });
+  const prevFetch=globalThis.fetch;
+  restoreCanaryEnv(t);
+  t.after(()=>{globalThis.fetch=prevFetch;});
   delete process.env.NAWAA_JARIR_PYTHON_PDP;
   globalThis.fetch=async()=>Response.json(constructorPayload);
   const result=await searchJarir("iPhone 17 256GB",3,"iPhone 17 256GB",{
@@ -68,4 +73,50 @@ test("feature disabled: injected extractor is never called; existing price retai
   assert.equal(result.offers.length,1);
   assert.equal(result.offers[0].productPrice,4399);
   assert.equal(result.diagnostics.pythonJarirPdp,undefined);
+});
+
+test("production guard: bare feature flag without SKU/query leaves normal path intact",async t=>{
+  const prevFetch=globalThis.fetch;restoreCanaryEnv(t);
+  t.after(()=>{globalThis.fetch=prevFetch;});
+  process.env.NAWAA_JARIR_PYTHON_PDP="1";
+  delete process.env.NAWAA_JARIR_PYTHON_CANARY_QUERY;
+  delete process.env.NAWAA_JARIR_PYTHON_CANARY_SKU;
+  globalThis.fetch=async()=>Response.json(constructorPayload);
+  let emitted=0;
+  const r=await searchJarir("iPhone 17 256GB",3,"iPhone 17 256GB",{
+    pythonExtract:async()=>{throw Error("ungated Python should not run");},
+    onOffers:async()=>{emitted++;}
+  });
+  assert.equal(r.offers[0].productPrice,4399);
+  assert.equal(r.diagnostics.pythonJarirPdp,undefined);
+  assert.equal(emitted,1);
+});
+
+test("production guard: different customer query never calls Python",async t=>{
+  const prevFetch=globalThis.fetch;restoreCanaryEnv(t);
+  t.after(()=>{globalThis.fetch=prevFetch;});
+  process.env.NAWAA_JARIR_PYTHON_PDP="1";
+  process.env.NAWAA_JARIR_PYTHON_CANARY_QUERY="iPhone 17 256GB";
+  process.env.NAWAA_JARIR_PYTHON_CANARY_SKU="666784";
+  globalThis.fetch=async()=>Response.json(constructorPayload);
+  const r=await searchJarir("iPhone 17",3,"iPhone 17",{
+    pythonExtract:async()=>{throw Error("query-mismatched Python must not run");}
+  });
+  assert.equal(r.offers[0].productPrice,4399);
+  assert.equal(r.diagnostics.pythonJarirPdp,undefined);
+});
+
+test("production guard: different approved SKU causes no HTTPX call or price change",async t=>{
+  const prevFetch=globalThis.fetch;restoreCanaryEnv(t);
+  t.after(()=>{globalThis.fetch=prevFetch;});
+  process.env.NAWAA_JARIR_PYTHON_PDP="1";
+  process.env.NAWAA_JARIR_PYTHON_CANARY_QUERY="iPhone 17 256GB";
+  process.env.NAWAA_JARIR_PYTHON_CANARY_SKU="666785";
+  globalThis.fetch=async()=>Response.json(constructorPayload);
+  const r=await searchJarir("iPhone 17 256GB",3,"iPhone 17 256GB",{
+    pythonExtract:async()=>{throw Error("non-approved SKU cannot be fetched");}
+  });
+  assert.equal(r.offers[0].productPrice,4399);
+  assert.equal(r.diagnostics.pythonJarirPdp.attempted,0);
+  assert.equal(r.diagnostics.pythonJarirPdp.accepted,0);
 });
