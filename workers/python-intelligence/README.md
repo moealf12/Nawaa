@@ -64,6 +64,8 @@ Python P1-P2 workflow:
 
 Dependency ranges are bounded, not a cryptographic lock file. Pin an auditable hash lock before production release. Github-hosted runners use available Actions minutes; the open-source packages have no license fee, but remaining free minutes must be monitored.
 
-## Production boundary
+## Jarir official PDP integration
 
-Do not merge or promote on the strength of examples alone. The Python layer remains experimental and is not invoked from server/server.mjs. No extra Render service or network acquisition loop is enabled.
+See [JARIR_INTEGRATION.md](./JARIR_INTEGRATION.md) for the official `nawaa_py.jarir_pdp` worker, Node admission bridge, exact-SKU merchant evidence, opt-in provider path and release controls.
+
+**Production default remains unchanged.** The Node Jarir provider has an explicit `NAWAA_JARIR_PYTHON_PDP=1` switch, OFF by default. Do not enable it on Render until Python 3.12 dependencies and source deadline/egress safeguards are verified. No new paid service or trust badge is introduced.
