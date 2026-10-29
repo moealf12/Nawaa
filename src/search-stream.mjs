@@ -57,11 +57,13 @@ export function needsEmptyPartialRecovery(data){
   if(!data?.coverage || !(data.coverage.partial===true ||
       data.coverage.complete===false || data.coverage.deadlineExceeded===true))return false;
   if(!Array.isArray(data.errors)||data.errors.length===0)return false;
-  return data.errors.some(error=>{
-    if(!CORE_RECOVERABLE_PROVIDERS.has(error?.sourceId||error?.provider))return false;
-    const detail=String(error?.error||error?.message||error?.failureClass||"").slice(0,300);
-    return TRANSIENT_SOURCE_FAILURE.test(detail)&&!PERMANENT_SOURCE_DENIAL.test(detail);
-  });
+  const coreErrors=data.errors.filter(error=>
+    CORE_RECOVERABLE_PROVIDERS.has(error?.sourceId||error?.provider));
+  const reason=error=>String(error?.error||error?.message||error?.failureClass||"").slice(0,300);
+  // An explicit 403/429 from either core source bars the full-source recovery:
+  // do not send another ordinary search that could immediately revisit a denial.
+  if(coreErrors.some(error=>PERMANENT_SOURCE_DENIAL.test(reason(error))))return false;
+  return coreErrors.some(error=>TRANSIENT_SOURCE_FAILURE.test(reason(error)));
 }
 
 function eligibleRecoveryOffer(offer,query){
