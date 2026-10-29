@@ -41,9 +41,9 @@ Explicit opt-in:
 
     NAWAA_PY_LIVE_ENABLED=1 python -m nawaa_py.live_trial
 
-Canary URL: https://www.jarir.com/sa-en/
+Canary URL: https://www.jarir.com/sa-en/apple-iphone-17-smartphones-666784.html
 
-The canary validates an exact source-host allowlist and public DNS, reads robots.txt, respects robots and HTTPS, then tries the public page once with the transparent NAWAA User-Agent. No WAF evasion, redirects, retries, paid proxy, browser impersonation, or direct ingest. An HTTP 403, robots block or other transport error is a recorded result, **not a successful merchant offer**. The homepage itself does not attest a price.
+The canary validates an exact source-host allowlist and public DNS, reads robots.txt, respects robots and HTTPS, then tries the public page once with the transparent NAWAA User-Agent. No WAF evasion, redirects, retries, paid proxy, browser impersonation, or direct ingest. An HTTP 403, robots block or other transport error is a recorded result, **not a successful merchant offer**. The product page is parsed only when received completely; a source price is still observational evidence, not a verified sellable offer.
 
 Note: DNS preflight alone cannot eliminate DNS rebinding; production network egress restrictions remain required before enabling arbitrary live fetching. Network access is OFF by default in the Node bridge.
 
