@@ -10,7 +10,7 @@ const queries=["iPhone 17 256GB","PS5","Samsung Galaxy S25"];
 const report={protocol:"LIVE_PRODUCTION_OBSERVED_ERRORS_V1",synthetic:false,
   noDirectMerchantProbes:true,noFirecrawl:true,
   startedAt:new Date().toISOString(),expectedRevision:expected||null,
-  actualRevision:null,searches:[],aggregate:null,outcome:"UNKNOWN"};
+  actualRevision:null,searches:[],aggregate:null,sourceOwnerChecks:[],outcome:"UNKNOWN"};
 const esc=x=>String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function fetchJSON(path,timeoutMs=50000){
   const started=Date.now();
@@ -79,6 +79,21 @@ try{
     if(!Array.isArray(data.offers)||!Array.isArray(data.errors))
       throw Error("SEARCH_CONTRACT_INCOMPLETE");
     const attrs=attributeSourceFailures(data.errors,{query});
+    // This probes REAL published customer-search HTTP. Candidate-only tests
+    // do not prove the new server error envelope has been deployed.
+    const owned=data.errors.filter(e=>e?.provider==="free-storefronts" &&
+      typeof e?.market==="string");
+    const broken=owned.filter(e=>e.sourceId!==e.market ||
+      typeof e.failureClass!=="string" || !e.failureClass);
+    report.sourceOwnerChecks.push({
+      query,
+      observedStorefrontErrors:owned.length,
+      ownedWithExplicitClass:owned.length-broken.length,
+      broken:broken.length,
+      uniqueStoreIds:[...new Set(owned.map(e=>e.market)
+        .filter(id=>/^[a-z0-9][a-z0-9-]{1,79}$/.test(id)))].length
+    });
+    if(broken.length)throw Error("LIVE_STOREFRONT_ERROR_OWNERSHIP_MISMATCH");
     const offers=data.offers, providers=Array.isArray(data.providers)?data.providers:[];
     const measured={
       query,httpStatus:res.status,durationMs:res.ms,
@@ -95,6 +110,8 @@ try{
     console.log("NAWAA_LIVE_SOURCE_MATRIX_QUERY "+JSON.stringify(measured));
   }
   report.aggregate=aggregateFailureMatrices(report.searches.map(x=>x.attribution));
+  if(!report.sourceOwnerChecks.some(x=>x.observedStorefrontErrors>0))
+    throw Error("NO_LIVE_STOREFRONT_ERROR_EVIDENCE");
   if(report.aggregate.eventCount!==report.searches.reduce((n,x)=>n+x.errorEvents,0))
     throw Error("ERROR_EVENT_CONSERVATION_FAILURE");
   if(report.aggregate.matrix.reduce((n,x)=>n+x.events,0)!==report.aggregate.eventCount)
@@ -110,7 +127,7 @@ try{
   writeFileSync("live-source-failure-report.html",visual(report));
   console.log("NAWAA_LIVE_SOURCE_MATRIX_FINAL "+JSON.stringify({
     outcome:report.outcome,expectedRevision:report.expectedRevision,actualRevision:report.actualRevision,
-    queries:report.searches.length,aggregate:report.aggregate,
+    queries:report.searches.length,aggregate:report.aggregate,sourceOwnerChecks:report.sourceOwnerChecks,
     failureCode:report.failureCode||null,finishedAt:report.finishedAt,
   }));
 }
