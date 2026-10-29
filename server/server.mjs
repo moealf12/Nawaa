@@ -717,7 +717,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     }
   }
 
-  const fallbackElapsedMs = performance.now() - pipelineStarted - primaryAcquiredMs;
+  const preSelectionMs = performance.now() - pipelineStarted - primaryAcquiredMs;
   offers=await canonicalCandidates(offers,true);
   const amazonUrls = new Set(amazonValidated.map((offer) => offer.sourceUrl).filter(Boolean));
   const rescoredOffers = dedupeNormalizedOffers(offers)
@@ -741,8 +741,8 @@ async function searchAll(query, { depth = 0 } = {}) {
   if (pipelineMs >= 10500) {
     console.info("NAWAA_SEARCH_JSON_PIPELINE "+JSON.stringify({
       primaryAcquiredMs:Math.round(primaryAcquiredMs),
-      fallbackElapsedMs:Math.round(fallbackElapsedMs),
-      finalizationMs:Math.round(Math.max(0,pipelineMs-primaryAcquiredMs-fallbackElapsedMs)),
+      preSelectionMs:Math.round(preSelectionMs),
+      finalizationMs:Math.round(Math.max(0,pipelineMs-primaryAcquiredMs-preSelectionMs)),
       totalMs:Math.round(pipelineMs),
       selectedOffers:selectedOffers.length,
       deadlineExceeded,
