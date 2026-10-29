@@ -10,7 +10,7 @@ def normalize_price(value: str, currency: str) -> dict[str, str]:
         raise ValueError("PRICE_INPUT_TYPE")
     if not ISO_CURRENCY.fullmatch(currency):
         raise ValueError("CURRENCY_INVALID")
-    if not re.fullmatch(r"[0-9]+(?:\\.[0-9]{1,2})?", value):
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]{1,2})?", value):
         raise ValueError("PRICE_FORMAT_INVALID")
     try:
         amount = Decimal(value)
