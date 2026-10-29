@@ -462,7 +462,7 @@ export async function refreshJarirPrices(raw, matchingQuery, {resolvePage=resolv
   return {offers:refreshed.filter(Boolean),errors:failures.filter(Boolean),queryFilter,pageRefresh};
 }
 
-export async function searchJarir(query, limit = 24, matchingQuery = query, {signal, onOffers} = {}) {
+export async function searchJarir(query, limit = 24, matchingQuery = query, {signal, onOffers, pythonExtract} = {}) {
   const capped=Math.max(1,Math.min(96,Math.floor(Number(limit)||24))), errors=[];
   // Explicit opt-in only. Default shopper search, first-offer latency and all
   // existing Jarir providers remain unchanged without this exact flag.
@@ -470,7 +470,7 @@ export async function searchJarir(query, limit = 24, matchingQuery = query, {sig
   const withPython=async result=>{
     if(!pythonGate||!Array.isArray(result?.offers)||!result.offers.length)return result;
     const tested=await enrichJarirOffersWithPython(result.offers,matchingQuery,{
-      signal,maxCandidates:1,timeoutMs:5500
+      signal,maxCandidates:1,timeoutMs:5500,extract:pythonExtract
     });
     const offers=tested.offers.map(offer=>({
       ...offer,...assessOfferMatch(matchingQuery,offer),category:productCategory(offer)
