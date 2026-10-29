@@ -1,4 +1,4 @@
-name: NAWAA Postrelease Arabic Bluetooth Acceptance
+name: NAWAA Postrelease Arabic Bluetooth Browser Acceptance
 on:
   pull_request:
     paths:
@@ -8,9 +8,9 @@ on:
 permissions:
   contents: read
 jobs:
-  exact-live-sha-arabic-search:
+  published-customer-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,7 +18,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify deployed merge SHA, Arabic shopper JSON and SSE
+      - name: Install locked app dependencies
+        run: npm ci --ignore-scripts
+      - name: Install ephemeral free browser test package
+        run: npm install --no-save --ignore-scripts --package-lock=false playwright@1.56.1
+      - name: Confirm system Chromium
+        run: command -v google-chrome || command -v google-chrome-stable || command -v chromium
+      - name: Validate published Arabic search and real mobile and desktop customer journey
         env:
-          NAWAA_EXPECT_LIVE_SHA: '9f7d15ba9d80d7b729fa530ff878e3fd652c3d83'
-        run: node scripts/postrelease-arabic-bluetooth-acceptance.mjs
+          NODE_ENV: 'test'
+          NAWAA_BROWSER_QUERY: 'سماعات بلوتوث'
+        run: node scripts/browser-customer-journey.mjs published
