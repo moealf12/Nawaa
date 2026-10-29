@@ -8,6 +8,7 @@ on:
       - "server/python-jarir-enrichment.mjs"
       - "server/providers/jarir.mjs"
       - "tests/python-jarir-admission.test.mjs"
+      - "tests/jarir-python-provider-flag.test.mjs"
       - "scripts/verify-jarir-python-integration.mjs"
       - "workers/python-intelligence/tests/test_jarir_user_waterfall.py"
       - ".github/workflows/jarir-python-user-trial.yml"
@@ -44,7 +45,7 @@ jobs:
         with:
           node-version: "22"
       - name: Verify Node Jarir admission, product identity and duplicate guards
-        run: node --test tests/python-jarir-admission.test.mjs
+        run: node --test tests/python-jarir-admission.test.mjs tests/jarir-python-provider-flag.test.mjs
       - name: Syntax check Python/Node Jarir bridge and provider
         run: |
           node --check src/python-jarir-bridge.mjs
@@ -83,7 +84,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Live Node subprocess -> Python JSONL -> strict Jarir admission (no DB writes)
+      - name: Three live Jarir products: Node subprocess -> Python JSONL -> strict admission (no DB writes)
         env:
           HTTP_PROXY: ""
           HTTPS_PROXY: ""
