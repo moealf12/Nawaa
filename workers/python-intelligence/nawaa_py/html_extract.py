@@ -120,6 +120,15 @@ def extract_html(html: str, expected: ProductExpectation) -> tuple[ProductExpect
     offer, offer_state = _single_offer(product, expected)
     if offer is None:
         return observed, None, offer_state
+    # A priced Offer bound to a different SKU must never enrich the Product.
+    # Missing offer SKU is tolerated only for a single, unambiguous Product Offer.
+    offer_sku = offer.get("sku")
+    product_sku = product.get("sku")
+    if isinstance(offer_sku, str) and offer_sku.strip():
+        if isinstance(product_sku, str) and product_sku.strip() and offer_sku.strip() != product_sku.strip():
+            return observed, None, "OFFER_PRODUCT_SKU_MISMATCH"
+        if expected.sku is not None and offer_sku.strip() != expected.sku:
+            return observed, None, "OFFER_EXPECTED_SKU_MISMATCH"
     raw_price = offer.get("price")
     if raw_price is None or raw_price == "":
         return observed, None, "PRICE_NOT_FOUND"
