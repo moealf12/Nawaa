@@ -225,7 +225,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
   // Response.json() unmodified. Prove parity with deterministic mock Responses.
   const splitJsonTiming = timingEnabled && process.env.NAWAA_PROFILE_EXTRA_SPLIT_JSON === "1";
   if (splitJsonTiming) Object.assign(timings,{bodyReadDecodeMs:0,jsonParseMs:0});
-  const overallDeadlineMs = 7200;
+  // A 3s UNBXD connection cap caused legitimate iPhone source requests to\n  // time out before Python was ever reached. Allow 4.2s for merchant fetch,\n  // bounded by the same 7.2s overall acquisition and 8s provider deadlines.\n  const overallDeadlineMs = 7200;
   let start = 0, total = null, complete = false;
   while(products.length < fetchCap) {
     signal?.throwIfAborted();
@@ -234,7 +234,7 @@ export async function searchExtraUnbxd(query, limit = 12, matchingQuery = query,
       const remainingMs = overallDeadlineMs - (Date.now() - startedAt);
       if (remainingMs <= 0) { errors.push({market:"extra-sa",error:"pagination_deadline_exceeded"}); break; }
       const transportStart = timingEnabled ? performance.now() : 0;
-      const response = await fetch(url, {headers:{accept:"application/json"},signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(Math.min(3000, remainingMs))]) : AbortSignal.timeout(Math.min(3000, remainingMs))});
+      const response = await fetch(url, {headers:{accept:"application/json"},signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(Math.min(4200, remainingMs))]) : AbortSignal.timeout(Math.min(4200, remainingMs))});
       const headersAt = timingEnabled ? performance.now() : 0;
       if(!response.ok) throw new Error("extra-unbxd: HTTP " + response.status);
       let data;
