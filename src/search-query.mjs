@@ -41,7 +41,7 @@ const ALIASES = [
   ["لابتوب", "laptop"], ["لابتوبات", "laptop"], ["لاب توب", "laptop"], ["حاسوب محمول", "laptop"],
   ["طابعه", "printer"], ["طابعات", "printer"], ["جوال", "phone"], ["جوالات", "phone"],
   ["تلفزيون", "tv"], ["تلفزيونات", "tv"], ["شاشه", "monitor"], ["شاشات", "monitor"],
-  ["سماعات", "headphones"], ["سماعه", "headphones"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
+  ["سماعات", "headphones"], ["سماعه", "headphones"], ["بلوتوث", "bluetooth"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
 
 // Compile immutable alias patterns once: offer matching calls normalization
@@ -549,7 +549,19 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const storageMediaMismatch = storageMediaRequested && (
     !GAMING_STORAGE_ACCESSORY.test(physicalTitle) ||
     (storagePartOnly(physicalTitle) && !storagePartRequested));
+  // Audio is a broad category. A shopper requesting headphones must not receive
+  // a source-titled standalone speaker merely because both advertise Bluetooth.
+  // Only explicit conflicting retail subjects are excluded; missing evidence
+  // never creates an invented headset/earbud identity.
+  const headphonesRequested = /\b(?:headphones?|headsets?|earphones?|earbuds?|airpods)\b/.test(normalizedQuery);
+  const speakerRequested = /\b(?:speakers?|soundbars?)\b/.test(normalizedQuery);
+  const retailAudioSubject = normalizeSearchQuery(offer?.title || "");
+  const audioSubjectMismatch = effectiveCategory === "audio" && headphonesRequested &&
+    !speakerRequested &&
+    /\b(?:speakers?|soundbars?)\b/.test(retailAudioSubject) &&
+    !/\b(?:headphones?|headsets?|earphones?|earbuds?|airpods)\b/.test(retailAudioSubject);
   const kindMismatch = Boolean(storageMediaMismatch || controllerBundleMismatch ||
+    audioSubjectMismatch ||
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
