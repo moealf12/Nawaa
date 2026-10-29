@@ -16,5 +16,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Probe production search JSON across distinct product families
+      - name: Bind to actual current main SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Could not resolve main SHA" >&2
+            exit 1
+          fi
+          echo "NAWAA_EXPECT_LIVE_SHA=$SHA" >> "$GITHUB_ENV"
+      - name: Probe the real Render API, bounded by request and response budgets
         run: node scripts/customer-multisource-live-acceptance.mjs
