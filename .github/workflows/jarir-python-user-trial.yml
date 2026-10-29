@@ -1,0 +1,95 @@
+name: Jarir Python User Waterfall Trial
+on:
+  pull_request:
+    paths:
+      - "workers/python-intelligence/experiments/**"
+      - "workers/python-intelligence/nawaa_py/jarir_pdp.py"
+      - "src/python-jarir-bridge.mjs"
+      - "server/python-jarir-enrichment.mjs"
+      - "server/providers/jarir.mjs"
+      - "tests/python-jarir-admission.test.mjs"
+      - "tests/jarir-python-provider-flag.test.mjs"
+      - "scripts/verify-jarir-python-integration.mjs"
+      - "workers/python-intelligence/tests/test_jarir_user_waterfall.py"
+      - ".github/workflows/jarir-python-user-trial.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  jarir-offline-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: workers/python-intelligence/pyproject.toml
+      - name: Install existing Python project test dependencies
+        run: |
+          cd workers/python-intelligence
+          python -m pip install --disable-pip-version-check -e ".[test]"
+      - name: Strict Jarir waterfall tests including Hypothesis
+        run: |
+          cd workers/python-intelligence
+          python -m pytest tests/test_jarir_user_waterfall.py -q -ra
+      - name: Existing Python extraction suite
+        run: |
+          cd workers/python-intelligence
+          python -m pytest tests/test_classifier.py -q -ra
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install repository Node dependencies for actual provider integration tests
+        run: npm ci --ignore-scripts
+      - name: Verify Node Jarir admission, product identity and duplicate guards
+        run: node --test tests/python-jarir-admission.test.mjs tests/jarir-python-provider-flag.test.mjs
+      - name: Syntax check Python/Node Jarir bridge and provider
+        run: |
+          node --check src/python-jarir-bridge.mjs
+          node --check server/python-jarir-enrichment.mjs
+          node --check server/providers/jarir.mjs
+      - name: JSON Lines real CLI error-frame smoke
+        run: |
+          cd workers/python-intelligence
+          printf '%s\n' '{"schemaVersion":"nawaa.jarir.pdp.v1","requestId":"smoke","url":"https://example.com/"}' | python -m experiments.jarir_user_waterfall
+  jarir-real-public-page:
+    needs: jarir-offline-validation
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing Python extractor dependencies
+        run: |
+          cd workers/python-intelligence
+          python -m pip install --disable-pip-version-check -e .
+      - name: Single direct Jarir iPhone 17 SKU 666784 HTTPX experiment
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: |
+          cd workers/python-intelligence
+          python -m experiments.run_jarir_user_trial
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: "Three live Jarir products - Node subprocess to Python JSONL to strict admission (no DB writes)"
+        env:
+          HTTP_PROXY: ""
+          HTTPS_PROXY: ""
+          ALL_PROXY: ""
+          NO_PROXY: "*"
+        run: node scripts/verify-jarir-python-integration.mjs
