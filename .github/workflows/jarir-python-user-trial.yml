@@ -44,6 +44,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install repository Node dependencies for actual provider integration tests
+        run: npm ci --ignore-scripts
       - name: Verify Node Jarir admission, product identity and duplicate guards
         run: node --test tests/python-jarir-admission.test.mjs tests/jarir-python-provider-flag.test.mjs
       - name: Syntax check Python/Node Jarir bridge and provider
