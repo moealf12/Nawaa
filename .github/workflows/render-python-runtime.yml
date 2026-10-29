@@ -59,6 +59,8 @@ jobs:
           RENDER: "true"
           RENDER_SERVICE_ID: "srv-dau4olo93c1s73cnj9a0"
           NAWAA_PYTHON_PREPARE: "1"
+          # Reproduce the exact Render Node native-runtime conflict from build logs.
+          UV_NO_MANAGED_PYTHON: "1"
         run: node scripts/provision-render-python.mjs
       - name: Check feature-disabled postinstall does not provision
         env:
