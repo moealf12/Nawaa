@@ -1,0 +1,26 @@
+name: NAWAA eXtra Source-First LIVE Acceptance
+on:
+  pull_request:
+    paths:
+      - "scripts/verify-extra-source-first-live-acceptance.mjs"
+      - ".github/workflows/extra-source-first-live-acceptance.yml"
+permissions:
+  contents: read
+jobs:
+  exact-live-source-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check test syntax
+        run: node --check scripts/verify-extra-source-first-live-acceptance.mjs
+      - name: Verify eXtra visible on live SSE and JSON for iPhone and PS5
+        env:
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/verify-extra-source-first-live-acceptance.mjs
