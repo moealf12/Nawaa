@@ -4,7 +4,7 @@
 // Does not treat HTTP 200 or an unknown JSON schema as accepted product coverage.
 const origin=process.env.NAWAA_PRODUCTION_ORIGIN || "https://nawaa-search-api.onrender.com";
 const expected=process.env.NAWAA_EXPECT_LIVE_SHA || null;
-const queries=["iPhone","PS5","سماعات بلوتوث","laptop"];
+const queries=["iPhone","PS5","سماعات بلوتوث","bluetooth headphones","سماعات","laptop"];
 const MAX_RESPONSE_BYTES=3_000_000;
 const LIMIT_MS=23_000;
 
