@@ -28,6 +28,7 @@ for (const [index,query] of queries.entries()) {
   report.results.push({
     queryIndex:index,
     status:d.status,
+    failureClass:d.failureClass || null,
     sourceObservation:d.sourceObservation || "UNKNOWN",
     acquisitionClass:d.acquisitionClass || null,
     rawCandidates:d.discoveryCount || 0,
