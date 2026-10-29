@@ -124,34 +124,46 @@ export function admitExtraPythonObservation(existing,evidence,matchingQuery,{pdp
 }
 
 // A retry, denial, timeout, unavailable Python runtime or contradictory PDP
-// NEVER causes a second eXtra offer or a loss of the existing index offer.
+// NEVER causes a second eXtra offer or loss of the original UNBXD offer.
+// General mode affects every visitor/query, but only merchant-provided,
+// exact-SKU, same-origin PDPs are eligible. No URL guessing or cross-SKU joins.
 export async function enrichExtraOffersWithPython(offers,matchingQuery,{
-  approvedSku,approvedUrl,signal,timeoutMs=3000,extract=runExtraPythonPdp
+  approvedSku,approvedUrl,signal,timeoutMs=3000,extract=runExtraPythonPdp,
+  scope="canary",maxAttempts=1
 }={}){
   const originals=Array.isArray(offers)?offers:[];
   const next=originals.slice();
   const diagnostics={attempted:0,accepted:0,rejected:0,failed:0,
-    transport:"bounded-python-jsonl",failureClasses:[]};
-  if(!approvedExtraPdp(approvedUrl,approvedSku))
+    transport:"bounded-python-jsonl",failureClasses:[],eligible:0};
+  const all=scope==="all";
+  if(!all&&!approvedExtraPdp(approvedUrl,approvedSku))
     return {offers:next,diagnostics};
-  const seen=new Set();
+  const cap=Math.max(1,Math.min(2,Number.isInteger(maxAttempts)?maxAttempts:1));
+  const budget=Math.max(0,Math.min(4000,Number(timeoutMs)||0));
+  const started=Date.now(),seen=new Set();
   for(let index=0;index<originals.length;index++){
-    if(signal?.aborted)break;
+    if(signal?.aborted||diagnostics.attempted>=cap)break;
     const candidate=originals[index];
+    const sku=String(candidate?.sourceMeta?.productId||"");
+    const url=all?candidate?.sourceMeta?.pdpUrl:approvedUrl;
     if(candidate?.provider!=="extra-unbxd"||candidate.merchant!=="eXtra"||
-      String(candidate.sourceMeta?.productId||"")!==approvedSku||
-      !approvedExtraIndexUrl(candidate.sourceUrl,approvedSku))continue;
-    if(seen.has(candidate.sourceUrl))continue;
-    seen.add(candidate.sourceUrl);
-    // One candidate, one bounded Python fetch, no source-wide loop.
-    if(diagnostics.attempted)break;
+      (!all&&sku!==approvedSku)||!approvedExtraIndexUrl(candidate.sourceUrl,sku)||
+      !approvedExtraPdp(url,sku))continue;
+    if(seen.has(sku))continue;
+    seen.add(sku);
+    diagnostics.eligible++;
+    const remaining=budget-(Date.now()-started);
+    // Never extend the original provider deadline for additional PDP reads.
+    if(remaining<1000){
+      diagnostics.failureClasses.push("PYTHON_EXTRA_BUDGET_EXHAUSTED");break;
+    }
     diagnostics.attempted++;
     try{
       const evidence=await extract(
-        {url:approvedUrl,expectedSku:approvedSku},{timeoutMs,signal}
+        {url,expectedSku:sku},{timeoutMs:Math.min(remaining,all?2000:3000),signal}
       );
       const decision=admitExtraPythonObservation(
-        candidate,evidence,matchingQuery,{pdpUrl:approvedUrl}
+        candidate,evidence,matchingQuery,{pdpUrl:url}
       );
       if(decision.accepted){
         next[index]=decision.offer;
