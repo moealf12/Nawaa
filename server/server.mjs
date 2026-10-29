@@ -560,6 +560,8 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
 
 async function searchAll(query, { depth = 0 } = {}) {
   if (Number(depth) > 0) return searchExpansion(query, Number(depth));
+  // Measure internal boundaries only. No query text, URLs, SKUs or prices in logs.
+  const pipelineStarted = performance.now();
   query = normalizeSearchQuery(query);
   if(OMEGA_INDEX_ONLY){
     const indexed=await searchIndexedOffers(query);
@@ -656,6 +658,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       () => ({ configured:false, offers:[] }),
     ),
   ]);
+  const primaryAcquiredMs = performance.now() - pipelineStarted;
   let providers = primary.providers;
   let errors = primary.errors;
   const amazonSourceId="free-storefronts:amazon-sa";
@@ -714,6 +717,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     }
   }
 
+  const preSelectionMs = performance.now() - pipelineStarted - primaryAcquiredMs;
   offers=await canonicalCandidates(offers,true);
   const amazonUrls = new Set(amazonValidated.map((offer) => offer.sourceUrl).filter(Boolean));
   const rescoredOffers = dedupeNormalizedOffers(offers)
@@ -731,6 +735,20 @@ async function searchAll(query, { depth = 0 } = {}) {
   const sources = currentSources();
   const allSelectedOffers = selectDiverseOffers(offers, Infinity);
   const selectedOffers = allSelectedOffers.slice(0, plan.returnLimit);
+  const pipelineMs = performance.now() - pipelineStarted;
+  // Emit one bounded, low-cardinality event only for a slow acquisition.
+  // These spans include async waits, not CPU timings; no shopper query is logged.
+  if (pipelineMs >= 10500) {
+    console.info("NAWAA_SEARCH_JSON_PIPELINE "+JSON.stringify({
+      primaryAcquiredMs:Math.round(primaryAcquiredMs),
+      preSelectionMs:Math.round(preSelectionMs),
+      finalizationMs:Math.round(Math.max(0,pipelineMs-primaryAcquiredMs-preSelectionMs)),
+      totalMs:Math.round(pipelineMs),
+      selectedOffers:selectedOffers.length,
+      deadlineExceeded,
+      fallbackUsed:Boolean(fallbackQuery),
+    }));
+  }
 
   // Persistence/indexing are optional accelerators and must never delay the
   // shopper response. Write-through happens asynchronously after live results
@@ -1068,6 +1086,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/search") {
+    const responseStarted = performance.now();
     const q = String(url.searchParams.get("q") || "").trim();
     const productUrl = String(url.searchParams.get("url") || "").trim();
     const cursorToken = String(url.searchParams.get("cursor") || "").trim();
@@ -1090,11 +1109,13 @@ const server = http.createServer(async (req, res) => {
       // JSON can return only current evidence or a new bounded acquisition;
       // a failed refresh may not certify an expired in-stock cached price.
       let result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth),{allowStale:false});
+      const cacheWaitMs = performance.now() - responseStarted;
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
       if(OMEGA_CANONICAL&&resolvedOffer)await canonicalCandidates([resolvedOffer],true);
       result=await canonicalResponse(result,normalizedComparisonQuery);
+      const canonicalizedMs = performance.now() - responseStarted - cacheWaitMs;
       const nextCursor = depth < MAX_SEARCH_DEPTH ? encodeSearchCursor(normalizedComparisonQuery, depth + 1) : null;
-      return jsonResponse(res, 200, {
+      const response = jsonResponse(res, 200, {
         query: productUrl || q,
         comparisonQuery: resolvedOffer ? comparisonQuery : null,
         resolvedOffer,
@@ -1104,6 +1125,21 @@ const server = http.createServer(async (req, res) => {
         nextCursor,
         ...result,
       }, origin || "*");
+      const totalMs = performance.now() - responseStarted;
+      if (totalMs >= 10500) {
+        // Enqueue timing is not proof of bytes reaching the client.
+        console.info("NAWAA_SEARCH_JSON_RESPONSE "+JSON.stringify({
+          cacheWaitMs:Math.round(cacheWaitMs),
+          canonicalizedMs:Math.round(canonicalizedMs),
+          responseEnqueueMs:Math.round(Math.max(0,totalMs-cacheWaitMs-canonicalizedMs)),
+          totalMs:Math.round(totalMs),
+          cacheMode:["fresh","miss","stale","stale-if-error"].includes(result.cache?.mode)
+            ?result.cache.mode:"unknown",
+          selectedOffers:Array.isArray(result.offers)?result.offers.length:0,
+          clientDisconnected:res.destroyed && !res.writableFinished,
+        }));
+      }
+      return response;
     } catch (error) {
       return jsonResponse(res, 500, {
         error: "search_failed",
