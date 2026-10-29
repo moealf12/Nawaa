@@ -12,6 +12,8 @@ import json
 import re
 import socket
 import sys
+import time
+_BOOT_TIME = time.perf_counter()
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -36,6 +38,20 @@ MAX_ROBOTS_BYTES = 128_000
 MAX_INPUT_BYTES = 4096
 MAX_REQUESTS = 8
 USER_AGENT = "NAWAA-PriceResearch/1.0 (+https://github.com/moealf12/Nawaa)"
+# Safe phase-only telemetry: no SKU, product URL, price, response, headers or PII.
+# The parent Node process filters fixed stage enums and logs only on failure.
+_ALLOWED_PHASES = frozenset((
+    "worker_ready", "dns_start", "dns_done", "robots_start",
+    "robots_done", "pdp_start", "pdp_done", "parse_done", "reply"
+))
+def _phase(stage: str) -> None:
+    if stage in _ALLOWED_PHASES:
+        ms = min(120_000, max(0, round((time.perf_counter() - _BOOT_TIME) * 1000)))
+        sys.stderr.write("NAWAA_EXTRA_PHASE " + json.dumps(
+            {"stage": stage, "sinceBootMs": ms}, separators=(",", ":")
+        ) + "\\n")
+        sys.stderr.flush()
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
@@ -362,7 +378,9 @@ class ExtraScraperEngine:
                         max_response_bytes: int = 1_500_000) -> ExtraOfferEvidence:
         if not approved_url(url, expected_sku):
             raise ExtraFetchError("UNAPPROVED_PRODUCT_URL")
+        _phase("dns_start")
         cls._public_dns()
+        _phase("dns_done")
         with httpx.Client(
             timeout=httpx.Timeout(timeout_ms / 1000, connect=min(3, timeout_ms / 1000)),
             follow_redirects=False,
@@ -373,17 +391,22 @@ class ExtraScraperEngine:
         ) as client:
             # Do not crawl a page disallowed by the public robots policy.
             robots_url = "https://www.extra.com/robots.txt"
+            _phase("robots_start")
             robots, _, _ = cls._limited_get(client, robots_url, MAX_ROBOTS_BYTES)
+            _phase("robots_done")
             parser = RobotFileParser()
             parser.parse(robots.decode("utf-8", errors="replace").splitlines())
             if not parser.can_fetch(USER_AGENT.split("/", 1)[0], url):
                 raise ExtraFetchError("ROBOTS_DISALLOW")
+            _phase("pdp_start")
             body, _, content_type = cls._limited_get(client, url, max_response_bytes)
+            _phase("pdp_done")
             if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
                 raise ExtraFetchError("NON_HTML_RESPONSE")
             sha = hashlib.sha256(body).hexdigest()
             html = body.decode("utf-8", errors="replace")
             evidence = cls.parse_html(html, expected_sku, requested_url=url, response_sha256=sha)
+            _phase("parse_done")
             evidence.fetched_at = datetime.now(timezone.utc).isoformat()
             return evidence
 
@@ -405,6 +428,7 @@ def process(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 def run_worker() -> int:
+    _phase("worker_ready")
     # JSONL has fixed framing and bounded input; stderr is generic diagnostics.
     for _ in range(MAX_REQUESTS):
         line = sys.stdin.buffer.readline(MAX_INPUT_BYTES + 1)
@@ -441,6 +465,7 @@ def run_worker() -> int:
                 out["requestId"] = rid
         sys.stdout.write(json.dumps(out, separators=(",", ":"), ensure_ascii=False) + "\n")
         sys.stdout.flush()
+        _phase("reply")
     return 0
 
 if __name__ == "__main__":
