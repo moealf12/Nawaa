@@ -1520,7 +1520,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       try {
         const expected = new URL(searchUrl);
         const actual = new URL(searchPageFinalUrl);
-        const searchPath = path => path.replace(/\\/$/, "");
+        const searchPath = path => path.endsWith("/") ? path.slice(0,-1) : path;
         return actual.protocol === "https:" &&
           actual.hostname === expected.hostname &&
           searchPath(actual.pathname) === searchPath(expected.pathname) &&
