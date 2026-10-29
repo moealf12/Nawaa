@@ -13,7 +13,7 @@ import {
   buildOfferIntelligence,
   offerVariantDimensions,
 } from "./search-core.mjs";
-import {selectSearchStreamResult} from "./search-stream.mjs";
+import {selectSearchStreamResult,needsExtraSourceRecovery,mergeExtraSourceRecovery} from "./search-stream.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
 import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
 
@@ -1307,6 +1307,8 @@ async function runSearch(rawQuery) {
 
   state.eventSource?.close?.();
   state.eventSource = null;
+  state.extraRecoveryController?.abort();
+  state.extraRecoveryController=null;
   const requestId = ++state.requestId;
   if (state.query !== query) {
     state.availability = "all"; state.merchant = "all";
@@ -1389,6 +1391,37 @@ async function runSearch(rawQuery) {
           { headers: { accept: "application/json" } },
           3
         );
+      }
+
+      // SSE can finish with Jarir-only offers when the independent UNBXD
+      // transport times out. One ordinary same-origin JSON read may recover
+      // fresh eXtra offers without creating guessed prices or repeating on 429.
+      // Keep already rendered cards visible while this bounded call runs.
+      if(needsExtraSourceRecovery(data)){
+        const recoveryController=new AbortController();
+        state.extraRecoveryController=recoveryController;
+        els.status.textContent="ظهرت نتائج أولية · نعيد التحقق من عروض eXtra…";
+        try{
+          const response=await fetch(
+            apiBase + "/api/search?q=" + encodeURIComponent(query),{
+              headers:{accept:"application/json"},mode:"cors",
+              credentials:"same-origin",cache:"no-store",redirect:"error",
+              signal:AbortSignal.any([
+                recoveryController.signal,AbortSignal.timeout(20000)
+              ])
+            }
+          );
+          if(response.ok&&requestId===state.requestId){
+            const refresh=await response.json();
+            if(requestId===state.requestId)
+              data=mergeExtraSourceRecovery(data,refresh);
+          }
+        }catch{
+          // A failed recovery does not erase valid offers from the SSE feed.
+        }finally{
+          if(state.extraRecoveryController===recoveryController)
+            state.extraRecoveryController=null;
+        }
       }
 
       if (requestId !== state.requestId) return;
