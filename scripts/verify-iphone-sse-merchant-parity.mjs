@@ -9,6 +9,19 @@ assert.equal(health.status,200);
 const info=await health.json();
 assert.equal(info.revision,expected);
 const q="iPhone";
+const sourceFailureClass=err=>{
+  const m=String(err?.error||"");
+  if(/provider_deadline_exceeded:extra-unbxd/.test(m))return "PROVIDER_DEADLINE";
+  const http=/HTTP\\s+([45][0-9]{2})/.exec(m);
+  if(http)return "HTTP_"+http[1];
+  if(/timeout|aborted|abort/i.test(m))return "TIMEOUT_OR_ABORT";
+  if(/fetch failed|network/i.test(m))return "NETWORK_FAILURE";
+  if(/Malformed product response/i.test(m))return "INVALID_RESPONSE";
+  return m ? "OTHER_SOURCE_FAILURE" : "UNKNOWN";
+};
+const extraFailures=data=>(Array.isArray(data?.errors)?data.errors:[])
+  .filter(e=>String(e?.sourceId||e?.provider||"").includes("extra"))
+  .map(sourceFailureClass);
 const counts=offers=>({
   all:offers.length,
   extra:offers.filter(x=>x.merchant==="eXtra").length,
@@ -30,7 +43,7 @@ for await(const chunk of response.body){
         const payload=JSON.parse(dataLines.join("\n"));
         const offers=Array.isArray(payload.offers)?payload.offers:[];
         snapshots.push({...counts(offers),cacheMode:payload.cache?.mode||null,
-          providers:(payload.providers||[]).filter(p=>String(p.sourceId||"").includes("extra")).map(p=>({returned:p.returnedOffers||0}))});
+          providers:(payload.providers||[]).filter(p=>String(p.sourceId||"").includes("extra")).map(p=>({returned:p.returnedOffers||0})),extraFailures:extraFailures(payload)});
         if(snapshots.length>50)throw Error("SSE_TOO_MANY_SNAPSHOTS");
       }
       if(eventType==="done")done=true;
@@ -43,7 +56,7 @@ for await(const chunk of response.body){
 const jsonRes=await fetch(origin+"/api/search?q="+encodeURIComponent(q),{signal:AbortSignal.timeout(45000)});
 assert.equal(jsonRes.status,200);
 const json=await jsonRes.json();
-const report={query:q,revision:expected.slice(0,12),snapshots,final: snapshots.at(-1)||null,json:counts(json.offers||[]),readOnly:true};
+const report={query:q,revision:expected.slice(0,12),snapshots,final: snapshots.at(-1)||null,json:counts(json.offers||[]),jsonExtraFailures:extraFailures(json),readOnly:true};
 console.log("NAWAA_IPHONE_SSE_MERCHANT_PARITY "+JSON.stringify(report));
 assert.ok(done,"stream must finish");
 assert.ok(snapshots.length>0);
