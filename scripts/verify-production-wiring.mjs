@@ -95,7 +95,7 @@ export async function verifyPublishedWiring({fetchImpl=fetch,files=sourceFiles()
         "ASSET_MISMATCH_"+label+"_"+name.replace(/[^a-z0-9]/gi,"_"));
       const mediaType=String(actual.headers.get("content-type")||"");
       const correctMime=name.endsWith(".html") ?
-        /(?:^|\\/)html/i.test(mediaType) :
+        mediaType.toLowerCase().includes("text/html") :
         /(?:javascript|ecmascript)/i.test(mediaType);
       invariant(correctMime,
         "SCRIPT_OR_HTML_MIME_MISMATCH_"+label+"_"+name.replace(/[^a-z0-9]/gi,"_"));
