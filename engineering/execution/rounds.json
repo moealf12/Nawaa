@@ -12,10 +12,28 @@
         "E15"
       ],
       "dependsOn": [],
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "baseSha": "6bd8b6d5a7a8695eaeca70c387153d2bd1b941a6",
       "blockers": [],
-      "evidence": {}
+      "evidence": {
+        "prUrl": "https://github.com/moealf12/Nawaa/pull/232",
+        "ciUrl": "https://github.com/moealf12/Nawaa/actions/runs/41140566482",
+        "regressionUrl": "https://github.com/moealf12/Nawaa/actions/runs/41140566465",
+        "testedSha": "310b44ed782f93521206531de97770a2f03c1191",
+        "mergedSha": "aa0da3fe3ccfa16ac8e8eb80f7ee67f926b0199d",
+        "liveSha": "aa0da3fe3ccfa16ac8e8eb80f7ee67f926b0199d",
+        "deploymentId": "dep-dbii12vb9u1s738j8ij0",
+        "customerAcceptance": "PASS",
+        "negativeControl": "PASS",
+        "liveAcceptanceUrl": "https://github.com/moealf12/Nawaa/actions/runs/41140566442",
+        "liveAcceptanceArtifactId": 13018912743,
+        "negativeControlPrUrl": "https://github.com/moealf12/Nawaa/pull/233",
+        "negativeControlCiUrl": "https://github.com/moealf12/Nawaa/actions/runs/41140794943",
+        "mainReleaseCiUrl": "https://github.com/moealf12/Nawaa/actions/runs/41140985605",
+        "observedSourceFailures": "15-19 per tested JSON query; all eight coverageComplete=false",
+        "liveMatrix": "8/8 HTTP200; 4/4 SSE completed; 0 malformed offers",
+        "caveat": "This verifies an R01 representative baseline, not exhaustive source coverage or live merchant inventory."
+      }
     },
     {
       "id": "R02",
