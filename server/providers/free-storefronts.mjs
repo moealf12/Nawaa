@@ -1137,7 +1137,11 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   // both views when HTML entities actually change the source content.
   const rawHydratedSource = String(html || "");
   const decodedHydratedSource = decodeHtml(rawHydratedSource);
-  const hydratedViews = decodedHydratedSource === rawHydratedSource
+  // Preserve the legacy double pass for any stateful /g or /y productPath:
+  // RegExp.test() changes lastIndex in that case. Existing source paths are
+  // non-stateful, but this guard protects future adapters and adversarial input.
+  const statefulProductPath = Boolean(store.productPath?.global || store.productPath?.sticky);
+  const hydratedViews = decodedHydratedSource === rawHydratedSource && !statefulProductPath
     ? [rawHydratedSource]
     : [rawHydratedSource, decodedHydratedSource];
   for (const hydratedSource of hydratedViews) {
