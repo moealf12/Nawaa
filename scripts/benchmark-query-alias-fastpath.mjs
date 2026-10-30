@@ -18,13 +18,17 @@ const measure=(fn,rounds=5)=>{
     for(const entry of corpus){
       const result=fn(entry);
       checksum+=result.length;
-      if(i===0&&result!==normalizeSearchQuery(entry))throw Error("SEMANTIC_DRIFT");
+
     }
     const use=process.cpuUsage(cpu);
     observations.push({cpuMs:(use.user+use.system)/1000,wallMs:performance.now()-start,checksum});
   }
   return observations;
 };
+for(const entry of corpus){
+  if(historical.normalizeSearchQuery(entry)!==normalizeSearchQuery(entry))
+    throw Error("SEMANTIC_DRIFT");
+}
 // Both function versions warm up; order is reversed between benchmark pairs.
 measure(historical.normalizeSearchQuery,1);measure(normalizeSearchQuery,1);
 const previous=[],current=[];
