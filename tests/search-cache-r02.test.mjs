@@ -130,3 +130,33 @@ test("R02 explicit complete is scoped to a selected acquisition wave, not exhaus
   value.coverage.moreAvailable=true;
   assert.equal(classifySearchCacheAdmission(value,{requireExplicitComplete:true}).cacheable,true);
 });
+
+test("R02 strict cache cannot silently turn malformed error evidence into zero failures",()=>{
+  for(const errors of ["HTTP 403",null,{sourceId:"jarir-direct"},23]){
+    const data=complete();
+    data.errors=errors;
+    const verdict=classifySearchCacheAdmission(data,{requireExplicitComplete:true});
+    assert.equal(verdict.cacheable,false,JSON.stringify({errors,verdict}));
+    assert.equal(verdict.reason,"errors_invalid");
+  }
+});
+test("R02 strict cache requires source error count and deadline evidence",()=>{
+  for(const modify of [
+    x=>delete x.coverage.sourceFailures,
+    x=>x.coverage.sourceFailures={},
+    x=>delete x.coverage.deadlineExceeded,
+    x=>delete x.errors,
+  ]){
+    const data=complete();
+    modify(data);
+    const verdict=classifySearchCacheAdmission(data,{requireExplicitComplete:true});
+    assert.equal(verdict.cacheable,false,JSON.stringify({data,verdict}));
+    assert.equal(verdict.reason,"coverage_invalid");
+  }
+});
+test("R02 strict cache allows valid zero-error explicitly completed current wave",()=>{
+  const data=complete();
+  data.coverage.exhaustive=false;
+  data.coverage.moreAvailable=true;
+  assert.equal(classifySearchCacheAdmission(data,{requireExplicitComplete:true}).cacheable,true);
+});

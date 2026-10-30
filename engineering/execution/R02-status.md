@@ -50,3 +50,7 @@ The v15.18 full-HTTP temporal test previously REQUIRED an SSE fresh cache hit af
 ## R02 Omega replay correctness
 
 The R01 Omega harness expected an artificial `+1` canonical price to remain visible in JSON and every SSE snapshot even after a new acquisition. With strict partial admission, a subsequent real provider observation can legitimately supersede the injected observation. The harness now proves the injected revision was accepted in PostgreSQL, then that JSON and final SSE results correspond to the CURRENT canonical revision observed after each real acquisition. This preserves monotonic revision ordering without claiming an artificial old price is still current.
+
+## Additional R02 negative-control contract
+
+A structurally malformed `errors` container, absent `sourceFailures.errorsReported`, or missing `deadlineExceeded` cannot be interpreted as a clean acquisition in strict production mode. This closes a case where a valid-looking `complete:true` result could otherwise suppress retry. Three targeted tests prove the rejection and continued admission of a coherent, bounded (non-exhaustive) wave. No provider, product identity or price logic changes.

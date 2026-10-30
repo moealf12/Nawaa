@@ -7,12 +7,26 @@ export function classifySearchCacheAdmission(result,{requireExplicitComplete=fal
   const coverage=result?.coverage && typeof result.coverage==="object" &&
     !Array.isArray(result.coverage)?result.coverage:null;
   const deny=(completeness,reason)=>({cacheable:false,completeness,reason});
+  // Invalid source error containers must not be silently normalized to [].
+  // A cache entry cannot claim a clean acquisition when error evidence is malformed.
+  if(result?.errors!==undefined && !Array.isArray(result.errors))
+    return deny("unknown","errors_invalid");
   if(!offers.length)return deny("empty","no_offers");
   if(!coverage){
     if(requireExplicitComplete)return deny("unknown","coverage_missing");
     if(errors.length)return deny("partial","source_errors");
     return {cacheable:true,completeness:"complete",reason:"legacy_clean_result"};
   }
+  // Production requires source-failure accounting and an explicit deadline
+  // verdict. Missing source evidence is UNKNOWN, never a zero-error success.
+  if(requireExplicitComplete && (
+    !Array.isArray(result?.errors) ||
+    !coverage.sourceFailures ||
+    typeof coverage.sourceFailures!=="object" ||
+    Array.isArray(coverage.sourceFailures) ||
+    !Object.hasOwn(coverage.sourceFailures,"errorsReported") ||
+    typeof coverage.deadlineExceeded!=="boolean"
+  ))return deny("unknown","coverage_invalid");
   // Missing optional counters mean the provider did not observe them. Explicit
   // malformed counters are NOT equivalent to 0 and must fail closed.
   const counter=(obj,key)=>{
