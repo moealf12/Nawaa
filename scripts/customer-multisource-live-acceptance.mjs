@@ -4,7 +4,7 @@
 // Does not treat HTTP 200 or an unknown JSON schema as accepted product coverage.
 const origin=process.env.NAWAA_PRODUCTION_ORIGIN || "https://nawaa-search-api.onrender.com";
 const expected=process.env.NAWAA_EXPECT_LIVE_SHA || null;
-const queries=["iPhone","PS5","سماعات بلوتوث","bluetooth headphones","سماعات","laptop"];
+const queries=["iPhone","iPhone 17","iPhone 17 256GB","آيفون","آيفون 17","Samsung Galaxy S25","PS5","سماعات بلوتوث","bluetooth headphones","سماعات","laptop"];
 const MAX_RESPONSE_BYTES=3_000_000;
 const LIMIT_MS=23_000;
 
@@ -43,6 +43,21 @@ function validOffer(offer){
   catch{return false;}
 }
 function bounded(s){return String(s??"unknown").replace(/[^a-zA-Z0-9 ._-]/g,"").slice(0,48)||"UNKNOWN";}
+// Classify source failures without logging untrusted merchant messages, source URLs
+// or embedded credentials. Preserve unknown when evidence is insufficient.
+function sourceFailureClass(entry){
+  const raw=String(entry?.code??entry?.errorCode??entry?.error??entry?.message??"");
+  if(/timeout|timed? out|abort/i.test(raw))return "TIMEOUT";
+  if(/(?:^|\D)403(?:\D|$)|access.denied/i.test(raw))return "HTTP_403";
+  if(/(?:^|\D)429(?:\D|$)|rate.limit/i.test(raw))return "HTTP_429";
+  if(/(?:^|\D)5\d\d(?:\D|$)/i.test(raw))return "HTTP_5XX";
+  if(/fetch failed|network|econnreset|enotfound|eai_again|socket/i.test(raw))return "TRANSPORT_FAILURE";
+  if(/invalid|malformed|parse/i.test(raw))return "INVALID_RESPONSE";
+  return "UNKNOWN";
+}
+function extraSourceId(entry){
+  return /^(extra|extra-sa|extra-unbxd)$/i.test(String(entry?.sourceId??entry?.provider??entry?.id??""));
+}
 function summarize(query,response){
   const body=response.body||{};
   const offers=Array.isArray(body.offers)?body.offers:null;
@@ -56,12 +71,23 @@ function summarize(query,response){
   const errors=Array.isArray(body.errors)?body.errors:[];
   return {
     query,status:response.status,requestMs:response.elapsedMs,
+    serverDurationMs:Number.isFinite(Number(body.durationMs)) ? Number(body.durationMs) : null,
+    cacheMode:["fresh","miss","stale","stale-if-error"].includes(body.cache?.mode)
+      ?body.cache.mode:"unknown",
+    serverDeadlineMs:Number.isFinite(Number(body.coverage?.requestDeadlineMs))
+      ?Number(body.coverage.requestDeadlineMs):null,
+    serverDeadlineExceeded:body.coverage?.deadlineExceeded===true,
+    fallbackUsed:body.coverage?.fallbackUsed===true,
     schemaRecognized:Array.isArray(offers),
     publishedOfferCount:offers?.length??0,
     structurallyEligible:eligible.length,
     structurallyInvalid:(offers?.length??0)-eligible.length,
     merchantCounts,
     providerRecords:providers.length,
+    extraProviderRecords:providers.filter(extraSourceId).length,
+    extraProviderReportedOffers:providers.filter(extraSourceId)
+      .reduce((n,p)=>n+(Number(p?.returnedOffers)||0),0),
+    extraFailureClasses:errors.filter(extraSourceId).map(sourceFailureClass).slice(0,8),
     reportedSourceErrors:errors.length,
     errorSourceIds:errors.slice(0,12).map(e=>bounded(e?.sourceId||e?.provider)),
     partial:body.coverage?.complete===false,
@@ -166,15 +192,20 @@ const extraJsonQueries=valid.filter(x=>Object.keys(x.merchantCounts)
   .some(merchant=>merchant.toLowerCase()==="extra")).length;
 const sse=healthOk?await observeCompletedSse("سماعات بلوتوث"):null;
 if(sse)console.log(JSON.stringify({kind:"SSE",...sse}));
+const iphoneSse=healthOk?await observeCompletedSse("iPhone"):null;
+if(iphoneSse)console.log(JSON.stringify({kind:"SSE_IPHONE",...iphoneSse}));
 const summary={kind:"SUMMARY",observedAtUtc:new Date().toISOString(),
   sampledQueries:queries.length,attemptedQueries:output.length,
   http200ValidSchema:valid.length,multiMerchantQueries:multi.length,
   singleMerchantQueries:single.length,emptyQueries:empty.length,
   extraJsonContributingQueries:extraJsonQueries,
   sseComplete:sse?.completeEvent??false,ssePassed:sse?.passed??false,
+  iphoneSseComplete:iphoneSse?.completeEvent??false,
+  iphoneSsePassed:iphoneSse?.passed??false,
+  iphoneSseExtraOffers:iphoneSse?.extraFinalOffers??null,
   invalidOrFailedQueries:output.length-valid.length,
   result:healthOk&&valid.length===queries.length&&multi.length>=1&&
-    extraJsonQueries>=1&&sse?.passed===true?"PASS":"FAIL",
-  limitation:"Read-only small live smoke; independent JSON/SSE requests are not parity evidence and structural validity is not price attestation."};
+    extraJsonQueries>=1&&sse?.passed===true&&iphoneSse?.passed===true?"PASS":"FAIL",
+  limitation:"Read-only bounded cohort; source participation is per query/time. Independent JSON/SSE requests do not prove parity, and structural validity does not attest prices."};
 console.log(JSON.stringify(summary));
 if(summary.result!=="PASS")process.exitCode=1;
