@@ -16,6 +16,7 @@ const evidence={
   expectedRevision:expected||null,
   checks:[],
   searches:[],
+  streams:[],
 };
 function check(name,ok,details={}) {
   evidence.checks.push({name,result:ok?"PASS":"FAIL",...details});
@@ -67,13 +68,23 @@ try {
   check("SOURCE_REGISTRY_HTTP_200",sources.status===200&&Array.isArray(sources.payload?.sources));
   check("ONE_NOON_SOURCE_RECORD",evidence.sourceRegistry.noonCount===1);
 
-  for(const query of ["iPhone 17 256GB","PS5","Samsung Galaxy S25"]){
-    const res=await get("/api/search?q="+encodeURIComponent(query),{timeoutMs:45000});
+  const cases=[
+    ["smartphone","en","iPhone 17 256GB"],
+    ["smartphone","ar","ايفون 17 256 جيجا"],
+    ["gaming","en","PS5"],
+    ["gaming","ar","بلايستيشن 5"],
+    ["audio","en","Bluetooth headphones"],
+    ["audio","ar","سماعات بلوتوث"],
+    ["computing","en","laptop"],
+    ["computing","ar","لابتوب"],
+  ];
+  for(const [group,language,query] of cases){
+    const res=await get("/api/search?q="+encodeURIComponent(query),{timeoutMs:32000});
     const data=res.payload||{};
     const offers=Array.isArray(data.offers)?data.offers:[];
     const invalid=offers.filter(x=>!validOffer(x));
     const result={
-      query,
+      group,language,query,
       status:res.status,
       requestMs:res.elapsedMs,
       totalOffers:offers.length,
@@ -93,9 +104,54 @@ try {
     if(invalid.length) evidence.checks.push({name:"INVALID_OFFERS_"+query,result:"FAIL",count:invalid.length});
     console.log("NAWAA_LIVE_SEARCH "+JSON.stringify(result));
   }
-  check("ALL_SEARCH_REQUESTS_200",evidence.searches.every(x=>x.status===200));
+  check("ALL_SEARCH_REQUESTS_200",evidence.searches.length===8&&evidence.searches.every(x=>x.status===200));
   check("NO_MALFORMED_PUBLISHED_OFFERS",evidence.searches.every(x=>x.invalidOffers===0));
   check("LIVE_PRODUCT_YIELD_PRESENT",evidence.searches.some(x=>x.structurallyValidOffers>0));
+  const categories=["smartphone","gaming","audio","computing"];
+  const categoryEvidence=Object.fromEntries(categories.map(group=>[group,evidence.searches
+    .filter(x=>x.group===group).reduce((count,x)=>count+x.structurallyValidOffers,0)]));
+  evidence.categoryOfferCounts=categoryEvidence;
+  // Record missing-category discovery rather than inventing source availability.
+  check("FOUR_CATEGORIES_HAVE_STRUCTURALLY_VALID_OFFERS",
+    categories.every(group=>categoryEvidence[group]>0),{categoryOfferCounts:categoryEvidence});
+
+  // SSE is an independent live acquisition; its merchant yields may differ from
+  // a JSON request that ran earlier. Check completion and evidence contracts,
+  // not artificial equality between two time-separated searches.
+  for(const [group,query] of [
+    ["smartphone","iPhone 17 256GB"],["gaming","PS5"],
+    ["audio","سماعات بلوتوث"],["computing","laptop"]
+  ]){
+    const response=await get("/api/search/stream?q="+encodeURIComponent(query),
+      {timeoutMs:35000,accept:"text/event-stream",parse:"text"});
+    let finalSnapshot=null,doneCount=0,errorCount=0,snapshotCount=0;
+    for(const block of response.payload.split(/\r?\n\r?\n/)){
+      const type=block.match(/^event: ([^\r\n]+)/m)?.[1];
+      const body=block.match(/^data: (.+)$/m)?.[1];
+      if(!type||!body)continue;
+      let data;
+      try{data=JSON.parse(body);}catch{throw new Error("SSE_INVALID_JSON_"+group);}
+      if(type==="error")errorCount++;
+      if(type==="done")doneCount++;
+      if(type==="snapshot"){
+        snapshotCount++;
+        finalSnapshot=data;
+      }
+    }
+    const offers=Array.isArray(finalSnapshot?.offers)?finalSnapshot.offers:[];
+    const invalidOffers=offers.filter(o=>!validOffer(o)).length;
+    const status={group,query,httpStatus:response.status,elapsedMs:response.elapsedMs,
+      snapshotCount,doneCount,errorCount,finalOffers:offers.length,invalidOffers,
+      coverageComplete:finalSnapshot?.coverage?.complete===true,
+      coveragePartial:finalSnapshot?.coverage?.partial===true,
+      finalRefreshing:finalSnapshot?.cache?.refreshing===true};
+    evidence.streams.push(status);
+    console.log("NAWAA_R01_LIVE_SSE "+JSON.stringify(status));
+  }
+  check("SSE_STREAMS_COMPLETE",evidence.streams.length===4&&
+    evidence.streams.every(x=>x.httpStatus===200&&x.snapshotCount>0&&
+      x.doneCount===1&&x.errorCount===0&&!x.finalRefreshing));
+  check("SSE_NO_MALFORMED_PUBLISHED_OFFERS",evidence.streams.every(x=>x.invalidOffers===0));
   evidence.result="PASS";
 }catch(error){
   evidence.result="FAIL";
