@@ -668,6 +668,21 @@ export function buildComparisonQuery(offer = {}) {
   return (model ? [model, storage, color].filter(Boolean).join(" ") : title).slice(0, 180).trim();
 }
 
+// Batch-friendly assessor: compile the immutable shopper intent/context once
+// rather than reparse the same query for each merchant offer. Lazy initialization
+// preserves empty-batch behavior; each factory is isolated to one query.
+export function createOfferMatchAssessor(query) {
+  let preparedIntent = null;
+  let preparedContext = null;
+  return (offer) => {
+    if (!preparedIntent) {
+      preparedIntent = parseSearchIntent(query);
+      preparedContext = prepareMatchContext(preparedIntent);
+    }
+    return assessOfferMatch(query, offer, preparedIntent, preparedContext);
+  };
+}
+
 // Shared by provider output and the stricter source audit. Metadata may not
 // hide a contradictory model or storage capacity explicitly present in a title.
 export function queryMatchReasons(query, offer, preparedIntent = null, preparedContext = null) {
