@@ -1,0 +1,312 @@
+{
+  "schemaVersion": "nawaa.execution.v1",
+  "planVersion": "23.20",
+  "initialMainSha": "6bd8b6d5a7a8695eaeca70c387153d2bd1b941a6",
+  "rounds": [
+    {
+      "id": "R01",
+      "title": "Baseline, truth corpus and CI governance",
+      "packages": [
+        "E00",
+        "S00",
+        "E15"
+      ],
+      "dependsOn": [],
+      "status": "IN_PROGRESS",
+      "baseSha": "6bd8b6d5a7a8695eaeca70c387153d2bd1b941a6",
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R02",
+      "title": "Partial cache correctness",
+      "packages": [
+        "E01"
+      ],
+      "dependsOn": [
+        "R01"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R03",
+      "title": "Cache invalidation and concurrency",
+      "packages": [
+        "E02"
+      ],
+      "dependsOn": [
+        "R02"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R04",
+      "title": "Search intent and ranking",
+      "packages": [
+        "E03",
+        "S01"
+      ],
+      "dependsOn": [
+        "R03"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R05",
+      "title": "Source stage observability",
+      "packages": [
+        "E04",
+        "S03",
+        "S04"
+      ],
+      "dependsOn": [
+        "R04"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R06",
+      "title": "Source partial recovery",
+      "packages": [
+        "S12"
+      ],
+      "dependsOn": [
+        "R05"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R07",
+      "title": "Query expansion and source yield",
+      "packages": [
+        "S02",
+        "S05"
+      ],
+      "dependsOn": [
+        "R06"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R08",
+      "title": "Variant identity",
+      "packages": [
+        "E09",
+        "S08"
+      ],
+      "dependsOn": [
+        "R07"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R09",
+      "title": "FX and landed price evidence",
+      "packages": [
+        "E07",
+        "S09"
+      ],
+      "dependsOn": [
+        "R08"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R10",
+      "title": "Comparable price history",
+      "packages": [
+        "E08"
+      ],
+      "dependsOn": [
+        "R09"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R11",
+      "title": "Bounded source dispatcher",
+      "packages": [
+        "E05",
+        "S06"
+      ],
+      "dependsOn": [
+        "R10"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R12",
+      "title": "Measured dispatcher rollout",
+      "packages": [
+        "E06",
+        "S07"
+      ],
+      "dependsOn": [
+        "R11"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R13",
+      "title": "Canonical identity migration and outbox",
+      "packages": [
+        "E10"
+      ],
+      "dependsOn": [
+        "R12"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R14",
+      "title": "PG and Meilisearch guard",
+      "packages": [
+        "E11",
+        "S13"
+      ],
+      "dependsOn": [
+        "R13"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R15",
+      "title": "Safe grouping acceleration",
+      "packages": [
+        "E12",
+        "S10"
+      ],
+      "dependsOn": [
+        "R14"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R16",
+      "title": "Ranking and merchant diversity",
+      "packages": [
+        "S11"
+      ],
+      "dependsOn": [
+        "R15"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R17",
+      "title": "Python optional enrichment",
+      "packages": [
+        "E13",
+        "S15"
+      ],
+      "dependsOn": [
+        "R16"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R18",
+      "title": "SSE JSON lifecycle parity",
+      "packages": [
+        "E14",
+        "S14"
+      ],
+      "dependsOn": [
+        "R17"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R19",
+      "title": "Light luxury frontend",
+      "packages": [
+        "E16"
+      ],
+      "dependsOn": [
+        "R18"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R20",
+      "title": "Safe adaptive policy research",
+      "packages": [
+        "E17",
+        "S16"
+      ],
+      "dependsOn": [
+        "R19"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    },
+    {
+      "id": "R21",
+      "title": "Final system verification",
+      "packages": [],
+      "dependsOn": [
+        "R20"
+      ],
+      "status": "PLANNED",
+      "baseSha": null,
+      "blockers": [],
+      "evidence": {}
+    }
+  ]
+}

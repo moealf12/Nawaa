@@ -40,6 +40,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Verify durable execution ledger
+        run: node scripts/verify-execution-ledger.mjs
       - name: Install existing locked dependencies without third-party scripts
         run: npm ci --ignore-scripts
       - name: Run required deterministic Node test suite
