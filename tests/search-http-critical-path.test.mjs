@@ -21,7 +21,7 @@ test("slow finished HTTP response attributes pre-cache, shared lookup, post-cach
   assert.deepEqual(events[0],{
     status:"finished",totalHttpMs:11500,afterPreparedMs:500,
     preCacheMs:21,cacheLookupMs:10000,postCacheMs:881,
-    cacheMode:"miss",coalescedOnEntry:true,cacheRefreshReplays:null,offers:19,
+    cacheMode:"miss",coalescedOnEntry:true,cacheRefreshReplays:null,cacheInvalidationReason:null,offers:19,
     headersSent:true,writableFinished:true
   });
   const body=JSON.stringify(events[0]);

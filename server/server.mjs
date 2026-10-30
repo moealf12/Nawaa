@@ -869,7 +869,7 @@ function enforceRateLimit(req, res, scope, policy, origin = "*") {
 const ebayDeletion = createEbayDeletionHandler({
   token: process.env.EBAY_DELETION_VERIFICATION_TOKEN,
   endpoint: process.env.EBAY_DELETION_ENDPOINT,
-  onDelete: () => cachedSearch.clear(),
+  onDelete: () => cachedSearch.clear("ebay_deletion"),
 });
 const internalAudit = createInternalAuditHandler();
 
@@ -939,7 +939,7 @@ const server = http.createServer(async (req, res) => {
       const source=String(body.source||"crawler").trim()||"crawler";
       const records=[];
       for(const offer of valid) records.push(await recordOffer({...offer,sourceName:source,query:source}));
-      cachedSearch.clear();
+      cachedSearch.clear("ingest");
       return jsonResponse(res,201,{accepted:valid.length,recorded:records.length},origin||"*");
     } catch(error) {
       const message=error instanceof Error?error.message:String(error);
@@ -1175,8 +1175,10 @@ const server = http.createServer(async (req, res) => {
       const cacheLookupStarted=performance.now();
       const coalescedOnEntry=cachedSearch.isPending(lookupKey);
       let cacheRefreshReplays=null;
+      let cacheInvalidationReason=null;
       let result = await cachedSearch(lookupKey,{allowStale:false,
-        onDiagnostic:diag=>{cacheRefreshReplays=diag.refreshReplays;},
+        onDiagnostic:diag=>{cacheRefreshReplays=diag.refreshReplays;
+          cacheInvalidationReason=diag.lastInvalidationReason;},
       });
       const cacheLookupMs=performance.now()-cacheLookupStarted;
       const cacheWaitMs = performance.now() - responseStarted;
@@ -1191,6 +1193,7 @@ const server = http.createServer(async (req, res) => {
         postCacheMs:canonicalizedMs,
         coalescedOnEntry,
         cacheRefreshReplays,
+        cacheInvalidationReason,
         cacheMode:result.cache?.mode,
         offers:result.offers?.length,
       });

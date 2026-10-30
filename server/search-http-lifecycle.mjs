@@ -33,6 +33,7 @@ export function createSearchHttpLifecycleTrace(res,{
       cacheMode:prepared?.cacheMode??"unknown",
       coalescedOnEntry:prepared?.coalescedOnEntry??null,
       cacheRefreshReplays:prepared?.cacheRefreshReplays??null,
+      cacheInvalidationReason:prepared?.cacheInvalidationReason??null,
       offers:prepared?.offers??null,
       headersSent:Boolean(res.headersSent),
       writableFinished:Boolean(res.writableFinished),
@@ -56,6 +57,8 @@ export function createSearchHttpLifecycleTrace(res,{
         cacheRefreshReplays:Number.isInteger(detail.cacheRefreshReplays)
           &&detail.cacheRefreshReplays>=0
           ?Math.min(detail.cacheRefreshReplays,100):null,
+        cacheInvalidationReason:["ingest","ebay_deletion","unknown"].includes(detail.cacheInvalidationReason)
+          ?detail.cacheInvalidationReason:null,
         offers:Number.isInteger(detail.offers)&&detail.offers>=0
           ?Math.min(detail.offers,100000):null,
       };
