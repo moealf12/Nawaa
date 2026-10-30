@@ -10,6 +10,7 @@ export function createSearchCache(search, {
   const pending = new Map();
   const refreshInfo=new WeakMap();
   const invalidators=new WeakMap();
+  const refreshControllers=new WeakMap();
   let generation = 0;
 
   const clone = (value) => structuredClone(value);
@@ -34,6 +35,7 @@ export function createSearchCache(search, {
   function startRefresh(key) {
     if (pending.has(key)) return pending.get(key);
     const trace={refreshReplays:0,lastInvalidationReason:null};
+    const controller=new AbortController();
     const startedGeneration=generation;
     let invalidate;
     const invalidated=new Promise(resolve=>{invalidate=resolve;});
@@ -44,7 +46,7 @@ export function createSearchCache(search, {
       // legacy cache and signed deletion tests; never defer search() twice.
       const acquisition=(async()=>{
         if(startedGeneration!==generation)return {obsolete:true};
-        return search(key);
+        return search(key,{signal:controller.signal});
       })().then(value=>({kind:"result",value}),error=>({kind:"error",error}));
       const outcome=await Promise.race([
         acquisition,
@@ -74,6 +76,7 @@ export function createSearchCache(search, {
     });
     refreshInfo.set(task,trace);
     invalidators.set(task,invalidate);
+    refreshControllers.set(task,controller);
     pending.set(key,task);
     return task;
   }
@@ -138,6 +141,10 @@ export function createSearchCache(search, {
     for(const [key,prior] of obsolete){
       const replacement=startRefresh(key);
       invalidators.get(prior)?.({replacement,reason:safeReason});
+      // Stop obsolete merchant work; each new generation remains independent.
+      const controller=refreshControllers.get(prior);
+      if(controller&&!controller.signal.aborted)
+        controller.abort(new Error("cache_generation_invalidated"));
     }
   };
   cachedSearch.stats = () => ({ entries:entries.size, pending:pending.size, ttlMs:ttl, staleTtlMs:staleTtl });
