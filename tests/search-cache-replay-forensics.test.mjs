@@ -4,17 +4,25 @@ import {readFileSync} from "node:fs";
 import {createSearchCache} from "../server/search-cache.mjs";
 
 test("an invalidation during search preserves freshness and reports exactly one replay",async()=>{
-  let releaseFirst,calls=0,trace=null;
+  let releaseFirst,markFirstStarted,calls=0,trace=null;
   const firstGate=new Promise(resolve=>{releaseFirst=resolve;});
+  const firstStarted=new Promise(resolve=>{markFirstStarted=resolve;});
   const cache=createSearchCache(async()=>{
     calls++;
-    if(calls===1){await firstGate;return {offers:[{title:"old",productPrice:10}],errors:[]};}
+    if(calls===1){
+      markFirstStarted();
+      await firstGate;
+      return {offers:[{title:"old",productPrice:10}],errors:[]};
+    }
     return {offers:[{title:"new",productPrice:20}],errors:[]};
   });
   const request=cache("iPhone 17",{allowStale:false,
     onDiagnostic:info=>{trace=info;},
   });
   assert.equal(cache.isPending("iPhone 17"),true);
+  // Wait for the first acquisition to begin. Invalidation before the search
+  // starts is NOT an in-flight replay, and must not be misclassified as one.
+  await firstStarted;
   cache.clear();
   releaseFirst();
   const result=await request;
