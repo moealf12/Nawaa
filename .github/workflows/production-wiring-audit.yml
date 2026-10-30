@@ -1,0 +1,60 @@
+name: NAWAA Frontend-to-API Production Wiring
+
+on:
+  pull_request:
+    paths:
+      - 'config.js'
+      - 'index.html'
+      - 'search.html'
+      - 'product.html'
+      - 'src/search-page.mjs'
+      - 'src/product-page.mjs'
+      - 'scripts/verify-production-wiring.mjs'
+      - 'tests/production-wiring-contract.test.mjs'
+      - '.github/workflows/production-wiring-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-production-wiring-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-customer-wiring:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out proposed audit and candidate UI
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Check out the published release source (main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: released
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify candidate frontend API routing using isolated fixtures
+        run: node --test candidate/tests/production-wiring-contract.test.mjs
+
+      - name: Bind the actual released GitHub main SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git -C released rev-parse HEAD)"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          echo "NAWAA_EXPECT_LIVE_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "NAWAA_AUDITED_REPO_DIR=$GITHUB_WORKSPACE/released" >> "$GITHUB_ENV"
+
+      - name: Verify published Pages and Render assets, CORS, and exact live SHA
+        run: node candidate/scripts/verify-production-wiring.mjs
