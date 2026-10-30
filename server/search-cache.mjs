@@ -8,6 +8,7 @@ export function createSearchCache(search, {
 } = {}) {
   const entries = new Map();
   const pending = new Map();
+  const refreshInfo=new WeakMap();
   let generation = 0;
 
   const clone = (value) => structuredClone(value);
@@ -28,10 +29,14 @@ export function createSearchCache(search, {
 
   function startRefresh(key) {
     if (pending.has(key)) return pending.get(key);
+    const trace={refreshReplays:0};
     const task = Promise.resolve().then(async () => {
       let startedGeneration = generation;
       let result = await search(key);
       if (generation !== startedGeneration) {
+        // A catalog invalidation requires another search before publishing
+        // current evidence. Count the replay, do not bypass it.
+        trace.refreshReplays++;
         startedGeneration = generation;
         result = await search(key);
       }
@@ -45,11 +50,12 @@ export function createSearchCache(search, {
     }).finally(() => {
       if (pending.get(key) === task) pending.delete(key);
     });
+    refreshInfo.set(task,trace);
     pending.set(key, task);
     return task;
   }
 
-  const cachedSearch = async function(key, { allowStale = true } = {}) {
+  const cachedSearch = async function(key, { allowStale = true, onDiagnostic = null } = {}) {
     const entry = entries.get(key);
     if (entry) {
       const age = Math.max(0, now() - entry.at);
@@ -66,7 +72,13 @@ export function createSearchCache(search, {
       // transient provider/deadline failure instead of flashing zero results.
     }
     const previous = entry ? clone(entry.result) : null;
-    const result = await startRefresh(key);
+    const refresh=startRefresh(key);
+    const result = await refresh;
+    // No raw cache key, query, URL or product evidence enters diagnostics.
+    // Observers are isolated: failures can never interrupt a valid result.
+    if(typeof onDiagnostic==="function"){
+      try{onDiagnostic({refreshReplays:refreshInfo.get(refresh)?.refreshReplays??0});}catch{}
+    }
     if (allowStale && (!result.offers?.length) && previous?.offers?.length) {
       touch(key, entry);
       return {

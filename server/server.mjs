@@ -653,9 +653,26 @@ async function searchAll(query, { depth = 0 } = {}) {
       offers:Math.max(0,Math.min(100000,Math.floor(event.offers||0))),
     });
   };
+  // The total primary phase waits on FOUR concurrent barriers. Per-provider
+  // timing alone cannot identify the independent Amazon/index lookup tails.
+  // These are wall clocks from the shared barrier, never per-source CPU usage.
+  const primaryComponents=[];
+  const barrierStartedAt=performance.now();
+  const observeBarrier=(component,task)=>Promise.resolve(task).then(value=>{
+    primaryComponents.push({
+      component,settledAtMs:Math.round(performance.now()-barrierStartedAt),
+    });
+    return value;
+  },error=>{
+    primaryComponents.push({
+      component,settledAtMs:Math.round(performance.now()-barrierStartedAt),
+      failed:true,
+    });
+    throw error;
+  });
   const [amazon,primary,indexed,persisted] = await Promise.all([
-    amazonPromise,
-    beforeRequestDeadline(
+    observeBarrier("amazon-sa",amazonPromise),
+    observeBarrier("provider-pass",beforeRequestDeadline(
       () => runProviderPass(providerQuery, "primary", query, {
         plan, signal:requestController.signal,
         onChunk: (chunk) => { completedPrimaryChunks.push(chunk); },
@@ -671,15 +688,15 @@ async function searchAll(query, { depth = 0 } = {}) {
           }],
         };
       },
-    ),
-    beforeRequestDeadline(
+    )),
+    observeBarrier("meilisearch",beforeRequestDeadline(
       () => searchIndexedOffers(query).catch(() => ({ configured:false, offers:[] })),
       () => ({ configured:false, offers:[] }),
-    ),
-    beforeRequestDeadline(
+    )),
+    observeBarrier("persisted",beforeRequestDeadline(
       () => Promise.resolve({ configured:false, offers:[] }),
       () => ({ configured:false, offers:[] }),
-    ),
+    )),
   ]);
   const primaryAcquiredMs = performance.now() - pipelineStarted;
   const afterPrimaryPressure = beginProcessPressure();
@@ -785,6 +802,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       deadlineExceeded,
       fallbackUsed:Boolean(fallbackQuery),
       providerTimings,
+      primaryComponents,
     }));
   }
 
@@ -1156,7 +1174,10 @@ const server = http.createServer(async (req, res) => {
       const lookupKey=searchCacheKey(normalizedComparisonQuery, depth);
       const cacheLookupStarted=performance.now();
       const coalescedOnEntry=cachedSearch.isPending(lookupKey);
-      let result = await cachedSearch(lookupKey,{allowStale:false});
+      let cacheRefreshReplays=null;
+      let result = await cachedSearch(lookupKey,{allowStale:false,
+        onDiagnostic:diag=>{cacheRefreshReplays=diag.refreshReplays;},
+      });
       const cacheLookupMs=performance.now()-cacheLookupStarted;
       const cacheWaitMs = performance.now() - responseStarted;
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
@@ -1169,6 +1190,7 @@ const server = http.createServer(async (req, res) => {
         cacheLookupMs,
         postCacheMs:canonicalizedMs,
         coalescedOnEntry,
+        cacheRefreshReplays,
         cacheMode:result.cache?.mode,
         offers:result.offers?.length,
       });
