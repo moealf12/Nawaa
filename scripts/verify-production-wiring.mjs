@@ -14,7 +14,9 @@ const ROOT=process.env.NAWAA_AUDITED_REPO_DIR
   : resolve(dirname(fileURLToPath(import.meta.url)),"..");
 const ASSETS=Object.freeze([
   "index.html","config.js","search.html","src/search-page.mjs",
-  "product.html","src/product-page.mjs"
+  "product.html","src/product-page.mjs",
+  "src/search-core.mjs","src/search-query.mjs","src/search-stream.mjs",
+  "src/search-coverage-status.mjs","src/product-card-presentation.mjs"
 ]);
 const sha256=x=>createHash("sha256").update(x).digest("hex");
 function invariant(ok,label){if(!ok)throw new Error(label)}
@@ -91,6 +93,12 @@ export async function verifyPublishedWiring({fetchImpl=fetch,files=sourceFiles()
       const actual=await getBounded(base+"/"+name,{fetchImpl});
       invariant(sha256(actual.text)===expected[name],
         "ASSET_MISMATCH_"+label+"_"+name.replace(/[^a-z0-9]/gi,"_"));
+      const mediaType=String(actual.headers.get("content-type")||"");
+      const correctMime=name.endsWith(".html") ?
+        /(?:^|\\/)html/i.test(mediaType) :
+        /(?:javascript|ecmascript)/i.test(mediaType);
+      invariant(correctMime,
+        "SCRIPT_OR_HTML_MIME_MISMATCH_"+label+"_"+name.replace(/[^a-z0-9]/gi,"_"));
       results.push(label+":"+name);
     }
   }
