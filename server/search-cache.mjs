@@ -40,10 +40,12 @@ export function createSearchCache(search, {
     const task=Promise.resolve().then(async()=>{
       // Handle late failures from an abandoned acquisition, even after its
       // subscribers switched generations. Do not leak an unhandled rejection.
-      const acquisition=Promise.resolve().then(()=>{
+      // Preserve the original first-microtask start contract relied on by
+      // legacy cache and signed deletion tests; never defer search() twice.
+      const acquisition=(async()=>{
         if(startedGeneration!==generation)return {obsolete:true};
         return search(key);
-      }).then(value=>({kind:"result",value}),error=>({kind:"error",error}));
+      })().then(value=>({kind:"result",value}),error=>({kind:"error",error}));
       const outcome=await Promise.race([
         acquisition,
         invalidated.then(({replacement,reason})=>({kind:"replacement",replacement,reason})),
