@@ -64,3 +64,55 @@ test("Amazon stream fallback supports response mocks without a readable body",as
  assert.equal(result.text,"<title>valid</title>");
  assert.equal(result.progress.chunksReceived,1);
 });
+
+test("stalled body terminates even without caller-provided abort callback",async()=>{
+ const body=new ReadableStream({start(c){c.enqueue(Buffer.from("partial"));}});
+ const t=Date.now();
+ await assert.rejects(readAmazonHtmlStream({body},{idleTimeoutMs:50}),e=>{
+   assert.equal(e.failureClass,"BODY_IDLE_TIMEOUT");
+   assert.equal(e.bodyProgress.bytesReceived,7);
+   assert.equal(e.bodyProgress.idleTimeoutTriggered,true);
+   return true;
+ });
+ assert.ok(Date.now()-t<600);
+});
+test("zero-length chunks never count as progress against idle deadline",async()=>{
+ let ctrl;
+ const body=new ReadableStream({start(c){ctrl=c;}});
+ const interval=setInterval(()=>{try{ctrl.enqueue(new Uint8Array(0));}catch{}},10);
+ try{
+   await assert.rejects(readAmazonHtmlStream({body},{idleTimeoutMs:70}),e=>{
+     assert.equal(e.failureClass,"BODY_IDLE_TIMEOUT");
+     assert.equal(e.bodyProgress.chunksReceived,0);
+     return true;
+   });
+ }finally{clearInterval(interval);}
+});
+test("real Amazon page acquisition retries one stalled stream and never exposes partial HTML",async()=>{
+ const {fetchAmazonSearchPages}=await import("../server/providers/free-storefronts.mjs");
+ const before=globalThis.fetch;
+ let calls=0,diag;
+ globalThis.fetch=async()=>{
+   calls++;
+   if(calls===1)return new Response(new ReadableStream({
+     start(c){c.enqueue(Buffer.from("<div>obsolete partial"));},
+   }),{status:200,headers:{"content-type":"text/html"}});
+   return new Response('<div data-component-type="s-search-result" data-asin="B012345678">complete</div>',{
+     status:200,headers:{"content-type":"text/html"},
+   });
+ };
+ try{
+   const pages=await fetchAmazonSearchPages("https://www.amazon.sa/s?k=PS5",{
+     pageCount:1,deadlineMs:7500,wait:async()=>{},
+     onDiagnostic:x=>{diag=x;},
+   });
+   assert.equal(calls,2,"only one allowed same-page retry");
+   assert.equal(pages.length,1);
+   assert.match(pages[0].html,/complete/);
+   assert.doesNotMatch(pages[0].html,/obsolete partial/);
+   assert.equal(diag.pagesRetried,1);
+   assert.equal(diag.streamIdleTimeouts,1);
+   assert.equal(diag.transportFailureClasses.BODY_IDLE_TIMEOUT,1);
+   assert.equal(diag.pagesFetched,1);
+ }finally{globalThis.fetch=before;}
+});

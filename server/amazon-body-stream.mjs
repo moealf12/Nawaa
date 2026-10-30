@@ -29,6 +29,9 @@ export async function readAmazonHtmlStream(response,{
     signal?.addEventListener("abort",onAbort,{once:true});
     if(signal?.aborted)onAbort();
   });
+  // Do not rely on the caller's abort callback to terminate a stalled stream.
+  let resolveIdle;
+  const idleCancelled=new Promise(resolve=>{resolveIdle=resolve;});
   const timeoutError=()=>{
     const error=new Error("amazon_body_idle_timeout");
     error.name="TimeoutError";
@@ -41,7 +44,9 @@ export async function readAmazonHtmlStream(response,{
       if(finished||signal?.aborted)return;
       idleTriggered=true;
       // Abort the same original request; no alternate route or extra page.
-      abortOnIdle(timeoutError());
+      const reason=timeoutError();
+      try{abortOnIdle(reason);}catch{}
+      resolveIdle({aborted:true,reason});
     },idleTimeoutMs);
   };
   const pieces=[];
@@ -50,7 +55,7 @@ export async function readAmazonHtmlStream(response,{
     while(true){
       const read=Promise.resolve().then(()=>reader.read())
         .then(value=>({value}),error=>({error}));
-      const settled=await Promise.race([read,cancelled]);
+      const settled=await Promise.race([read,cancelled,idleCancelled]);
       if(settled.aborted)throw settled.reason;
       if(settled.error)throw settled.error;
       if(settled.value.done)break;
