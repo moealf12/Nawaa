@@ -1407,7 +1407,9 @@ export async function fetchAmazonSearchPages(searchUrl,{
      if(isRetryableAmazonSearchError(result.reason)&&!fetchSignal.aborted&&Date.now()<deadlineAt){
        const delay=Math.min(200*(page.index+1),Math.max(0,deadlineAt-Date.now()-25));
        if(delay>0)await Promise.race([Promise.resolve().then(()=>wait(delay)),cancelled]);
-       if(!fetchSignal.aborted&&Date.now()<deadlineAt){
+       // Never count or launch a retry when the absolute deadline leaves
+       // no usable transport time (25ms reserved for completion).
+       if(!fetchSignal.aborted&&amazonAttemptTimeoutMs(deadlineAt-Date.now())>0){
          pagesRetried++;result=validate(await attempt(true));
        }
      }
