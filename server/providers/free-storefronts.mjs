@@ -1223,48 +1223,77 @@ function isRetryableAmazonSearchError(error){
   return status===408 || status===425 || (status>=500 && status<600);
 }
 
-export async function fetchAmazonSearchPages(searchUrl,{pageStart=1,pageCount=1,deadlineMs=10000,signal,fetchPage=fetchText,wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
-  const deadlineAt=Date.now()+Math.max(50,Math.min(15000,Number(deadlineMs)||10000));
-  const controller=new AbortController();
-  const fetchSignal=signal ? AbortSignal.any([signal,controller.signal]) : controller.signal;
-  signal?.throwIfAborted();
-  const pageUrls=Array.from({length:pageCount},(_,index)=>{
-    const pageUrl=new URL(searchUrl);
-    pageUrl.searchParams.set("page",String(pageStart+index));
-    return {index,url:pageUrl.href};
-  });
-  const settleBeforeDeadline=async(operation)=>{
-    if(signal?.aborted) return {status:"rejected",reason:signal.reason || new Error("search_cancelled")};
-    const remaining=deadlineAt-Date.now();
-    if(remaining<=0){const error=new Error("amazon_page_deadline_exceeded");error.name="TimeoutError";return {status:"rejected",reason:error};}
-    let timeoutId;
-    const timeout=new Promise(resolve=>{timeoutId=setTimeout(()=>{const error=new Error("amazon_page_deadline_exceeded");error.name="TimeoutError";controller.abort(error);resolve({status:"rejected",reason:error});},remaining);});
-    try{
-      return await Promise.race([
-        Promise.resolve().then(operation).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason})),
-        timeout,
-      ]);
-    }finally{clearTimeout(timeoutId);}
-  };
-  const first=await Promise.all(pageUrls.map(page=>settleBeforeDeadline(()=>fetchPage(page.url,{signal:fetchSignal,storeId:"amazon-sa"}))));
-  const results=first.map((result,index)=>({index,result}));
-  const retryable=results.filter(({result})=>result.status==="rejected"&&isRetryableAmazonSearchError(result.reason));
-  if(retryable.length&&Date.now()<deadlineAt){
-    const retried=await Promise.all(retryable.map(async({index})=>{
-      signal?.throwIfAborted();
-      const delay=Math.min(200*(index+1),Math.max(0,deadlineAt-Date.now()));
-      if(delay)await wait(delay);
-      return {index,result:await settleBeforeDeadline(()=>fetchPage(pageUrls[index].url,{signal:fetchSignal,storeId:"amazon-sa"}))};
-    }));
-    signal?.throwIfAborted();
-    for(const replacement of retried)results[replacement.index]=replacement;
-  }
-  const fulfilled=results
-    .filter(({result})=>result.status==="fulfilled")
-    .sort((a,b)=>a.index-b.index)
-    .map(({result})=>result.value);
-  if(!fulfilled.length)throw results.find(({result})=>result.status==="rejected")?.result.reason||new Error("Amazon Saudi search pages unavailable");
-  return fulfilled;
+// Retry each failed page while sibling pages are still in flight. Same page
+// range, same per-page retry limit, same source, one absolute deadline.
+export async function fetchAmazonSearchPages(searchUrl,{
+ pageStart=1,pageCount=1,deadlineMs=10000,signal,fetchPage=fetchText,
+ wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),onDiagnostic=null,
+}={}){
+ const durationMs=Math.max(50,Math.min(15000,Number(deadlineMs)||10000));
+ const deadlineAt=Date.now()+durationMs,started=performance.now();
+ const firstPage=Math.max(1,Math.min(8,Math.floor(Number(pageStart)||1)));
+ const count=Math.min(8-firstPage+1,Math.max(1,Math.floor(Number(pageCount)||1)));
+ const controller=new AbortController();
+ const fetchSignal=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
+ signal?.throwIfAborted();
+ const deadlineError=()=>Object.assign(new Error("amazon_page_deadline_exceeded"),{name:"TimeoutError"});
+ let deadlineExceeded=false,pagesRetried=0,firstAttemptFailures=0;
+ const timer=setTimeout(()=>{
+   deadlineExceeded=true;
+   if(!controller.signal.aborted)controller.abort(deadlineError());
+ },durationMs);
+ let onAbort;
+ const cancelled=new Promise(resolve=>{onAbort=()=>resolve({status:"rejected",reason:fetchSignal.reason||new Error("amazon_aborted")});});
+ fetchSignal.addEventListener("abort",onAbort,{once:true});
+ if(fetchSignal.aborted)onAbort();
+ const pages=Array.from({length:count},(_,index)=>{
+   const url=new URL(searchUrl);url.searchParams.set("page",String(firstPage+index));
+   return {index,url:url.href};
+ });
+ const runPage=async(page)=>{
+   const attempt=()=>{
+     if(fetchSignal.aborted)return Promise.resolve({status:"rejected",reason:fetchSignal.reason});
+     if(Date.now()>=deadlineAt)return Promise.resolve({status:"rejected",reason:deadlineError()});
+     // Observe both promise outcomes even when cancellation wins the race.
+     return Promise.race([
+       Promise.resolve().then(()=>{
+         fetchSignal.throwIfAborted();
+         return fetchPage(page.url,{signal:fetchSignal,storeId:"amazon-sa"});
+       }).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason})),
+       cancelled,
+     ]);
+   };
+   let result=await attempt();
+   if(result.status==="rejected"){
+     firstAttemptFailures++;
+     if(isRetryableAmazonSearchError(result.reason)&&!fetchSignal.aborted&&Date.now()<deadlineAt){
+       const delay=Math.min(200*(page.index+1),Math.max(0,deadlineAt-Date.now()-25));
+       if(delay>0)await Promise.race([Promise.resolve().then(()=>wait(delay)),cancelled]);
+       if(!fetchSignal.aborted&&Date.now()<deadlineAt){
+         pagesRetried++;result=await attempt();
+       }
+     }
+   }
+   return {index:page.index,result};
+ };
+ try{
+   const outcomes=await Promise.all(pages.map(runPage));
+   // Cache invalidation or caller disconnect cannot publish obsolete evidence.
+   signal?.throwIfAborted();
+   const fulfilled=outcomes.filter(x=>x.result.status==="fulfilled")
+     .sort((a,b)=>a.index-b.index).map(x=>x.result.value);
+   if(typeof onDiagnostic==="function"){
+     try{onDiagnostic({pagesRequested:count,pagesFetched:fulfilled.length,
+       pagesFailed:count-fulfilled.length,pagesRetried,firstAttemptFailures,
+       elapsedMs:Math.round(performance.now()-started),deadlineExceeded});}catch{}
+   }
+   if(!fulfilled.length)throw outcomes.find(x=>x.result.status==="rejected")?.result.reason
+     ||new Error("Amazon Saudi search pages unavailable");
+   return fulfilled;
+ }finally{
+   clearTimeout(timer);
+   fetchSignal.removeEventListener("abort",onAbort);
+ }
 }
 
 const GENERAL_STORE_IDS = new Set(["amazon-sa","noon-sa","amazon-ae","aliexpress-cn","temu-global","walmart-us"]);
@@ -1473,7 +1502,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
         const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
-        const fulfilled = await fetchAmazonSearchPages(searchUrl,{pageStart,pageCount,signal:options.signal});
+        const fulfilled = await fetchAmazonSearchPages(searchUrl,{
+          pageStart,pageCount,signal:options.signal,
+          onDiagnostic:metrics=>{
+            // No query, URL, ASIN, product, price or customer identity in logs.
+            if(metrics.elapsedMs>=6000||metrics.pagesRetried>0)
+              console.info("NAWAA_AMAZON_PAGE_TIMING "+JSON.stringify(metrics));
+          },
+        });
         html = fulfilled.map(page => page.html).join("\n");
         searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
         searchDiagnostics = {
@@ -1638,18 +1674,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       }
       try {
         if (store.id === "amazon-sa") {
-          const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
-          const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
-          const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
-          const fulfilled = await fetchAmazonSearchPages(searchUrl,{pageStart,pageCount,signal:options.signal});
-          html = fulfilled.map((page) => page.html).join("\n");
-          searchPageFinalUrl = fulfilled[0].finalUrl || searchUrl;
-          searchDiagnostics = {
-            ...searchPageDiagnostics(html, searchUrl, searchPageFinalUrl),
-            pageStart,
-            pagesRequested:pageCount,
-            pagesFetched:fulfilled.length,
-          };
+          // The initial fetch already attempted each page and its eligible
+          // same-page retry. A second full batch was an unbounded replay.
+          throw new Error(primarySearchError || "amazon_sa_search_unavailable");
         } else {
           const page = await fetchText(searchUrl,{signal:options.signal,storeId:store.id});
           html = page.html;
