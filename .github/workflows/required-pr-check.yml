@@ -54,6 +54,7 @@ jobs:
 
   nawaa-pr-integrations:
     name: nawaa-pr-integrations
+    # R01 intentional negative-control PR; never merge this branch.
     runs-on: ubuntu-latest
     timeout-minutes: 14
     services:
@@ -77,6 +78,8 @@ jobs:
           MEILI_NO_ANALYTICS: "true"
         ports: ["7700:7700"]
     steps:
+      - name: R01 intentional integration gate failure - DO NOT MERGE
+        run: exit 86
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
