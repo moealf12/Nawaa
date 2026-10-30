@@ -1683,7 +1683,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }
     options.signal?.throwIfAborted();
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
-    const jsonLdOffers = html
+    // JSON-LD is only a fallback when the already-priced search adapters
+    // produced nothing. Parsing it when those results win is discarded work.
+    const jsonLdOffers = html && !htmlFirstOffers.length && !primarySearchOffers.length
       ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query)
         .filter(offer => !store.euSource ||
           (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)))
@@ -1718,7 +1720,6 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const discoveryLimit=directSearchOffers.length
       ? Math.max(4,Math.min(30,Number.isFinite(perStore)?Math.floor(perStore)*6:30))
       : candidateLimit;
-    const links=html ? extractProductLinks(html,searchUrl,store,query,discoveryLimit) : [];
     // Search-result offers are already price-verified. Do not fan out into slow product pages.
     const directOffers = (await Promise.all(independentlyPricedOffers.map(async (item) => {
       const converted = await moneyToSAR(item.price, item.currency).catch(() => null);
@@ -1762,6 +1763,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           priceEvidence:item.pdpPriceEvidence || "SEARCH_CARD_ONLY" },
       };
     }))).filter(Boolean);
+    // A matching direct offer causes selectStorefrontRecoveryLinks() to return
+    // DIRECT_MATCHES_RETAINED without consulting links. Avoid scanning a large
+    // hydrated HTML page for links that cannot enter either PDP resolution or
+    // customer-facing output. Keep the exact legacy scan on every recovery path.
+    const hasMatchingDirectOffers=directOffers.length>0 &&
+      filterQueryOffers(matchingQuery,directOffers).offers.length>0;
+    const links=html && !hasMatchingDirectOffers
+      ? extractProductLinks(html,searchUrl,store,query,discoveryLimit)
+      : [];
     const recoveryPlan=selectStorefrontRecoveryLinks({
       query:matchingQuery,directOffers,links,pageLimit:perStore,
       hadStructuredCards:directSearchOffers.length>0,
