@@ -42,3 +42,7 @@ but shall not silently reintroduce the original misclassification.
 - Target: exact-head PR checks, explicit RED/GREEN regression, full
   npm test, PostgreSQL/Meilisearch/Python integration, and live release
   SHA verification. The ledger remains R02 IN_PROGRESS pending all gates.
+
+## Legacy contract update
+
+The v15.18 full-HTTP temporal test previously REQUIRED an SSE fresh cache hit after a mocked partial source acquisition. That was the exact stale-promotion bug R02 fixes. Its essential evidence obligations (no expired price, signed cursor, live source update) remain; the erroneous fresh-hit requirement is replaced with a guard rejecting partial snapshots labeled fresh. A RED failure in the v15.18 assertion is not waived; it is corrected to the new explicit safety invariant.
