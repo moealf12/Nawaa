@@ -318,7 +318,7 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   };
 }
 
-async function searchExpansion(query, depth) {
+async function searchExpansion(query, depth, {signal} = {}) {
   query = normalizeSearchQuery(query);
   const plan = acquisitionPlan(depth, configuredFreeStorefronts().length);
   const providerQuery = parseSearchIntent(query).providerQuery;
@@ -328,7 +328,7 @@ async function searchExpansion(query, depth) {
         catalogLimit:Infinity,
         amazonPageStart:plan.amazonPageStart,
         amazonPageCount:plan.amazonPageCount,
-        matchingQuery:query,
+        matchingQuery:query,signal,
       }).catch(error=>({offers:[],error:error instanceof Error?error.message:String(error)}))
     : Promise.resolve({offers:[],diagnostics:null});
   const storefrontPromise = plan.storefrontLimit > 0
@@ -340,7 +340,7 @@ async function searchExpansion(query, depth) {
         stableRouting:true,
         productPageLimit:plan.productPageLimit,
         catalogLimit:Infinity,
-        storeDeadlineMs:6500,
+        storeDeadlineMs:6500,signal,
       }).catch(error=>({provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],errors:[{error:error instanceof Error?error.message:String(error)}],diagnostics:[]}))
     : Promise.resolve({provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],errors:[],diagnostics:[]});
 
@@ -565,8 +565,9 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   };
 }
 
-async function searchAll(query, { depth = 0 } = {}) {
-  if (Number(depth) > 0) return searchExpansion(query, Number(depth));
+async function searchAll(query, { depth = 0, signal } = {}) {
+  signal?.throwIfAborted();
+  if (Number(depth) > 0) return searchExpansion(query, Number(depth), {signal});
   // Measure internal boundaries only. No query text, URLs, SKUs or prices in logs.
   const pipelineStarted = performance.now();
   const pipelinePressure = beginProcessPressure();
@@ -596,6 +597,12 @@ async function searchAll(query, { depth = 0 } = {}) {
   // The JSON cache coalesces identical searches. Abort one shared refresh only
   // at its own deadline, never when a single subscribing client disconnects.
   const requestController=new AbortController();
+  // Invalidation cancels the obsolete generation's downstream merchant fetches.
+  // A single client disconnect must never abort a *shared* active generation.
+  if(signal?.aborted)requestController.abort(signal.reason);
+  else signal?.addEventListener("abort",()=>{
+    if(!requestController.signal.aborted)requestController.abort(signal.reason);
+  },{once:true});
   let deadlineExceeded = false;
   const beforeRequestDeadline = async (operation, fallback) => {
     const remaining = requestDeadlineAt - Date.now();
@@ -848,10 +855,10 @@ async function searchAll(query, { depth = 0 } = {}) {
 }
 
 const searchCacheKey = (query, depth) => JSON.stringify([query, depth]);
-const cachedSearch = createSearchCache(async (key) => {
+const cachedSearch = createSearchCache(async (key,{signal}={}) => {
   const parsed = JSON.parse(key);
   if (!Array.isArray(parsed) || typeof parsed[0] !== "string") throw new Error("invalid_search_cache_key");
-  return searchAll(parsed[0], { depth:Number(parsed[1]) || 0 });
+  return searchAll(parsed[0], { depth:Number(parsed[1]) || 0, signal });
 }, { ttl:45000, maxEntries:48 });
 const rateLimit = createRateLimiter();
 
