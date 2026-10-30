@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  nawaa-required-pr-check:
-    name: nawaa-required-pr-check
+  nawaa-pr-core:
+    name: nawaa-pr-core
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -51,3 +51,109 @@ jobs:
           MEILI_HOST: ""
           MEILI_MASTER_KEY: ""
         run: npm test
+
+  nawaa-pr-integrations:
+    name: nawaa-pr-integrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nawaa_ci
+          POSTGRES_PASSWORD: test_only_not_a_secret
+          POSTGRES_DB: nawaa_temporal_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nawaa_ci -d nawaa_temporal_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 8
+      meilisearch:
+        image: getmeili/meilisearch:v1.10.3
+        env:
+          MEILI_MASTER_KEY: test_only_meili_master_key_for_ci_20261018
+          MEILI_ENV: development
+          MEILI_NO_ANALYTICS: "true"
+        ports: ["7700:7700"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify exact PR head
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Test PostgreSQL two-process chronology using disposable database
+        env:
+          NAWAA_TEST_DATABASE_URL: postgresql://nawaa_ci:test_only_not_a_secret@127.0.0.1:5432/nawaa_temporal_ci
+          DATABASE_SSL: "false"
+          DATABASE_URL: ""
+          MEILI_HOST: ""
+          MEILI_MASTER_KEY: ""
+        run: node --test tests/postgres-provenance.test.mjs
+      - name: Verify Meilisearch isolated source observations survive restart
+        env:
+          NODE_ENV: test
+          MEILI_HOST: http://127.0.0.1:7700
+          MEILI_MASTER_KEY: test_only_meili_master_key_for_ci_20261018
+          MEILI_INDEX: nawaa_ci_replay
+          DATABASE_URL: ""
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:7700/health | grep -q available; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:7700/health
+          node scripts/certify-real-meili-replay.mjs write
+          container="$(docker ps --filter ancestor=getmeili/meilisearch:v1.10.3 --format '{{.ID}}' | head -n 1)"
+          test -n "$container"
+          docker restart "$container"
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:7700/health | grep -q available; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:7700/health
+          node scripts/certify-real-meili-replay.mjs read
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: workers/python-intelligence/pyproject.toml
+      - name: Python strict extraction contracts and property tests
+        env:
+          NAWAA_PY_LIVE_ENABLED: "0"
+        run: |
+          cd workers/python-intelligence
+          python -m pip install --disable-pip-version-check -e ".[test]"
+          python -m pytest tests/test_classifier.py -q -ra
+      - name: Node/Python JSONL subprocess and cancellation contracts
+        env:
+          NAWAA_PY_LIVE_ENABLED: "0"
+        run: node --test workers/python-intelligence/tests/node-bridge.test.mjs
+
+  nawaa-required-pr-check:
+    name: nawaa-required-pr-check
+    needs: [nawaa-pr-core, nawaa-pr-integrations]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Require actual same-run success from both dependency jobs
+        env:
+          NAWAA_PR_NEEDS_JSON: ${{ toJSON(needs) }}
+          NAWAA_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verify-required-pr-gate.mjs
