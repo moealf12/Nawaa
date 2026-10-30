@@ -1,0 +1,31 @@
+name: NAWAA Source Acquisition CPU Forensics
+
+on:
+  pull_request:
+    paths:
+      - 'server/providers/free-storefronts.mjs'
+      - 'scripts/profile-storefront-acquisition-cpu.mjs'
+      - 'tests/storefront-acquisition-cpu-forensics.test.mjs'
+      - '.github/workflows/storefront-acquisition-cpu.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-cpu-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate local-only source extraction fixtures
+        run: node --test tests/storefront-acquisition-cpu-forensics.test.mjs
+      - name: Quantify link versus embedded HTML parser CPU without merchant traffic
+        run: node scripts/profile-storefront-acquisition-cpu.mjs
