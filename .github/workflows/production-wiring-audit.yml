@@ -36,7 +36,7 @@ jobs:
       - name: Check out the published release source (main)
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
           path: released
           persist-credentials: false
 
