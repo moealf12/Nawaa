@@ -190,9 +190,8 @@ test("query deep link starts exactly one live search and URL submission requests
   element(".selected-comparison").events.toggle({target:{open:false,isConnected:true}});
   assert.match(element("#results").innerHTML,/<details class="selected-comparison" hidden>/,"closing the comparison clears its expanded card state");
 
-  // Two stores can report different manufacturer SKUs for what looks like the
-  // same phone/color/capacity. The conservative groups MUST stay separate, but
-  // the buyer must be shown why the two otherwise-identical cards exist.
+  // Merchant model-number differences alone must not fragment a phone with the
+  // same model, capacity, color and condition. Price comparison uses one card.
   const differentSkuSameAppearance = [
     offer,
     {...offer,merchant:'Jarir',sourceUrl:'https://example.com/black-import',
@@ -204,12 +203,12 @@ test("query deep link starts exactly one live search and URL submission requests
   element('#searchForm').events.submit({preventDefault(){}});
   await new Promise(resolve=>setImmediate(resolve));
   const duplicatePhonesHtml=element('#results').innerHTML;
-  assert.equal((duplicatePhonesHtml.match(/class="match-result-card/g)||[]).length,2,
-    'distinct reported manufacturer models must not be silently merged');
-  assert.match(duplicatePhonesHtml,/رقم الموديل: MG674AH\/A/,
-    'first otherwise-indistinguishable card must display its reported model');
-  assert.match(duplicatePhonesHtml,/رقم الموديل: MG674LL\/A/,
-    'second otherwise-indistinguishable card must display its different model');
+  assert.equal((duplicatePhonesHtml.match(/class="match-result-card/g)||[]).length,1,
+    'same phone configuration should have one card despite retailer SKU differences');
+  assert.match(duplicatePhonesHtml,/عرضان · متجران/,
+    'both merchant offers must survive in the one phone group');
+  assert.doesNotMatch(duplicatePhonesHtml,/data-dimension="skuKey"/,
+    'phone comparison must not force a SKU selector');
 
   const manyOffers=Array.from({length:25},(_,i)=>({...offer,title:`HP Pavilion Laptop ${i+1}`,sourceUrl:`https://example.com/hp-${i+1}`,specs:{brand:'HP',modelNumber:`HP-LAP-${i+1}`}}));
   globalThis.fetch=async url=>({ok:true,text:async()=>JSON.stringify(String(url).includes('/health')?{ok:true}:{offers:manyOffers,providers:[]})});

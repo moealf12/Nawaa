@@ -378,7 +378,7 @@ test("a product URL yields a bounded model search without merchant marketing tex
   assert.equal(queries.buildComparisonQuery?.({ title: "a".repeat(240) }).length, 180);
 });
 
-test("URL comparison keeps the source offer and labels conflicting SKUs as related", () => {
+test("URL comparison preserves same-configuration iPhones despite different merchant SKUs", () => {
   const source = { title: "Apple iPhone 17 256GB Black", sourceUrl: "https://shop.example/phone",
     condition: "new", specs: { brand: "Apple", deviceType: "iPhone 17", storage: "256GB", color: "Black", modelNumber: "MG674AH/A" } };
   const offers = queries.mergeComparisonOffers?.(source, [
@@ -390,7 +390,8 @@ test("URL comparison keeps the source offer and labels conflicting SKUs as relat
   assert.equal(offers?.length, 4);
   assert.equal(offers?.[0].sourceUrl, source.sourceUrl);
   assert.equal(offers?.[1].exactMatch, true);
-  assert.equal(offers?.[2].exactMatch, false);
+  assert.equal(offers?.[2].exactMatch, true,
+    "same phone model, capacity and color should not need a shared SKU");
   assert.equal(offers?.[3].exactMatch, false);
 });
 
