@@ -7,6 +7,7 @@ import {enforceCustomerOfferPublication} from "./customer-offer-output.mjs";
 import http from "node:http";
 import {beginProcessPressure,endProcessPressure,processPressureBetween} from "./search-process-pressure.mjs";
 import {observedDeadlineExceeded} from "./search-deadline-status.mjs";
+import {createSearchHttpLifecycleTrace} from "./search-http-lifecycle.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -271,8 +272,9 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   const remaining=[...ordered];
   const inFlight=new Map();
   const launch=(task)=>{
+    const launchedAt=trace ? performance.now() : 0;
     const p=executeProviderTask(task,pass,providerQuery,{signal:options.signal})
-      .then(chunk=>({task,chunk,readyAt:trace ? performance.now() : 0}));
+      .then(chunk=>({task,chunk,readyAt:trace ? performance.now() : 0,launchedAt}));
     inFlight.set(task.id,p);
   };
   // Providers already enforce their own deadlines. Start every eligible
@@ -285,7 +287,9 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
     inFlight.delete(settled.task.id);
     const dispatchAt = trace ? performance.now() : 0;
     if(trace) trace({stage:"providerCompleted",sourceId:settled.task.id,
-      offers:settled.chunk.offers?.length||0,queueMs:Math.max(0,dispatchAt-settled.readyAt)});
+      offers:settled.chunk.offers?.length||0,
+      providerWallMs:Math.max(0,dispatchAt-settled.launchedAt),
+      queueMs:Math.max(0,dispatchAt-settled.readyAt)});
     chunks.push(settled.chunk);
     if (onChunk) {
       try { await onChunk(settled.chunk, { completed:chunks.length, total:ordered.length, pending:remaining.length + inFlight.size }); } catch {}
@@ -636,12 +640,26 @@ async function searchAll(query, { depth = 0 } = {}) {
   // This is the same incremental evidence path used by SSE, without sacrificing
   // the existing bounded deadline on the synchronous JSON endpoint.
   const completedPrimaryChunks = [];
+  // Only bounded known provider IDs and wall-clock completion are recorded.
+  // A providerWallMs span includes network/CPU/queue waits and is NOT provider CPU.
+  const providerTimings=[];
+  const traceProvider=(event,pass)=>{
+    if(event.stage!=="providerCompleted"||providerTimings.length>=24)return;
+    providerTimings.push({
+      sourceId:String(event.sourceId||"unknown").replace(/[^a-z0-9:_-]/gi,"").slice(0,56),
+      pass,
+      providerWallMs:Math.round(Math.max(0,event.providerWallMs||0)),
+      queueMs:Math.round(Math.max(0,event.queueMs||0)),
+      offers:Math.max(0,Math.min(100000,Math.floor(event.offers||0))),
+    });
+  };
   const [amazon,primary,indexed,persisted] = await Promise.all([
     amazonPromise,
     beforeRequestDeadline(
       () => runProviderPass(providerQuery, "primary", query, {
         plan, signal:requestController.signal,
         onChunk: (chunk) => { completedPrimaryChunks.push(chunk); },
+        onTrace:(event)=>traceProvider(event,"primary"),
       }),
       () => {
         const completed = mergeProviderChunks(completedPrimaryChunks);
@@ -712,7 +730,8 @@ async function searchAll(query, { depth = 0 } = {}) {
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
       const expansions = await Promise.all(expansionQueries.map((candidate) => beforeRequestDeadline(
-        () => runProviderPass(candidate, "fallback", query, { plan,signal:requestController.signal }),
+        () => runProviderPass(candidate, "fallback", query, { plan,signal:requestController.signal,
+          onTrace:(event)=>traceProvider(event,"fallback") }),
         () => ({ providers:[], errors:[], offers:[] }),
       )));
       for (const fallback of expansions) {
@@ -765,6 +784,7 @@ async function searchAll(query, { depth = 0 } = {}) {
       selectedOffers:selectedOffers.length,
       deadlineExceeded,
       fallbackUsed:Boolean(fallbackQuery),
+      providerTimings,
     }));
   }
 
@@ -1113,6 +1133,12 @@ const server = http.createServer(async (req, res) => {
     if (productUrl ? productUrl.length > 2000 : q.length < 2 || q.length > 180) {
       return jsonResponse(res, 400, { error: "invalid_query" }, origin || "*");
     }
+    // Independent from the 12s acquisition budget: observe how much time
+    // the actual HTTP response spends in lookup/coalescing and final delivery.
+    const httpTrace=createSearchHttpLifecycleTrace(res,{
+      startedAt:responseStarted,
+      onSlow:record=>console.info("NAWAA_SEARCH_HTTP_LIFECYCLE "+JSON.stringify(record)),
+    });
 
     try {
       const started = Date.now();
@@ -1127,13 +1153,25 @@ const server = http.createServer(async (req, res) => {
       }
       // JSON can return only current evidence or a new bounded acquisition;
       // a failed refresh may not certify an expired in-stock cached price.
-      let result = await cachedSearch(searchCacheKey(normalizedComparisonQuery, depth),{allowStale:false});
+      const lookupKey=searchCacheKey(normalizedComparisonQuery, depth);
+      const cacheLookupStarted=performance.now();
+      const coalescedOnEntry=cachedSearch.isPending(lookupKey);
+      let result = await cachedSearch(lookupKey,{allowStale:false});
+      const cacheLookupMs=performance.now()-cacheLookupStarted;
       const cacheWaitMs = performance.now() - responseStarted;
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
       if(OMEGA_CANONICAL&&resolvedOffer)await canonicalCandidates([resolvedOffer],true);
       result=await canonicalResponse(result,normalizedComparisonQuery);
       const canonicalizedMs = performance.now() - responseStarted - cacheWaitMs;
       const nextCursor = depth < MAX_SEARCH_DEPTH ? encodeSearchCursor(normalizedComparisonQuery, depth + 1) : null;
+      httpTrace.markPrepared({
+        preCacheMs:cacheLookupStarted-responseStarted,
+        cacheLookupMs,
+        postCacheMs:canonicalizedMs,
+        coalescedOnEntry,
+        cacheMode:result.cache?.mode,
+        offers:result.offers?.length,
+      });
       const response = jsonResponse(res, 200, {
         query: productUrl || q,
         comparisonQuery: resolvedOffer ? comparisonQuery : null,
