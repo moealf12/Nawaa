@@ -1132,7 +1132,15 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
 
   // Modern storefronts often hydrate search results in JSON instead of rendering
   // product anchors server-side. Scan quoted URL values as a second discovery path.
-  for (const hydratedSource of [String(html || ""), decodeHtml(html)]) {
+  // A byte-identical decoded view cannot reveal any new candidate: each
+  // duplicate URL is already rejected by the canonical seen Set. Preserve
+  // both views when HTML entities actually change the source content.
+  const rawHydratedSource = String(html || "");
+  const decodedHydratedSource = decodeHtml(rawHydratedSource);
+  const hydratedViews = decodedHydratedSource === rawHydratedSource
+    ? [rawHydratedSource]
+    : [rawHydratedSource, decodedHydratedSource];
+  for (const hydratedSource of hydratedViews) {
     const quotedUrlRe = /["']((?:https?:)?(?:\\?\/){1,2}[^"' <>\s]+)["']/gi;
     while ((match = quotedUrlRe.exec(hydratedSource))) addCandidate(match[1], "");
 
