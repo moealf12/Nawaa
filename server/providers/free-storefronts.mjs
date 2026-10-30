@@ -1205,7 +1205,7 @@ export function classifyAmazonPageFailure(error,signalAborted=false){
   return "OTHER";
 }
 
-async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
+async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeoutMs}={}) {
   signal?.throwIfAborted();
   const amazon=storeId==="amazon-sa"&&typeof onTransportDiagnostic==="function";
   const start=amazon?performance.now():0;
@@ -1229,8 +1229,14 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
       throw error;
     }
     const idleController=new AbortController();
+    // Preserve the historical default for every other storefront. Amazon's
+    // batch grants each attempt only the time remaining before its one shared
+    // absolute deadline. Long, *progressing* HTML bodies are no longer
+    // prematurely killed at 8s with an unproductive 2s replacement fetch.
+    const transportTimeoutMs=amazon&&Number.isFinite(requestTimeoutMs)
+      ?Math.max(1,Math.min(9750,Math.trunc(requestTimeoutMs))):8000;
     requestSignal=AbortSignal.any([
-      ...(signal?[signal]:[]),AbortSignal.timeout(8000),idleController.signal,
+      ...(signal?[signal]:[]),AbortSignal.timeout(transportTimeoutMs),idleController.signal,
     ]);
     const response = await createRuntimeSourceFetcher({fetchImpl:globalThis.fetch})(url, {
       headers:merchantRequestHeaders(storeId,{
@@ -1307,6 +1313,15 @@ function isRetryableAmazonSearchError(error){
   return status===408 || status===425 || (status>=500 && status<600);
 }
 
+// Reserve 25ms to resolve outcomes before the one absolute batch deadline.
+// A long-progressing first attempt can use up to 9.75s of a 10s batch,
+// while early network/5xx failures retain the existing same-page retry.
+export function amazonAttemptTimeoutMs(remainingMs){
+  const remaining=Number(remainingMs);
+  if(!Number.isFinite(remaining)||remaining<=25)return 0;
+  return Math.max(1,Math.min(9750,Math.floor(remaining-25)));
+}
+
 // Retry each failed page while sibling pages are still in flight. Same page
 // range, same per-page retry limit, same source, one absolute deadline.
 export async function fetchAmazonSearchPages(searchUrl,{
@@ -1322,6 +1337,7 @@ export async function fetchAmazonSearchPages(searchUrl,{
  signal?.throwIfAborted();
  const deadlineError=()=>Object.assign(new Error("amazon_page_deadline_exceeded"),{name:"TimeoutError"});
  let deadlineExceeded=false,pagesRetried=0,firstAttemptFailures=0;
+ let firstAttemptMaxBudgetMs=0,retryMaxBudgetMs=0;
  const failureClasses=Object.create(null),transportFailureClasses=Object.create(null);
  let headersMeasured=0,bodyMeasured=0,headersTotalMs=0,bodyTotalMs=0,bytesReceived=0;
  let streamAttempts=0,streamChunks=0,streamFirstByteMeasured=0,streamFirstByteTotalMs=0;
@@ -1359,14 +1375,20 @@ export async function fetchAmazonSearchPages(searchUrl,{
    return {index,url:url.href};
  });
  const runPage=async(page)=>{
-   const attempt=()=>{
+   const attempt=(retry=false)=>{
      if(fetchSignal.aborted)return Promise.resolve({status:"rejected",reason:fetchSignal.reason});
-     if(Date.now()>=deadlineAt)return Promise.resolve({status:"rejected",reason:deadlineError()});
+     const requestTimeoutMs=amazonAttemptTimeoutMs(deadlineAt-Date.now());
+     if(!requestTimeoutMs)return Promise.resolve({status:"rejected",reason:deadlineError()});
+     if(retry)retryMaxBudgetMs=Math.max(retryMaxBudgetMs,requestTimeoutMs);
+     else firstAttemptMaxBudgetMs=Math.max(firstAttemptMaxBudgetMs,requestTimeoutMs);
      // Observe both promise outcomes even when cancellation wins the race.
      return Promise.race([
        Promise.resolve().then(()=>{
          fetchSignal.throwIfAborted();
-         return fetchPage(page.url,{signal:fetchSignal,storeId:"amazon-sa",onTransportDiagnostic:transportObserver});
+         return fetchPage(page.url,{
+           signal:fetchSignal,storeId:"amazon-sa",
+           onTransportDiagnostic:transportObserver,requestTimeoutMs,
+         });
        }).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason})),
        cancelled,
      ]);
@@ -1386,7 +1408,7 @@ export async function fetchAmazonSearchPages(searchUrl,{
        const delay=Math.min(200*(page.index+1),Math.max(0,deadlineAt-Date.now()-25));
        if(delay>0)await Promise.race([Promise.resolve().then(()=>wait(delay)),cancelled]);
        if(!fetchSignal.aborted&&Date.now()<deadlineAt){
-         pagesRetried++;result=validate(await attempt());
+         pagesRetried++;result=validate(await attempt(true));
        }
      }
    }
@@ -1403,6 +1425,7 @@ export async function fetchAmazonSearchPages(searchUrl,{
    if(typeof onDiagnostic==="function"){
      try{onDiagnostic({pagesRequested:count,pagesFetched:fulfilled.length,
        pagesFailed:count-fulfilled.length,pagesRetried,firstAttemptFailures,
+       firstAttemptMaxBudgetMs,retryMaxBudgetMs,
        elapsedMs:Math.round(performance.now()-started),deadlineExceeded,
        failureClasses:{...failureClasses},transportFailureClasses:{...transportFailureClasses},
        headersMeasured,bodyMeasured,

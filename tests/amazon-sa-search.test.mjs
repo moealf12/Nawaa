@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractAmazonSearchOffers, fetchAmazonSearchPages, isAmazonSearchChallengeHtml, classifyAmazonPageFailure } from "../server/providers/free-storefronts.mjs";
+import { extractAmazonSearchOffers, fetchAmazonSearchPages, isAmazonSearchChallengeHtml, classifyAmazonPageFailure, amazonAttemptTimeoutMs } from "../server/providers/free-storefronts.mjs";
 
 test("Amazon Saudi search cards produce verified price offers without product-page fetch",()=>{
  const html=`<div data-component-type="s-search-result" data-asin="B0ABC12345">
@@ -151,4 +151,82 @@ test("Amazon normal empty HTML remains a valid zero-product page, never called a
    pageCount:1,fetchPage:async()=>({html:"<html>no results</html>"}),deadlineMs:300,
  });
  assert.equal(pages.length,1);
+});
+
+test("Amazon request-time budgeting spends the full progressing 10s window without exceeding it",()=>{
+ assert.equal(amazonAttemptTimeoutMs(10000),9750);
+ assert.equal(amazonAttemptTimeoutMs(9600),9575);
+ assert.equal(amazonAttemptTimeoutMs(4000),3975);
+ assert.equal(amazonAttemptTimeoutMs(75),50);
+ assert.equal(amazonAttemptTimeoutMs(25),0);
+ assert.equal(amazonAttemptTimeoutMs(-5),0);
+ assert.equal(amazonAttemptTimeoutMs(NaN),0);
+ assert.equal(amazonAttemptTimeoutMs(Infinity),0);
+});
+
+test("Amazon first attempt receives near-batch deadline instead of legacy 8s timeout",async()=>{
+ const budgets=[];let diagnostic;
+ const results=await fetchAmazonSearchPages("https://www.amazon.sa/s?k=iphone",{
+   pageCount:5,deadlineMs:10000,
+   fetchPage:async (url,{requestTimeoutMs})=>{
+     budgets.push(requestTimeoutMs);
+     return {html:"verified-"+new URL(url).searchParams.get("page")};
+   },onDiagnostic:x=>{diagnostic=x;},
+ });
+ assert.equal(budgets.length,5);
+ assert.ok(budgets.every(x=>x>=9000&&x<=9750),JSON.stringify(budgets));
+ assert.deepEqual(results.map(x=>x.html),["verified-1","verified-2","verified-3","verified-4","verified-5"]);
+ assert.equal(diagnostic.pagesRetried,0);
+ assert.ok(diagnostic.firstAttemptMaxBudgetMs>9000);
+ assert.equal(diagnostic.retryMaxBudgetMs,0);
+});
+
+test("early retry gets only remaining budget and never restarts full timeout",async()=>{
+ let hits=0,diagnostic;const budgets=[];
+ const found=await fetchAmazonSearchPages("https://www.amazon.sa/s?k=PS5",{
+   pageCount:1,deadlineMs:700,wait:async()=>{},
+   fetchPage:async(_url,{requestTimeoutMs})=>{
+     budgets.push(requestTimeoutMs);
+     if(++hits===1){
+       await new Promise(r=>setTimeout(r,75));
+       throw new TypeError("transient network error");
+     }
+     return {html:"legitimate completed HTML"};
+   },onDiagnostic:x=>{diagnostic=x;},
+ });
+ assert.equal(hits,2);
+ assert.ok(budgets[0]<=675&&budgets[0]>=400);
+ assert.ok(budgets[1]<budgets[0],"retry must not reset absolute deadline");
+ assert.equal(found[0].html,"legitimate completed HTML");
+ assert.equal(diagnostic.pagesRetried,1);
+ assert.equal(diagnostic.pagesFetched,1);
+ assert.ok(diagnostic.retryMaxBudgetMs<diagnostic.firstAttemptMaxBudgetMs);
+});
+
+test("near-deadline failure cannot launch an unbudgeted replacement request",async()=>{
+ let attempts=0,metrics;
+ await assert.rejects(fetchAmazonSearchPages("https://www.amazon.sa/s?k=PS5",{
+   pageCount:1,deadlineMs:80,
+   fetchPage:async()=>{attempts++;await new Promise(r=>setTimeout(r,70));throw new TypeError("late failure");},
+   wait:async()=>{},onDiagnostic:x=>{metrics=x;},
+ }),/late failure|amazon_page_deadline_exceeded/);
+ assert.equal(attempts,1);
+ assert.equal(metrics.pagesRetried,0);
+});
+
+test("403 and 429 remain non-retryable after extending first attempt window",async()=>{
+ const counts={};let metrics;
+ const pages=await fetchAmazonSearchPages("https://www.amazon.sa/s?k=laptop",{
+   pageCount:3,deadlineMs:1000,
+   fetchPage:async(url)=>{
+     const page=new URL(url).searchParams.get("page");
+     counts[page]=(counts[page]||0)+1;
+     if(page==="1"||page==="2")
+       throw Object.assign(new Error("denied"),{status:page==="1"?403:429});
+     return {html:"valid complete HTML"};
+   },onDiagnostic:x=>{metrics=x;},
+ });
+ assert.deepEqual(counts,{"1":1,"2":1,"3":1});
+ assert.deepEqual(pages.map(x=>x.html),["valid complete HTML"]);
+ assert.equal(metrics.pagesRetried,0);
 });
