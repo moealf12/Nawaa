@@ -1,4 +1,5 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
+import {readAmazonHtmlStream} from "../amazon-body-stream.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
@@ -1190,6 +1191,7 @@ export function isAmazonSearchChallengeHtml(html){
 export function classifyAmazonPageFailure(error,signalAborted=false){
   if(signalAborted||error?.failureClass==="CACHE_GENERATION_INVALIDATED")return "CANCELLED";
   if(error?.failureClass==="HTTP_200_CHALLENGE")return "CHALLENGE_200";
+  if(error?.failureClass==="BODY_IDLE_TIMEOUT")return "BODY_IDLE_TIMEOUT";
   if(error?.failureClass==="HTTP_429_RATE_LIMITED"||error?.failureClass==="SOURCE_RATE_LIMIT_COOLDOWN")return "RATE_LIMIT";
   const status=Number(error?.status || String(error?.message||"").match(/^HTTP (\d{3})\b/)?.[1]);
   if(status===403)return "ACCESS_DENIED";
@@ -1208,10 +1210,12 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
   const amazon=storeId==="amazon-sa"&&typeof onTransportDiagnostic==="function";
   const start=amazon?performance.now():0;
   let headersMs=null,bodyMs=null,bodyStarted=0,bytes=0,phase="headers";
+  let streamProgress=null, requestSignal=null;
   const observe=(outcome,error)=>{
     if(!amazon)return;
     try{onTransportDiagnostic({
       outcome,phase,headersMs,bodyMs,htmlBytes:bytes,
+      streamProgress,
       failureClass:outcome==="failed"
         ?classifyAmazonPageFailure(error,signal?.aborted):null,
       elapsedMs:Math.round(performance.now()-start),
@@ -1224,6 +1228,10 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
       error.failureClass="HTTP_429_RATE_LIMITED";
       throw error;
     }
+    const idleController=new AbortController();
+    requestSignal=AbortSignal.any([
+      ...(signal?[signal]:[]),AbortSignal.timeout(8000),idleController.signal,
+    ]);
     const response = await createRuntimeSourceFetcher({fetchImpl:globalThis.fetch})(url, {
       headers:merchantRequestHeaders(storeId,{
         accept:"text/html,application/xhtml+xml",
@@ -1237,7 +1245,7 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
         "user-agent":USER_AGENT,
       }),
       redirect:"follow",
-      signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),
+      signal:requestSignal,
     },{sourceId:storeId});
     if(amazon)headersMs=Math.round(performance.now()-start);
     if(response.status===429 && storeId)
@@ -1257,8 +1265,17 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
       const e=new Error("search response too large");e.failureClass="RESPONSE_TOO_LARGE";throw e;
     }
     phase="body";if(amazon)bodyStarted=performance.now();
-    const text=await response.text();
-    if(amazon){bodyMs=Math.round(performance.now()-bodyStarted);bytes=Buffer.byteLength(text,"utf8");}
+    const streamed=amazon
+      ?await readAmazonHtmlStream(response,{
+        signal:requestSignal,
+        abortOnIdle:error=>idleController.abort(error),
+      }):null;
+    const text=amazon?streamed.text:await response.text();
+    if(amazon){
+      bodyMs=Math.round(performance.now()-bodyStarted);
+      streamProgress=streamed.progress;
+      bytes=streamProgress.bytesReceived;
+    }
     if(text.length>5000000){
       const e=new Error("search response too large");e.failureClass="RESPONSE_TOO_LARGE";throw e;
     }
@@ -1267,6 +1284,15 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
   }catch(error){
     if(amazon&&phase==="body"&&bodyMs===null)
       bodyMs=Math.round(performance.now()-bodyStarted);
+    if(amazon&&error?.bodyProgress){
+      streamProgress=error.bodyProgress;
+      bytes=streamProgress.bytesReceived;
+    }
+    if(amazon&&phase==="body"&&error?.name==="AbortError"&&requestSignal?.reason?.failureClass==="BODY_IDLE_TIMEOUT"){
+      const caused=requestSignal.reason;
+      caused.bodyProgress=streamProgress||null;
+      error=caused;
+    }
     observe("failed",error);
     throw error;
   }
@@ -1298,12 +1324,27 @@ export async function fetchAmazonSearchPages(searchUrl,{
  let deadlineExceeded=false,pagesRetried=0,firstAttemptFailures=0;
  const failureClasses=Object.create(null),transportFailureClasses=Object.create(null);
  let headersMeasured=0,bodyMeasured=0,headersTotalMs=0,bodyTotalMs=0,bytesReceived=0;
+ let streamAttempts=0,streamChunks=0,streamFirstByteMeasured=0,streamFirstByteTotalMs=0;
+ let maxObservedIdleGapMs=0,streamIdleTimeouts=0,partialBodyBytes=0;
  const addClass=(counter,key)=>{counter[key]=(counter[key]||0)+1;};
  const transportObserver=event=>{
    if(event.outcome==="failed")addClass(transportFailureClasses,event.failureClass||"OTHER");
    if(Number.isFinite(event.headersMs)){headersMeasured++;headersTotalMs+=event.headersMs;}
    if(Number.isFinite(event.bodyMs)){bodyMeasured++;bodyTotalMs+=event.bodyMs;}
    if(Number.isFinite(event.htmlBytes))bytesReceived+=event.htmlBytes;
+   const p=event.streamProgress;
+   if(p){
+     streamAttempts++;
+     streamChunks+=p.chunksReceived||0;
+     if(Number.isFinite(p.firstByteMs)){
+       streamFirstByteMeasured++;
+       streamFirstByteTotalMs+=p.firstByteMs;
+     }
+     if(Number.isFinite(p.maxIdleGapMs))
+       maxObservedIdleGapMs=Math.max(maxObservedIdleGapMs,p.maxIdleGapMs);
+     if(p.idleTimeoutTriggered)streamIdleTimeouts++;
+     if(event.outcome==="failed")partialBodyBytes+=p.bytesReceived||0;
+   }
  };
  const timer=setTimeout(()=>{
    deadlineExceeded=true;
@@ -1367,7 +1408,12 @@ export async function fetchAmazonSearchPages(searchUrl,{
        headersMeasured,bodyMeasured,
        avgHeadersMs:headersMeasured?Math.round(headersTotalMs/headersMeasured):null,
        avgBodyMs:bodyMeasured?Math.round(bodyTotalMs/bodyMeasured):null,
-       htmlBytesReceived:bytesReceived});}catch{}
+       htmlBytesReceived:bytesReceived,
+       streamAttempts,streamChunks,streamIdleTimeouts,
+       maxObservedIdleGapMs:Math.round(maxObservedIdleGapMs),
+       avgFirstByteMs:streamFirstByteMeasured?
+         Math.round(streamFirstByteTotalMs/streamFirstByteMeasured):null,
+       partialBodyBytes});}catch{}
    }
    if(!fulfilled.length)throw outcomes.find(x=>x.result.status==="rejected")?.result.reason
      ||new Error("Amazon Saudi search pages unavailable");
