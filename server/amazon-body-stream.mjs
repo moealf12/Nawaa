@@ -57,9 +57,10 @@ export async function readAmazonHtmlStream(response,{
       const chunk=settled.value.value;
       const size=chunk?.byteLength??0;
       const at=now();
+      // An empty chunk is not progress and must not reset the idle clock.
+      if(size===0)continue;
       maxIdleGapMs=Math.max(maxIdleGapMs,at-lastProgress);
       lastProgress=at;
-      if(size===0){resetIdle();continue;}
       if(chunks===0)firstByteMs=Math.round(at-started);
       chunks++;
       total+=size;
