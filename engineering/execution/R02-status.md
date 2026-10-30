@@ -46,3 +46,7 @@ but shall not silently reintroduce the original misclassification.
 ## Legacy contract update
 
 The v15.18 full-HTTP temporal test previously REQUIRED an SSE fresh cache hit after a mocked partial source acquisition. That was the exact stale-promotion bug R02 fixes. Its essential evidence obligations (no expired price, signed cursor, live source update) remain; the erroneous fresh-hit requirement is replaced with a guard rejecting partial snapshots labeled fresh. A RED failure in the v15.18 assertion is not waived; it is corrected to the new explicit safety invariant.
+
+## R02 Omega replay correctness
+
+The R01 Omega harness expected an artificial `+1` canonical price to remain visible in JSON and every SSE snapshot even after a new acquisition. With strict partial admission, a subsequent real provider observation can legitimately supersede the injected observation. The harness now proves the injected revision was accepted in PostgreSQL, then that JSON and final SSE results correspond to the CURRENT canonical revision observed after each real acquisition. This preserves monotonic revision ordering without claiming an artificial old price is still current.

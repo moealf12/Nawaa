@@ -138,21 +138,40 @@ try{
     assert.ok(first.body.offers.every(o=>Number.isInteger(o.canonicalRevision)));
     const original=first.body.offers[0];
     // Explicitly simulated AFTER live measurements; never reported as merchant evidence.
-    const {commitCanonicalObservation}=await import('../server/omega-canonical-index.mjs');
+    const {commitCanonicalObservation,currentCanonical}=await import('../server/omega-canonical-index.mjs');
     const changed={...original,productPrice:original.productPrice+1,observedAt:new Date(Math.max(Date.now(),Date.parse(original.observedAt)+1)).toISOString()};
-    assert.equal((await commitCanonicalObservation(changed)).state,'accepted');
-    const cached=await request(path);assert.equal(cached.status,200);
-    const updated=cached.body.offers.find(o=>o.sourceUrl===original.sourceUrl);
-    assert.ok(updated);assert.equal(updated.productPrice,changed.productPrice);
+    const committed=await commitCanonicalObservation(changed);
+    assert.equal(committed.state,'accepted');
+    const afterInjection=await currentCanonical(committed.offerKey);
+    assert.equal(afterInjection.offer.productPrice,changed.productPrice);
+    assert.equal(afterInjection.revision,committed.revision);
+    // Under R02 strict cache admission, a partial JSON acquisition is retried.
+    // A newer real provider observation may supersede the artificial +1;
+    // insisting it remain visible would reject correct canonical ordering.
+    const refreshed=await request(path);assert.equal(refreshed.status,200);
+    const updated=refreshed.body.offers.find(o=>o.sourceUrl===original.sourceUrl);
+    assert.ok(updated);
+    const postRefresh=await currentCanonical(committed.offerKey);
+    assert.ok(postRefresh.revision>=committed.revision);
+    assert.equal(updated.canonicalRevision,postRefresh.revision);
+    assert.equal(updated.productPrice,postRefresh.offer.productPrice);
     const stream=await fetch(origin+'/api/search/stream?q=PS5',{signal:AbortSignal.timeout(10000)});
     const frames=(await stream.text()).split(/\r?\n\r?\n/).filter(b=>b.startsWith('event: snapshot')).map(b=>JSON.parse(b.match(/^data: (.*)$/m)[1]));
-    assert.ok(frames.length);const streamed=frames.flatMap(f=>f.offers).filter(o=>o.sourceUrl===original.sourceUrl);assert.ok(streamed.length);assert.ok(streamed.every(o=>o.productPrice===changed.productPrice));
+    assert.ok(frames.length);
+    const streamed=frames.flatMap(f=>f.offers).filter(o=>o.sourceUrl===original.sourceUrl);
+    assert.ok(streamed.length);
+    const postStream=await currentCanonical(committed.offerKey);
+    const lastStreamOffer=frames.at(-1).offers.find(o=>o.sourceUrl===original.sourceUrl);
+    assert.ok(lastStreamOffer);
+    assert.ok(postStream.revision>=postRefresh.revision);
+    assert.equal(lastStreamOffer.canonicalRevision,postStream.revision);
+    assert.equal(lastStreamOffer.productPrice,postStream.offer.productPrice);
     const cursor=first.body.nextCursor;assert.ok(cursor);
     assert.equal((await request(path+'&cursor='+encodeURIComponent(cursor+'x'))).status,400);
     assert.equal((await request('/api/search?q=iphone&cursor='+encodeURIComponent(cursor))).status,400);
     const page=await request(path+'&cursor='+encodeURIComponent(cursor));assert.equal(page.status,200);
     assert.ok(page.body.offers.every(o=>Number.isInteger(o.canonicalRevision)));
-    console.log('REAL_OMEGA_CUSTOMER_BOUNDARIES '+JSON.stringify({liveJsonOffers:first.body.offers.length,simulatedPostAcquisitionTransition:true,cachedJsonRehydrated:true,cachedSseRehydrated:true,signedCursorAccepted:true,tamperedCursorRejected:true,queryMismatchRejected:true,paginationOffers:page.body.offers.length}));
+    console.log('REAL_OMEGA_CUSTOMER_BOUNDARIES '+JSON.stringify({liveJsonOffers:first.body.offers.length,simulatedPostAcquisitionTransition:true,currentJsonCanonicalVerified:true,currentSseCanonicalVerified:true,syntheticCanonicalProof:true,signedCursorAccepted:true,tamperedCursorRejected:true,queryMismatchRejected:true,paginationOffers:page.body.offers.length}));
   }
   console.log('REPRESENTATIVE_SUMMARY '+JSON.stringify({n:results.length,
     firstValidFound:results.filter(x=>x.clientFirstValidMs!==null).length,
