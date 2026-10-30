@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import {loadExecutionLedger,validateExecutionLedger,EXPECTED_PACKAGES} from "../scripts/verify-execution-ledger.mjs";
 const original=loadExecutionLedger();
 const negative=(mutate,part)=>{
-  const plan=structuredClone(original);mutate(plan);
+  // Test invalid transitions from a controlled initial state. The real ledger
+  // changes from IN_PROGRESS to VERIFIED; negative controls must not drift
+  // or silently turn into valid transitions when a round is completed.
+  const plan=structuredClone(original);
+  plan.rounds[0].status="IN_PROGRESS";
+  plan.rounds[0].evidence={};
+  mutate(plan);
   const errors=validateExecutionLedger(plan);
   assert.ok(errors.some(s=>s.includes(part)),JSON.stringify(errors));
 };
