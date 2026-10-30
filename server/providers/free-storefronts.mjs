@@ -1177,48 +1177,106 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   return Number.isFinite(limit) ? ranked.slice(0, Math.max(0, limit)) : ranked;
 }
 
-async function fetchText(url,{signal,storeId}={}) {
+
+// Explicit source challenge evidence only. Generic empty results, missing ASINs,
+// or slow HTML do not prove access denial and are never labelled a CAPTCHA.
+export function isAmazonSearchChallengeHtml(html){
+  const body=String(html||"");
+  return /\/errors\/validateCaptcha\b/i.test(body) ||
+    (/(?:<title[^>]*>\s*Robot Check\s*<\/title>|name=["']amzn["']|amzn-captcha)/i.test(body) &&
+      /(?:captcha|enter the characters you see below)/i.test(body));
+}
+
+export function classifyAmazonPageFailure(error,signalAborted=false){
+  if(signalAborted||error?.failureClass==="CACHE_GENERATION_INVALIDATED")return "CANCELLED";
+  if(error?.failureClass==="HTTP_200_CHALLENGE")return "CHALLENGE_200";
+  if(error?.failureClass==="HTTP_429_RATE_LIMITED"||error?.failureClass==="SOURCE_RATE_LIMIT_COOLDOWN")return "RATE_LIMIT";
+  const status=Number(error?.status || String(error?.message||"").match(/^HTTP (\d{3})\b/)?.[1]);
+  if(status===403)return "ACCESS_DENIED";
+  if(status===429)return "RATE_LIMIT";
+  if(status>=500&&status<600)return "UPSTREAM_5XX";
+  if(status>=400&&status<500)return "UPSTREAM_4XX";
+  if(error?.name==="TimeoutError"||error?.name==="AbortError")return "TRANSPORT_TIMEOUT";
+  if(error instanceof TypeError)return "TRANSPORT_NETWORK";
+  if(error?.failureClass==="NON_HTML")return "INVALID_CONTENT";
+  if(error?.failureClass==="RESPONSE_TOO_LARGE")return "RESPONSE_TOO_LARGE";
+  return "OTHER";
+}
+
+async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
   signal?.throwIfAborted();
-  // A merchant-specific Retry-After must be honored without querying alternate
-  // endpoints or inferring anything about inventory or sellable prices.
-  if(storeId && !sourceRateLimitGuard.canRequest(storeId).allowed){
-    const error=new Error("SOURCE_RATE_LIMIT_COOLDOWN");
-    error.failureClass="HTTP_429_RATE_LIMITED";
+  const amazon=storeId==="amazon-sa"&&typeof onTransportDiagnostic==="function";
+  const start=amazon?performance.now():0;
+  let headersMs=null,bodyMs=null,bodyStarted=0,bytes=0,phase="headers";
+  const observe=(outcome,error)=>{
+    if(!amazon)return;
+    try{onTransportDiagnostic({
+      outcome,phase,headersMs,bodyMs,htmlBytes:bytes,
+      failureClass:outcome==="failed"
+        ?classifyAmazonPageFailure(error,signal?.aborted):null,
+      elapsedMs:Math.round(performance.now()-start),
+    });}catch{}
+  };
+  try{
+    // Retry-After and network denial policies apply to all storefronts.
+    if(storeId && !sourceRateLimitGuard.canRequest(storeId).allowed){
+      const error=new Error("SOURCE_RATE_LIMIT_COOLDOWN");
+      error.failureClass="HTTP_429_RATE_LIMITED";
+      throw error;
+    }
+    const response = await createRuntimeSourceFetcher({fetchImpl:globalThis.fetch})(url, {
+      headers:merchantRequestHeaders(storeId,{
+        accept:"text/html,application/xhtml+xml",
+        "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
+        "cache-control":"no-cache",
+        pragma:"no-cache",
+        "sec-fetch-dest":"document",
+        "sec-fetch-mode":"navigate",
+        "sec-fetch-site":"none",
+        "upgrade-insecure-requests":"1",
+        "user-agent":USER_AGENT,
+      }),
+      redirect:"follow",
+      signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),
+    },{sourceId:storeId});
+    if(amazon)headersMs=Math.round(performance.now()-start);
+    if(response.status===429 && storeId)
+      sourceRateLimitGuard.record429(storeId,response.headers.get("retry-after"));
+    if(!response.ok)throw new SourceHttpError(response.status,{
+      retryAfterMs:response.status===429?parseRetryAfter(response.headers.get("retry-after")):null,
+    });
+    const type=response.headers.get("content-type")||"";
+    if(!type.includes("text/html")&&!type.includes("application/xhtml+xml")){
+      const e=new Error("non-html response");e.failureClass="NON_HTML";throw e;
+    }
+    // Reject a declared oversized response before allocating its full body.
+    // Existing post-download limit remains authoritative for missing/false headers.
+    const declared=Number(response.headers.get("content-length"));
+    if(response.headers.get("content-length")!==null &&
+      Number.isFinite(declared)&&declared>5000000){
+      const e=new Error("search response too large");e.failureClass="RESPONSE_TOO_LARGE";throw e;
+    }
+    phase="body";if(amazon)bodyStarted=performance.now();
+    const text=await response.text();
+    if(amazon){bodyMs=Math.round(performance.now()-bodyStarted);bytes=Buffer.byteLength(text,"utf8");}
+    if(text.length>5000000){
+      const e=new Error("search response too large");e.failureClass="RESPONSE_TOO_LARGE";throw e;
+    }
+    phase="complete";observe("success",null);
+    return {html:text,finalUrl:response.url||url};
+  }catch(error){
+    if(amazon&&phase==="body"&&bodyMs===null)
+      bodyMs=Math.round(performance.now()-bodyStarted);
+    observe("failed",error);
     throw error;
   }
-  // Only explicitly opted-in merchant hosts may use the optional transport.
-  // A 403/429 is returned as-is: never rotate source routes after denial.
-  const response = await createRuntimeSourceFetcher({fetchImpl:globalThis.fetch})(url, {
-    headers:merchantRequestHeaders(storeId,{
-      accept:"text/html,application/xhtml+xml",
-      "accept-language":"en-US,en;q=0.9,ar-SA;q=0.8",
-      "cache-control":"no-cache",
-      pragma:"no-cache",
-      "sec-fetch-dest":"document",
-      "sec-fetch-mode":"navigate",
-      "sec-fetch-site":"none",
-      "upgrade-insecure-requests":"1",
-      "user-agent":USER_AGENT,
-    }),
-    redirect:"follow",
-    signal:signal?AbortSignal.any([signal,AbortSignal.timeout(8000)]):AbortSignal.timeout(8000),
-  },{sourceId:storeId});
-  if(response.status===429 && storeId)
-    sourceRateLimitGuard.record429(storeId,response.headers.get("retry-after"));
-  if(!response.ok) throw new SourceHttpError(response.status,{
-    retryAfterMs:response.status===429 ? parseRetryAfter(response.headers.get("retry-after")) : null,
-  });
-  const type = response.headers.get("content-type") || "";
-  if (!type.includes("text/html") && !type.includes("application/xhtml+xml")) throw new Error("non-html response");
-  const text = await response.text();
-  if (text.length > 5000000) throw new Error("search response too large");
-  return { html:text, finalUrl:response.url || url };
 }
 
 function isRetryableAmazonSearchError(error){
   const status=Number(error?.status || String(error?.message||"").match(/^HTTP (\d{3})\b/)?.[1]);
   // Access denials and merchant throttling must never schedule immediate retries.
-  if(status===403 || status===429 || error?.failureClass==="HTTP_429_RATE_LIMITED")return false;
+  if(status===403 || status===429 || error?.failureClass==="HTTP_429_RATE_LIMITED" ||
+   error?.failureClass==="HTTP_200_CHALLENGE")return false;
   if(error?.name==="TimeoutError" || error instanceof TypeError)return true;
   return status===408 || status===425 || (status>=500 && status<600);
 }
@@ -1238,6 +1296,15 @@ export async function fetchAmazonSearchPages(searchUrl,{
  signal?.throwIfAborted();
  const deadlineError=()=>Object.assign(new Error("amazon_page_deadline_exceeded"),{name:"TimeoutError"});
  let deadlineExceeded=false,pagesRetried=0,firstAttemptFailures=0;
+ const failureClasses=Object.create(null),transportFailureClasses=Object.create(null);
+ let headersMeasured=0,bodyMeasured=0,headersTotalMs=0,bodyTotalMs=0,bytesReceived=0;
+ const addClass=(counter,key)=>{counter[key]=(counter[key]||0)+1;};
+ const transportObserver=event=>{
+   if(event.outcome==="failed")addClass(transportFailureClasses,event.failureClass||"OTHER");
+   if(Number.isFinite(event.headersMs)){headersMeasured++;headersTotalMs+=event.headersMs;}
+   if(Number.isFinite(event.bodyMs)){bodyMeasured++;bodyTotalMs+=event.bodyMs;}
+   if(Number.isFinite(event.htmlBytes))bytesReceived+=event.htmlBytes;
+ };
  const timer=setTimeout(()=>{
    deadlineExceeded=true;
    if(!controller.signal.aborted)controller.abort(deadlineError());
@@ -1258,22 +1325,32 @@ export async function fetchAmazonSearchPages(searchUrl,{
      return Promise.race([
        Promise.resolve().then(()=>{
          fetchSignal.throwIfAborted();
-         return fetchPage(page.url,{signal:fetchSignal,storeId:"amazon-sa"});
+         return fetchPage(page.url,{signal:fetchSignal,storeId:"amazon-sa",onTransportDiagnostic:transportObserver});
        }).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason})),
        cancelled,
      ]);
    };
-   let result=await attempt();
+   const validate=outcome=>{
+     if(outcome.status==="fulfilled"&&isAmazonSearchChallengeHtml(outcome.value?.html)){
+       const reason=new Error("amazon_html_challenge");
+       reason.failureClass="HTTP_200_CHALLENGE";
+       return {status:"rejected",reason};
+     }
+     return outcome;
+   };
+   let result=validate(await attempt());
    if(result.status==="rejected"){
      firstAttemptFailures++;
      if(isRetryableAmazonSearchError(result.reason)&&!fetchSignal.aborted&&Date.now()<deadlineAt){
        const delay=Math.min(200*(page.index+1),Math.max(0,deadlineAt-Date.now()-25));
        if(delay>0)await Promise.race([Promise.resolve().then(()=>wait(delay)),cancelled]);
        if(!fetchSignal.aborted&&Date.now()<deadlineAt){
-         pagesRetried++;result=await attempt();
+         pagesRetried++;result=validate(await attempt());
        }
      }
    }
+   if(result.status==="rejected")
+     addClass(failureClasses,classifyAmazonPageFailure(result.reason,signal?.aborted));
    return {index:page.index,result};
  };
  try{
@@ -1285,7 +1362,12 @@ export async function fetchAmazonSearchPages(searchUrl,{
    if(typeof onDiagnostic==="function"){
      try{onDiagnostic({pagesRequested:count,pagesFetched:fulfilled.length,
        pagesFailed:count-fulfilled.length,pagesRetried,firstAttemptFailures,
-       elapsedMs:Math.round(performance.now()-started),deadlineExceeded});}catch{}
+       elapsedMs:Math.round(performance.now()-started),deadlineExceeded,
+       failureClasses:{...failureClasses},transportFailureClasses:{...transportFailureClasses},
+       headersMeasured,bodyMeasured,
+       avgHeadersMs:headersMeasured?Math.round(headersTotalMs/headersMeasured):null,
+       avgBodyMs:bodyMeasured?Math.round(bodyTotalMs/bodyMeasured):null,
+       htmlBytesReceived:bytesReceived});}catch{}
    }
    if(!fulfilled.length)throw outcomes.find(x=>x.result.status==="rejected")?.result.reason
      ||new Error("Amazon Saudi search pages unavailable");
