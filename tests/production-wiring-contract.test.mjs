@@ -19,7 +19,7 @@ function fakeFetch({modifyAsset,revision=SHA}={}){
     const originalBody=original[local];
     assert.equal(typeof originalBody,"string","unexpected endpoint "+url);
     const body=modifyAsset?modifyAsset(url,originalBody):originalBody;
-    return new Response(body,{status:200});
+    return new Response(body,{status:200,headers:{"content-type":local.endsWith(".html")?"text/html; charset=utf-8":"text/javascript; charset=utf-8"}});
   };
   return {fn,calls};
 }
@@ -33,12 +33,12 @@ test("both published entrypoints resolve to the same Render API and local candid
   assert.equal(resolved.quoteHost,"nawaa-store-jeddah.moezz12.chatgpt.site");
 });
 
-test("live wiring audit verifies twelve published asset copies plus revision and CORS, without merchant requests",async()=>{
+test("live wiring audit verifies twenty-two published asset copies plus revision and CORS, without merchant requests",async()=>{
   const {fn,calls}=fakeFetch();
   const res=await verifyPublishedWiring({fetchImpl:fn,files:original,expectedSha:SHA});
   assert.equal(res.result,"PASS");
-  assert.equal(res.assetPairsVerified,12);
-  assert.equal(calls.length,14);
+  assert.equal(res.assetPairsVerified,22);
+  assert.equal(calls.length,24);
   assert.ok(calls.every(x=>x.url.startsWith(PAGES+"/")||x.url.startsWith(API+"/")));
   assert.equal(calls.some(x=>x.url.includes("/api/search")),false);
   assert.equal(calls.some(x=>x.url.includes("unbxd")||x.url.includes("jarir.com")),false);
@@ -65,4 +65,16 @@ test("live wiring audit rejects missing and malformed release identity",async()=
     /EXPECTED_SHA_REQUIRED/);
   assert.throws(()=>checkRoutingContract({...original,"config.js":"window.NAWAA_API_BASE='https://incorrect.invalid';"}),
     /PAGES_API_WRONG_ORIGIN/);
+});
+
+test("published frontend module MIME errors fail the wiring contract",async()=>{
+  const {fn}=fakeFetch();
+  const bad=async (url,options)=>{
+    const response=await fn(url,options);
+    if(url===PAGES+"/src/search-stream.mjs")
+      return new Response(await response.text(),{status:200,headers:{"content-type":"application/octet-stream"}});
+    return response;
+  };
+  await assert.rejects(verifyPublishedWiring({fetchImpl:bad,files:original,expectedSha:SHA}),
+    /SCRIPT_OR_HTML_MIME_MISMATCH_pages_src_search_stream_mjs/);
 });
