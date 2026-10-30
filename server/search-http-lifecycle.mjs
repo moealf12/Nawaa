@@ -32,6 +32,7 @@ export function createSearchHttpLifecycleTrace(res,{
       postCacheMs:prepared?.postCacheMs??null,
       cacheMode:prepared?.cacheMode??"unknown",
       coalescedOnEntry:prepared?.coalescedOnEntry??null,
+      cacheRefreshReplays:prepared?.cacheRefreshReplays??null,
       offers:prepared?.offers??null,
       headersSent:Boolean(res.headersSent),
       writableFinished:Boolean(res.writableFinished),
@@ -52,6 +53,9 @@ export function createSearchHttpLifecycleTrace(res,{
           ?detail.cacheMode:"unknown",
         coalescedOnEntry:typeof detail.coalescedOnEntry==="boolean"
           ?detail.coalescedOnEntry:null,
+        cacheRefreshReplays:Number.isInteger(detail.cacheRefreshReplays)
+          &&detail.cacheRefreshReplays>=0
+          ?Math.min(detail.cacheRefreshReplays,100):null,
         offers:Number.isInteger(detail.offers)&&detail.offers>=0
           ?Math.min(detail.offers,100000):null,
       };
