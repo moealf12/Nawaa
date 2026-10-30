@@ -230,3 +230,75 @@ test("403 and 429 remain non-retryable after extending first attempt window",asy
  assert.deepEqual(pages.map(x=>x.html),["valid complete HTML"]);
  assert.equal(metrics.pagesRetried,0);
 });
+
+test("starved deadline timer never admits a late Amazon HTML page",async()=>{
+ let mono=0,diagnostic;
+ const pages=await fetchAmazonSearchPages("https://www.amazon.sa/s?k=phone",{
+   pageCount:2,deadlineMs:80,now:()=>mono,
+   fetchPage:async url=>{
+     if(new URL(url).searchParams.get("page")==="1")
+       return {html:"completed-before-deadline"};
+     // Simulate an event-loop-delayed resolution while timeout callback
+     // has not fired. The wall-clock deadline is already exceeded.
+     await new Promise(resolve=>setImmediate(resolve));
+     mono=125;
+     return {html:"late-must-not-publish"};
+   },
+   onDiagnostic:x=>{diagnostic=x;},
+ });
+ assert.deepEqual(pages.map(x=>x.html),["completed-before-deadline"]);
+ assert.equal(diagnostic.pagesFetched,1);
+ assert.equal(diagnostic.pagesFailed,1);
+ assert.equal(diagnostic.deadlineExceeded,true);
+ assert.equal(diagnostic.actualOverrunMs,45);
+ assert.equal(diagnostic.pagesRetried,0);
+});
+
+test("all late arrivals are denied even if Node deadline callback has not fired",async()=>{
+ let mono=0,diag;
+ await assert.rejects(fetchAmazonSearchPages("https://www.amazon.sa/s?k=PS5",{
+   pageCount:1,deadlineMs:80,now:()=>mono,
+   fetchPage:async()=>{
+     await new Promise(resolve=>setImmediate(resolve));
+     mono=130;
+     return {html:"late-completed-html"};
+   },
+   onDiagnostic:x=>{diag=x;},
+ }),/amazon_page_deadline_exceeded/);
+ assert.equal(diag.pagesFetched,0);
+ assert.equal(diag.deadlineExceeded,true);
+ assert.equal(diag.actualOverrunMs,50);
+ assert.equal(diag.pagesRetried,0);
+});
+
+test("monotonic deadline ignores Date.now jumps and retains valid pages",async()=>{
+ const old=Date.now;
+ try{
+   Date.now=()=>Number.MAX_SAFE_INTEGER;
+   let t=0,diag;
+   const pages=await fetchAmazonSearchPages("https://www.amazon.sa/s?k=tablet",{
+     pageCount:1,deadlineMs:500,now:()=>t,
+     fetchPage:async()=>({html:"verified"}),
+     onDiagnostic:x=>{diag=x;},
+   });
+   assert.deepEqual(pages.map(x=>x.html),["verified"]);
+   assert.equal(diag.deadlineExceeded,false);
+   assert.equal(diag.pagesFetched,1);
+ }finally{Date.now=old;}
+});
+
+test("blocked main thread cannot publish over-budget HTML even before timer callback",async()=>{
+ let diag;
+ await assert.rejects(fetchAmazonSearchPages("https://www.amazon.sa/s?k=PS5",{
+   pageCount:1,deadlineMs:60,
+   fetchPage:async()=>{
+     const until=performance.now()+100;
+     while(performance.now()<until){} // Deterministic short CPU-stall fixture
+     return {html:"late-after-event-loop-stall"};
+   },
+   onDiagnostic:x=>{diag=x;},
+ }),/amazon_page_deadline_exceeded/);
+ assert.equal(diag.pagesFetched,0);
+ assert.equal(diag.deadlineExceeded,true);
+ assert.ok(diag.actualOverrunMs>=25);
+});
