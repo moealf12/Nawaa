@@ -87,6 +87,9 @@ export function createSearchCache(search, {
     if (!allowStale && age >= ttl) return null;
     return { ...clone(entry.result), cache:cacheMeta(age < ttl ? "fresh" : "stale", age) };
   };
+  // Read-only, per-key observation for bounded HTTP wait diagnostics.
+  // It does not change cache freshness, coalescing, invalidation or offer truth.
+  cachedSearch.isPending = (key) => pending.has(key);
   cachedSearch.refresh = (key) => startRefresh(key);
   cachedSearch.clear = () => { generation++; entries.clear(); pending.clear(); };
   cachedSearch.stats = () => ({ entries:entries.size, pending:pending.size, ttlMs:ttl, staleTtlMs:staleTtl });
