@@ -148,3 +148,27 @@ test("one shared replacement serves many subscribers and does not publish stale 
   assert.ok(results.every(x=>x.offers[0].title==="fresh"));
   releaseOld();
 });
+
+test("invalidation aborts only the obsolete acquisition, preserving the replacement",async()=>{
+  let started,oldSignal,calls=0;
+  const begun=new Promise(resolve=>{started=resolve;});
+  const cache=createSearchCache(async(_key,{signal}={})=>{
+    calls++;
+    if(calls===1){
+      oldSignal=signal;started();
+      await new Promise((_,reject)=>{
+        if(signal.aborted)return reject(signal.reason);
+        signal.addEventListener("abort",()=>reject(signal.reason),{once:true});
+      });
+    }
+    assert.equal(signal.aborted,false,"current generation must never inherit obsolete abort");
+    return {offers:[{title:"fresh",productPrice:55}]};
+  });
+  const first=cache("laptop",{allowStale:false});
+  await begun;
+  cache.clear("ingest");
+  const result=await first;
+  assert.equal(oldSignal.aborted,true);
+  assert.equal(result.offers[0].title,"fresh");
+  assert.equal(calls,2);
+});
