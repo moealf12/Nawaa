@@ -9,7 +9,9 @@ import vm from "node:vm";
 
 export const PAGES="https://moealf12.github.io/Nawaa";
 export const API="https://nawaa-search-api.onrender.com";
-const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),"..");
+const ROOT=process.env.NAWAA_AUDITED_REPO_DIR
+  ? resolve(process.env.NAWAA_AUDITED_REPO_DIR)
+  : resolve(dirname(fileURLToPath(import.meta.url)),"..");
 const ASSETS=Object.freeze([
   "index.html","config.js","search.html","src/search-page.mjs",
   "product.html","src/product-page.mjs"
