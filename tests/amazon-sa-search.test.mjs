@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractAmazonSearchOffers, fetchAmazonSearchPages } from "../server/providers/free-storefronts.mjs";
+import { extractAmazonSearchOffers, fetchAmazonSearchPages, isAmazonSearchChallengeHtml, classifyAmazonPageFailure } from "../server/providers/free-storefronts.mjs";
 
 test("Amazon Saudi search cards produce verified price offers without product-page fetch",()=>{
  const html=`<div data-component-type="s-search-result" data-asin="B0ABC12345">
@@ -92,4 +92,63 @@ test("source only invokes one bounded Amazon batch per search",async()=>{
  const text=readFileSync(new URL("../server/providers/free-storefronts.mjs",import.meta.url),"utf8");
  const source=text.slice(text.indexOf("async function searchStore("),text.indexOf("export function configuredFreeStorefronts",text.indexOf("async function searchStore(")));
  assert.equal((source.match(/await fetchAmazonSearchPages\(/g)||[]).length,1);
+});
+
+test("HTTP 200 explicit Amazon Robot Check is classified as denial, not a sellable product page",async()=>{
+ const challenge='<html><title>Robot Check</title><form action="/errors/validateCaptcha"><input name="amzn-captcha"></form></html>';
+ assert.equal(isAmazonSearchChallengeHtml(challenge),true);
+ assert.equal(isAmazonSearchChallengeHtml("<html><title>iPhone results</title><div>No results</div></html>"),false);
+ let calls=0,trace;
+ const pages=await fetchAmazonSearchPages("https://www.amazon.sa/s?k=iPhone",{
+   pageCount:2,deadlineMs:500,wait:async()=>{},
+   fetchPage:async url=>{
+     calls++;
+     return {html:new URL(url).searchParams.get("page")==="1"?challenge:"<div data-asin='B012345678'></div>"};
+   },onDiagnostic:x=>{trace=x;},
+ });
+ assert.equal(calls,2,"challenge must not be retried as a network failure");
+ assert.equal(pages.length,1);
+ assert.equal(trace.pagesFetched,1);
+ assert.equal(trace.failureClasses.CHALLENGE_200,1);
+ assert.equal(trace.pagesRetried,0);
+});
+
+test("all Amazon 200 challenges fail rather than appear as healthy empty search",async()=>{
+ await assert.rejects(fetchAmazonSearchPages("https://www.amazon.sa/s?k=PS5",{
+   pageCount:2,deadlineMs:500,
+   fetchPage:async()=>({html:'<title>Robot Check</title><div>captcha</div>'}),
+ }),/amazon_html_challenge/);
+});
+
+test("Amazon page errors are counted by bounded categories without raw response data",async()=>{
+ const error=Object.assign(new Error("PRIVATE_PRODUCT_QUERY"),{status:503});
+ assert.equal(classifyAmazonPageFailure(error), "UPSTREAM_5XX");
+ assert.equal(classifyAmazonPageFailure(new TypeError("socket private URL")), "TRANSPORT_NETWORK");
+ assert.equal(classifyAmazonPageFailure(Object.assign(new Error("challenge"),{failureClass:"HTTP_200_CHALLENGE"})),"CHALLENGE_200");
+ let trace;
+ await fetchAmazonSearchPages("https://www.amazon.sa/s?k=iPhone",{
+   pageCount:2,deadlineMs:500,wait:async()=>{},
+   fetchPage:async (url,{onTransportDiagnostic})=>{
+     const page=new URL(url).searchParams.get("page");
+     if(page==="1"){
+       onTransportDiagnostic?.({outcome:"success",phase:"complete",headersMs:120,bodyMs:23,htmlBytes:700,elapsedMs:143});
+       return {html:"valid"};
+     }
+     throw Object.assign(new Error("HTTP 403 PRIVATE"),{status:403});
+   },onDiagnostic:x=>{trace=x;},
+ });
+ assert.equal(trace.avgHeadersMs,120);
+ assert.equal(trace.avgBodyMs,23);
+ assert.equal(trace.failureClasses.ACCESS_DENIED,1);
+ assert.equal(trace.pagesRetried,0);
+ assert.equal(trace.htmlBytesReceived,700);
+ assert.equal(JSON.stringify(trace).includes("PRIVATE"),false);
+});
+
+test("Amazon normal empty HTML remains a valid zero-product page, never called a challenge",async()=>{
+ assert.equal(isAmazonSearchChallengeHtml("<html><title>Amazon Search</title>No results for your search</html>"),false);
+ const pages=await fetchAmazonSearchPages("https://www.amazon.sa/s?k=unlikely",{
+   pageCount:1,fetchPage:async()=>({html:"<html>no results</html>"}),deadlineMs:300,
+ });
+ assert.equal(pages.length,1);
 });
