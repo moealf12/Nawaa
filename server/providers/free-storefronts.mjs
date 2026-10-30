@@ -1210,7 +1210,7 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
   const amazon=storeId==="amazon-sa"&&typeof onTransportDiagnostic==="function";
   const start=amazon?performance.now():0;
   let headersMs=null,bodyMs=null,bodyStarted=0,bytes=0,phase="headers";
-  let streamProgress=null;
+  let streamProgress=null, requestSignal=null;
   const observe=(outcome,error)=>{
     if(!amazon)return;
     try{onTransportDiagnostic({
@@ -1229,7 +1229,7 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic}={}) {
       throw error;
     }
     const idleController=new AbortController();
-    const requestSignal=AbortSignal.any([
+    requestSignal=AbortSignal.any([
       ...(signal?[signal]:[]),AbortSignal.timeout(8000),idleController.signal,
     ]);
     const response = await createRuntimeSourceFetcher({fetchImpl:globalThis.fetch})(url, {
