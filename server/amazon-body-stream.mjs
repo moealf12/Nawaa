@@ -18,7 +18,7 @@ export async function readAmazonHtmlStream(response,{
   const decoder=new TextDecoder("utf-8");
   let total=0,chunks=0,firstByteMs=null,maxIdleGapMs=0,idleTriggered=false;
   const started=now();
-  let lastProgress=started,timer=null,onAbort,finished=false;
+  let lastProgress=started,timer=null,onAbort,finished=false,completed=false;
   const snapshot=()=>({
     bytesReceived:total,chunksReceived:chunks,firstByteMs,
     maxIdleGapMs:Math.max(0,Math.round(Math.max(maxIdleGapMs,now()-lastProgress))),
@@ -72,7 +72,7 @@ export async function readAmazonHtmlStream(response,{
       resetIdle();
     }
     pieces.push(decoder.decode());
-    finished=true;
+    finished=true;completed=true;
     return {text:pieces.join(""),progress:snapshot()};
   }catch(error){
     // Bind safe, aggregate-only progress to the error for existing telemetry.
@@ -83,7 +83,7 @@ export async function readAmazonHtmlStream(response,{
     if(timer!==null)clearTimeout(timer);
     signal?.removeEventListener("abort",onAbort);
     // Never await cancellation: a non-compliant stream must not hang cleanup.
-    if(!reader.closed){
+    if(!completed){
       try{Promise.resolve(reader.cancel()).catch(()=>{});}catch{}
     }
     try{reader.releaseLock();}catch{}
