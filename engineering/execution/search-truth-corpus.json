@@ -1,0 +1,333 @@
+{
+  "schemaVersion": "nawaa.search-corpus.v1",
+  "sourceKind": "synthetic-intent-and-adversarial-fixtures",
+  "baselineSha": "707f1ac3edb802cb5b7563c34184fe64d50e2554",
+  "liveMerchantCertification": false,
+  "queryCases": [
+    {
+      "id": "Q01",
+      "group": "smartphone",
+      "language": "en",
+      "query": "iPhone 17 256GB"
+    },
+    {
+      "id": "Q02",
+      "group": "smartphone",
+      "language": "ar",
+      "query": "ايفون 17 256 جيجا"
+    },
+    {
+      "id": "Q03",
+      "group": "smartphone-variant",
+      "language": "en",
+      "query": "Samsung Galaxy S25 Ultra"
+    },
+    {
+      "id": "Q04",
+      "group": "smartphone-variant",
+      "language": "ar",
+      "query": "سامسونج جالكسي S25 الترا"
+    },
+    {
+      "id": "Q05",
+      "group": "console",
+      "language": "en",
+      "query": "PS5 Digital Edition"
+    },
+    {
+      "id": "Q06",
+      "group": "console",
+      "language": "ar",
+      "query": "بلايستيشن 5 ديجيتال"
+    },
+    {
+      "id": "Q07",
+      "group": "disc-accessory",
+      "language": "en",
+      "query": "PS5 Disc Drive"
+    },
+    {
+      "id": "Q08",
+      "group": "disc-accessory",
+      "language": "ar",
+      "query": "قارئ اقراص بلايستيشن 5"
+    },
+    {
+      "id": "Q09",
+      "group": "game-storage",
+      "language": "en",
+      "query": "PS5 NVMe SSD 1TB"
+    },
+    {
+      "id": "Q10",
+      "group": "game-storage",
+      "language": "ar",
+      "query": "قرص اس اس دي بلايستيشن 5"
+    },
+    {
+      "id": "Q11",
+      "group": "audio-headphones",
+      "language": "en",
+      "query": "JBL Bluetooth headphones"
+    },
+    {
+      "id": "Q12",
+      "group": "audio-headphones",
+      "language": "ar",
+      "query": "سماعات بلوتوث جي بي ال"
+    },
+    {
+      "id": "Q13",
+      "group": "audio-speakers",
+      "language": "en",
+      "query": "Bluetooth speaker"
+    },
+    {
+      "id": "Q14",
+      "group": "audio-speakers",
+      "language": "ar",
+      "query": "سبيكر بلوتوث"
+    },
+    {
+      "id": "Q15",
+      "group": "laptop",
+      "language": "en",
+      "query": "HP laptop 16GB RAM"
+    },
+    {
+      "id": "Q16",
+      "group": "laptop",
+      "language": "ar",
+      "query": "لابتوب اتش بي 16 رام"
+    },
+    {
+      "id": "Q17",
+      "group": "desktop",
+      "language": "en",
+      "query": "gaming desktop RTX 5070"
+    },
+    {
+      "id": "Q18",
+      "group": "desktop",
+      "language": "ar",
+      "query": "كمبيوتر مكتبي للالعاب"
+    },
+    {
+      "id": "Q19",
+      "group": "camera",
+      "language": "en",
+      "query": "Canon mirrorless camera"
+    },
+    {
+      "id": "Q20",
+      "group": "camera",
+      "language": "ar",
+      "query": "كاميرا كانون بدون مرآة"
+    },
+    {
+      "id": "Q21",
+      "group": "appliance",
+      "language": "en",
+      "query": "Dyson V15 vacuum cleaner"
+    },
+    {
+      "id": "Q22",
+      "group": "appliance",
+      "language": "ar",
+      "query": "مكنسة دايسون V15"
+    },
+    {
+      "id": "Q23",
+      "group": "jewelry",
+      "language": "en",
+      "query": "Swarovski necklace"
+    },
+    {
+      "id": "Q24",
+      "group": "jewelry",
+      "language": "ar",
+      "query": "سلسال سواروفسكي"
+    },
+    {
+      "id": "Q25",
+      "group": "fashion",
+      "language": "en",
+      "query": "Nike running shoes"
+    },
+    {
+      "id": "Q26",
+      "group": "fashion",
+      "language": "ar",
+      "query": "حذاء نايك رياضي"
+    },
+    {
+      "id": "Q27",
+      "group": "beauty",
+      "language": "en",
+      "query": "Dior perfume"
+    },
+    {
+      "id": "Q28",
+      "group": "beauty",
+      "language": "ar",
+      "query": "عطر ديور رجالي"
+    },
+    {
+      "id": "Q29",
+      "group": "home",
+      "language": "en",
+      "query": "office chair"
+    },
+    {
+      "id": "Q30",
+      "group": "home",
+      "language": "ar",
+      "query": "كرسي مكتب"
+    },
+    {
+      "id": "Q31",
+      "group": "grocery",
+      "language": "en",
+      "query": "coffee beans"
+    },
+    {
+      "id": "Q32",
+      "group": "grocery",
+      "language": "ar",
+      "query": "بن قهوة"
+    },
+    {
+      "id": "Q33",
+      "group": "watch",
+      "language": "en",
+      "query": "Apple Watch Series 11"
+    },
+    {
+      "id": "Q34",
+      "group": "watch",
+      "language": "ar",
+      "query": "ساعة ابل سيريس 11"
+    },
+    {
+      "id": "Q35",
+      "group": "general",
+      "language": "en",
+      "query": "wireless earbuds"
+    },
+    {
+      "id": "Q36",
+      "group": "general",
+      "language": "ar",
+      "query": "سماعة لاسلكية"
+    }
+  ],
+  "matchCases": [
+    {
+      "id": "M01",
+      "query": "PS5 SSD",
+      "title": "Heatsink for PS5 NVMe SSD",
+      "expectedExact": false,
+      "why": "thermal accessory cannot become a storage drive"
+    },
+    {
+      "id": "M02",
+      "query": "PS5 SSD",
+      "title": "WD_BLACK 1TB SN850 NVMe SSD for PS5 Consoles Solid State Drive with Heatsink",
+      "expectedExact": true,
+      "why": "standalone SSD with cooling; regression previously certified"
+    },
+    {
+      "id": "M03",
+      "query": "iPhone 17",
+      "title": "غطاء هاتف ايفون 17 اسود",
+      "expectedExact": false,
+      "why": "Arabic phone cover is not a handset"
+    },
+    {
+      "id": "M04",
+      "query": "iPhone 17",
+      "title": "Case for iPhone 17 256 GB Protective Cover",
+      "expectedExact": false,
+      "why": "phone cover is not handset"
+    },
+    {
+      "id": "M05",
+      "query": "PS5",
+      "title": "PS5 Disc Drive accessory for Digital Edition",
+      "expectedExact": false,
+      "why": "disc accessory is not console"
+    },
+    {
+      "id": "M06",
+      "query": "iPhone 17",
+      "title": "Apple iPhone 17 256GB Black New",
+      "expectedExact": true,
+      "why": "handset family example"
+    },
+    {
+      "id": "M07",
+      "query": "PS5",
+      "title": "Sony PlayStation 5 PS5 Console Disc Edition 1TB",
+      "expectedExact": true,
+      "why": "standalone console example"
+    }
+  ],
+  "sourceScenarios": [
+    {
+      "id": "T01",
+      "stage": "transport",
+      "state": "HTTP_403_ACCESS_DENIED",
+      "verified": false,
+      "stockConclusion": "UNKNOWN"
+    },
+    {
+      "id": "T02",
+      "stage": "transport",
+      "state": "HTTP_429_RATE_LIMITED",
+      "verified": false,
+      "stockConclusion": "UNKNOWN"
+    },
+    {
+      "id": "T03",
+      "stage": "transport",
+      "state": "HTTP_200_CHALLENGE",
+      "verified": false,
+      "stockConclusion": "UNKNOWN"
+    },
+    {
+      "id": "T04",
+      "stage": "discovery",
+      "state": "SEARCH_CARD_UNPRICED",
+      "verified": false,
+      "stockConclusion": "UNKNOWN"
+    },
+    {
+      "id": "T05",
+      "stage": "identity",
+      "state": "VARIANT_CONFLICT",
+      "verified": false,
+      "stockConclusion": "UNKNOWN"
+    },
+    {
+      "id": "T06",
+      "stage": "price",
+      "state": "MISSING_CURRENCY",
+      "verified": false,
+      "stockConclusion": "UNKNOWN"
+    },
+    {
+      "id": "T07",
+      "stage": "price",
+      "state": "MISSING_SHIPPING",
+      "verified": false,
+      "stockConclusion": "UNKNOWN"
+    },
+    {
+      "id": "T08",
+      "stage": "publication",
+      "state": "STALE_OBSERVATION",
+      "verified": false,
+      "stockConclusion": "UNKNOWN"
+    }
+  ]
+}
