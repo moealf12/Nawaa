@@ -15,7 +15,7 @@ import { fileURLToPath, URL } from "node:url";
 import { allowedOrigin, jsonResponse } from "./provider-utils.mjs";
 import { ebayConfigured, searchEbayWorldwide } from "./providers/ebay.mjs";
 import { searchConfiguredShopifyStores, shopifyConfigured, configuredShopifyStores } from "./providers/shopify.mjs";
-import { assessOfferMatch, dedupeNormalizedOffers } from "./match.mjs";
+import { dedupeNormalizedOffers } from "./match.mjs";
 import { resolveProductUrl } from "./url-resolver.mjs";
 import { extractNawaaProduct } from "./nawaa-extractor.mjs";
 import { searchSaudiRetailers } from "./providers/saudi-retailers.mjs";
@@ -28,7 +28,7 @@ import { searchSharafDG } from "./providers/sharafdg.mjs";
 import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarovski.mjs";
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonCreators } from "./providers/amazon-creators.mjs";
 import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontById } from "./providers/free-storefronts.mjs";
-import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries } from "../src/search-query.mjs";
+import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries, createOfferMatchAssessor } from "../src/search-query.mjs";
 import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
 import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
 import { createSearchCache } from "./search-cache.mjs";
@@ -233,8 +233,11 @@ async function executeProviderTask(task, pass, providerQuery, {signal} = {}) {
 }
 
 function retainRelatedOffers(query, offers = []) {
+  // Preserve the original matching function and thresholds; prepare only the
+  // query-side context once per nonempty batch, never once per merchant offer.
+  const assess=createOfferMatchAssessor(query);
   return dedupeNormalizedOffers(offers)
-    .map(offer => ({ ...offer, ...assessOfferMatch(query, offer), dataKind:offer.dataKind || "live" }))
+    .map(offer => ({ ...offer, ...assess(offer), dataKind:offer.dataKind || "live" }))
     // Keep strong matches first, but do not erase useful cross-merchant alternatives.
     // A 0.35 floor still rejects unrelated/category-mismatched noise because those
     // are heavily penalized by assessOfferMatch (0.2x / 0.12x).
@@ -564,6 +567,7 @@ async function searchAll(query, { depth = 0 } = {}) {
   const pipelineStarted = performance.now();
   const pipelinePressure = beginProcessPressure();
   query = normalizeSearchQuery(query);
+  const assessSearchOffer=createOfferMatchAssessor(query);
   if(OMEGA_INDEX_ONLY){
     const indexed=await searchIndexedOffers(query);
     const related=retainRelatedOffers(query,indexed.offers||[]);
@@ -669,7 +673,7 @@ async function searchAll(query, { depth = 0 } = {}) {
   const amazonValidated = dedupeNormalizedOffers(amazon.offers || [])
     .map((offer) => ({
       ...offer,
-      ...assessOfferMatch(query, offer),
+      ...assessSearchOffer(offer),
       dataKind:"live",
     }))
     .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
@@ -684,7 +688,7 @@ async function searchAll(query, { depth = 0 } = {}) {
   // Expand when the first pass has too few relevant offers or too little merchant diversity.
   const primaryAssessed = dedupeNormalizedOffers(offers).map((offer) => ({
     ...offer,
-    ...assessOfferMatch(query, offer),
+    ...assessSearchOffer(offer),
   }));
   const relevantPrimary = primaryAssessed.filter((offer) => (offer.matchConfidence || 0) >= 0.65);
   const primaryMerchants = new Set(relevantPrimary.map(offerMerchantKey)).size;
@@ -727,7 +731,7 @@ async function searchAll(query, { depth = 0 } = {}) {
     .filter((offer) => !amazonUrls.has(offer.sourceUrl))
     .map((offer) => ({
       ...offer,
-      ...assessOfferMatch(query, offer),
+      ...assessSearchOffer(offer),
       dataKind: offer.dataKind || "live",
     }))
     .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
