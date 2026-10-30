@@ -39,10 +39,10 @@ test("per-phase CPU profiler uses bounded finite samples without provider traffi
     assert.ok(Number.isFinite(record.results[0][key])&&record.results[0][key]>=0);
 });
 
-test("source implementation currently repeats JSON-LD scanning and merits a guarded repair",()=>{
+test("source parser path remains testable after future duplicate-parsing fix",()=>{
   const source=readFileSync(new URL("../server/providers/free-storefronts.mjs",import.meta.url),"utf8");
   const body=source.slice(source.indexOf("async function searchStore("));
-  // Historical baseline can invoke once in primary and again in fallback.
+  // Historically this was twice; removing one call is a future improvement, not a test failure.
   const count=(body.match(/extractJsonLdSearchOffers\(html,/g)||[]).length;
-  assert.ok(count>=2,"baseline duplication must be present or this experiment needs reassessment");
+  assert.ok(count>=1,"source must retain the source-owned JSON-LD evidence path");
 });
