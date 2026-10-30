@@ -1327,9 +1327,13 @@ export function amazonAttemptTimeoutMs(remainingMs){
 export async function fetchAmazonSearchPages(searchUrl,{
  pageStart=1,pageCount=1,deadlineMs=10000,signal,fetchPage=fetchText,
  wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),onDiagnostic=null,
+ now=()=>performance.now(),
 }={}){
  const durationMs=Math.max(50,Math.min(15000,Number(deadlineMs)||10000));
- const deadlineAt=Date.now()+durationMs,started=performance.now();
+ // One monotonic deadline; wall-clock jumps cannot reset the time budget.
+ // Node timers are not real-time guarantees under event-loop stalls:
+ // validate completion times again when queued microtasks finally run.
+ const started=now(),deadlineAt=started+durationMs;
  const firstPage=Math.max(1,Math.min(8,Math.floor(Number(pageStart)||1)));
  const count=Math.min(8-firstPage+1,Math.max(1,Math.floor(Number(pageCount)||1)));
  const controller=new AbortController();
@@ -1377,7 +1381,7 @@ export async function fetchAmazonSearchPages(searchUrl,{
  const runPage=async(page)=>{
    const attempt=(retry=false)=>{
      if(fetchSignal.aborted)return Promise.resolve({status:"rejected",reason:fetchSignal.reason});
-     const requestTimeoutMs=amazonAttemptTimeoutMs(deadlineAt-Date.now());
+     const requestTimeoutMs=amazonAttemptTimeoutMs(deadlineAt-now());
      if(!requestTimeoutMs)return Promise.resolve({status:"rejected",reason:deadlineError()});
      if(retry)retryMaxBudgetMs=Math.max(retryMaxBudgetMs,requestTimeoutMs);
      else firstAttemptMaxBudgetMs=Math.max(firstAttemptMaxBudgetMs,requestTimeoutMs);
@@ -1389,7 +1393,13 @@ export async function fetchAmazonSearchPages(searchUrl,{
            signal:fetchSignal,storeId:"amazon-sa",
            onTransportDiagnostic:transportObserver,requestTimeoutMs,
          });
-       }).then(value=>({status:"fulfilled",value}),reason=>({status:"rejected",reason})),
+       }).then(
+         // The OS or Node event loop can postpone a timeout callback. Do not
+         // treat a response completed after the monotonic deadline as valid.
+         value=>now()<deadlineAt?{status:"fulfilled",value}
+           :{status:"rejected",reason:deadlineError()},
+         reason=>({status:"rejected",reason}),
+       ),
        cancelled,
      ]);
    };
@@ -1404,12 +1414,12 @@ export async function fetchAmazonSearchPages(searchUrl,{
    let result=validate(await attempt());
    if(result.status==="rejected"){
      firstAttemptFailures++;
-     if(isRetryableAmazonSearchError(result.reason)&&!fetchSignal.aborted&&Date.now()<deadlineAt){
-       const delay=Math.min(200*(page.index+1),Math.max(0,deadlineAt-Date.now()-25));
+     if(isRetryableAmazonSearchError(result.reason)&&!fetchSignal.aborted&&now()<deadlineAt){
+       const delay=Math.min(200*(page.index+1),Math.max(0,deadlineAt-now()-25));
        if(delay>0)await Promise.race([Promise.resolve().then(()=>wait(delay)),cancelled]);
        // Never count or launch a retry when the absolute deadline leaves
        // no usable transport time (25ms reserved for completion).
-       if(!fetchSignal.aborted&&amazonAttemptTimeoutMs(deadlineAt-Date.now())>0){
+       if(!fetchSignal.aborted&&amazonAttemptTimeoutMs(deadlineAt-now())>0){
          pagesRetried++;result=validate(await attempt(true));
        }
      }
@@ -1420,6 +1430,14 @@ export async function fetchAmazonSearchPages(searchUrl,{
  };
  try{
    const outcomes=await Promise.all(pages.map(runPage));
+   // A stalled event loop can run Promise microtasks before its expired timer.
+   // The deadline is a validity constraint even when the callback did not fire.
+   const settledAt=now();
+   const actualOverrunMs=Math.max(0,Math.round(settledAt-deadlineAt));
+   if(settledAt>=deadlineAt){
+     deadlineExceeded=true;
+     if(!controller.signal.aborted)controller.abort(deadlineError());
+   }
    // Cache invalidation or caller disconnect cannot publish obsolete evidence.
    signal?.throwIfAborted();
    const fulfilled=outcomes.filter(x=>x.result.status==="fulfilled")
@@ -1428,7 +1446,8 @@ export async function fetchAmazonSearchPages(searchUrl,{
      try{onDiagnostic({pagesRequested:count,pagesFetched:fulfilled.length,
        pagesFailed:count-fulfilled.length,pagesRetried,firstAttemptFailures,
        firstAttemptMaxBudgetMs,retryMaxBudgetMs,
-       elapsedMs:Math.round(performance.now()-started),deadlineExceeded,
+       elapsedMs:Math.round(settledAt-started),deadlineExceeded,
+       actualOverrunMs,
        failureClasses:{...failureClasses},transportFailureClasses:{...transportFailureClasses},
        headersMeasured,bodyMeasured,
        avgHeadersMs:headersMeasured?Math.round(headersTotalMs/headersMeasured):null,
