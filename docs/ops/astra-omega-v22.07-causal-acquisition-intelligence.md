@@ -1,10 +1,10 @@
 # NAWAA 3.0 — ASTRA OMEGA v22.07
 ## Causal Acquisition Intelligence · Contradiction-Driven Engineering · Algorithmic Efficiency · Proof-Preserving Production Evolution
 
-**Execution mode:** Real connected-repository engineering. **Repository:** \`moealf12/Nawaa\`. **API:** \`https://nawaa-search-api.onrender.com\`. **Frontend:** \`https://moealf12.github.io/Nawaa\`. **Cost policy:** zero additional paid services. **Historical checkpoint, not an authority:** \`decd166fbe1f3d9d7d12b4e73eb25d0aa46ca7ff\`. Always refresh GitHub main, CI, Render and published frontend before acting.
+**Execution mode:** Real connected-repository engineering. **Repository:** `moealf12/Nawaa`. **API:** `https://nawaa-search-api.onrender.com`. **Frontend:** `https://moealf12.github.io/Nawaa`. **Cost policy:** zero additional paid services. **Historical checkpoint, not an authority:** `decd166fbe1f3d9d7d12b4e73eb25d0aa46ca7ff`. Always refresh GitHub main, CI, Render and published frontend before acting.
 
 ### 0. Ontology: what the agent is permitted to know
-Facts are only: source-controlled code at a verified SHA, reproducible test outcomes, exact measured telemetry, and connector-confirmed deployment/runtime state. A previous assistant sentence, PR title, planned implementation, source label, search result, or a statistically weak performance sample is **not** proof. Record each claim as \`OBSERVED\`, \`DEDUCED\`, \`HYPOTHESIS\`, or \`UNKNOWN\`, with exact SHA, cohort, time and counterexample. Do not invent confidence scores.
+Facts are only: source-controlled code at a verified SHA, reproducible test outcomes, exact measured telemetry, and connector-confirmed deployment/runtime state. A previous assistant sentence, PR title, planned implementation, source label, search result, or a statistically weak performance sample is **not** proof. Record each claim as `OBSERVED`, `DEDUCED`, `HYPOTHESIS`, or `UNKNOWN`, with exact SHA, cohort, time and counterexample. Do not invent confidence scores.
 
 ### 1. Fixed operating constraints
 1. No paid infrastructure, third-party proxy, source block evasion, credential exploitation, or unapproved API billing.
@@ -29,7 +29,7 @@ These are logical layers, not reasons to add processes or vendors.
 
 ### 3. Formal objective and hard ordering
 Use lexicographic optimization (not weighted summation):
-\`\`\`
+```
 Security & authorization
 > Evidence provenance and price truth
 > Product and seller identity
@@ -38,17 +38,17 @@ Security & authorization
 > Multi-merchant relevance
 > P95 and maximum customer latency
 > CPU / memory / code complexity
-\`\`\`
+```
 A speedup is **rejected** if an earlier hard invariant regresses, even if throughput increases.
 
 ### 4. Critical path algebra
-Let an execution graph \`G=(V,E)\` contain dependencies, and each node have observed wall duration \`d(v)\`. Then:
-\`\`\`
+Let an execution graph `G=(V,E)` contain dependencies, and each node have observed wall duration `d(v)`. Then:
+```
 T_critical = max_{path p in G} Σ_{v in p} d(v)
 T_customer ≈ queue_wait + T_critical + response_delivery + browser_work
-\`\`\`
+```
 Parallel merchant durations are **not additive**. They overlap with parsing, CPU saturation, cancellation and canonicalization. Measurement spans must include timestamp origin, concurrency and cache mode. CPU delta is:
-\`CPU_ms = Δ(user + system) / 1000\` where deltas are process-wide microseconds. Event loop utilization is \`active / (active + idle)\`. Neither metric assigns cost to a single merchant request. Distinguish Run queue, network time, CPU runnable time, source parsing, deadline overshoot and client HTTP overhead.
+`CPU_ms = Δ(user + system) / 1000` where deltas are process-wide microseconds. Event loop utilization is `active / (active + idle)`. Neither metric assigns cost to a single merchant request. Distinguish Run queue, network time, CPU runnable time, source parsing, deadline overshoot and client HTTP overhead.
 
 ### 5. Observed production anchor
 On the preceding live checkpoint, 11/11 JSON customer-cohort requests completed with structural validity and eXtra contributed to all 11, while **coverage was partial on all samples**. Nine slow JSON pipeline records had mean primary acquisition ~11,569 ms, process CPU ~1,627 ms, with five marking deadline exceeded. This does **not** establish stable p95, prices independently verified or an end to 23-second client timeouts. Keep the diagnostic PR #210 unresolved until repeated acceptance demonstrates repair.
@@ -69,16 +69,16 @@ Every accepted repair must name an alternative hypothesis it does *not* resolve.
 First run **unmodified** baseline on a local fixture. Freeze input, execution mode, source adapter and expected outputs. Run the candidate with the same fixture, seed, order (alternate A/B when timing) and warmup; verify semantic equality **before** timing. Include empty, zero matches, malformed markup, 5MB response cap, escaped JSON, Unicode punctuation, NFKC Arabic aliases, embedded links, redirects, 200 block pages, 403/429 and interrupted fetches. The only admissible performance claim is measured scope + denominator + sample size + uncertainty. Never label a three-run median 'production p95'.
 
 ### 8. First-principles candidate: hydrated URL scan idempotence
-The URL extractor parses HTML anchor tags, then performs regex scans on both \`raw=String(html||"")\` and \`decoded=decodeHtml(raw)\`.
-If \`raw === decoded\`, the second view is **byte-identical**; scanning the same URL patterns again can only attempt duplicates already rejected by the canonical \`seen\` Set. Therefore scan once, *without* changing anchor processing, matching, scoring, ranking, merchant-path filters, domain ownership, limit or the decoded path when content actually changes.
-Formally, if \`R(x)\` is the sequence of deterministic URL candidates from hydrated extraction, \`R(raw) ∪ R(decoded) = R(raw)\` whenever \`raw = decoded\`. With first-seen insertion and stable sorting, the returned array must be identical. This is a **conditional proof**, not a guarantee that runtime CPU impact is large.
+The URL extractor parses HTML anchor tags, then performs regex scans on both `raw=String(html||"")` and `decoded=decodeHtml(raw)`.
+If `raw === decoded`, the second view is **byte-identical**; scanning the same URL patterns again can only attempt duplicates already rejected by the canonical `seen` Set. Therefore scan once, *without* changing anchor processing, matching, scoring, ranking, merchant-path filters, domain ownership, limit or the decoded path when content actually changes.
+Formally, if `R(x)` is the sequence of deterministic URL candidates from hydrated extraction, `R(raw) ∪ R(decoded) = R(raw)` whenever `raw = decoded`. With first-seen insertion and stable sorting, the returned array must be identical. This is a **conditional proof**, not a guarantee that runtime CPU impact is large.
 Never skip decoded HTML when entities, numeric HTML escapes, or URL-encoded content make it differ. Do not skip URL scanning entirely when structured offers are already present: diagnostic counts and PDP recovery may depend on links.
 
 ### 9. Contradictions that can falsify H1
 - An HTML-entity fixture changes the decoded view and exposes a product absent from the raw view.
 - Same-host restrictions or asset-extension guards behave differently after conditional skipping.
 - Equal-score candidate order changes after deduplication.
-- A store-specific \`productIds\` branch reads different input.
+- A store-specific `productIds` branch reads different input.
 - Raw and decoded views *appear* equal but product extraction is stateful due to mutated regex.lastIndex, global side effects, or cached URL resolution.
 - One malformed product link crashes only in the candidate.
 - A large HTML sample causes a memory or CPU regression despite fewer scans.
@@ -87,16 +87,16 @@ Never skip decoded HTML when entities, numeric HTML escapes, or URL-encoded cont
 If any counterexample passes the baseline but fails the candidate, stop promotion and repair the invariant first.
 
 ### 10. Source provenance and JSON-LD
-JSON-LD is independent input evidence. It must be parsed from source-owned markup and vetted through same-host/product-path gates where existing adapters require them. A future per-request JSON-LD cache key must include exact \`html\`, effective \`searchUrl\`, \`query\`, store identity and relevant adapter options; no cross-customer or cross-source evidence reuse. Do not lock a duplicated parse in a regression test, nor add historical snapshots to live offers. Cache hit must not upgrade trust.
+JSON-LD is independent input evidence. It must be parsed from source-owned markup and vetted through same-host/product-path gates where existing adapters require them. A future per-request JSON-LD cache key must include exact `html`, effective `searchUrl`, `query`, store identity and relevant adapter options; no cross-customer or cross-source evidence reuse. Do not lock a duplicated parse in a regression test, nor add historical snapshots to live offers. Cache hit must not upgrade trust.
 
 ### 11. Complexity ledger
-- Before H1: three hydration regex scans over raw plus three over decoded; worst-case URL scanning ~\`O(2 * R * |html|)\` before candidate callbacks; \`R=3\`.
-- After H1 when byte-identical: ~\`O(R * |html|)\` hydration scans, plus mandatory HTML decode, anchors and candidate normalization. Worst-case entities still take both paths.
+- Before H1: three hydration regex scans over raw plus three over decoded; worst-case URL scanning ~`O(2 * R * |html|)` before candidate callbacks; `R=3`.
+- After H1 when byte-identical: ~`O(R * |html|)` hydration scans, plus mandatory HTML decode, anchors and candidate normalization. Worst-case entities still take both paths.
 - Theoretical factor-of-two reduction is **only for this sub-stage**, not whole provider CPU or end-to-end latency.
 - Benchmark overhead should be measured in bytes, candidate count, CPU-ms, wall-ms, and RSS; track both positive and adversarial cases.
 
 ### 12. Search invariants for refactoring
-\`\`\`
+```
 OutputOld(input) ≡ OutputNew(input)   // exact ordering and values
 PriceNew(x) = PriceOld(x)
 MerchantOwnerNew(x) = MerchantOwnerOld(x)
@@ -106,11 +106,11 @@ NoNewNetworkCalls = true
 NoNewPaidServices = true
 NoTrustPromotionFromMetadata = true
 NoSourceOmission = true
-\`\`\`
+```
 When equivalence is unprovable, keep behavior unchanged and add diagnostics only.
 
 ### 13. Testing hierarchy
-1. Static source assertion and fixture unit tests: synthetic link anchors, HTML entity escape, \`\\u002F\` JSON hydration, structured keys, stable ordering, duplicate canonical links, assets masquerading as products, cross-host links, short/multi-token queries, empty HTML, per-store limits.
+1. Static source assertion and fixture unit tests: synthetic link anchors, HTML entity escape, `\\u002F` JSON hydration, structured keys, stable ordering, duplicate canonical links, assets masquerading as products, cross-host links, short/multi-token queries, empty HTML, per-store limits.
 2. Differential tests: historical versus optimized extractor on same fixtures, strict array equality.
 3. Metamorphic tests: adding harmless duplicate markup cannot add canonical URL; adding explicit entity links may add exactly that link; product source ownership unchanged.
 4. Resource experiments: paired CPU with warmups, alternating A/B, no HTTP/merchant load, benchmark full parser and hydrated sub-stage independently.
@@ -119,10 +119,10 @@ When equivalence is unprovable, keep behavior unchanged and add diagnostics only
 7. Live 11-query JSON + 2 SSE acceptance; preserve failed queries in PR #210.
 
 ### 14. Useful libraries, chosen only with evidence
-- Native JS/Node: \`node:perf_hooks\`, \`node:test\`, \`node:assert\`, \`process.cpuUsage\`, \`AbortSignal\`, \`URL\`: preferred now.
+- Native JS/Node: `node:perf_hooks`, `node:test`, `node:assert`, `process.cpuUsage`, `AbortSignal`, `URL`: preferred now.
 - Existing Crawlee/Cheerio/Playwright, PostgreSQL canonicalization, Meilisearch retrieval: preserve boundaries.
-- Python \`httpx\`, \`BeautifulSoup\`, \`pydantic\`, \`rapidfuzz\`: optional extractor, bounded JSONL, never automatic truth.
-- \`fast-check\` / \`Hypothesis\`: optional test-only property generators after benchmark, license and CI budget review.
+- Python `httpx`, `BeautifulSoup`, `pydantic`, `rapidfuzz`: optional extractor, bounded JSONL, never automatic truth.
+- `fast-check` / `Hypothesis`: optional test-only property generators after benchmark, license and CI budget review.
 - OpenTelemetry: optional controlled exporterless tracing if built-in spans cannot discriminate.
 - Rust/WASM: defer until reproducible CPU flamegraph, correctness proof and language-boundary overhead budget.
 Do not install dependencies to satisfy a list of tool names.
@@ -131,11 +131,11 @@ Do not install dependencies to satisfy a list of tool names.
 At each checkpoint choose an action from {OBSERVE, ISOLATED_TEST, ADD_TEST, MINIMAL_PATCH, CI_REVIEW, MERGE, DEPLOY_VERIFY, CUSTOMER_ACCEPT, HOLD}. Each action requires a predecessor proof. A model-generated improvement claim without a measured artifact is assigned HOLD. Use deterministic test outcomes instead of private 'intuition' scores; prioritize measurable risk reduction per unit engineering complexity.
 
 ### 16. Release-state machine
-\`\`\`
+```
 DISCOVERY -> REPRODUCED -> CONTRACT_TESTED -> CANDIDATE_CREATED
 -> REQUIRED_CI_GREEN -> EXACT_HEAD_MERGED -> RENDER_SHA_LIVE
 -> FRONTEND_SHA_ALIGNED -> CUSTOMER_ACCEPTED -> EVIDENCE_RECORDED
-\`\`\`
+```
 Failed/unknown gate -> HOLD. Existing autoDeploy checksPass must not be circumvented. A merged PR does not mean production deployment. A LIVE SHA does not mean customer acceptance.
 
 ### 17. Observability discipline
@@ -149,7 +149,7 @@ Store a small, auditable evidence journal in PR text or docs: exact SHAs, fixtur
 
 ### 20. Immediate execution order
 1. Verify GitHub main === Render LIVE SHA; verify PR #210 still represents open customer timeout investigation.
-2. Inspect exact \`extractProductLinks\` and callers, do not redo completed PR #212/#213/#214/#215/#216/#217/#218/#219.
+2. Inspect exact `extractProductLinks` and callers, do not redo completed PR #212/#213/#214/#215/#216/#217/#218/#219.
 3. Implement only H1's equal-view deduplication with explicit comments and a negative-control test requiring the decoded view when entities exist.
 4. Run isolated unit tests and mandatory existing CI. On failure, preserve evidence and correct; do not declare success.
 5. Merge exactly the tested head only after all required gates pass.
