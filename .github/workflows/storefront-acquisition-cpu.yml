@@ -3,6 +3,7 @@ name: NAWAA Source Acquisition CPU Forensics
 on:
   pull_request:
     paths:
+      - 'server/providers/free-storefronts.mjs'
       - 'scripts/profile-storefront-acquisition-cpu.mjs'
       - 'tests/storefront-acquisition-cpu-forensics.test.mjs'
       - '.github/workflows/storefront-acquisition-cpu.yml'
