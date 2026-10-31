@@ -161,6 +161,27 @@ export const PRODUCT_CATEGORIES = [
   ['office','مكتبية', /\b(?:office supplies|stationery|notebook|pens?|pencils?|paper shredder)\b/],
   ['tool','أدوات', /\b(?:drill|saw|screwdriver|power tool)\b/],
 ];
+// The retail subject, not compatible device names or a merchant URL, decides
+// whether the listing is an entire device. These narrowly scoped terms were
+// captured in the R04 actual LIVE first-ten evidence. Only the *primary* sold
+// item preceding an explicit "with/including" bundle boundary is inspected:
+// a real console/phone with an included accessory stays a principal product.
+function detectedRetailPeripheral(offer = {}) {
+  const retail = normalizeSearchQuery(String(offer.title || ""));
+  if (!retail) return null;
+  const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  if (/\b(?:user guide|instruction manual|repair manual)\b/.test(subject))
+    return "book";
+  if (/\b(?:photo stick|usb memory stick|screen protectors?|lcd display touch screen digitizer|touch screen digitizer|screen digitizer|panzerfolie|schutzfolie|schutzglas|halterung|vetro posteriore|coperchio batteria)\b/.test(subject))
+    return "accessory";
+  if (/(?:^| )standf[uü](?:ss|ß)?e(?: |$)/u.test(subject))return "accessory";
+  // A RAM kit advertised for a Victus/EliteBook does not become a laptop
+  // simply because compatibility text includes the laptop family/model.
+  if (/^(?:\d+x )?\d+gb(?: \d+gb)? ram\b(?: memory| module| kit| upgrade)?/.test(subject) &&
+      /\b(?:ram memory|ram module|ram kit|ram upgrade|\d+x \d+gb)/.test(subject))
+    return "accessory";
+  return null;
+}
 export function productCategory(offer = {}) {
   return productCategoryWithDescription(offer, describeProduct(offer));
 }
@@ -209,6 +230,8 @@ function isEvidencedCompleteLaptop(offer = {}) {
 // The matching path already computed describeProduct(offer); reuse that immutable
 // value rather than normalizing its title and metadata a second time.
 function productCategoryWithDescription(offer, gaming) {
+  const soldPeripheral=detectedRetailPeripheral(offer);
+  if (soldPeripheral) return soldPeripheral;
   if (gaming.kind !== 'product') return gaming.kind;
   // Merchant retail SUBJECT leads: Spanish "Adaptador/Cargador/Convertidor
   // ... para iPhone 17" sells a peripheral, not an iPhone. Match only the
@@ -241,6 +264,13 @@ function productCategoryWithDescription(offer, gaming) {
   if(hpClaim && !computerSubjectBeforeClaim) return 'accessory';
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   if (isEvidencedCompleteLaptop(offer)) return 'laptop';
+  // A complete title-leading smartphone may include a free screen protector.
+  // The INCLUDED accessory does not replace the sold handset subject.
+  const primary=normalizedRetailTitle.split(/\b(?:with|including|includes)\b/,1)[0];
+  if (/^(?:(?:apple )?iphone \d+|samsung galaxy s\d+)/.test(primary) &&
+      /\b(?:smartphone|phone|handset)\b/.test(primary) &&
+      !/\b(?:screen protectors?|photo stick|case|cover|digitizer)\b/.test(primary))
+    return 'phone';
   let urlSemantic = "";
   try {
     const parsedUrl = new URL(String(offer?.sourceUrl || ""));
@@ -444,7 +474,9 @@ export function describeProduct(offer = {}) {
     explicitlyIncludedConsoleAccessory(title, offer.title) || identifiedConsoleBundle ||
     retailConsoleWithController;
   let kind = "product";
-  if (platform) {
+  const retailPeripheral=detectedRetailPeripheral(offer);
+  if (retailPeripheral) kind = retailPeripheral;
+  else if (platform) {
     if (GAMING_STORAGE_ACCESSORY.test(title) && !GAMING_CONSOLE_PRIMARY.test(title) && !evidencedConsoleChassis && !explicitlyIncludedConsoleAccessory(title, offer.title)) kind = "accessory";
     else if ((GAMING_ACCESSORY.test(title + " " + metadata) || GAMING_ARABIC_ACCESSORY.test(title + " " + metadata)) && !(
       GENUINE_CONSOLE_BUNDLE(title) ||
