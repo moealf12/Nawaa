@@ -174,9 +174,12 @@ async function run(){
     failed:result.requests.filter(x=>x.status!=="OBSERVED").length,
     unjudged:result.requests.reduce((n,x)=>n+(x.metrics?.unjudged||0),0),
     partial:result.requests.filter(x=>x.partial).length,
+    knownPeripheralTopOne:result.requests.filter(x=>
+      x.status==="OBSERVED" && x.firstTen[0]?.judgment?.grade===0).map(x=>x.id),
     fatal};
   writeFileSync("r04-live-ranking-evidence.json",JSON.stringify(result,null,2)+"\n");
   console.log("R04_LIVE_SUMMARY "+JSON.stringify(result.summary));
-  if(fatal||result.summary.failed||result.summary.observed!==QUERIES.length)process.exitCode=1;
+  if(fatal||result.summary.failed||result.summary.observed!==QUERIES.length ||
+     result.summary.knownPeripheralTopOne.length>0)process.exitCode=1;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))await run();
