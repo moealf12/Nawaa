@@ -32,7 +32,7 @@ import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontB
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries, createOfferMatchAssessor } from "../src/search-query.mjs";
 import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
 import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
-import { createSearchCache } from "./search-cache.mjs";
+import { createSearchCache, classifySearchCacheAdmission } from "./search-cache.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
@@ -360,6 +360,29 @@ async function searchExpansion(query, depth, {signal} = {}) {
   const allSelectedOffers=selectDiverseOffers(offers,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
+  // Do not infer successful completion merely from a non-throwing adapter:
+  // source-owned diagnostics can report rejected pages and failed PDPs.
+  const amazonDiagnostic=amazon?.diagnostics;
+  const amazonSourceProblem=!amazon.error && plan.amazonPageCount>0 && (
+    Boolean(amazonDiagnostic?.primarySearchError) ||
+    Boolean(amazonDiagnostic?.sourceAccessFailure) ||
+    Boolean(amazonDiagnostic?.searchPage?.blockedReason) ||
+    Number(amazon?.failures||0)>0 ||
+    (Number.isFinite(amazonDiagnostic?.pagesRequested) &&
+     Number(amazonDiagnostic?.pagesFetched)<Number(amazonDiagnostic.pagesRequested))
+  );
+  if(amazonSourceProblem)errors.push({provider:"free-storefronts",
+    sourceId:"free-storefronts:amazon-sa",pass:"expansion",
+    error:"amazon_incomplete_source_evidence"});
+  const storefrontSourceProblem=Array.isArray(storefront?.diagnostics) &&
+    storefront.diagnostics.some(item=>Number(item?.failures||0)>0);
+  if(storefrontSourceProblem)errors.push({provider:"free-storefronts",
+    sourceId:"free-storefronts",pass:"expansion",
+    error:"storefront_incomplete_pdp_evidence"});
+  // Both expansion components have settled, but completion applies only to
+  // this bounded cursor wave, not the entire world source registry.
+  const sourceFailures=summarizeSourceFailures(errors);
+  const partial=errors.length>0 || sourceFailures.errorsReported>0;
   const sources=currentSources();
   return {
     providersConfigured:configuredProviders(),
@@ -384,7 +407,10 @@ async function searchExpansion(query, depth, {signal} = {}) {
         responseOffers:plan.returnLimit,
       },
       fallbackUsed:false,
-      sourceFailures:summarizeSourceFailures(errors),
+      partial,complete:!partial,
+      deadlineExceeded:false,
+      providersPending:0,
+      sourceFailures,
     },
     providers,
     normalizedQuery:query,
@@ -859,7 +885,9 @@ const cachedSearch = createSearchCache(async (key,{signal}={}) => {
   const parsed = JSON.parse(key);
   if (!Array.isArray(parsed) || typeof parsed[0] !== "string") throw new Error("invalid_search_cache_key");
   return searchAll(parsed[0], { depth:Number(parsed[1]) || 0, signal });
-}, { ttl:45000, maxEntries:48 });
+}, { ttl:45000, maxEntries:48,
+  classifyAdmission:result=>classifySearchCacheAdmission(result,{requireExplicitComplete:true}),
+});
 const rateLimit = createRateLimiter();
 
 function enforceRateLimit(req, res, scope, policy, origin = "*") {

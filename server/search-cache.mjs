@@ -1,3 +1,67 @@
+// Cache admission is intentionally separate from returning validated offers.
+// A partial fetch can help the requesting shopper while never becoming a
+// canonical fresh snapshot that suppresses subsequent source acquisition.
+export function classifySearchCacheAdmission(result,{requireExplicitComplete=false}={}){
+  const offers=Array.isArray(result?.offers)?result.offers:[];
+  const errors=Array.isArray(result?.errors)?result.errors:[];
+  const coverage=result?.coverage && typeof result.coverage==="object" &&
+    !Array.isArray(result.coverage)?result.coverage:null;
+  const deny=(completeness,reason)=>({cacheable:false,completeness,reason});
+  // Invalid source error containers must not be silently normalized to [].
+  // A cache entry cannot claim a clean acquisition when error evidence is malformed.
+  if(result?.errors!==undefined && !Array.isArray(result.errors))
+    return deny("unknown","errors_invalid");
+  if(!offers.length)return deny("empty","no_offers");
+  if(!coverage){
+    if(requireExplicitComplete)return deny("unknown","coverage_missing");
+    if(errors.length)return deny("partial","source_errors");
+    return {cacheable:true,completeness:"complete",reason:"legacy_clean_result"};
+  }
+  // Production requires source-failure accounting and an explicit deadline
+  // verdict. Missing source evidence is UNKNOWN, never a zero-error success.
+  if(requireExplicitComplete && (
+    !Array.isArray(result?.errors) ||
+    !coverage.sourceFailures ||
+    typeof coverage.sourceFailures!=="object" ||
+    Array.isArray(coverage.sourceFailures) ||
+    !Object.hasOwn(coverage.sourceFailures,"errorsReported") ||
+    typeof coverage.deadlineExceeded!=="boolean"
+  ))return deny("unknown","coverage_invalid");
+  // Missing optional counters mean the provider did not observe them. Explicit
+  // malformed counters are NOT equivalent to 0 and must fail closed.
+  const counter=(obj,key)=>{
+    if(!(key in obj))return 0;
+    const n=obj[key];
+    return typeof n==="number" && Number.isSafeInteger(n) && n>=0 ? n : null;
+  };
+  const pending=counter(coverage,"providersPending");
+  const failures=coverage.sourceFailures;
+  const errorsReported=failures===undefined?0:
+    failures && typeof failures==="object" && !Array.isArray(failures)
+      ?counter(failures,"errorsReported"):null;
+  if(pending===null||errorsReported===null)return deny("unknown","coverage_invalid");
+  const complete=coverage.complete===true;
+  const partial=coverage.partial===true;
+  const deadline=coverage.deadlineExceeded===true;
+  const hasErrors=errors.length>0||errorsReported>0;
+  if(complete&&(partial||deadline||pending>0||hasErrors))
+    return deny("unknown","coverage_conflict");
+  if(deadline)return deny("partial","deadline_exceeded");
+  if(pending>0)return deny("partial","providers_pending");
+  if(partial)return deny("partial","coverage_partial");
+  if(coverage.complete===false)return deny("partial","coverage_incomplete");
+  if(hasErrors)return deny("partial","source_errors");
+  if(complete && coverage.partial!==false)return deny("unknown","coverage_unproven");
+  if(coverage.deadlineExceeded!==undefined && typeof coverage.deadlineExceeded!=="boolean")
+    return deny("unknown","coverage_invalid");
+  if(coverage.partial!==undefined && typeof coverage.partial!=="boolean")
+    return deny("unknown","coverage_invalid");
+  if(coverage.complete!==undefined && typeof coverage.complete!=="boolean")
+    return deny("unknown","coverage_invalid");
+  if(!complete)return deny("unknown","coverage_unproven");
+  return {cacheable:true,completeness:"complete",reason:"complete_result"};
+}
+
 // Stale-while-revalidate search snapshots. Fresh hits return immediately; stale
 // hits are served immediately while one coalesced refresh runs in background.
 export function createSearchCache(search, {
@@ -5,7 +69,10 @@ export function createSearchCache(search, {
   staleTtl = 5 * 60 * 1000,
   maxEntries = 80,
   now = Date.now,
+  classifyAdmission = classifySearchCacheAdmission,
 } = {}) {
+  if(typeof search!=="function"||typeof now!=="function"||typeof classifyAdmission!=="function")
+    throw new TypeError("invalid_search_cache_dependency");
   const entries = new Map();
   const pending = new Map();
   const refreshInfo=new WeakMap();
@@ -14,11 +81,12 @@ export function createSearchCache(search, {
   let generation = 0;
 
   const clone = (value) => structuredClone(value);
-  const cacheMeta = (mode, ageMs) => ({
+  const cacheMeta = (mode, ageMs, {completeness=null,refreshing=mode==="stale"}={}) => ({
     hit: mode !== "miss",
     mode,
-    stale: mode === "stale",
-    refreshing: mode === "stale",
+    stale: mode === "stale" || mode === "stale-if-error",
+    refreshing:Boolean(refreshing),
+    completeness,
     ageMs,
     ttlMs: ttl,
     staleTtlMs: staleTtl,
@@ -34,7 +102,8 @@ export function createSearchCache(search, {
   // waiting for the obsolete merchant acquisition to settle first.
   function startRefresh(key) {
     if (pending.has(key)) return pending.get(key);
-    const trace={refreshReplays:0,lastInvalidationReason:null};
+    const trace={refreshReplays:0,lastInvalidationReason:null,
+      cacheAdmission:null,cacheAdmissionReason:null,completeness:null};
     const controller=new AbortController();
     const startedGeneration=generation;
     let invalidate;
@@ -60,16 +129,40 @@ export function createSearchCache(search, {
         trace.refreshReplays=1+(next?.refreshReplays||0);
         trace.lastInvalidationReason=next?.lastInvalidationReason||
           (outcome.kind==="replacement"?outcome.reason:"unknown");
+        trace.cacheAdmission=next?.cacheAdmission??null;
+        trace.cacheAdmissionReason=next?.cacheAdmissionReason??null;
+        trace.completeness=next?.completeness??null;
         return fresh;
       }
       if(outcome.kind==="error")throw outcome.error;
       const result=outcome.value;
-      if(result.offers?.length){
-        while(entries.size>=maxEntries)entries.delete(entries.keys().next().value);
-        const entry={at:now(),result:clone(result)};
+      let admission;
+      try{
+        const candidate=classifyAdmission(result);
+        admission=candidate && typeof candidate==="object" &&
+          typeof candidate.cacheable==="boolean" &&
+          ["complete","partial","unknown","empty"].includes(candidate.completeness) &&
+          typeof candidate.reason==="string" && /^[a-z_]{3,64}$/.test(candidate.reason) &&
+          (!candidate.cacheable || candidate.completeness==="complete")
+          ?candidate:{cacheable:false,completeness:"unknown",reason:"classifier_invalid"};
+      }catch{
+        admission={cacheable:false,completeness:"unknown",reason:"classifier_failed"};
+      }
+      trace.cacheAdmission=admission.cacheable?"accepted":"rejected";
+      trace.cacheAdmissionReason=admission.reason;
+      trace.completeness=admission.completeness;
+      // Missing/zero entry budgets may not enter an unbounded eviction loop.
+      if(admission.cacheable && Number.isSafeInteger(maxEntries) && maxEntries>0){
+        while(entries.size>=maxEntries){
+          const oldest=entries.keys().next().value;
+          if(oldest===undefined)break;
+          entries.delete(oldest);
+        }
+        const entry={at:now(),result:clone(result),completeness:admission.completeness};
         entries.delete(key);
         entries.set(key,entry);
       }
+      // Result contract: never wrap, redact, or drop valid partial offers.
       return result;
     }).finally(()=>{
       if(pending.get(key)===task)pending.delete(key);
@@ -87,12 +180,14 @@ export function createSearchCache(search, {
       const age = Math.max(0, now() - entry.at);
       if (age < ttl) {
         touch(key, entry);
-        return { ...clone(entry.result), cache:cacheMeta("fresh", age) };
+        return { ...clone(entry.result), cache:cacheMeta("fresh", age,
+          {completeness:entry.completeness??"complete",refreshing:false}) };
       }
       if (allowStale && age < staleTtl) {
         touch(key, entry);
         void startRefresh(key).catch(() => {});
-        return { ...clone(entry.result), cache:cacheMeta("stale", age) };
+        return { ...clone(entry.result), cache:cacheMeta("stale", age,
+          {completeness:entry.completeness??"complete",refreshing:true}) };
       }
       // Keep the expired snapshot until refresh succeeds; it can rescue a
       // transient provider/deadline failure instead of flashing zero results.
@@ -103,17 +198,27 @@ export function createSearchCache(search, {
     // No raw cache key, query, URL or product evidence enters diagnostics.
     // Observers are isolated: failures can never interrupt a valid result.
     if(typeof onDiagnostic==="function"){
-      try{onDiagnostic({refreshReplays:refreshInfo.get(refresh)?.refreshReplays??0,
-        lastInvalidationReason:refreshInfo.get(refresh)?.lastInvalidationReason??null});}catch{}
+      try{
+        const info=refreshInfo.get(refresh);
+        onDiagnostic({
+          refreshReplays:info?.refreshReplays??0,
+          lastInvalidationReason:info?.lastInvalidationReason??null,
+          cacheAdmission:info?.cacheAdmission??null,
+          cacheAdmissionReason:info?.cacheAdmissionReason??null,
+          completeness:info?.completeness??null,
+        });
+      }catch{}
     }
     if (allowStale && (!result.offers?.length) && previous?.offers?.length) {
       touch(key, entry);
       return {
         ...previous,
-        cache:{...cacheMeta("stale-if-error", Math.max(0, now() - entry.at)), hit:true, stale:true, refreshing:false},
+        cache:cacheMeta("stale-if-error",Math.max(0,now()-entry.at),
+          {completeness:entry?.completeness??"complete",refreshing:false}),
       };
     }
-    return { ...clone(result), cache:cacheMeta("miss", 0) };
+    return { ...clone(result), cache:cacheMeta("miss", 0,
+      {completeness:refreshInfo.get(refresh)?.completeness??"unknown",refreshing:false}) };
   };
 
   cachedSearch.peek = (key, { allowStale = true } = {}) => {
@@ -124,7 +229,8 @@ export function createSearchCache(search, {
     // Customer SSE must not emit an out-of-date exactMatch, price, or
     // availability snapshot while merchants are being refreshed.
     if (!allowStale && age >= ttl) return null;
-    return { ...clone(entry.result), cache:cacheMeta(age < ttl ? "fresh" : "stale", age) };
+    return { ...clone(entry.result), cache:cacheMeta(age < ttl ? "fresh" : "stale", age,
+      {completeness:entry.completeness??"complete",refreshing:age>=ttl}) };
   };
   // Read-only, per-key observation for bounded HTTP wait diagnostics.
   // It does not change cache freshness, coalescing, invalidation or offer truth.

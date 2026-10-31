@@ -28,7 +28,9 @@ test("an invalidation during search preserves freshness and reports exactly one 
   const result=await request;
   assert.equal(calls,2,"invalidation must trigger a fresh second search");
   assert.deepEqual(result.offers,[{title:"new",productPrice:20}]);
-  assert.deepEqual(trace,{refreshReplays:1,lastInvalidationReason:"unknown"});
+  assert.equal(trace.refreshReplays,1);
+  assert.equal(trace.lastInvalidationReason,"unknown");
+  assert.equal(trace.cacheAdmission,"accepted");
   assert.equal(cache.isPending("iPhone 17"),false);
 });
 
@@ -46,8 +48,10 @@ test("normal coalesced requests report zero replay without changing results",asy
   const [x,y]=await Promise.all([a,b]);
   assert.deepEqual(x.offers,y.offers);
   assert.equal(calls,1);
-  assert.deepEqual(diagA,{refreshReplays:0,lastInvalidationReason:null});
-  assert.deepEqual(diagB,{refreshReplays:0,lastInvalidationReason:null});
+  assert.equal(diagA.refreshReplays,0);
+  assert.equal(diagA.lastInvalidationReason,null);
+  assert.equal(diagB.refreshReplays,0);
+  assert.equal(diagB.lastInvalidationReason,null);
 });
 
 test("cache diagnostics never turn eligible offers into errors",async()=>{
@@ -86,7 +90,9 @@ test("in-flight invalidation returns fresh evidence before obsolete search settl
   assert.equal(calls,2);
   assert.equal(outcome[0].offers[0].title,"current");
   assert.deepEqual(outcome[0].offers,outcome[1].offers);
-  assert.deepEqual(diagnostic,{refreshReplays:1,lastInvalidationReason:"ingest"});
+  assert.equal(diagnostic.refreshReplays,1);
+  assert.equal(diagnostic.lastInvalidationReason,"ingest");
+  assert.equal(diagnostic.cacheAdmission,"accepted");
   release();
 });
 
@@ -108,7 +114,9 @@ test("two invalidations chain to newest generation without releasing older acqui
   const response=await Promise.race([request,new Promise((_,reject)=>setTimeout(()=>reject(Error("still waiting on obsolete generation")),1500))]);
   assert.equal(calls,3);
   assert.equal(response.offers[0].title,"gen3");
-  assert.deepEqual(diagnostic,{refreshReplays:2,lastInvalidationReason:"ebay_deletion"});
+  assert.equal(diagnostic.refreshReplays,2);
+  assert.equal(diagnostic.lastInvalidationReason,"ebay_deletion");
+  assert.equal(diagnostic.cacheAdmission,"accepted");
   releaseFirst();releaseSecond();
 });
 
