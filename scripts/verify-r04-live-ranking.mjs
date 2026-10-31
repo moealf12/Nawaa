@@ -47,14 +47,22 @@ export function provisionalLabel(queryKind,offer){
   // Recorded live R04 top-ten evidence includes multilingual screen protectors,
   // memory upgrade kits, camera parts, books and a PS5 stand.
   const peripheralSubject=/(?:\bphoto\s*stick\b|\bflash\s*drive\b|\busb\s*memory\b|\bscreen\s*protectors?\b|\buser\s*guide\b|\bmanual\b|\bglass\s*film\b|\bpanzerfolie\b|\bschutzfolie\b|\bschutzglas\b|\bvetro\s*posteriore\b|\bcoperchio\s*batteria\b|\bdigitizer\b|\blcd\s*display\b|\brear\s*camera\s*(?:set|replacement|repair)\b|\bfor\s*repair\b|\bstan(?:d|dfusse|dfu\w*e)\b|\bhalterung\b|\b2x\s*\d+gb\s*\d+gb\s*ram\b)/i;
-  if(has(title,peripheralSubject) ||
-     (queryKind==="laptop" && /^(?:\d+x )?\d+gb(?: \d+gb)? ram memory\b/.test(title)))
+  if(queryKind==="laptop" && /^(?:\d+x )?\d+gb(?: \d+gb)? ram memory\b/.test(title))
     return {grade:0,reason:"retail_peripheral_subject"};
-  // Bundled games, installed SSDs and included DualSense are not standalone
-  // peripherals when a complete PlayStation console is the sold item.
-  const completeConsole=has(title,/(?:\\bconsole\\b|بلايستيشن\\s*5\\s*جهاز)/);
-  if(has(title,accessory) &&
-     !(queryKind==="ps5" && completeConsole && has(title,/(?:\\bwith\\b|\\bbundle\\b|\\bincluding\\b)/)))
+  // The sold retail subject must be a complete PS5 chassis BEFORE an inclusion
+  // phrase. "PS5 stand for Digital Edition Console" is a stand, not a console.
+  // Keep this independent of NAWAA's own exactMatch/confidence/price/rank.
+  const completeConsole=/(?:\bconsole\b|جهاز\s+بلايستيشن\s*5|بلايستيشن\s*5\s+جهاز)/.test(title);
+  const principalConsoleSubject=
+    /^(?:(?:sony|سوني)\s+)?(?:playstation\s*5|ps\s*5|بلايستيشن\s*5)(?:(?!\b(?:stand|holder|bracket|drive|faceplate|case|cover|adapter)\b).){0,100}\bconsole\b/.test(title) ||
+    /^(?:جهاز\s+بلايستيشن\s*5|بلايستيشن\s*5\s+جهاز)/.test(title);
+  const includedAccessory=title.match(/\b(?:with|including|includes)\s+(?:(?:an?|the|free|included|extra|additional)\s+)*(?:(?:vertical|horizontal)\s+)?(?:dualsense|controllers?|stand|games?|ssd)\b/);
+  const accessoryIsIncluded=queryKind==="ps5" && completeConsole && principalConsoleSubject &&
+    Boolean(includedAccessory) &&
+    !/\b(?:stand|holder|bracket|drive|faceplate|case|cover|adapter)\b/.test(title.slice(0,includedAccessory.index));
+  if(has(title,peripheralSubject) && !accessoryIsIncluded)
+    return {grade:0,reason:"retail_peripheral_subject"};
+  if(has(title,accessory) && !accessoryIsIncluded)
     return {grade:0,reason:"explicit_accessory_cue"};
   if(queryKind==="iphone"){
     if(!has(combined,iphone))return {grade:null,reason:"iphone_family_unproven"};
@@ -83,6 +91,15 @@ export function provisionalLabel(queryKind,offer){
     if(!has(combined,jbl))return {grade:null,reason:"jbl_brand_unproven"};
     if(has(title,/(?:\bspeaker\b|\bsoundbar\b|\bearbuds\b|سبيكر|مكبر\s*صوت|ساوندبار)/))
       return {grade:2,reason:"jbl_other_audio_category"};
+    // JBL's own model catalog classifies Tune 125BT and Tune 135BT as
+    // wireless in-ear HEADPHONES. Limit the positive exception to explicit
+    // matching model + sold earphones + Bluetooth, not arbitrary "earbuds".
+    // Sources: https://www.jbl.com/TUNE125BT-.html and https://www.jbl.com/TUNE135BT.html
+    const manufacturerEvidencedInEar=
+      /\b(?:tune\s+)?(?:125bt|135bt)\b/.test(title) &&
+      /\b(?:in\s+ear\s+)?earphones?\b/.test(title) && has(title,wireless);
+    if(manufacturerEvidencedInEar)
+      return {grade:3,reason:"manufacturer_evidenced_jbl_wireless_in_ear"};
     if(!has(title,headphones))return {grade:null,reason:"headphone_type_not_evidenced"};
     return has(title,wireless)?{grade:3,reason:"jbl_wireless_headphones_explicit"}:
       {grade:2,reason:"jbl_headphones_bluetooth_unconfirmed"};

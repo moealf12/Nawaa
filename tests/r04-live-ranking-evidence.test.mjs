@@ -40,3 +40,22 @@ test("R04 metrics: unknown relevance is never auto-converted into zero",()=>{
  assert.ok(complete.ndcg10<1);
  assert.equal(complete.metricStatus,"PROVISIONAL_RULE_LABELS");
 });
+
+test("R04 recorded JBL Tune 125BT/135BT in-ear Bluetooth retail subjects have external manufacturer model evidence",()=>{
+  const titles=[
+    "JBL Tune 125BT In-Ear Earphones, Bluetooth, USB (Charging), Built-in Microphone, Black",
+    "JBL Tune 125BT In-Ear Earphones, Bluetooth, USB (Charging), Built-in Microphone, White",
+    "JBL Tune 135BT In-Ear Earphones, Bluetooth, Built-in Microphone, Black",
+    "JBL Tune 135BT In-Ear Earphones, Bluetooth, Built-in Microphone, White",
+  ];
+  for(const title of titles){
+    const judged=provisionalLabel("jbl",{title,matchConfidence:0,exactMatch:false});
+    assert.deepEqual(judged,{grade:3,reason:"manufacturer_evidenced_jbl_wireless_in_ear"},title);
+    assert.deepEqual(provisionalLabel("jbl",{title,matchConfidence:1,exactMatch:true}),
+      judged,"do not borrow system confidence to build label");
+  }
+  assert.equal(p("jbl","JBL generic Bluetooth Earphones").grade,null,
+    "unverified earphone models remain UNKNOWN, not silently exact");
+  assert.equal(p("jbl","JBL Tune 125BT wired earphones").grade,null);
+  assert.equal(p("jbl","JBL Tune 135BT Bluetooth Speaker").grade,2);
+});
