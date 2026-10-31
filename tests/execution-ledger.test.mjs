@@ -26,5 +26,9 @@ test("reject round advancement without prior verification",()=>negative(x=>{x.ro
 test("reject multiple rounds in progress",()=>negative(x=>{x.rounds[1].status="IN_PROGRESS";x.rounds[1].baseSha=original.initialMainSha;},"multiple IN_PROGRESS"));
 test("reject invented completed status with missing evidence",()=>negative(x=>x.rounds[0].status="VERIFIED","PR evidence missing"));
 test("reject blocked status without a reason",()=>negative(x=>x.rounds[0].status="BLOCKED","missing documented blocker"));
-test("reject a planned round with an asserted baseline",()=>negative(x=>x.rounds[2].baseSha=original.initialMainSha,"planned rounds must not claim baseline"));
+test("reject a planned round with an asserted baseline",()=>negative(x=>{
+  const planned=x.rounds.find(r=>r.status==="PLANNED");
+  assert.ok(planned,"fixture requires a planned future round");
+  planned.baseSha=original.initialMainSha;
+},"planned rounds must not claim baseline"));
 test("JSON serialization leaves all invariants intact",()=>assert.deepEqual(validateExecutionLedger(JSON.parse(JSON.stringify(original))),[]));

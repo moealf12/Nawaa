@@ -77,10 +77,28 @@
       "dependsOn": [
         "R02"
       ],
-      "status": "PLANNED",
-      "baseSha": null,
+      "status": "VERIFIED",
+      "baseSha": "a9d847598cba2782509ad7a201a0ad7d38bab76c",
       "blockers": [],
-      "evidence": {}
+      "evidence": {
+        "prUrl": "https://github.com/moealf12/Nawaa/pull/239",
+        "ciUrl": "https://github.com/moealf12/Nawaa/actions/runs/41155723743",
+        "regressionUrl": "https://github.com/moealf12/Nawaa/actions/runs/41155236892",
+        "testedSha": "33a9cc759102986185990c4ef73ed401a7976fb8",
+        "mergedSha": "dd96abdc8ec76f4d8730a482fc77762dd9a3b88d",
+        "liveSha": "dd96abdc8ec76f4d8730a482fc77762dd9a3b88d",
+        "deploymentId": "dep-dbikbtbm8hqs73eurs1g",
+        "customerAcceptance": "PASS",
+        "negativeControl": "PASS",
+        "redSha": "49fec1ef298e8b58a8035ce73ab3c01d93dee89d",
+        "redGateUrl": "https://github.com/moealf12/Nawaa/actions/runs/41155127573",
+        "liveAcceptanceUrl": "https://github.com/moealf12/Nawaa/actions/runs/41157104272",
+        "liveAcceptanceArtifactId": 13025297718,
+        "mainReleaseCiUrl": "https://github.com/moealf12/Nawaa/actions/runs/41155826932",
+        "scope": "Generation fence prevents revoked stale-if-error fallback; bounded coalescing and R02 guards proven by deterministic tests.",
+        "observedLive": "Two exact-SHA HTTP health checks PASS; 8/8 real JSON 200, 4/4 SSE complete, no structurally invalid offers, no unproven FRESH.",
+        "caveat": "All eight sampled JSON queries remain partial with 14-15 source errors; no production-induced deletion race, exhaustive merchant recall, or P95 proof."
+      }
     },
     {
       "id": "R04",
@@ -92,8 +110,8 @@
       "dependsOn": [
         "R03"
       ],
-      "status": "PLANNED",
-      "baseSha": null,
+      "status": "IN_PROGRESS",
+      "baseSha": "69896f49c89a1534d62eb4a10a34da71ebfb6739",
       "blockers": [],
       "evidence": {}
     },
