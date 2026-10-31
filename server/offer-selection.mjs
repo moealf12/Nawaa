@@ -49,7 +49,16 @@ export function selectDiverseOffers(offers = [], limit = 120) {
       // Keep cohort boundaries anchored to confidence, then sort only each
       // merchant's comparable offers by buyer price. Do not globally re-sort:
       // round-robin merchant diversity must remain intact.
-      for (const bucket of merchants.values()) bucket.sort(compareOffers);
+      for (const bucket of merchants.values()) {
+        const currency=bucket[0]?.currency;
+        // Mixed or unknown currencies cannot safely form a price-first
+        // ordering: fall back to monotone confidence, avoiding comparator cycles.
+        const comparable=typeof currency==="string" &&
+          /^[A-Z]{3}$/.test(currency) &&
+          bucket.every(o=>o.currency===currency);
+        bucket.sort(comparable ? compareOffers :
+          (a,b)=>confidence(b)-confidence(a));
+      }
       let index=0,added=true;
       while(added && selected.length<cap){
         added=false;
