@@ -44,10 +44,29 @@
       "dependsOn": [
         "R01"
       ],
-      "status": "IN_PROGRESS",
+      "status": "VERIFIED",
       "baseSha": "ccd379508c2f1f357329a188949d4b40779490af",
       "blockers": [],
-      "evidence": {}
+      "evidence": {
+        "prUrl": "https://github.com/moealf12/Nawaa/pull/235",
+        "ciUrl": "https://github.com/moealf12/Nawaa/actions/runs/41147570959",
+        "regressionUrl": "https://github.com/moealf12/Nawaa/actions/runs/41147570965",
+        "testedSha": "8e75405aa04e7ff5643ca8c835318af4fc862e91",
+        "mergedSha": "9fd20bd57b3f19e181afa2397d3ed2fdf7abc7e7",
+        "liveSha": "9fd20bd57b3f19e181afa2397d3ed2fdf7abc7e7",
+        "deploymentId": "dep-dbij60rm8hqs73etojv0",
+        "customerAcceptance": "PASS",
+        "negativeControl": "PASS",
+        "postDeployPrUrl": "https://github.com/moealf12/Nawaa/pull/236",
+        "postDeployAcceptanceUrl": "https://github.com/moealf12/Nawaa/actions/runs/41148436879",
+        "postDeployTestedSha": "05f79129129635a01cbf64f490c9caef3168e525",
+        "redCommit": "d60bbf1984a2e7ee313b368747a7614f782550db",
+        "redGateUrl": "https://github.com/moealf12/Nawaa/actions/runs/41146177000",
+        "realSourceSmokeUrl": "https://github.com/moealf12/Nawaa/actions/runs/41147570967",
+        "r02ObservedUtc": "2026-10-31T00:10:19.730Z",
+        "liveFindings": "8/8 JSON partial/miss with valid offers; same PS5 repeated partial/miss; 4/4 SSE done; all live R02 checks PASS.",
+        "limitation": "All eight live queries remained partial; per-query observed 9,199–12,401ms and repeated PS5 12,498ms. Not P95, no proof of reduced source traffic or exhaustive coverage."
+      }
     },
     {
       "id": "R03",
