@@ -1,0 +1,49 @@
+name: NAWAA R04 Real Ranking Evidence (Read Only)
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-r04-live-ranking.mjs'
+      - 'tests/r04-live-ranking-evidence.test.mjs'
+      - '.github/workflows/r04-live-ranking-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-r04-ranking-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bounded-live-ranking:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check probe and independent judgment rubric
+        run: |
+          node --check scripts/verify-r04-live-ranking.mjs
+          node --test tests/r04-live-ranking-evidence.test.mjs
+      - name: Sample ten bilingual real shopper requests at exact LIVE base SHA
+        env:
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          FIRECRAWL_API_KEY: ''
+        run: node scripts/verify-r04-live-ranking.mjs
+      - name: Preserve bounded real customer evidence for independent adjudication
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-live-ranking-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-live-ranking-evidence.json
+          retention-days: 7
+          if-no-files-found: warn
