@@ -1,0 +1,609 @@
+{
+  "schemaVersion": "nawaa.r04-ranking-benchmark.v1",
+  "baselineSha": "69896f49c89a1534d62eb4a10a34da71ebfb6739",
+  "source": "engineering/execution/search-truth-corpus.json",
+  "provenance": "SYNTHETIC_DESIGNED_FIXTURES_NOT_INDEPENDENTLY_ADJUDICATED",
+  "currency": "SAR",
+  "relevanceRubric": {
+    "0": "Accessory, unrelated product, or wrong principal item",
+    "1": "Related category but not the requested item",
+    "2": "Same family, variant mismatch or incomplete requested specification",
+    "3": "Same target product and requested specification; price does not change relevance grade"
+  },
+  "cases": [
+    {
+      "id": "P01",
+      "queryIds": [
+        "Q01",
+        "Q02"
+      ],
+      "principalItem": "Apple iPhone 17 256GB",
+      "nearVariant": "Apple iPhone 17 128GB",
+      "accessory": "iPhone 17 protective case",
+      "illustrativePriceSAR": 3999,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P02",
+      "queryIds": [
+        "Q03",
+        "Q04"
+      ],
+      "principalItem": "Samsung Galaxy S25 Ultra",
+      "nearVariant": "Samsung Galaxy S25 base",
+      "accessory": "Galaxy S25 Ultra protective case",
+      "illustrativePriceSAR": 4599,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P03",
+      "queryIds": [
+        "Q05",
+        "Q06"
+      ],
+      "principalItem": "PS5 Digital Edition console",
+      "nearVariant": "PS5 Disc Edition console",
+      "accessory": "PS5 Digital Edition cover plate",
+      "illustrativePriceSAR": 1999,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P04",
+      "queryIds": [
+        "Q07",
+        "Q08"
+      ],
+      "principalItem": "PS5 standalone disc drive",
+      "nearVariant": "PS5 console Disc Edition",
+      "accessory": "PS5 disc drive carrying case",
+      "illustrativePriceSAR": 549,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P05",
+      "queryIds": [
+        "Q09",
+        "Q10"
+      ],
+      "principalItem": "PS5 NVMe SSD 1TB",
+      "nearVariant": "PS5 NVMe SSD 2TB",
+      "accessory": "PS5 SSD heatsink without storage",
+      "illustrativePriceSAR": 599,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P06",
+      "queryIds": [
+        "Q11",
+        "Q12"
+      ],
+      "principalItem": "JBL Bluetooth headphones",
+      "nearVariant": "JBL wired headphones",
+      "accessory": "JBL headphone carrying pouch",
+      "illustrativePriceSAR": 449,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P07",
+      "queryIds": [
+        "Q13",
+        "Q14"
+      ],
+      "principalItem": "Bluetooth speaker",
+      "nearVariant": "Bluetooth headphones",
+      "accessory": "Speaker power cable",
+      "illustrativePriceSAR": 329,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P08",
+      "queryIds": [
+        "Q15",
+        "Q16"
+      ],
+      "principalItem": "HP laptop with 16GB RAM",
+      "nearVariant": "HP laptop with 8GB RAM",
+      "accessory": "HP laptop sleeve",
+      "illustrativePriceSAR": 3299,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P09",
+      "queryIds": [
+        "Q17",
+        "Q18"
+      ],
+      "principalItem": "Gaming desktop RTX 5070",
+      "nearVariant": "Gaming desktop RTX 4060",
+      "accessory": "RTX 5070 graphics card alone",
+      "illustrativePriceSAR": 5899,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P10",
+      "queryIds": [
+        "Q19",
+        "Q20"
+      ],
+      "principalItem": "Canon mirrorless camera body",
+      "nearVariant": "Canon compact camera",
+      "accessory": "Canon mirrorless lens cap",
+      "illustrativePriceSAR": 3999,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P11",
+      "queryIds": [
+        "Q21",
+        "Q22"
+      ],
+      "principalItem": "Dyson V15 vacuum cleaner",
+      "nearVariant": "Dyson V12 vacuum cleaner",
+      "accessory": "Dyson V15 vacuum filter",
+      "illustrativePriceSAR": 2499,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P12",
+      "queryIds": [
+        "Q23",
+        "Q24"
+      ],
+      "principalItem": "Swarovski necklace",
+      "nearVariant": "Swarovski bracelet",
+      "accessory": "Necklace jewelry storage pouch",
+      "illustrativePriceSAR": 699,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P13",
+      "queryIds": [
+        "Q25",
+        "Q26"
+      ],
+      "principalItem": "Nike running shoes",
+      "nearVariant": "Nike casual shoes",
+      "accessory": "Nike shoes replacement laces",
+      "illustrativePriceSAR": 499,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P14",
+      "queryIds": [
+        "Q27",
+        "Q28"
+      ],
+      "principalItem": "Dior men's perfume",
+      "nearVariant": "Dior women's perfume",
+      "accessory": "Empty refill perfume atomizer",
+      "illustrativePriceSAR": 699,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P15",
+      "queryIds": [
+        "Q29",
+        "Q30"
+      ],
+      "principalItem": "Office chair",
+      "nearVariant": "Office stool",
+      "accessory": "Office chair replacement wheel",
+      "illustrativePriceSAR": 549,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P16",
+      "queryIds": [
+        "Q31",
+        "Q32"
+      ],
+      "principalItem": "Coffee beans",
+      "nearVariant": "Ground coffee",
+      "accessory": "Coffee machine brush",
+      "illustrativePriceSAR": 75,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P17",
+      "queryIds": [
+        "Q33",
+        "Q34"
+      ],
+      "principalItem": "Apple Watch Series 11",
+      "nearVariant": "Apple Watch Series 10",
+      "accessory": "Apple Watch Series 11 band",
+      "illustrativePriceSAR": 1899,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    },
+    {
+      "id": "P18",
+      "queryIds": [
+        "Q35",
+        "Q36"
+      ],
+      "principalItem": "Wireless earbuds",
+      "nearVariant": "Wired earbuds",
+      "accessory": "Wireless earbuds silicone case",
+      "illustrativePriceSAR": 249,
+      "judgments": {
+        "sameHigh": {
+          "relevance": 3,
+          "rationale": "same principal item; higher verified same-currency observed price"
+        },
+        "sameLow": {
+          "relevance": 3,
+          "rationale": "same principal item; lower verified same-currency observed price"
+        },
+        "otherExact": {
+          "relevance": 3,
+          "rationale": "same principal item from an independent simulated merchant"
+        },
+        "nearVariant": {
+          "relevance": 2,
+          "rationale": "nearby product/spec; not identical to the explicit request"
+        },
+        "accessory": {
+          "relevance": 0,
+          "rationale": "non-principal accessory or unrelated category"
+        }
+      }
+    }
+  ]
+}
