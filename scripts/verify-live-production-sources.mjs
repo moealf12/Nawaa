@@ -98,12 +98,49 @@ try {
           count:Number(x.returnedOffers)})).slice(0,15),
       sourceErrors:Array.isArray(data.errors)?data.errors.length:0,
       coverageComplete:data.coverage?.complete===true,
+      coveragePartial:data.coverage?.partial===true,
+      cacheMode:data.cache?.mode??null,
+      cacheCompleteness:data.cache?.completeness??null,
+      cacheFreshIsProven:data.cache?.mode!=="fresh" ||
+        (data.coverage?.complete===true && data.coverage?.partial===false &&
+        (Array.isArray(data.errors)?data.errors.length===0:false) &&
+        !data.coverage?.deadlineExceeded),
+      cachePartialIsHonest:data.coverage?.partial!==true ||
+        (data.cache?.mode!=="fresh" && data.cache?.completeness!=="complete"),
     };
     evidence.searches.push(result);
     if(res.status!==200) evidence.checks.push({name:"SEARCH_HTTP_"+query,result:"FAIL"});
     if(invalid.length) evidence.checks.push({name:"INVALID_OFFERS_"+query,result:"FAIL",count:invalid.length});
     console.log("NAWAA_LIVE_SEARCH "+JSON.stringify(result));
+    // Compare two sequential acquisitions of the *same* query within the
+    // normal 45-second TTL. A partial first response cannot create a fresh
+    // authoritative cache entry, even if its offers were useful to shoppers.
+    if(group==="gaming" && language==="en"){
+      const repeated=await get("/api/search?q="+encodeURIComponent(query),{timeoutMs:32000});
+      const next=repeated.payload||{};
+      evidence.r02Repeat={
+        firstPartial:result.coveragePartial,
+        firstCacheMode:result.cacheMode,
+        secondStatus:repeated.status,
+        secondElapsedMs:repeated.elapsedMs,
+        secondCacheMode:next.cache?.mode??null,
+        secondCacheCompleteness:next.cache?.completeness??null,
+        secondPartial:next.coverage?.partial===true,
+        secondComplete:next.coverage?.complete===true,
+        secondOffers:Array.isArray(next.offers)?next.offers.length:0,
+      };
+      check("R02_REPEAT_HTTP_200",repeated.status===200);
+      if(result.coveragePartial && result.cacheMode==="miss")
+        check("R02_PARTIAL_NOT_ADMITTED_AS_FRESH",next.cache?.mode==="miss");
+      check("R02_REPEAT_COVERAGE_HONEST",
+        next.cache?.mode!=="fresh" || (
+          next.coverage?.complete===true && next.coverage?.partial===false &&
+          Array.isArray(next.errors) && next.errors.length===0));
+      console.log("NAWAA_R02_CACHE_REPEAT "+JSON.stringify(evidence.r02Repeat));
+    }
   }
+  check("R02_NO_UNPROVEN_FRESH_IN_JSON",
+    evidence.searches.every(x=>x.cacheFreshIsProven&&x.cachePartialIsHonest));
   check("ALL_SEARCH_REQUESTS_200",evidence.searches.length===8&&evidence.searches.every(x=>x.status===200));
   check("NO_MALFORMED_PUBLISHED_OFFERS",evidence.searches.every(x=>x.invalidOffers===0));
   check("LIVE_PRODUCT_YIELD_PRESENT",evidence.searches.some(x=>x.structurallyValidOffers>0));
@@ -124,7 +161,7 @@ try {
   ]){
     const response=await get("/api/search/stream?q="+encodeURIComponent(query),
       {timeoutMs:35000,accept:"text/event-stream",parse:"text"});
-    let finalSnapshot=null,doneCount=0,errorCount=0,snapshotCount=0;
+    let finalSnapshot=null,doneCount=0,errorCount=0,snapshotCount=0,unsafeFreshSnapshots=0;
     for(const block of response.payload.split(/\r?\n\r?\n/)){
       const type=block.match(/^event: ([^\r\n]+)/m)?.[1];
       const body=block.match(/^data: (.+)$/m)?.[1];
@@ -136,12 +173,14 @@ try {
       if(type==="snapshot"){
         snapshotCount++;
         finalSnapshot=data;
+        if(data?.cache?.mode==="fresh" && data?.coverage?.complete!==true)
+          unsafeFreshSnapshots++;
       }
     }
     const offers=Array.isArray(finalSnapshot?.offers)?finalSnapshot.offers:[];
     const invalidOffers=offers.filter(o=>!validOffer(o)).length;
     const status={group,query,httpStatus:response.status,elapsedMs:response.elapsedMs,
-      snapshotCount,doneCount,errorCount,finalOffers:offers.length,invalidOffers,
+      snapshotCount,doneCount,errorCount,unsafeFreshSnapshots,finalOffers:offers.length,invalidOffers,
       coverageComplete:finalSnapshot?.coverage?.complete===true,
       coveragePartial:finalSnapshot?.coverage?.partial===true,
       finalRefreshing:finalSnapshot?.cache?.refreshing===true};
@@ -152,6 +191,8 @@ try {
     evidence.streams.every(x=>x.httpStatus===200&&x.snapshotCount>0&&
       x.doneCount===1&&x.errorCount===0&&!x.finalRefreshing));
   check("SSE_NO_MALFORMED_PUBLISHED_OFFERS",evidence.streams.every(x=>x.invalidOffers===0));
+  check("R02_SSE_NEVER_PROMOTES_PARTIAL_TO_FRESH",
+    evidence.streams.every(x=>x.unsafeFreshSnapshots===0));
   evidence.result="PASS";
 }catch(error){
   evidence.result="FAIL";
