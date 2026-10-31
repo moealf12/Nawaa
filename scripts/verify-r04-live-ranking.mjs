@@ -47,6 +47,9 @@ export function provisionalLabel(queryKind,offer){
   // a complete handset/headset/laptop. This rubric is independent of NAWAA's
   // own confidence/price/exactMatch and never treats unknown as grade zero.
   const retailSubject=title.split(/\b(?:with|including|includes)\b/,1)[0];
+  const verifiedStandaloneHpBoard=/\b(?:mainboards?|motherboards?|logic boards?|system boards?)\b|(?:^| )l34280 601(?= |$)/;
+  if(has(retailSubject,verifiedStandaloneHpBoard))
+    return {grade:0,reason:"verified_hp_mainboard_spare_part"};
   const independentlyObservedParts=/\b(?:rear camera lens glass|camera lens glass replacement|presa di ricarica|connettore dock|lcd frame|ear pads? replacement|replacement ear pads?|memoria ram|benutzerhandbuch)\b|^(?:\d+x )?\d+gb ram\b.*\b(?:so dimm|ddr[345])\b/;
   if(has(retailSubject,independentlyObservedParts) ||
      /\b(?:ear pads?|ear cushions?)\b.*\b(?:replacement|cushions?)\b/.test(retailSubject))
