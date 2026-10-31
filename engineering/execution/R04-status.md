@@ -21,3 +21,13 @@
 5. Execute protected PR gates and post-merge production exact-SHA checks before promoting a code slice.
 
 **Status:** IN_PROGRESS is not a claim of production-verified R04 quality or final completion.
+
+## Bilingual ranking quality benchmark — synthetic, not final certification
+
+- Baseline policy is frozen byte-for-byte from R03 LIVE main `69896f49c89a1534d62eb4a10a34da71ebfb6739` in `engineering/execution/r04-baseline-offer-selection.mjs`. Never substitute a manually claimed historical result.
+- `engineering/execution/r04-ranking-benchmark.json` provides **18 labeled scenarios paired across the existing 36 Arabic/English intent IDs**, with inspectable primary item, near-variant, accessory, synthetic merchant and price fixtures.
+- `scripts/evaluate-ranking-r04.mjs` evaluates frozen R03 and candidate R04 selection using the same synthetic candidate set and prints per-query and aggregate `NDCG@10`, `MRR@10`, and **first comparable exact-offer price regret**.
+- Relevance grades: 3 exact principal item, 2 near variant, 1 related, 0 accessory/unrelated. Price is *not* used to create a relevance label. Therefore same-item price improvements can legitimately leave NDCG/MRR unchanged at their ceiling.
+- Acceptable first-slice deterministic outcome: **zero NDCG/MRR regression**, zero accessory-first, and a positive reduction in first comparable SAR price regret. Metrics are computed, not asserted by prose.
+- Provenance is `SYNTHETIC_DESIGNED_FIXTURES_NOT_INDEPENDENTLY_ADJUDICATED`; 18 paired cases are not 36 independent merchant samples, and no observed prices are claimed.
+- **Full R04 certification remains blocked** until independent graded judgments from actual source observations and real exact-SHA production search checks exist. A perfect synthetic NDCG is not evidence of production ranking perfection.
