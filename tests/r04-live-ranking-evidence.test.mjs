@@ -59,3 +59,10 @@ test("R04 recorded JBL Tune 125BT/135BT in-ear Bluetooth retail subjects have ex
   assert.equal(p("jbl","JBL Tune 125BT wired earphones").grade,null);
   assert.equal(p("jbl","JBL Tune 135BT Bluetooth Speaker").grade,2);
 });
+
+test("R04 independent live rank-2 Samsung S Pen is peripheral, full handset stays principal",()=>{
+  const recorded="Samsung Galaxy Official S25 Ultra S Pen for Galaxy S25 Ultra Grey SM-S938N";
+  assert.deepEqual(p("galaxy",recorded),{grade:0,reason:"explicit_accessory_cue"});
+  assert.deepEqual(p("galaxy","Samsung Galaxy S25 Ultra 256GB Smartphone with included S Pen"),
+    {grade:3,reason:"s25_ultra_explicit"});
+});
