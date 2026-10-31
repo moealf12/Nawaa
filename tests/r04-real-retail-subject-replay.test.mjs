@@ -54,3 +54,16 @@ test("R04 legitimate bundles and complete principal items remain discoverable",(
       "must not overcorrect legitimate device: "+query+" "+title);
   }
 });
+
+test("R04 no overblocking: title-leading device with INCLUDED accessory stays a device",()=>{
+  const examples=[
+    {title:"Apple iPhone 17 256GB Smartphone with free Photo Stick",category:"phone"},
+    {title:"Samsung Galaxy S25 Ultra Smartphone with included Screen Protector",category:"phone"},
+    {title:"Sony PS5 Digital Edition Console with included Vertical Stand",category:"console"},
+    {title:"HP EliteBook Core i7 Laptop 16GB RAM with bundled Laptop Sleeve",category:"laptop"},
+  ];
+  for(const x of examples)assert.equal(productCategory({
+    title:x.title,merchant:"synthetic positive boundary",sourceUrl:"https://example.org/bundle",
+    specs:{modelNumber:"ELITEBOOK-840"},condition:"new"
+  }),x.category,x.title);
+});
