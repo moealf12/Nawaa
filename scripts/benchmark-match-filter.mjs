@@ -44,9 +44,22 @@ const queries = ['PS5','iPhone 17','PS5 disc drive','ايفون 17 256 جيجا'
 // across all 100 offers, not just the 95 unaffected historical fixtures.
 const knownArabicCover = 'غطاء هاتف ايفون 17 اسود';
 const intentional = offers.filter(offer=>offer.title===knownArabicCover);
-const unaffected = offers.filter(offer=>offer.title!==knownArabicCover);
+// R04 live-evidence remediation changes ONLY a documented accessory title
+// in this legacy parity corpus. This is an expected safety correction, not
+// permission for broad cross-version semantic drift.
+const r04NewPeripheral = new Set(['iPhone 17 Screen Protector']);
+const unaffected = offers.filter(offer=>offer.title!==knownArabicCover &&
+  !r04NewPeripheral.has(offer.title));
+const corrected = offers.filter(offer=>r04NewPeripheral.has(offer.title));
+assert.ok(corrected.length>0,'must exercise new R04 accessory-negative fixture');
+for (const offer of corrected) {
+  assert.equal(candidate.productCategory(offer),'accessory',
+    'R04 documented retail screen protector must not remain a phone');
+  assert.equal(candidate.assessOfferMatch('iPhone 17',offer).exactMatch,false);
+}
 assert.ok(intentional.length>0,'must exercise the known false-positive title');
 for (const offer of offers) {
+  if (r04NewPeripheral.has(offer.title)) continue;
   assert.deepStrictEqual(candidate.describeProduct(offer),baseline.describeProduct(offer),'description parity: '+offer.title);
   assert.deepStrictEqual(candidate.productCategory(offer),baseline.productCategory(offer),'category parity: '+offer.title);
 }
@@ -68,9 +81,9 @@ if (historicalFalsePositive) {
     iphoneBefore.filter(o=>o.title!==knownArabicCover).map(o=>o.sourceUrl),
     'candidate must remove only the documented Arabic cover false positives');
 } else {
-  assert.deepStrictEqual(candidate.filterQueryOffers('iPhone 17',offers),
-    baseline.filterQueryOffers('iPhone 17',offers),
-    'post-v15.3 baseline must preserve strict full-list semantic parity');
+  assert.deepStrictEqual(candidate.filterQueryOffers('iPhone 17',unaffected),
+    baseline.filterQueryOffers('iPhone 17',unaffected),
+    'post-v15.3 baseline must preserve strict non-R04 semantic parity');
 }
 const measuredQueries=['PS5','iPhone 17','HP laptop','Nike','iPhone 17 256GB','ايفون 17 256 جيجا'];
 let checksum=0;
@@ -89,10 +102,12 @@ const median = a=>{const b=[...a].sort((x,y)=>x-y);return (b[2]+b[3])/2;};
 const baseMs=median(timings.baseline),candidateMs=median(timings.candidate);
 console.log('MATCH_FILTER_BENCHMARK '+JSON.stringify({
   queries:measuredQueries,offersPerQuery:offers.length,
-  parityQueries:queries.length,parityOffers:historicalFalsePositive?unaffected.length:offers.length,rounds:6,
+  parityQueries:queries.length,parityOffers:unaffected.length,rounds:6,
   baselineMedianMs:baseMs,candidateMedianMs:candidateMs,
   relativeSpeedup:Number((baseMs/candidateMs).toFixed(3)),
-  semanticallyEquivalent:!historicalFalsePositive,unaffectedOfferParity:true,
+  semanticallyEquivalent:false,unaffectedOfferParity:true,
+  r04IntentionalCorrection:{titles:[...r04NewPeripheral],
+    fixtureCount:corrected.length,requiredCategory:'accessory'},
   intentionalChange:historicalFalsePositive?{
     reason:'Arabic covers no longer falsely match iPhone 17 handsets',
     excludedOfferCount:iphoneBefore.length-iphoneAfter.length,
