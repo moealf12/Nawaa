@@ -110,8 +110,8 @@
       "dependsOn": [
         "R03"
       ],
-      "status": "PLANNED",
-      "baseSha": null,
+      "status": "IN_PROGRESS",
+      "baseSha": "69896f49c89a1534d62eb4a10a34da71ebfb6739",
       "blockers": [],
       "evidence": {}
     },
