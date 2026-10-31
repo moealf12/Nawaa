@@ -1,4 +1,4 @@
-# R02 — Strict cache admission and performance safety
+# R02 — Strict cache admission and performance safety (VERIFIED)
 
 ## Fix delivered by this PR
 
@@ -41,7 +41,7 @@ but shall not silently reintroduce the original misclassification.
 - Branch RED commit: `d60bbf1984a2e7ee313b368747a7614f782550db`
 - Target: exact-head PR checks, explicit RED/GREEN regression, full
   npm test, PostgreSQL/Meilisearch/Python integration, and live release
-  SHA verification. The ledger remains R02 IN_PROGRESS pending all gates.
+  SHA verification. R02 is VERIFIED against post-deploy acceptance and exact LIVE SHA; see R02-evidence.md for evidence and limitations.
 
 ## Legacy contract update
 

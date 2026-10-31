@@ -24,18 +24,12 @@ system and owns no extra implementation package.
 - Keep the project zero-paid. Never confuse a registry candidate with a
   source that was attempted, verified, or displayed.
 
-## R01 scope (currently IN_PROGRESS, NOT closed)
+## Round status
 
-This PR is the first **governance slice**, creating durable ownership and
-negative-control ledger tests in the protected required PR workflow.
+- R01 VERIFIED — see `R01-evidence.md`
+- R02 VERIFIED — see `R02-evidence.md`
+- R03–R21 PLANNED
 
-Remaining R01 work before marking VERIFIED:
-1. Pin labeled multi-category corpus and source-stage acceptance fixtures.
-2. Require exact-PR-SHA relevant PG/Meilisearch/Python integrations through
-   a reliable aggregate CI gate, with real failure-injection controls.
-3. Verify PR, branch rule, production deployment and frontend/backend health.
-4. Save checked URLs and SHA-bound evidence. Do NOT backfill fabricated proof.
-
-The ledger validator checks structure and required proof fields. It cannot
-know whether remote evidence links are truthful; a release agent must fetch
-and verify them independently. A passed npm suite is not a universal proof.
+This README is informational. `rounds.json`, exact GitHub checks and
+actual Render LIVE commit remain authoritative. Do not start another
+round until the certification PR itself is deployed and verified.
