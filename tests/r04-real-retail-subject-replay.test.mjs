@@ -23,6 +23,8 @@ const cases=[
     "PS5 Slim Digital Edition Horizontal Standfüße Halterung, PS5 Slim ohne Laufwerk",expected:"accessory"},
   {id:"hp-ram-upgrade",query:"HP laptop 16GB RAM",title:
     "2x 16GB 32GB RAM DDR4 3200Mhz PC4-3200AA für HP Victus Gaming Laptop 15-fa0xxx",expected:"accessory"},
+  {id:"hp-sold-ram-memory",query:"HP laptop 16GB RAM",title:
+    "16GB RAM Memory HP-Compaq Omen 15-dc1053ur (DDR4-21300 (PC4-2666)) Laptop Memory",expected:"accessory"},
 ];
 const offer=(item)=>({title:item.title,merchant:"Live recorded title",condition:"new",
   sourceUrl:"https://example.org/replay/"+item.id,productPrice:999,currency:"SAR",
