@@ -43,6 +43,14 @@ export function provisionalLabel(queryKind,offer){
   const specs=norm([offer?.specs?.storage,offer?.specs?.ram].filter(Boolean).join(" "));
   const combined=[title,model].filter(Boolean).join(" ");
   if(!title)return {grade:null,reason:"missing_title"};
+  // Judge the principal retail item, not accessories explicitly bundled WITH
+  // a complete handset/headset/laptop. This rubric is independent of NAWAA's
+  // own confidence/price/exactMatch and never treats unknown as grade zero.
+  const retailSubject=title.split(/\b(?:with|including|includes)\b/,1)[0];
+  const independentlyObservedParts=/\b(?:rear camera lens glass|camera lens glass replacement|presa di ricarica|connettore dock|lcd frame|ear pads? replacement|replacement ear pads?|memoria ram|benutzerhandbuch)\b|^(?:\d+x )?\d+gb ram\b.*\b(?:so dimm|ddr[345])\b/;
+  if(has(retailSubject,independentlyObservedParts) ||
+     /\b(?:ear pads?|ear cushions?)\b.*\b(?:replacement|cushions?)\b/.test(retailSubject))
+    return {grade:0,reason:"recorded_retail_spare_part_or_manual"};
   // Proof of the item being sold dominates its compatible-device keywords.
   // Recorded live R04 top-ten evidence includes multilingual screen protectors,
   // memory upgrade kits, camera parts, books and a PS5 stand.
@@ -60,9 +68,9 @@ export function provisionalLabel(queryKind,offer){
   const accessoryIsIncluded=queryKind==="ps5" && completeConsole && principalConsoleSubject &&
     Boolean(includedAccessory) &&
     !/\b(?:stand|holder|bracket|drive|faceplate|case|cover|adapter)\b/.test(title.slice(0,includedAccessory.index));
-  if(has(title,peripheralSubject) && !accessoryIsIncluded)
+  if(has(retailSubject,peripheralSubject) && !accessoryIsIncluded)
     return {grade:0,reason:"retail_peripheral_subject"};
-  if(has(title,accessory) && !accessoryIsIncluded)
+  if(has(retailSubject,accessory) && !accessoryIsIncluded)
     return {grade:0,reason:"explicit_accessory_cue"};
   if(queryKind==="iphone"){
     if(!has(combined,iphone))return {grade:null,reason:"iphone_family_unproven"};
