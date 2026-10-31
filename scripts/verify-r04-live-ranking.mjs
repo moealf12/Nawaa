@@ -47,7 +47,9 @@ export function provisionalLabel(queryKind,offer){
   // Recorded live R04 top-ten evidence includes multilingual screen protectors,
   // memory upgrade kits, camera parts, books and a PS5 stand.
   const peripheralSubject=/(?:\bphoto\s*stick\b|\bflash\s*drive\b|\busb\s*memory\b|\bscreen\s*protectors?\b|\buser\s*guide\b|\bmanual\b|\bglass\s*film\b|\bpanzerfolie\b|\bschutzfolie\b|\bschutzglas\b|\bvetro\s*posteriore\b|\bcoperchio\s*batteria\b|\bdigitizer\b|\blcd\s*display\b|\brear\s*camera\s*(?:set|replacement|repair)\b|\bfor\s*repair\b|\bstan(?:d|dfusse|dfu\w*e)\b|\bhalterung\b|\b2x\s*\d+gb\s*\d+gb\s*ram\b)/i;
-  if(has(title,peripheralSubject))return {grade:0,reason:"retail_peripheral_subject"};
+  if(has(title,peripheralSubject) ||
+     (queryKind==="laptop" && /^(?:\d+x )?\d+gb(?: \d+gb)? ram memory\b/.test(title)))
+    return {grade:0,reason:"retail_peripheral_subject"};
   // Bundled games, installed SSDs and included DualSense are not standalone
   // peripherals when a complete PlayStation console is the sold item.
   const completeConsole=has(title,/(?:\\bconsole\\b|بلايستيشن\\s*5\\s*جهاز)/);
