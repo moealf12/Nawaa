@@ -109,3 +109,13 @@ test("R04 postdeploy negative control: a real observed peripheral at top rank mu
     assert.equal(rank1Bad.metricStatus,"PROVISIONAL_RULE_LABELS");
   }
 });
+
+test("R04 real Q15 motherboard must be independently labeled as a spare part",()=>{
+  const title="L34280-601 für HP EliteBook x360 1030 G3 mit Intel Core i7-8650U und 16 GB RAM";
+  const a=provisionalLabel("laptop",{title,exactMatch:true,matchConfidence:1,productPrice:1});
+  const b=provisionalLabel("laptop",{title,exactMatch:false,matchConfidence:0,productPrice:100000});
+  assert.deepEqual(a,{grade:0,reason:"verified_hp_mainboard_spare_part"});
+  assert.deepEqual(a,b);
+  const legitimate="HP EliteBook 840 G6 Business Laptop Intel Core i7 16GB RAM with included spare motherboard";
+  assert.equal(provisionalLabel("laptop",{title:legitimate}).grade,3);
+});
