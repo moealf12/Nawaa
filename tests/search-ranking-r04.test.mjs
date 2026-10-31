@@ -44,3 +44,14 @@ test("R04: absent price must never be treated as zero",()=>{
   const without=listing("missing",undefined,.98);
   assert.ok(compareOffers(verified,without)<0);
 });
+
+test("R04: mixed-currency merchant cohort stays confidence-ordered across arrival permutations",()=>{
+  const a=listing("a",4500,.99);
+  const b=listing("b",650,.98,{currency:"EUR"});
+  const c=listing("c",2800,.97);
+  for(const permutation of [[a,b,c],[a,c,b],[b,a,c],[b,c,a],[c,a,b],[c,b,a]]){
+    assert.deepEqual(selectDiverseOffers(permutation,3).map(o=>o.sourceUrl),
+      [a,b,c].map(o=>o.sourceUrl),
+      "never create a nontransitive raw-price ordering across currencies");
+  }
+});
