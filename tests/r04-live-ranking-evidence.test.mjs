@@ -59,3 +59,37 @@ test("R04 recorded JBL Tune 125BT/135BT in-ear Bluetooth retail subjects have ex
   assert.equal(p("jbl","JBL Tune 125BT wired earphones").grade,null);
   assert.equal(p("jbl","JBL Tune 135BT Bluetooth Speaker").grade,2);
 });
+
+test("R04 independent live rank-2 Samsung S Pen is peripheral, full handset stays principal",()=>{
+  const recorded="Samsung Galaxy Official S25 Ultra S Pen for Galaxy S25 Ultra Grey SM-S938N";
+  assert.deepEqual(p("galaxy",recorded),{grade:0,reason:"explicit_accessory_cue"});
+  assert.deepEqual(p("galaxy","Samsung Galaxy S25 Ultra 256GB Smartphone with included S Pen"),
+    {grade:3,reason:"s25_ultra_explicit"});
+});
+
+test("R04 real first-screen retail parts are graded as spare parts, not principal devices",()=>{
+  const recorded=[
+    ["galaxy","Perzework 2 Sets Back Rear Camera Lens Glass Replacement for Samsung Galaxy S25 Ultra",0],
+    ["galaxy","Samsung Galaxy S25 Ultra Benutzerhandbuch: Meistern Sie Ihr Gerät",0],
+    ["galaxy","Originale Samsung Galaxy S25 ULTRA S938B presa di ricarica connettore dock USB microfono",0],
+    ["galaxy","Genuine Samsung Galaxy S25 Ultra S938B Lcd+frame Jet Black Assembled GH82-36387D",0],
+    ["jbl","Ear Pads Replacement Cushion for JBL E35 E45bt E45 Bluetooth Wireless Headphones",0],
+    ["laptop","16GB Memoria RAM HP-Compaq Pavilion Notebook 15-da3000nia",0],
+    ["laptop","16GB RAM SO DIMM DDR5 5600Mhz PC5-5600B for HP Notebook Omen Laptop 16-b1xxx",0],
+  ];
+  for(const [kind,title,grade] of recorded){
+    const a=provisionalLabel(kind,{title,exactMatch:true,matchConfidence:1,productPrice:1});
+    const b=provisionalLabel(kind,{title,exactMatch:false,matchConfidence:0,productPrice:100000});
+    assert.equal(a.grade,grade,title);
+    assert.deepEqual(a,b,"retail part truth cannot depend on system rank/confidence/price");
+  }
+});
+test("R04 independent rubric keeps sold principal device with explicitly included accessory",()=>{
+  const positives=[
+    ["galaxy","Samsung Galaxy S25 Ultra 256GB Smartphone with included camera lens protector",3],
+    ["jbl","JBL Tune 520BT Bluetooth Headphones with replacement ear pads included",3],
+    ["laptop","HP EliteBook 840 G6 16GB RAM Laptop Intel Core i7 with included protective sleeve",3],
+  ];
+  for(const [kind,title,grade] of positives)
+    assert.equal(provisionalLabel(kind,{title}).grade,grade,title);
+});
