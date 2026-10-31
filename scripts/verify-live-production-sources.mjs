@@ -51,6 +51,13 @@ try {
     revision:health.payload?.revision||null};
   check("HEALTH_HTTP_200",health.status===200&&health.payload?.ok===true);
   check("EXACT_LIVE_REVISION",health.payload?.revision===expected);
+  // R03 certification: sample a second independent HTTP request, rather than
+  // mistaking one healthy instance for proof of the entire rolling release.
+  const revisionRepeat=await get("/health",{timeoutMs:25000});
+  evidence.r03HealthRepeat={status:revisionRepeat.status,
+    revision:revisionRepeat.payload?.revision??null,elapsedMs:revisionRepeat.elapsedMs};
+  check("R03_REPEAT_HEALTH_REVISION",revisionRepeat.status===200 &&
+    revisionRepeat.payload?.ok===true && revisionRepeat.payload?.revision===expected);
   const free=health.payload?.liveProviders?.freeStorefronts||[];
   const legacy=health.payload?.liveProviders?.noon;
   evidence.noonRouting={scopedSourceConfigured:free.includes("noon-sa"),legacyProviderEnabled:legacy};
