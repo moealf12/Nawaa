@@ -169,15 +169,15 @@ export const PRODUCT_CATEGORIES = [
 function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
-  const subject=retail.split(/\\b(?:with|including|includes)\\b/,1)[0];
-  if (/\\b(?:user guide|instruction manual|repair manual)\\b/.test(subject))
+  const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  if (/\b(?:user guide|instruction manual|repair manual)\b/.test(subject))
     return "book";
-  if (/\\b(?:photo stick|usb memory stick|screen protectors?|lcd display touch screen digitizer|touch screen digitizer|screen digitizer|panzerfolie|schutzfolie|schutzglas|halterung|vetro posteriore|coperchio batteria)\\b/.test(subject))
+  if (/\b(?:photo stick|usb memory stick|screen protectors?|lcd display touch screen digitizer|touch screen digitizer|screen digitizer|panzerfolie|schutzfolie|schutzglas|halterung|vetro posteriore|coperchio batteria)\b/.test(subject))
     return "accessory";
   if (/(?:^| )standf[uü](?:ss|ß)?e(?: |$)/u.test(subject))return "accessory";
   // A RAM kit advertised for a Victus/EliteBook does not become a laptop
   // simply because compatibility text includes the laptop family/model.
-  if (/^\\d+x \\d+gb(?: \\d+gb)? ram\\b/.test(subject))
+  if (/^\d+x \d+gb(?: \d+gb)? ram\b/.test(subject))
     return "accessory";
   return null;
 }
