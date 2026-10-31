@@ -91,6 +91,15 @@ export function provisionalLabel(queryKind,offer){
     if(!has(combined,jbl))return {grade:null,reason:"jbl_brand_unproven"};
     if(has(title,/(?:\bspeaker\b|\bsoundbar\b|\bearbuds\b|سبيكر|مكبر\s*صوت|ساوندبار)/))
       return {grade:2,reason:"jbl_other_audio_category"};
+    // JBL's own model catalog classifies Tune 125BT and Tune 135BT as
+    // wireless in-ear HEADPHONES. Limit the positive exception to explicit
+    // matching model + sold earphones + Bluetooth, not arbitrary "earbuds".
+    // Sources: https://www.jbl.com/TUNE125BT-.html and https://www.jbl.com/TUNE135BT.html
+    const manufacturerEvidencedInEar=
+      /\b(?:tune\s+)?(?:125bt|135bt)\b/.test(title) &&
+      /\b(?:in\s+ear\s+)?earphones?\b/.test(title) && has(title,wireless);
+    if(manufacturerEvidencedInEar)
+      return {grade:3,reason:"manufacturer_evidenced_jbl_wireless_in_ear"};
     if(!has(title,headphones))return {grade:null,reason:"headphone_type_not_evidenced"};
     return has(title,wireless)?{grade:3,reason:"jbl_wireless_headphones_explicit"}:
       {grade:2,reason:"jbl_headphones_bluetooth_unconfirmed"};
