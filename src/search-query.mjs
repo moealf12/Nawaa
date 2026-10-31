@@ -177,7 +177,8 @@ function detectedRetailPeripheral(offer = {}) {
   if (/(?:^| )standf[uü](?:ss|ß)?e(?: |$)/u.test(subject))return "accessory";
   // A RAM kit advertised for a Victus/EliteBook does not become a laptop
   // simply because compatibility text includes the laptop family/model.
-  if (/^\d+x \d+gb(?: \d+gb)? ram\b/.test(subject))
+  if (/^(?:\d+x )?\d+gb(?: \d+gb)? ram\b(?: memory| module| kit| upgrade)?/.test(subject) &&
+      /\b(?:ram memory|ram module|ram kit|ram upgrade|\d+x \d+gb)/.test(subject))
     return "accessory";
   return null;
 }
@@ -263,6 +264,13 @@ function productCategoryWithDescription(offer, gaming) {
   if(hpClaim && !computerSubjectBeforeClaim) return 'accessory';
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   if (isEvidencedCompleteLaptop(offer)) return 'laptop';
+  // A complete title-leading smartphone may include a free screen protector.
+  // The INCLUDED accessory does not replace the sold handset subject.
+  const primary=normalizedRetailTitle.split(/\b(?:with|including|includes)\b/,1)[0];
+  if (/^(?:(?:apple )?iphone \d+|samsung galaxy s\d+)/.test(primary) &&
+      /\b(?:smartphone|phone|handset)\b/.test(primary) &&
+      !/\b(?:screen protectors?|photo stick|case|cover|digitizer)\b/.test(primary))
+    return 'phone';
   let urlSemantic = "";
   try {
     const parsedUrl = new URL(String(offer?.sourceUrl || ""));
