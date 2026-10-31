@@ -170,6 +170,17 @@ function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
   const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  // R04: confirmed live Q04 ranked a standalone Samsung S Pen at #2 for the
+  // S25 Ultra handset query. The pen is the sold item when it is described as
+  // "S Pen for Galaxy" / replacement or no full-phone model/spec accompanies
+  // it. Inspect the principal retail subject BEFORE an inclusion separator so
+  // a full Galaxy smartphone WITH an S Pen stays a phone.
+  const standaloneSPen=/\bs pen\b/.test(subject) && (
+    /\bs pen\s+(?:for|replacement)\b/.test(subject) ||
+    /\breplacement\s+s pen\b/.test(subject) ||
+    !/\b(?:smartphones?|handsets?|phones?|\d+(?:gb|tb))\b/.test(subject)
+  );
+  if (standaloneSPen) return "accessory";
   if (/\b(?:user guide|instruction manual|repair manual)\b/.test(subject))
     return "book";
   if (/\b(?:photo stick|usb memory stick|screen protectors?|lcd display touch screen digitizer|touch screen digitizer|screen digitizer|panzerfolie|schutzfolie|schutzglas|halterung|vetro posteriore|coperchio batteria)\b/.test(subject))
