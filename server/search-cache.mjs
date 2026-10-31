@@ -175,6 +175,7 @@ export function createSearchCache(search, {
   }
 
   const cachedSearch = async function(key, { allowStale = true, onDiagnostic = null } = {}) {
+    const requestGeneration = generation;
     const entry = entries.get(key);
     if (entry) {
       const age = Math.max(0, now() - entry.at);
@@ -209,7 +210,9 @@ export function createSearchCache(search, {
         });
       }catch{}
     }
-    if (allowStale && (!result.offers?.length) && previous?.offers?.length) {
+    // R03: a revoked or replaced snapshot must never reappear after an async refresh.
+    if (allowStale && (!result.offers?.length) && previous?.offers?.length
+        && generation === requestGeneration && entries.get(key) === entry) {
       touch(key, entry);
       return {
         ...previous,
