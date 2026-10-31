@@ -181,11 +181,20 @@ function detectedRetailPeripheral(offer = {}) {
     !/\b(?:smartphones?|handsets?|phones?|\d+(?:gb|tb))\b/.test(subject)
   );
   if (standaloneSPen) return "accessory";
-  if (/\b(?:user guide|instruction manual|repair manual)\b/.test(subject))
+  if (/\b(?:user guide|instruction manual|repair manual|benutzerhandbuch)\b/.test(subject))
     return "book";
   if (/\b(?:photo stick|usb memory stick|screen protectors?|lcd display touch screen digitizer|touch screen digitizer|screen digitizer|panzerfolie|schutzfolie|schutzglas|halterung|vetro posteriore|coperchio batteria)\b/.test(subject))
     return "accessory";
   if (/(?:^| )standf[uü](?:ss|ß)?e(?: |$)/u.test(subject))return "accessory";
+  // R04 real customer first-screen replays: camera lens spare glass, Italian
+  // charging port, LCD+frame spare assemblies, ear cushions, and SO-DIMM RAM
+  // are the items being SOLD, not the Galaxy/JBL/HP device named after "for".
+  // Never scan beyond "with/including": a complete phone/headset/laptop can
+  // legitimately include these parts as accessories in the same bundle.
+  if (/\b(?:rear camera lens glass|camera lens glass replacement|presa di ricarica|connettore dock|lcd frame|ear pads? replacement|replacement ear pads?|memoria ram)\b/.test(subject) ||
+      /\b(?:ear pads?|ear cushions?)\b.*\b(?:replacement|cushions?)\b/.test(subject) ||
+      /^(?:\d+x )?\d+gb ram\b.*\b(?:so dimm|ddr[345])\b/.test(subject))
+    return "accessory";
   // A RAM kit advertised for a Victus/EliteBook does not become a laptop
   // simply because compatibility text includes the laptop family/model.
   if (/^(?:\d+x )?\d+gb(?: \d+gb)? ram\b(?: memory| module| kit| upgrade)?/.test(subject) &&
