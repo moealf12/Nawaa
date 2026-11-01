@@ -11,12 +11,12 @@ const samples=[
   ...Array.from({length:60},(_,i)=>"PS5 "+(i%2?"Console":"Controller")+" Bundle "+i),
 ];
 
-test("all 160 configured aliases contain Arabic characters: Latin-only fast path has no possible match",()=>{
+test("all 161 reviewed aliases contain Arabic characters: Latin-only fast path has no possible match",()=>{
   const aliasSection=CURRENT_SOURCE.slice(
     CURRENT_SOURCE.indexOf("const ALIASES ="),
     CURRENT_SOURCE.indexOf("const COMPILED_ALIASES ="));
   const aliases=[...aliasSection.matchAll(/\["([^"]+)",\s*"([^"]+)"\]/g)].map(x=>x[1]);
-  assert.equal(aliases.length,160,"new aliases require explicit fast-path safety review");
+  assert.equal(aliases.length,161,"Arabic RAM alias reviewed; new aliases require explicit fast-path safety review");
   assert.ok(aliases.every(alias=>/[\u0600-\u06ff]/u.test(alias)),
     "Latin alias added: ungated evaluation required before release");
 });
