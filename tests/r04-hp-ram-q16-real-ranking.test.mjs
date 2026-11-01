@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {normalizeSearchQuery,parseSearchIntent,assessOfferMatch,filterQueryOffers} from "../src/search-query.mjs";
 import {groupComparableOffers} from "../src/search-core.mjs";
+import {provisionalLabel} from "../scripts/verify-r04-live-ranking.mjs";
 
 // Captured R04 LIVE Q16 rank-one, GitHub run 41313349013: 16-inch
 // display with 8GB RAM outranked true 16GB RAM HP laptops.
@@ -55,4 +56,12 @@ test("R04 safety: merchant title contradicts stale 16GB metadata; sold title win
 test("R04 safety: unqualified HP laptop searches retain ordinary 8GB discovery",()=>{
   const offer=mk(bad);
   assert.ok(assessOfferMatch("HP laptop",offer).matchConfidence>=0.65);
+});
+
+test("R04 Q16 independent grade: 8GB/16-inch false laptop cannot inherit 16GB relevance",()=>{
+  const wrong=provisionalLabel("laptop",{title:bad,exactMatch:true,matchConfidence:1,productPrice:1});
+  const independent=provisionalLabel("laptop",{title:bad,exactMatch:false,matchConfidence:0,productPrice:100000});
+  assert.deepEqual(wrong,{grade:0,reason:"explicit_hp_laptop_ram_capacity_conflict"});
+  assert.deepEqual(wrong,independent);
+  assert.equal(provisionalLabel("laptop",{title:goodEn}).grade,3);
 });
