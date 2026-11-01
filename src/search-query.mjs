@@ -68,7 +68,7 @@ export function normalizeSearchQuery(value = "") {
   text=text.replace(/(^| )مع (?:يد تحكم|يد) اضافيه(?= |$)/g,
     "$1console bundle controller");
   // Every configured alias begins with an Arabic-script character. When
-  // normalized merchant text contains no Arabic script, none of these 160
+  // normalized merchant text contains no Arabic script, none of these Arabic-script
   // patterns can match. Avoid scanning all patterns for every Latin product
   // title and URL; mixed Arabic/English keeps the original exact behavior.
   if (/[\u0600-\u06ff]/u.test(text)) {
@@ -78,8 +78,7 @@ export function normalizeSearchQuery(value = "") {
   }
   // Explicit RAM shorthand ("16 ram" / "16 رام") is a memory quantity,
   // never a screen-size token nor an SSD storage capacity.
-  text=text.replace(/\b(\d{1,3})\s+(?:gb\s+)?ram\b/g,"$1gb ram")
-    .replace(/\bram\s+(\d{1,3})(?:\s*gb)?\b/g,"ram $1gb");
+  text=text.replace(/\b(\d{1,3})\s+(?:gb\s+)?ram\b/g,"$1gb ram");
   if (/\b(?:iphone|galaxy)\b/.test(text)) text = text.replace(/\b(64|128|256|512|1024)(?= |$)(?!\s+(?:gb|tb)\b)/g, "$1gb");
   return text.replace(/(^| )(?:ابغي|ابي|اريد|ابحث|عن|لي|بافضل|افضل|ارخص|سعر|اشتري|please|find)(?= |$)/g, " ")
     .replace(/\b(iphone|airpods|ps)\s*(\d+)/g, "$1 $2")
