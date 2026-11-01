@@ -47,6 +47,16 @@ export function provisionalLabel(queryKind,offer){
   // a complete handset/headset/laptop. This rubric is independent of NAWAA's
   // own confidence/price/exactMatch and never treats unknown as grade zero.
   const retailSubject=title.split(/\b(?:with|including|includes)\b/,1)[0];
+  // R04 Q04 independent negative labels: real speaker and LCD+frame spares.
+  // This adjudicator does not use system rank, confidence, price or match flag.
+  const spanishReplacementSpeaker=/^altavoces? de repuesto(?: |$)/.test(retailSubject) &&
+    /\b(?:samsung|galaxy)\b/.test(retailSubject);
+  const frenchAssembledLcdFrame=/\blcd cadre\b/.test(retailSubject) &&
+    /\bassembl[\p{L}]*(?: |$)/u.test(retailSubject) &&
+    /\b(?:samsung|galaxy)\b/.test(retailSubject) &&
+    !/\b(?:smartphones?|telephones?|phones?|handsets?)\b/.test(retailSubject);
+  if(spanishReplacementSpeaker || frenchAssembledLcdFrame)
+    return {grade:0,reason:"recorded_galaxy_replacement_component"};
   // Independent negative control: the observed Spanish "Funda" is a case.
   // Anchor to the title-leading sold subject, never any bundled phone case.
   if (/^fundas?(?: |$)/.test(retailSubject) && /\b(?:galaxy|samsung|s25)\b/.test(retailSubject))
