@@ -170,6 +170,16 @@ function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
   const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  // R04 Q04 actual LIVE top two: Spanish standalone replacement speaker and
+  // French assembled LCD+frame are sold spare parts, not Galaxy handsets.
+  // A complete smartphone advertised with included spares retains its identity.
+  const spanishReplacementSpeaker=/^altavo(?:z|ces) de repuesto(?: |$)/.test(subject) &&
+    /\b(?:samsung|galaxy)\b/.test(subject);
+  const frenchAssembledLcdFrame=/\blcd cadre\b/.test(subject) &&
+    /\bassembl[\p{L}]*(?: |$)/u.test(subject) &&
+    /\b(?:samsung|galaxy)\b/.test(subject) &&
+    !/\b(?:smartphones?|telephones?|phones?|handsets?)\b/.test(subject);
+  if (spanishReplacementSpeaker || frenchAssembledLcdFrame) return "accessory";
   // R04 recorded LIVE Q03: a Spanish title-leading "Funda" is a separately
   // sold protective case; a complete Galaxy handset "con funda" is not.
   if (/^fundas?(?: |$)/u.test(subject) && /\b(?:galaxy|samsung|s25)\b/.test(subject))
