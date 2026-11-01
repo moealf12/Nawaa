@@ -1,0 +1,56 @@
+name: NAWAA R05 Branch Verification
+on:
+  push:
+    branches:
+      - engineering/r05-live-source-reliability-20261101
+    paths:
+      - src/source-access-intelligence.mjs
+      - server/providers/free-storefronts.mjs
+      - tests/source-access-intelligence.test.mjs
+      - scripts/measure-live-source-failures.mjs
+      - .github/workflows/r05-branch-verification.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r05-branch-verification-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  r05-verified-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require exact candidate commit
+        env:
+          EXPECTED: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Syntax and focused source-access regressions
+        env:
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          FIRECRAWL_API_KEY: ''
+          NAWAA_TEST_TRANSPORT: fetch
+        run: |
+          node --check src/source-access-intelligence.mjs
+          node --check server/providers/free-storefronts.mjs
+          node --check scripts/measure-live-source-failures.mjs
+          node --test tests/source-access-intelligence.test.mjs tests/source-failure-attribution.test.mjs
+      - name: Complete deterministic Node suite
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          FIRECRAWL_API_KEY: ''
+        run: npm test
