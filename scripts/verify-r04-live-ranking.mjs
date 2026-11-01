@@ -47,6 +47,16 @@ export function provisionalLabel(queryKind,offer){
   // a complete handset/headset/laptop. This rubric is independent of NAWAA's
   // own confidence/price/exactMatch and never treats unknown as grade zero.
   const retailSubject=title.split(/\b(?:with|including|includes)\b/,1)[0];
+  // R04 Q04 independent negative labels: real speaker and LCD+frame spares.
+  // This adjudicator does not use system rank, confidence, price or match flag.
+  const spanishReplacementSpeaker=/^altavo(?:z|ces) de repuesto(?: |$)/.test(retailSubject) &&
+    /\b(?:samsung|galaxy)\b/.test(retailSubject);
+  const frenchAssembledLcdFrame=/\blcd cadre\b/.test(retailSubject) &&
+    /\bassembl[\p{L}]*(?: |$)/u.test(retailSubject) &&
+    /\b(?:samsung|galaxy)\b/.test(retailSubject) &&
+    !/\b(?:smartphones?|telephones?|phones?|handsets?)\b/.test(retailSubject);
+  if(spanishReplacementSpeaker || frenchAssembledLcdFrame)
+    return {grade:0,reason:"recorded_galaxy_replacement_component"};
   // Independent negative control: the observed Spanish "Funda" is a case.
   // Anchor to the title-leading sold subject, never any bundled phone case.
   if (/^fundas?(?: |$)/.test(retailSubject) && /\b(?:galaxy|samsung|s25)\b/.test(retailSubject))
@@ -124,6 +134,12 @@ export function provisionalLabel(queryKind,offer){
     if(!has(title,laptop))return {grade:null,reason:"complete_laptop_not_evidenced"};
     if(has(title,/(?:\bssd\s+(?:for|upgrade)\b|\breplacement\b|\bram\s+for\b|لترقيه|بديل)/))
       return {grade:0,reason:"component_not_laptop"};
+    // Q15/Q16 request 16GB RAM. A title saying "16 in" with an explicit
+    // 8GB RAM claim is a different sellable laptop variant, not grade 3/2.
+    const retailRam=title.match(/(?:^| )(\d{1,3})\s*gb(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram(?= |$)|(?:^| )(\d{1,3}) ram(?= |$)|(?:^| )ram (\d{1,3})(?: ?gb)?(?= |$)/);
+    const verifiedRam=retailRam ? Number(retailRam[1]||retailRam[2]||retailRam[3]) : null;
+    if(verifiedRam!==null && verifiedRam!==16)
+      return {grade:0,reason:"explicit_hp_laptop_ram_capacity_conflict"};
     return has([title,specs].join(" "),/(?:\b16\s*gb\b|\b16\s*ram\b|\b16\s*جيجا\b|\b16gb\b|\b16\s*رام\b)/)
       ?{grade:3,reason:"hp_laptop_16gb_explicit"}:{grade:2,reason:"hp_laptop_ram_unconfirmed"};
   }

@@ -24,7 +24,7 @@ test("R04 live rubric: explicit positive evidence only for audio and computing",
  assert.equal(p("jbl","JBL wired headphones").grade,2);
  assert.equal(p("jbl","JBL Bluetooth Speaker").grade,2);
  assert.equal(p("laptop","HP Pavilion Laptop 16GB RAM").grade,3);
- assert.equal(p("laptop","HP Pavilion Laptop 8GB RAM").grade,2);
+ assert.equal(p("laptop","HP Pavilion Laptop 8GB RAM").grade,0, "Q15 and Q16 require 16GB RAM, not an 8GB variant");
  assert.equal(p("laptop","HP Pavilion laptop sleeve").grade,0);
  assert.equal(p("laptop","16GB RAM Memory HP-Compaq Omen 15-dc1053ur Laptop Memory").grade,0);
  assert.equal(p("laptop","MacBook Pro 16GB RAM").grade,null);

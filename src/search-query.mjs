@@ -29,7 +29,7 @@ const ALIASES = [
   ["حيوانات اليفه", "pet"], ["مستلزمات حيوانات", "pet"], ["سياره", "automotive"], ["سيارات", "automotive"],
   ["مكتب", "office"], ["مكتبيه", "office"], ["بقاله", "grocery"], ["مواد غذائيه", "grocery"],
   ["برو", "pro"], ["ماكس", "max"], ["بلس", "plus"], ["الترا", "ultra"], ["اير", "air"],
-  ["جيجابايت", "gb"], ["جيجا بايت", "gb"], ["جيجا", "gb"], ["تيرابايت", "tb"],
+  ["جيجابايت", "gb"], ["جيجا بايت", "gb"], ["جيجا", "gb"], ["تيرابايت", "tb"], ["رام", "ram"],
   ["اسود", "black"], ["ابيض", "white"], ["لافندر", "lavender"], ["ازرق", "blue"],
   ["اخضر", "green"], ["ذهبي", "gold"], ["فضي", "silver"],
   ["كفر", "case"], ["حافظه", "case"], ["شاحن", "charger"], ["كيبل", "cable"],
@@ -68,7 +68,7 @@ export function normalizeSearchQuery(value = "") {
   text=text.replace(/(^| )مع (?:يد تحكم|يد) اضافيه(?= |$)/g,
     "$1console bundle controller");
   // Every configured alias begins with an Arabic-script character. When
-  // normalized merchant text contains no Arabic script, none of these 160
+  // normalized merchant text contains no Arabic script, none of these Arabic-script
   // patterns can match. Avoid scanning all patterns for every Latin product
   // title and URL; mixed Arabic/English keeps the original exact behavior.
   if (/[\u0600-\u06ff]/u.test(text)) {
@@ -170,6 +170,16 @@ function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
   const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  // R04 Q04 actual LIVE top two: Spanish standalone replacement speaker and
+  // French assembled LCD+frame are sold spare parts, not Galaxy handsets.
+  // A complete smartphone advertised with included spares retains its identity.
+  const spanishReplacementSpeaker=/^altavo(?:z|ces) de repuesto(?: |$)/.test(subject) &&
+    /\b(?:samsung|galaxy)\b/.test(subject);
+  const frenchAssembledLcdFrame=/\blcd cadre\b/.test(subject) &&
+    /\bassembl[\p{L}]*(?: |$)/u.test(subject) &&
+    /\b(?:samsung|galaxy)\b/.test(subject) &&
+    !/\b(?:smartphones?|telephones?|phones?|handsets?)\b/.test(subject);
+  if (spanishReplacementSpeaker || frenchAssembledLcdFrame) return "accessory";
   // R04 recorded LIVE Q03: a Spanish title-leading "Funda" is a separately
   // sold protective case; a complete Galaxy handset "con funda" is not.
   if (/^fundas?(?: |$)/u.test(subject) && /\b(?:galaxy|samsung|s25)\b/.test(subject))
@@ -329,6 +339,14 @@ function explicitModels(value) {
   });
 }
 
+// Read a memory capacity ONLY when it is explicitly tied to RAM. A nearby
+// 16-inch diagonal and unrelated 512GB SSD must never substitute for it.
+function normalizedRamCapacityGb(value = "") {
+  const claim=String(value).match(/(?:^| )(\d{1,3})(?:gb)?(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram(?= |$)/) ||
+    String(value).match(/(?:^| )ram (\d{1,3})(?:gb)?(?= |$)/);
+  return claim ? Number(claim[1]) : null;
+}
+
 export function parseSearchIntent(value = "") {
   const normalizedQuery = normalizeSearchQuery(value);
   const brand = Object.keys(BRAND_CATEGORY_PRIORITIES).find(name => (' '+normalizedQuery+' ').includes(' '+name+' ')) || null;
@@ -341,11 +359,16 @@ export function parseSearchIntent(value = "") {
   const residual = normalizedQuery.replace(categoryDefinition?.[2] || /$^/g, ' ').split(' ').filter(token => token && token !== brand);
   const discoveryMode = !kind && !/\b\d+(?:gb|tb)\b/.test(normalizedQuery) && (residual.length === 0 || (!brand && !category && residual.length === 1)) ? (brand ? 'brand' : category ? 'category' : 'general') : 'specific';
   const condition = normalizedQuery.match(/\b(refurbished|used|new)\b/)?.[1] || null;
+  // RAM and SSD are independent properties. Preserve a separately specified
+  // SSD capacity while excluding the RAM amount from the storage constraint.
+  const storageOnlyQuery=normalizedRamCapacityGb(normalizedQuery)!==null
+    ? normalizedQuery.replace(/\b\d{1,3}(?:gb)?(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram\b|\bram \d{1,3}(?:gb)?\b/g," ")
+    : normalizedQuery;
   return {
     normalizedQuery,
     providerQuery: normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim(),
     model: normalizedQuery.match(MODEL_PATTERN)?.[0] || null,
-    storage: normalizedQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
+    storage: storageOnlyQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
     color: normalizedQuery.match(/\b(?:mist blue|desert titanium|natural titanium|black titanium|white titanium|cosmic orange|deep blue|black|white|lavender|sage|silver|gold|blue|green)\b/)?.[0] || null,
     condition,
     kind, brand, category, discoveryMode,
@@ -568,6 +591,7 @@ function prepareMatchContext(intent) {
     NORMALIZED_ACCESSORY_TERMS.some(term => hasNormalizedPhrase(normalizedQuery,term)) ||
     (intent.discoveryMode === "brand" && ACCESSORY_LED_BRANDS.has(intent.brand));
   return {normalizedQuery,effectiveCategory,categoryTokenRequested,q,
+    requestedRamGb:normalizedRamCapacityGb(normalizedQuery),
     queryTokens:new Set(q),queryHasAccessoryIntent,
     storageMediaRequested:GAMING_STORAGE_ACCESSORY.test(normalizedQuery),
     storagePartRequested:STORAGE_PART_NOUN.test(normalizedQuery)};
@@ -575,7 +599,7 @@ function prepareMatchContext(intent) {
 
 export function assessOfferMatch(query, offer, preparedIntent = null, preparedContext = null) {
   const intent = preparedIntent || parseSearchIntent(query);
-  const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent,storageMediaRequested,storagePartRequested} =
+  const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent,storageMediaRequested,storagePartRequested,requestedRamGb} =
     preparedContext || prepareMatchContext(intent);
   let urlSemantic = "";
   try {
@@ -586,6 +610,16 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
+  // Match RAM quantities semantically for RAM-constrained laptop queries:
+  // "16 RAM" and "16GB DDR4 RAM" are equivalent. Never rewrite global
+  // model names (e.g. "iPhone 17 RAM 8GB") into fictitious capacities.
+  if (requestedRamGb !== null && effectiveCategory === "laptop") {
+    const retailMemory=normalizedRamCapacityGb(normalizeSearchQuery(offer?.title||""));
+    if (retailMemory===requestedRamGb) {
+      titleTokens.add(String(requestedRamGb));
+      titleTokens.add(String(requestedRamGb)+"gb");
+    }
+  }
   const hits = q.filter((token) => titleTokens.has(token)).length;
   let confidence = q.length ? hits / q.length : 1;
   const description = describeProduct(offer);
@@ -706,6 +740,19 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     !/\b(?:pavilion|elitebook|probook|spectre|envy|omnibook|victus|omen|latitude|thinkpad|ideapad|zenbook|vivobook|macbook|chromebook)\b/.test(retailTitle) &&
     !/\b(?:intel|amd|ryzen|core|celeron|pentium|ram|memory|ssd|windows|processor|\d+(?:gb|tb))\b/.test(retailTitle));
   if (sparseLaptopEvidence) confidence = Math.min(confidence, 0.69);
+  // Retail title has precedence over optional merchant specs: never turn
+  // explicitly advertised 8GB RAM into 16GB via stale/conflicting metadata.
+  const titleRamGb=requestedRamGb!==null && offerCategory==="laptop"
+    ? normalizedRamCapacityGb(retailTitle) : null;
+  const ramSpecs=titleRamGb===null && requestedRamGb!==null && offerCategory==="laptop"
+    ? normalizeSearchQuery(offer?.specs?.ram||"") : "";
+  const evidenceRamGb=titleRamGb ?? normalizedRamCapacityGb(ramSpecs) ??
+    (ramSpecs.match(/^(\d{1,3})gb$/)?.[1] ? Number(ramSpecs.match(/^(\d{1,3})gb$/)[1]) : null);
+  const ramMismatch=Boolean(requestedRamGb!==null && offerCategory==="laptop" &&
+    evidenceRamGb!==null && evidenceRamGb!==requestedRamGb);
+  const ramUnverified=Boolean(requestedRamGb!==null && offerCategory==="laptop" && evidenceRamGb===null);
+  if (ramMismatch) confidence*=0.2;
+  if (ramUnverified) confidence=Math.min(confidence,0.69);
   confidence = Math.max(0, Math.min(1, confidence));
 
   const missingTerms = q.filter((token) => !titleTokens.has(token));
@@ -713,13 +760,14 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const exactMatch = confidence >= 0.92 && hits === q.length && structuralTermsMatch &&
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
       !hasUnrequestedVariant && !conflictingGalaxyModel &&
-      !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch;
+      !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch &&
+      !ramMismatch && !ramUnverified;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
       conflictingGalaxyModel ? "طراز Galaxy مختلف عن الجهاز المطلوب" :
