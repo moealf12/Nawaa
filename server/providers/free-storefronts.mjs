@@ -1739,8 +1739,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // Never probe another endpoint to work around an explicit access refusal,
     // including IKEA and other sources with secondary API fallback strategies.
     if(!html && (sourceAccessFailure === "HTTP_403_ACCESS_DENIED" ||
-                 sourceAccessFailure === "HTTP_429_RATE_LIMITED"))
-      throw new Error(primarySearchError || sourceAccessFailure);
+                 sourceAccessFailure === "HTTP_429_RATE_LIMITED")) {
+      // Preserve structured access-denial evidence across the searchStore
+      // exception boundary. A cooldown is not a transport failure, empty
+      // catalog or a stockout, even if its message contains no "HTTP 403".
+      const denied=new Error(primarySearchError || sourceAccessFailure);
+      denied.failureClass=sourceAccessFailure;
+      throw denied;
+    }
     // Real, first-party HTML search cards are Noon's primary source path.
     // Bind them to the exact requested search URL; a redirect to the homepage
     // is not evidence for the submitted query. No other endpoints are fetched.
