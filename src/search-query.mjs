@@ -173,7 +173,7 @@ function detectedRetailPeripheral(offer = {}) {
   // R04 Q04 actual LIVE top two: Spanish standalone replacement speaker and
   // French assembled LCD+frame are sold spare parts, not Galaxy handsets.
   // A complete smartphone advertised with included spares retains its identity.
-  const spanishReplacementSpeaker=/^altavoces? de repuesto(?: |$)/.test(subject) &&
+  const spanishReplacementSpeaker=/^altavo(?:z|ces) de repuesto(?: |$)/.test(subject) &&
     /\b(?:samsung|galaxy)\b/.test(subject);
   const frenchAssembledLcdFrame=/\blcd cadre\b/.test(subject) &&
     /\bassembl[\p{L}]*(?: |$)/u.test(subject) &&
