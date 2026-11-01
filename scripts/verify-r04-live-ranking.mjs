@@ -49,7 +49,7 @@ export function provisionalLabel(queryKind,offer){
   const retailSubject=title.split(/\b(?:with|including|includes)\b/,1)[0];
   // R04 Q04 independent negative labels: real speaker and LCD+frame spares.
   // This adjudicator does not use system rank, confidence, price or match flag.
-  const spanishReplacementSpeaker=/^altavoces? de repuesto(?: |$)/.test(retailSubject) &&
+  const spanishReplacementSpeaker=/^altavo(?:z|ces) de repuesto(?: |$)/.test(retailSubject) &&
     /\b(?:samsung|galaxy)\b/.test(retailSubject);
   const frenchAssembledLcdFrame=/\blcd cadre\b/.test(retailSubject) &&
     /\bassembl[\p{L}]*(?: |$)/u.test(retailSubject) &&
