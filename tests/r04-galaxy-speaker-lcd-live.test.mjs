@@ -40,3 +40,17 @@ test("R04 negative overblock guards: genuine complete Galaxy devices with includ
     assert.equal(provisionalLabel("galaxy",{title}).grade,3,title);
   }
 });
+
+// Derived morphology guard, NOT an additional observed seller listing.
+test("R04 Spanish replacement speaker singular/plural morphology and phone-bundle boundaries",()=>{
+  for(const soldNoun of ["Altavoz","Altavoces"]){
+    const title=`${soldNoun} de repuesto para Samsung Galaxy S25 Ultra`;
+    const item=mk(title);
+    assert.equal(productCategory(item),"accessory",title);
+    assert.equal(filterQueryOffers(query,[item]).offers.length,0,title);
+    assert.equal(provisionalLabel("galaxy",{title}).grade,0,title);
+  }
+  const phone="Samsung Galaxy S25 Ultra 256GB Smartphone con altavoces de repuesto incluidos";
+  assert.notEqual(productCategory(mk(phone)),"accessory");
+  assert.equal(provisionalLabel("galaxy",{title:phone}).grade,3);
+});
