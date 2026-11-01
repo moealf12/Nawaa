@@ -116,8 +116,7 @@ export function createSourceRateLimitGuard({
     const previous=blockedUntil.get(id);
     const until=Math.max(previous?.until||0,now()+delay);
     // Never reduce an existing Retry-After window because of a later 403.
-    blockedUntil.set(id,{until,failureClass:previous?.until>now()
-      ?previous.failureClass:"HTTP_429_RATE_LIMITED"});
+    blockedUntil.set(id,{until,failureClass:"HTTP_429_RATE_LIMITED"});
     accessDenials.delete(id);
     return canRequest(id);
   }
