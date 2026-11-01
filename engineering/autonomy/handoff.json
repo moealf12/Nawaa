@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "nawaa.autonomy.handoff.v1",
+  "observedAt": null,
+  "repository": "moealf12/Nawaa",
+  "mainSha": null,
+  "localHeadSha": null,
+  "currentRound": null,
+  "status": "NOT_VERIFIED",
+  "nextAction": "RUN_CURRENT_POINT_HANDSHAKE",
+  "openPrCount": null,
+  "unknowns": ["The current GitHub state has not been retrieved by this controller."],
+  "deploymentSha": null
+}
