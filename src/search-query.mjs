@@ -603,7 +603,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // Match RAM quantities semantically for RAM-constrained laptop queries:
   // "16 RAM" and "16GB DDR4 RAM" are equivalent. Never rewrite global
   // model names (e.g. "iPhone 17 RAM 8GB") into fictitious capacities.
-  if (requestedRamGb !== null) {
+  if (requestedRamGb !== null && effectiveCategory === "laptop") {
     const retailMemory=normalizedRamCapacityGb(normalizeSearchQuery(offer?.title||""));
     if (retailMemory===requestedRamGb) {
       titleTokens.add(String(requestedRamGb));
