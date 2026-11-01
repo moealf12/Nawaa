@@ -9,7 +9,7 @@ import {
   sourceRateLimitGuard,
   createSourceRateLimitGuard,
 } from "../src/source-access-intelligence.mjs";
-import { fetchAmazonSearchPages, searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
+import { fetchAmazonSearchPages, searchFreeStorefrontById, searchFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 
 test("source access: HTTP status taxonomy never implies out-of-stock",()=>{
   const cases=[
@@ -251,4 +251,36 @@ test("R05: unrelated status never counts as access denial or global out-of-stock
   guard.record403("merchant-a");
   assert.equal(guard.canRequest("merchant-a").allowed,true);
   assert.equal(guard.canRequest("merchant-b").allowed,true);
+});
+
+test("R05: aggregate storefront response retains source-owned 403 cooldown evidence",{
+  concurrency:false,
+},async()=>{
+  const prior=globalThis.fetch;
+  const id="lulu-sa", query="iphone 17";
+  const pos=routeFreeStorefronts(query,Infinity,{stable:true})
+    .findIndex(entry=>entry.store.id===id);
+  assert.ok(pos>=0,"chosen merchant must be in the stable route");
+  const options={storeOffset:pos,storeLimit:1,stableRouting:true,
+    productPageLimit:1,catalogLimit:1,storeDeadlineMs:1500};
+  let calls=0;
+  try{
+    sourceRateLimitGuard.reset(id);
+    globalThis.fetch=async()=>{
+      calls++;
+      return new Response("Forbidden",{status:403,headers:{"content-type":"text/html"}});
+    };
+    for(let i=0;i<3;i++){
+      const result=await searchFreeStorefronts(query,options);
+      assert.equal(result.offers.length,0);
+      assert.equal(result.errors.length,1);
+      assert.equal(result.errors[0].sourceId,id);
+      assert.equal(result.errors[0].failureClass,"HTTP_403_ACCESS_DENIED",
+        "cooldown must never be reported as a transport failure or inventory absence");
+    }
+    assert.equal(calls,2,"third query should not hit repeatedly denying merchant");
+  }finally{
+    globalThis.fetch=prior;
+    sourceRateLimitGuard.reset(id);
+  }
 });
