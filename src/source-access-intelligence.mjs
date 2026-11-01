@@ -85,23 +85,61 @@ export function classifySourceObservation({
   return outcome("CATALOG_RESULT_NOT_FOUND");
 }
 
-export function createSourceRateLimitGuard({now=Date.now}={}){
+export function createSourceRateLimitGuard({
+  now=Date.now,
+  denyThreshold=2,
+  denyCooldownMs=300_000,
+}={}){
   const blockedUntil=new Map();
+  const accessDenials=new Map();
+  // Access denial is not inventory evidence and is never a permanent ban.
+  // Only two consecutive explicit HTTP 403 responses enable a bounded,
+  // process-local cooldown. A later request probes again after expiry.
+  const threshold=Number.isSafeInteger(denyThreshold)&&denyThreshold>=2
+    ?denyThreshold:2;
+  const cooldown=Number.isSafeInteger(denyCooldownMs)&&denyCooldownMs>=1_000
+    ?Math.min(denyCooldownMs,1_800_000):300_000;
   function canRequest(id){
-    const until=blockedUntil.get(id)||0,remaining=Math.max(0,until-now());
-    if(!remaining&&until)blockedUntil.delete(id);
-    return {allowed:remaining===0,retryAfterMs:remaining};
+    const block=blockedUntil.get(id);
+    if(!block)return {allowed:true,retryAfterMs:0,failureClass:null};
+    const remaining=Math.max(0,block.until-now());
+    if(remaining===0){
+      blockedUntil.delete(id);
+      return {allowed:true,retryAfterMs:0,failureClass:null};
+    }
+    return {allowed:false,retryAfterMs:remaining,failureClass:block.failureClass};
   }
   function record429(id,retryAfterHeader){
-    if(!id)return {allowed:false,retryAfterMs:0};
+    if(!id)return {allowed:false,retryAfterMs:0,failureClass:"HTTP_429_RATE_LIMITED"};
     const parsed=parseRetryAfter(retryAfterHeader,{now:now()});
-    // If no valid header is present, choose a bounded courtesy cooldown.
     const delay=Math.max(1000,parsed??RATE_LIMIT_FALLBACK_MS);
-    blockedUntil.set(id,Math.max(blockedUntil.get(id)||0,now()+delay));
+    const previous=blockedUntil.get(id);
+    const until=Math.max(previous?.until||0,now()+delay);
+    // Never reduce an existing Retry-After window because of a later 403.
+    blockedUntil.set(id,{until,failureClass:previous?.until>now()
+      ?previous.failureClass:"HTTP_429_RATE_LIMITED"});
+    accessDenials.delete(id);
     return canRequest(id);
   }
-  function reset(id=null){if(id)blockedUntil.delete(id);else blockedUntil.clear();}
-  return {canRequest,record429,reset};
+  function record403(id){
+    if(!id)return {allowed:true,retryAfterMs:0,failureClass:null};
+    const failures=(accessDenials.get(id)||0)+1;
+    accessDenials.set(id,failures);
+    if(failures>=threshold){
+      const previous=blockedUntil.get(id);
+      if(!previous||previous.until<=now())
+        blockedUntil.set(id,{until:now()+cooldown,failureClass:"HTTP_403_ACCESS_DENIED"});
+    }
+    return canRequest(id);
+  }
+  function recordNon403(id){
+    if(id)accessDenials.delete(id);
+  }
+  function reset(id=null){
+    if(id){blockedUntil.delete(id);accessDenials.delete(id);}
+    else {blockedUntil.clear();accessDenials.clear();}
+  }
+  return {canRequest,record429,record403,recordNon403,reset};
 }
 
 // Process-local source guard; no persisted global inventory or product state.
