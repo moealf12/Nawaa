@@ -1,0 +1,48 @@
+name: NAWAA R04 Postdeploy Production Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-r04-postdeploy-acceptance.mjs'
+      - '.github/workflows/r04-postdeploy-production-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-r04-postdeploy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postdeploy-four-intents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check read-only verifier and actual recorded regressions
+        run: |
+          node --check scripts/verify-r04-postdeploy-acceptance.mjs
+          node --test tests/r04-galaxy-speaker-lcd-live.test.mjs tests/r04-hp-ram-q16-real-ranking.test.mjs
+      - name: Independently validate exact Render revision and four real top-ten rankings
+        env:
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          FIRECRAWL_API_KEY: ''
+        run: node scripts/verify-r04-postdeploy-acceptance.mjs
+      - name: Retain independently evaluated production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-postdeploy-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-postdeploy-production-acceptance.json
+          retention-days: 14
+          if-no-files-found: warn
