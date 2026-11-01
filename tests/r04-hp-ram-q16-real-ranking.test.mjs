@@ -15,8 +15,10 @@ const unknown="HP 16 in Laptop AMD Ryzen 7 Windows 11 touchscreen";
 const mk=(title,productPrice=2000,specs={})=>({title,merchant:"Recorded evidence replay",sourceUrl:"https://example.invalid/q16-test",productPrice,currency:"SAR",availability:"in_stock",condition:"new",specs});
 
 test("R04 RED Q16: normalize the requested Arabic/English RAM quantity without confusing screen inches",()=>{
-  assert.match(normalizeSearchQuery(queryAr),/\b16gb ram\b/);
-  assert.match(normalizeSearchQuery("HP laptop 16 RAM"),/\b16gb ram\b/);
+  assert.match(normalizeSearchQuery(queryAr),/\b16 ram\b/);
+  assert.match(normalizeSearchQuery("HP laptop 16 RAM"),/\b16 ram\b/);
+  assert.match(normalizeSearchQuery("Apple iPhone 17 RAM 8GB 256GB"),/\biphone 17 ram 8gb 256gb\b/,
+    "do not corrupt an iPhone model number into a RAM capacity");
   assert.equal(parseSearchIntent(queryEn).storage,null,"a requested RAM quantity is not storage");
   assert.equal(parseSearchIntent("HP laptop 16GB RAM 512GB SSD").storage,"512gb","SSD request stays storage");
 });
