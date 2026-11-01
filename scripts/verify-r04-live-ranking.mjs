@@ -47,6 +47,10 @@ export function provisionalLabel(queryKind,offer){
   // a complete handset/headset/laptop. This rubric is independent of NAWAA's
   // own confidence/price/exactMatch and never treats unknown as grade zero.
   const retailSubject=title.split(/\b(?:with|including|includes)\b/,1)[0];
+  // Independent negative control: the observed Spanish "Funda" is a case.
+  // Anchor to the title-leading sold subject, never any bundled phone case.
+  if (/^fundas?(?: |$)/.test(retailSubject) && /\b(?:galaxy|samsung|s25)\b/.test(retailSubject))
+    return {grade:0,reason:"spanish_case_retail_subject"};
   const verifiedStandaloneHpBoard=/\b(?:mainboards?|motherboards?|logic boards?|system boards?)\b|(?:^| )l34280 601(?= |$)/;
   if(has(retailSubject,verifiedStandaloneHpBoard))
     return {grade:0,reason:"verified_hp_mainboard_spare_part"};

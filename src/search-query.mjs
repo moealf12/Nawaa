@@ -170,6 +170,10 @@ function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
   const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  // R04 recorded LIVE Q03: a Spanish title-leading "Funda" is a separately
+  // sold protective case; a complete Galaxy handset "con funda" is not.
+  if (/^fundas?(?: |$)/u.test(subject) && /\b(?:galaxy|samsung|s25)\b/.test(subject))
+    return "accessory";
   // R04: confirmed live Q04 ranked a standalone Samsung S Pen at #2 for the
   // S25 Ultra handset query. The pen is the sold item when it is described as
   // "S Pen for Galaxy" / replacement or no full-phone model/spec accompanies
