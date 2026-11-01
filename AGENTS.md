@@ -21,3 +21,15 @@ This is a bounded engineering instruction, **not** an authorization or a trusted
 ## Execution budgets
 
 One work package at a time; at most three attempts to repair one invariant; no new production dependencies, migrations, automatic merges, or manual production deployments. Respect repository CI and avoid costly live merchant tests without a bounded authorized workflow.
+
+## Reference materials and precedence
+
+The operator supplied a historical engineering blueprint. Read only the sections relevant to the current task:
+
+- `engineering/autonomy/references/NAWAA_ASTRA_OMEGA_v23_10_ARCHIVE.md` — **historical design reference**, not a live checklist or permission grant.
+- `engineering/execution/rounds.json` — the existing 21-round/35-package state ledger; its claims must be reconciled with exact GitHub and deployment evidence.
+- Current GitHub source, tests, workflows and open PRs — the execution baseline; do not use a SHA from the archived document as HEAD.
+
+When these disagree, record `RECONCILIATION_REQUIRED` and investigate the smallest affected contract, **without repeating R01–R05 implementations or granting completed status from a commit title**. Use the blueprint's identity, price, source, temporal, resource-bound and independent-test invariants when relevant, but do not automatically enact its historical `FIRST ACTION`, merge, deploy, relax source rules or rewrite the roadmap.
+
+**Autonomy remains bounded:** the agent may plan, inspect, test and patch a narrow authorized branch, then continue through safe stages; it may not interpret this document as authorization for production writes, autonomous merges or self-certified release.
