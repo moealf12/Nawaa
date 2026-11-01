@@ -1,0 +1,48 @@
+name: NAWAA R05 Live Source Baseline
+on:
+  push:
+    branches:
+      - engineering/r05-live-source-reliability-20261101
+    paths:
+      - .github/workflows/r05-live-source-baseline.yml
+      - scripts/measure-live-source-failures.mjs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r05-live-source-baseline-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-revision-source-attribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify attribution syntax and deterministic classifications
+        run: |
+          node --check scripts/measure-live-source-failures.mjs
+          node --test tests/source-failure-attribution.test.mjs
+      - name: Six real bilingual shopper queries against exact LIVE main
+        env:
+          NAWAA_EXPECT_LIVE_SHA: 152fc20bfcee7c7b6a58d6cfc46cdad948949a40
+          FIRECRAWL_API_KEY: ''
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/measure-live-source-failures.mjs
+      - name: Archive classified errors and merchant yield
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r05-six-intent-live-baseline-${{ github.sha }}
+          path: |
+            live-source-failure-matrix.json
+            live-source-failure-report.html
+          retention-days: 14
+          if-no-files-found: warn
