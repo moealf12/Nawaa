@@ -6,7 +6,7 @@ import {attributeSourceFailures,aggregateFailureMatrices} from "../src/source-fa
 
 const origin="https://nawaa-search-api.onrender.com";
 const expected=process.env.NAWAA_EXPECT_LIVE_SHA;
-const queries=["iPhone 17 256GB","PS5","Samsung Galaxy S25"];
+const queries=["iPhone 17 256GB","PS5","Samsung Galaxy S25 Ultra","سامسونج جالكسي S25 الترا","HP laptop 16GB RAM","لابتوب اتش بي 16 رام"];
 const report={protocol:"LIVE_PRODUCTION_OBSERVED_ERRORS_V1",synthetic:false,
   noDirectMerchantProbes:true,noFirecrawl:true,
   startedAt:new Date().toISOString(),expectedRevision:expected||null,

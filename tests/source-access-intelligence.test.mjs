@@ -9,7 +9,7 @@ import {
   sourceRateLimitGuard,
   createSourceRateLimitGuard,
 } from "../src/source-access-intelligence.mjs";
-import { fetchAmazonSearchPages, searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
+import { fetchAmazonSearchPages, searchFreeStorefrontById, searchFreeStorefronts, routeFreeStorefronts } from "../server/providers/free-storefronts.mjs";
 
 test("source access: HTTP status taxonomy never implies out-of-stock",()=>{
   const cases=[
@@ -182,5 +182,105 @@ test("source guardrail: 403 and 429 never masquerade as out-of-stock or valid em
     assert.equal(classed.productAvailability,"unknown");
     assert.notEqual(classed.failureClass,"HTTP_200_EMPTY_CATALOG");
     assert.equal(classed.retryableNow,false);
+  }
+});
+
+test("R05: repeated explicit 403 denials trigger only bounded per-source cooldown",()=>{
+  let clock=100_000;
+  const guard=createSourceRateLimitGuard({now:()=>clock,denyThreshold:2,denyCooldownMs:10_000});
+  assert.equal(guard.canRequest("lulu-sa").allowed,true);
+  guard.record403("lulu-sa");
+  assert.equal(guard.canRequest("lulu-sa").allowed,true,"first denial may be transient");
+  assert.equal(guard.canRequest("jarir-direct").allowed,true,"one source may never poison another");
+  guard.record403("lulu-sa");
+  assert.deepEqual(guard.canRequest("lulu-sa"),{
+    allowed:false,retryAfterMs:10_000,failureClass:"HTTP_403_ACCESS_DENIED",
+  });
+  clock+=9_999;
+  assert.equal(guard.canRequest("lulu-sa").allowed,false);
+  clock++;
+  assert.equal(guard.canRequest("lulu-sa").allowed,true,"expired cooldown must probe again");
+  guard.recordNon403("lulu-sa");
+  guard.record403("lulu-sa");
+  assert.equal(guard.canRequest("lulu-sa").allowed,true,
+    "a confirmed recovery clears consecutive-denial history");
+  guard.record403("lulu-sa");
+  guard.reset("lulu-sa");
+  assert.equal(guard.canRequest("lulu-sa").allowed,true);
+});
+
+test("R05: 429 Retry-After remains authoritative; 403 cannot weaken it",()=>{
+  let clock=1000;
+  const guard=createSourceRateLimitGuard({now:()=>clock,denyThreshold:2,denyCooldownMs:5000});
+  guard.record403("test-source");
+  guard.record429("test-source","120");
+  assert.equal(guard.canRequest("test-source").retryAfterMs,120_000);
+  assert.equal(guard.canRequest("test-source").failureClass,"HTTP_429_RATE_LIMITED");
+  clock+=10_000;
+  assert.equal(guard.canRequest("test-source").retryAfterMs,110_000);
+  assert.equal(guard.canRequest("test-source").allowed,false);
+});
+
+test("R05: 403 circuit-breaker limits real storefront fetches but never re-labels failure",{
+  concurrency:false,
+},async()=>{
+  const original=globalThis.fetch;
+  let calls=0;
+  try{
+    sourceRateLimitGuard.reset("lulu-sa");
+    globalThis.fetch=async()=>{calls++;return new Response("Forbidden",{
+      status:403,headers:{"content-type":"text/html"}
+    });};
+    for(let i=0;i<2;i++){
+      await assert.rejects(searchFreeStorefrontById("lulu-sa","iphone 17",{perStore:2}),/HTTP 403/);
+    }
+    await assert.rejects(searchFreeStorefrontById("lulu-sa","iphone 17",{perStore:2}),err=>
+      err?.message==="SOURCE_ACCESS_DENIED_COOLDOWN" &&
+      err?.failureClass==="HTTP_403_ACCESS_DENIED");
+    assert.equal(calls,2,"blocked merchant must not generate a third request during cooldown");
+  }finally{
+    globalThis.fetch=original;
+    sourceRateLimitGuard.reset("lulu-sa");
+  }
+});
+
+test("R05: unrelated status never counts as access denial or global out-of-stock",()=>{
+  const guard=createSourceRateLimitGuard();
+  guard.record403("merchant-a");
+  guard.recordNon403("merchant-a"); // 404/200/500 breaks consecutive 403 chain.
+  guard.record403("merchant-a");
+  assert.equal(guard.canRequest("merchant-a").allowed,true);
+  assert.equal(guard.canRequest("merchant-b").allowed,true);
+});
+
+test("R05: aggregate storefront response retains source-owned 403 cooldown evidence",{
+  concurrency:false,
+},async()=>{
+  const prior=globalThis.fetch;
+  const id="lulu-sa", query="iphone 17";
+  const pos=routeFreeStorefronts(query,Infinity,{stable:true})
+    .findIndex(entry=>entry.store.id===id);
+  assert.ok(pos>=0,"chosen merchant must be in the stable route");
+  const options={storeOffset:pos,storeLimit:1,stableRouting:true,
+    productPageLimit:1,catalogLimit:1,storeDeadlineMs:1500};
+  let calls=0;
+  try{
+    sourceRateLimitGuard.reset(id);
+    globalThis.fetch=async()=>{
+      calls++;
+      return new Response("Forbidden",{status:403,headers:{"content-type":"text/html"}});
+    };
+    for(let i=0;i<3;i++){
+      const result=await searchFreeStorefronts(query,options);
+      assert.equal(result.offers.length,0);
+      assert.equal(result.errors.length,1);
+      assert.equal(result.errors[0].sourceId,id);
+      assert.equal(result.errors[0].failureClass,"HTTP_403_ACCESS_DENIED",
+        "cooldown must never be reported as a transport failure or inventory absence");
+    }
+    assert.equal(calls,2,"third query should not hit repeatedly denying merchant");
+  }finally{
+    globalThis.fetch=prior;
+    sourceRateLimitGuard.reset(id);
   }
 });

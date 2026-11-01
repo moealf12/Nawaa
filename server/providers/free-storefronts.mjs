@@ -1223,10 +1223,14 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeou
   };
   try{
     // Retry-After and network denial policies apply to all storefronts.
-    if(storeId && !sourceRateLimitGuard.canRequest(storeId).allowed){
-      const error=new Error("SOURCE_RATE_LIMIT_COOLDOWN");
-      error.failureClass="HTTP_429_RATE_LIMITED";
-      throw error;
+    if(storeId){
+      const access=sourceRateLimitGuard.canRequest(storeId);
+      if(!access.allowed){
+        const denied=access.failureClass==="HTTP_403_ACCESS_DENIED";
+        const error=new Error(denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN");
+        error.failureClass=denied?"HTTP_403_ACCESS_DENIED":"HTTP_429_RATE_LIMITED";
+        throw error;
+      }
     }
     const idleController=new AbortController();
     // Preserve the historical default for every other storefront. Amazon's
@@ -1254,8 +1258,13 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeou
       signal:requestSignal,
     },{sourceId:storeId});
     if(amazon)headersMs=Math.round(performance.now()-start);
-    if(response.status===429 && storeId)
-      sourceRateLimitGuard.record429(storeId,response.headers.get("retry-after"));
+    if(storeId){
+      if(response.status===429)
+        sourceRateLimitGuard.record429(storeId,response.headers.get("retry-after"));
+      else if(response.status===403)
+        sourceRateLimitGuard.record403(storeId);
+      else sourceRateLimitGuard.recordNon403(storeId);
+    }
     if(!response.ok)throw new SourceHttpError(response.status,{
       retryAfterMs:response.status===429?parseRetryAfter(response.headers.get("retry-after")):null,
     });
@@ -1730,8 +1739,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // Never probe another endpoint to work around an explicit access refusal,
     // including IKEA and other sources with secondary API fallback strategies.
     if(!html && (sourceAccessFailure === "HTTP_403_ACCESS_DENIED" ||
-                 sourceAccessFailure === "HTTP_429_RATE_LIMITED"))
-      throw new Error(primarySearchError || sourceAccessFailure);
+                 sourceAccessFailure === "HTTP_429_RATE_LIMITED")) {
+      // Preserve structured access-denial evidence across the searchStore
+      // exception boundary. A cooldown is not a transport failure, empty
+      // catalog or a stockout, even if its message contains no "HTTP 403".
+      const denied=new Error(primarySearchError || sourceAccessFailure);
+      denied.failureClass=sourceAccessFailure;
+      throw denied;
+    }
     // Real, first-party HTML search cards are Noon's primary source path.
     // Bind them to the exact requested search URL; a redirect to the homepage
     // is not evidence for the submitted query. No other endpoints are fetched.
