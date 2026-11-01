@@ -76,9 +76,6 @@ export function normalizeSearchQuery(value = "") {
       text = text.replace(pattern, "$1" + canonical);
     }
   }
-  // Explicit RAM shorthand ("16 ram" / "16 رام") is a memory quantity,
-  // never a screen-size token nor an SSD storage capacity.
-  text=text.replace(/\b(\d{1,3})\s+(?:gb\s+)?ram\b/g,"$1gb ram");
   if (/\b(?:iphone|galaxy)\b/.test(text)) text = text.replace(/\b(64|128|256|512|1024)(?= |$)(?!\s+(?:gb|tb)\b)/g, "$1gb");
   return text.replace(/(^| )(?:ابغي|ابي|اريد|ابحث|عن|لي|بافضل|افضل|ارخص|سعر|اشتري|please|find)(?= |$)/g, " ")
     .replace(/\b(iphone|airpods|ps)\s*(\d+)/g, "$1 $2")
@@ -335,8 +332,8 @@ function explicitModels(value) {
 // Read a memory capacity ONLY when it is explicitly tied to RAM. A nearby
 // 16-inch diagonal and unrelated 512GB SSD must never substitute for it.
 function normalizedRamCapacityGb(value = "") {
-  const claim=String(value).match(/(?:^| )(\d{1,3})gb(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram(?= |$)/) ||
-    String(value).match(/(?:^| )ram (\d{1,3})gb(?= |$)/);
+  const claim=String(value).match(/(?:^| )(\d{1,3})(?:gb)?(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram(?= |$)/) ||
+    String(value).match(/(?:^| )ram (\d{1,3})(?:gb)?(?= |$)/);
   return claim ? Number(claim[1]) : null;
 }
 
@@ -355,7 +352,7 @@ export function parseSearchIntent(value = "") {
   // RAM and SSD are independent properties. Preserve a separately specified
   // SSD capacity while excluding the RAM amount from the storage constraint.
   const storageOnlyQuery=normalizedRamCapacityGb(normalizedQuery)!==null
-    ? normalizedQuery.replace(/\b\d{1,3}gb(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram\b|\bram \d{1,3}gb\b/g," ")
+    ? normalizedQuery.replace(/\b\d{1,3}(?:gb)?(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram\b|\bram \d{1,3}(?:gb)?\b/g," ")
     : normalizedQuery;
   return {
     normalizedQuery,
@@ -603,6 +600,16 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
+  // Match RAM quantities semantically for RAM-constrained laptop queries:
+  // "16 RAM" and "16GB DDR4 RAM" are equivalent. Never rewrite global
+  // model names (e.g. "iPhone 17 RAM 8GB") into fictitious capacities.
+  if (requestedRamGb !== null) {
+    const retailMemory=normalizedRamCapacityGb(normalizeSearchQuery(offer?.title||""));
+    if (retailMemory===requestedRamGb) {
+      titleTokens.add(String(requestedRamGb));
+      titleTokens.add(String(requestedRamGb)+"gb");
+    }
+  }
   const hits = q.filter((token) => titleTokens.has(token)).length;
   let confidence = q.length ? hits / q.length : 1;
   const description = describeProduct(offer);
