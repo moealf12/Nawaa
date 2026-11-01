@@ -1,0 +1,30 @@
+name: NAWAA Extra Render Phase Read-Only Acceptance
+on:
+  pull_request:
+    paths:
+      - "scripts/verify-extra-render-phase-production.mjs"
+      - ".github/workflows/extra-render-phase-production.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  extra-render-exact-sha:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check diagnostic code syntax
+        run: node --check scripts/verify-extra-render-phase-production.mjs
+      - name: Read exact Render LIVE SHA and one eXtra shopper search
+        env:
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          DATABASE_URL: ""
+          MEILI_HOST: ""
+          MEILI_MASTER_KEY: ""
+        run: node scripts/verify-extra-render-phase-production.mjs
