@@ -124,6 +124,12 @@ export function provisionalLabel(queryKind,offer){
     if(!has(title,laptop))return {grade:null,reason:"complete_laptop_not_evidenced"};
     if(has(title,/(?:\bssd\s+(?:for|upgrade)\b|\breplacement\b|\bram\s+for\b|لترقيه|بديل)/))
       return {grade:0,reason:"component_not_laptop"};
+    // Q15/Q16 request 16GB RAM. A title saying "16 in" with an explicit
+    // 8GB RAM claim is a different sellable laptop variant, not grade 3/2.
+    const retailRam=title.match(/(?:^| )(\d{1,3})\s*gb(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram(?= |$)|(?:^| )(\d{1,3}) ram(?= |$)|(?:^| )ram (\d{1,3})(?: ?gb)?(?= |$)/);
+    const verifiedRam=retailRam ? Number(retailRam[1]||retailRam[2]||retailRam[3]) : null;
+    if(verifiedRam!==null && verifiedRam!==16)
+      return {grade:0,reason:"explicit_hp_laptop_ram_capacity_conflict"};
     return has([title,specs].join(" "),/(?:\b16\s*gb\b|\b16\s*ram\b|\b16\s*جيجا\b|\b16gb\b|\b16\s*رام\b)/)
       ?{grade:3,reason:"hp_laptop_16gb_explicit"}:{grade:2,reason:"hp_laptop_ram_unconfirmed"};
   }
