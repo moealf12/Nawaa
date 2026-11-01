@@ -93,3 +93,29 @@ test("R04 independent rubric keeps sold principal device with explicitly include
   for(const [kind,title,grade] of positives)
     assert.equal(provisionalLabel(kind,{title}).grade,grade,title);
 });
+
+test("R04 postdeploy negative control: a real observed peripheral at top rank must lower NDCG and MRR",()=>{
+  const observedParts=[
+    ["galaxy","Originale Samsung Galaxy S25 ULTRA S938B presa di ricarica connettore dock USB microfono"],
+    ["jbl","Ear Pads Replacement Cushion for JBL E35 E45bt E45 Bluetooth Wireless Headphones"],
+    ["laptop","16GB Memoria RAM HP-Compaq Pavilion Notebook 15-da3000nia"],
+  ];
+  for(const [kind,title] of observedParts){
+    const judgment=provisionalLabel(kind,{title});
+    assert.equal(judgment.grade,0,title);
+    const rank1Bad=judgedMetrics([{judgment},{judgment:{grade:3}}]);
+    assert.equal(rank1Bad.mrr10,0.5,title);
+    assert.ok(rank1Bad.ndcg10<1,title);
+    assert.equal(rank1Bad.metricStatus,"PROVISIONAL_RULE_LABELS");
+  }
+});
+
+test("R04 real Q15 motherboard must be independently labeled as a spare part",()=>{
+  const title="L34280-601 für HP EliteBook x360 1030 G3 mit Intel Core i7-8650U und 16 GB RAM";
+  const a=provisionalLabel("laptop",{title,exactMatch:true,matchConfidence:1,productPrice:1});
+  const b=provisionalLabel("laptop",{title,exactMatch:false,matchConfidence:0,productPrice:100000});
+  assert.deepEqual(a,{grade:0,reason:"verified_hp_mainboard_spare_part"});
+  assert.deepEqual(a,b);
+  const legitimate="HP EliteBook 840 G6 Business Laptop Intel Core i7 16GB RAM with included spare motherboard";
+  assert.equal(provisionalLabel("laptop",{title:legitimate}).grade,3);
+});

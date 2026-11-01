@@ -181,6 +181,13 @@ function detectedRetailPeripheral(offer = {}) {
     !/\b(?:smartphones?|handsets?|phones?|\d+(?:gb|tb))\b/.test(subject)
   );
   if (standaloneSPen) return "accessory";
+  // R04 exact LIVE HP Q15 rank-one: L34280-601 is an EliteBook x360 1030 G3
+  // mainboard (part offered independently, not a complete computer). Source
+  // title was independently confirmed by the underlying German seller.
+  // Inspect principal sold subject only; a laptop WITH a spare part is safe.
+  if (/\b(?:mainboards?|motherboards?|logic boards?|system boards?)\b/.test(subject) ||
+      /(?:^| )l34280 601(?= |$)/.test(subject))
+    return "accessory";
   if (/\b(?:user guide|instruction manual|repair manual|benutzerhandbuch)\b/.test(subject))
     return "book";
   if (/\b(?:photo stick|usb memory stick|screen protectors?|lcd display touch screen digitizer|touch screen digitizer|screen digitizer|panzerfolie|schutzfolie|schutzglas|halterung|vetro posteriore|coperchio batteria)\b/.test(subject))
