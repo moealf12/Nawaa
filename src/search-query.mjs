@@ -597,6 +597,59 @@ function prepareMatchContext(intent) {
     storagePartRequested:STORAGE_PART_NOUN.test(normalizedQuery)};
 }
 
+// R04 P1: evidence-gated incompatibility between the shopper's requested
+// principal retail item and the actual SOLD SUBJECT of the merchant title.
+// Category/brand metadata and SEO URLs are deliberately ignored here. This
+// only vetoes a contradicted complete-product intent, never invents an item
+// type or suppresses explicitly requested accessories and included bundles.
+function contradictedPrincipalRetailItem(query, originalTitle) {
+  const cameraRequest=/\b(?:camera|mirrorless|dslr)\b/.test(query) &&
+    !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?)\b/.test(query);
+  const vacuumRequest=/\b(?:dyson v\d+|vacuum cleaner)\b/.test(query) &&
+    !/\b(?:toys?|pretend|children|kids?)\b/.test(query);
+  const officeChairRequest=/\b(?:office chair|chair office)\b/.test(query) &&
+    !/\b(?:repair|clamp|bracket|caster|wheels?|miniature|model|replacement|fix)\b/.test(query);
+  const coffeeBeansRequest=/\b(?:coffee beans|coffee coffee)\b/.test(query) &&
+    !/\b(?:spray|sprayer|stickers?|bottle|grinder|labels?)\b/.test(query);
+  const wholeWatchRequest=/\bapple watch\b/.test(query) &&
+    !/\b(?:straps?|wristbands?|bands?|loops?|cases?|chargers?)\b/.test(query);
+  const fullDiscDriveRequest=/\bps5\b/.test(query) && /\b(?:disc drive|optical drive)\b/.test(query) &&
+    !/\b(?:housings?|shell|repair|connector|travel|case|replacement parts?)\b/.test(query);
+  if (!(cameraRequest||vacuumRequest||officeChairRequest||
+        coffeeBeansRequest||wholeWatchRequest||fullDiscDriveRequest)) return false;
+
+  const retail=normalizeSearchQuery(originalTitle);
+  // Only an explicit package inclusion marker separates the primary sold
+  // item from extras; "compatible with" must NOT be interpreted as inclusion.
+  const subject=retail.replace(/\bcompatible with\b/g,"compatible_to")
+    .split(/\b(?:with|including|includes)\b/,1)[0];
+  if (cameraRequest) {
+    const part=subject.match(/\b(?:lens(?:es)?|straps?|hand strap|wrist strap|camera bag|camera case|tripod)\b/);
+    if (part) {
+      // An EOS compatibility model in a LENS title is not a camera body.
+      // Retail chassis evidence must precede the separately sold part.
+      const retailBeforePart=subject.slice(0,part.index);
+      const actualCameraBody=/(?:\beos r\d+\b.*\bmirrorless camera\b|\b(?:mirrorless|digital) camera (?:kit|body)\b|\bcamera body\b)/.test(retailBeforePart);
+      if (!actualCameraBody) return true;
+    }
+  }
+  if (vacuumRequest && /\b(?:pretend play|toy vacuum|vacuum toy|kids? pretend|childrens? toy)\b/.test(subject))
+    return true;
+  if (officeChairRequest &&
+    /\b(?:miniature|miniatures|dollhouse|1 100|sagging fix clamp|fix clamp|repair clamp|height lock bracket|replacement caster|caster wheel replacement)\b/.test(subject))
+    return true;
+  if (coffeeBeansRequest &&
+    /\b(?:sprayer|spray bottle|empty makeup|empty bottle|stickers?|3d stickers|coffee cup sticker)\b/.test(subject))
+    return true;
+  if (wholeWatchRequest &&
+    /\b(?:straps?|wristbands?|sport loop|braided loop|watch bands?|replacement bands?)\b/.test(subject))
+    return true;
+  if (fullDiscDriveRequest &&
+    /\b(?:empty shell|shell housing|drive housing|housings?|connector replacement|repair kit|travel case)\b/.test(subject))
+    return true;
+  return false;
+}
+
 export function assessOfferMatch(query, offer, preparedIntent = null, preparedContext = null) {
   const intent = preparedIntent || parseSearchIntent(query);
   const {normalizedQuery,effectiveCategory,categoryTokenRequested,q,queryTokens,queryHasAccessoryIntent,storageMediaRequested,storagePartRequested,requestedRamGb} =
@@ -668,6 +721,10 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
+  // A high lexical match cannot upgrade a standalone retail part to the
+  // complete camera/vacuum/chair/watch/food/PS5 drive requested by the shopper.
+  const principalRetailConflict=contradictedPrincipalRetailItem(normalizedQuery,offer?.title||"");
+  if (principalRetailConflict) confidence *= 0.05;
 
   // Brand-only searches still reject accessories that merely carry the name.
   // Query-only accessory intent was prepared outside the per-offer loop.
@@ -761,7 +818,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
       !hasUnrequestedVariant && !conflictingGalaxyModel &&
       !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch &&
-      !ramMismatch && !ramUnverified;
+      !ramMismatch && !ramUnverified && !principalRetailConflict;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
@@ -769,6 +826,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     productKind: description.kind,
     matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
+      principalRetailConflict ? "العرض يخص ملحقًا أو قطعة أو لعبة، وليس المنتج الأساسي المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
       conflictingGalaxyModel ? "طراز Galaxy مختلف عن الجهاز المطلوب" :
       hasUnrequestedVariant ? "نسخة مختلفة عن الموديل المطلوب" : sparseLaptopEvidence ? "بيانات العرض لا تثبت وجود جهاز لابتوب كامل" : "بعض مواصفات البحث غير موجودة في بيانات العرض",
