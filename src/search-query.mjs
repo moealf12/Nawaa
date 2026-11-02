@@ -607,10 +607,10 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
     !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?|guides?|manuals?|books?|tutorials?|setup)\b/.test(query) &&
     !/(?:عدسه|حقيبه|حزام|غطاء|فلتر|كتاب|دليل)/.test(query);
   const vacuumRequest=(/\b(?:dyson v\d+|vacuum cleaner)\b/.test(query)||query.includes("مكنسه دايسون")) &&
-    !/\b(?:toys?|pretend|children|kids?|filters?|attachments?|extension wand|cleaner head|floor tool|replacement parts?|holders?)\b/.test(query) &&
+    !/\b(?:toys?|pretend|children|kids?|filters?|attachments?|extension wand|cleaner head|floor tool|replacement parts?|holders?|hoses?|dust bins?|dustbins?|cyclones?|body|brushes?|accessories|spare parts?)\b/.test(query) &&
     !/(?:فلتر|ملحق|فرشاه|انبوب|قطعه)/.test(query);
   const officeChairRequest=(/\b(?:office chair|chair office)\b/.test(query)||query.includes("كرسي مكتب")) &&
-    !/\b(?:repair|clamp|bracket|caster|wheels?|miniature|model|replacement|fix)\b/.test(query) &&
+    !/\b(?:repair|clamp|bracket|caster|wheels?|miniature|model|replacement|fix|headrests?|armrests?|cushions?|mats?|gas lifts?|spare parts?|hydraulic cylinders?|chair savers?)\b/.test(query) &&
     !/(?:اصلاح|عجلات|مشبك|تصليح)/.test(query);
   const coffeeBeansRequest=(/\b(?:coffee beans|coffee coffee)\b/.test(query)||
     query.includes("بن قهوه")||query.includes("حبوب قهوه")) &&
@@ -631,6 +631,20 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
   // item from extras; "compatible with" must NOT be interpreted as inclusion.
   const subject=retail.replace(/\bcompatible with\b/g,"compatible_to")
     .split(/\b(?:with|including|includes)\b/,1)[0];
+  // R04 P3: post-P2 exact-LIVE adverse retail subjects. Do not infer
+  // principal identity from a matching brand/model in parts or book titles.
+  // The original merchant sale title is authoritative; no source URL,
+  // price, schema brand or productType metadata may override this veto.
+  if(vacuumRequest &&
+    /\b(?:vacuum cleaner hoses?|replacement (?:vacuum cleaner )?hoses?|hose for dyson|vacuum cleaner attachments?|attachment accessories kit|accessories kit replacement|dust bin replacement|dustbin replacement|vacuum cleaner floor brush|floor brush head|vacuum cleaner main body|main body (?:and )?cyclone|main body cyclone|vacuum replacement cyclone)\b/.test(subject))
+    return true;
+  if(officeChairRequest &&
+    /\b(?:fix sinking chair kit|office chair saver|replace swivel caster wheels|stationary foot|office chair headrest attachment|headrest attachment|head cushion pillow attachment|armrest cushions?|elbow pillow|office chair spare parts|chair spare parts|gas lift hydraulic|gas lift pneumatic|chair gas lift cylinder|office chair mat|floor protectors for rolling chairs|camping cot|portable recliner chair)\b/.test(subject))
+    return true;
+  if(coffeeBeansRequest &&
+    /\b(?:pour over premium coffee set|coffee brewing set|coffee dripper|coffee server|barista tools|coffee brewing tools|book for coffee lovers|little book for coffee lovers|treatise on the nature|coffee and poetry|coffee poetry)\b/.test(subject))
+    return true;
+
   // R04 P2: recorded LIVE 2026-11-02 source titles, independent from
   // merchant metadata/URL/price. A related book, repair part, cup or band
   // cannot become the complete retail item through lexical overlap.
