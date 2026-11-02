@@ -76,3 +76,17 @@ test("R04 P1: exclusion is query-specific and does not mutate merchant offers or
   for(const [,query] of evidence)filterQueryOffers(query,examples);
   assert.deepStrictEqual(examples,originals);
 });
+
+test("R04 P1: EOS R compatibility in a sold lens is not evidence of an actual camera body",()=>{
+  const title="Canon EOS R5 compatible lens RF 50mm for mirrorless camera";
+  const item=offer(title,"eos-lens");
+  assert.equal(assessOfferMatch("Canon mirrorless camera",item).exactMatch,false);
+  assert.equal(filterQueryOffers("Canon mirrorless camera",[item]).offers.length,0);
+  assert.equal(filterQueryOffers("Canon camera lens",[item]).offers.length,1,
+    "explicit lens search must keep the same retail item");
+});
+test("R04 P1: an EOS mirrorless retail camera kit containing a lens stays a camera",()=>{
+  const title="Canon EOS R50 Mirrorless Camera Lens Kit";
+  const item=offer(title,"camera-kit");
+  assert.equal(filterQueryOffers("Canon mirrorless camera",[item]).offers.length,1);
+});
