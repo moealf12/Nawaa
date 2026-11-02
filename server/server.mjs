@@ -33,6 +33,7 @@ import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeCom
 import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
 import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
 import { createSearchCache, classifySearchCacheAdmission } from "./search-cache.mjs";
+import { amazonPartialEvidenceError } from "./amazon-page-evidence.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
@@ -362,18 +363,9 @@ async function searchExpansion(query, depth, {signal} = {}) {
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
   // Do not infer successful completion merely from a non-throwing adapter:
   // source-owned diagnostics can report rejected pages and failed PDPs.
-  const amazonDiagnostic=amazon?.diagnostics;
-  const amazonSourceProblem=!amazon.error && plan.amazonPageCount>0 && (
-    Boolean(amazonDiagnostic?.primarySearchError) ||
-    Boolean(amazonDiagnostic?.sourceAccessFailure) ||
-    Boolean(amazonDiagnostic?.searchPage?.blockedReason) ||
-    Number(amazon?.failures||0)>0 ||
-    (Number.isFinite(amazonDiagnostic?.pagesRequested) &&
-     Number(amazonDiagnostic?.pagesFetched)<Number(amazonDiagnostic.pagesRequested))
-  );
-  if(amazonSourceProblem)errors.push({provider:"free-storefronts",
-    sourceId:"free-storefronts:amazon-sa",pass:"expansion",
-    error:"amazon_incomplete_source_evidence"});
+  const amazonEvidenceError=amazonPartialEvidenceError(plan.amazonPageCount,amazon,"expansion");
+  if(amazonEvidenceError && !amazon.error)
+    errors.push(amazonEvidenceError);
   const storefrontSourceProblem=Array.isArray(storefront?.diagnostics) &&
     storefront.diagnostics.some(item=>Number(item?.failures||0)>0);
   if(storefrontSourceProblem)errors.push({provider:"free-storefronts",
@@ -509,6 +501,10 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
         error:typeof issue==="string"?issue:String(issue?.error||issue?.message||"amazon_search_failed"),
       });
     }
+    if(value.error)errors.push({provider:"free-storefronts",sourceId,pass:"primary",error:String(value.error)});
+    const amazonEvidenceError=amazonPartialEvidenceError(plan.amazonPageCount,value,"primary");
+    if(amazonEvidenceError && !value.error && !(Array.isArray(value.errors)&&value.errors.length))
+      errors.push(amazonEvidenceError);
     if(value.offers?.length)await emit({completed:primaryCompleted+1,pending:Math.max(0,primaryCount-primaryCompleted)});
   }).catch(error=>{
     amazonSettled=true;
@@ -738,6 +734,9 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   const amazonSourceId="free-storefronts:amazon-sa";
   providers.push({provider:"free-storefronts",sourceId:amazonSourceId,ok:!amazon.error && Boolean(amazon.offers?.length),pass:"primary",query:providerQuery,returnedOffers:amazon.offers?.length || 0,diagnostics:amazon.diagnostics || null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
   if(amazon.error) errors.push({provider:"free-storefronts",sourceId:amazonSourceId,pass:"primary",error:amazon.error});
+  const amazonEvidenceError=amazonPartialEvidenceError(plan.amazonPageCount,amazon,"primary");
+  if(amazonEvidenceError && !amazon.error)
+    errors.push(amazonEvidenceError);
   const amazonValidated = dedupeNormalizedOffers(amazon.offers || [])
     .map((offer) => ({
       ...offer,
