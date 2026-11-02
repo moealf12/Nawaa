@@ -113,8 +113,10 @@
       "status": "IN_PROGRESS",
       "baseSha": "69896f49c89a1534d62eb4a10a34da71ebfb6739",
       "blockers": [
-        "Ten real bilingual sampled queries and four published DOM-SSE checks passed, but do not cover all 36 graded intents with independent human/merchant adjudication.",
-        "Published first-screen DOM parity is evidenced for Q03/Q04/Q15/Q16 only; full-category/variant/merchant UI acceptance remains unverified."
+        "All 36 bilingual intents were observed, but only 9 had computable rule-only provisional NDCG; 117 top-ten judgments remain UNKNOWN and no independently adjudicated full-corpus NDCG/MRR or relevance certificate exists.",
+        "13 of 36 current LIVE intents had no strictly qualified UI groups; all 36 were PARTIAL (560 source error events summed across requests). This is not out-of-stock evidence.",
+        "Real merchant titles in issue #263 show major rank-one accessory/principal-item confusion (camera straps, toy vacuum, miniature office furniture, coffee sprayers/stickers); a separate bounded RED/GREEN ranking fix is required.",
+        "Published first-screen DOM same-SSE parity was confirmed for Q03/Q04/Q15/Q16 only; remaining UI/category and full human adjudication are still open."
       ],
       "evidence": {
         "certification": "NOT_VERIFIED",
@@ -136,7 +138,14 @@
         "publishedUiLiveAuditUrl": "https://github.com/moealf12/Nawaa/actions/runs/41509844134",
         "publishedUiArtifactId": 13173032817,
         "publishedUiAuditedSha": "d442e211da059040f6a3641927428b07508764df",
-        "publishedUiAuditSummary": "10/10 real bilingual queries/99 grouped entries provisionally judged; 4/4 exact-SSE published DOM order matched 10 visible groups, no fallback JSON, rank 1 grade 3; all ten query responses partial."
+        "publishedUiAuditSummary": "10/10 real bilingual queries/99 grouped entries provisionally judged; 4/4 exact-SSE published DOM order matched 10 visible groups, no fallback JSON, rank 1 grade 3; all ten query responses partial.",
+        "fullCorpusEvidencePr": "https://github.com/moealf12/Nawaa/pull/262",
+        "fullCorpusLiveRun": "https://github.com/moealf12/Nawaa/actions/runs/41520143778",
+        "fullCorpusArtifactId": 13176798630,
+        "fullCorpusObservedSha": "b29cd8194474d83525faceac8a05f42f1dc3f43c",
+        "fullCorpusAuditMergeSha": "42a38667116206e9b1b899d85ca47be1a86b3558",
+        "fullCorpusResult": "36/36 observed; 36/36 partial; 560 per-request source errors; 13 with no strictly qualified groups; 117 unknown judgments; 9 rule-only NDCG values; human relevance certificate FALSE.",
+        "confirmedRelevanceFailureIssue": "https://github.com/moealf12/Nawaa/issues/263"
       }
     },
     {
