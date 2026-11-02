@@ -38,6 +38,7 @@ test('JSON search retains a fast genuine offer when slower sources overrun the d
               status:res.statusCode,elapsed:Date.now()-start,
               offers:body.offers?.map(o=>({provider:o.provider,price:o.productPrice,title:o.title})),
               deadlineExceeded:body.coverage?.deadlineExceeded,
+              providersPending:body.coverage?.providersPending,
               deadlineErrors:body.errors?.filter(e=>e.error==='search_deadline_exceeded').length,
               cancelledNetworkCalls:globalThis.cancelledNetworkCalls,
             }));
@@ -58,6 +59,7 @@ test('JSON search retains a fast genuine offer when slower sources overrun the d
   assert.equal(actual.status,200);
   assert.ok(actual.elapsed<1750,'the deadline must remain bounded');
   assert.equal(actual.deadlineExceeded,true);
+  assert.equal(actual.providersPending,null,'a timed-out wave cannot claim an observed zero pending providers');
   assert.ok(actual.deadlineErrors>=1);
   assert.ok(actual.cancelledNetworkCalls>=1,'JSON deadline must abort underlying merchant fetches');
   assert.ok(actual.offers.some(o=>o.provider==='extra-unbxd' && o.price===2799 &&
