@@ -35,7 +35,11 @@ const positives=[
  ["coffee mug","Mustard Coffee Crew Mug Reusable Coffee Mug"],
  ["Apple Watch Series 11","Apple Watch Series 11 GPS Smartwatch 42mm with Sport Band"],
  ["Apple Watch strap","Compatible with Apple Watch Strap Braided Sport Loop Band for Series 11"],
- ["PS5 Disc Drive","Sony Disc Drive for PlayStation 5 Digital Edition Slim, White"]
+ ["PS5 Disc Drive","Sony Disc Drive for PlayStation 5 Digital Edition Slim, White"],
+ ["Canon EOS R100 pocket guide","Canon EOS R100 Quick Setup Pocket Guide Master Your Camera Settings"],
+ ["Dyson V15 extension wand","Quick Release Extension Wand Compatible for Dyson V15 Vacuum Cleaners"],
+ ["PS5 disc drive connector","Optical Disc Drive Connector Module Replacement for PS5"],
+ ["Apple Watch Series 11 tempered glass","Tempered Glass for Apple Watch Series 11 Screen Protection"]
 ];
 const fixture=(query,title,id)=>({
  title,brand:query,productType:query,
