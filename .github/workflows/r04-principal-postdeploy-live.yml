@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      NAWAA_EXPECT_LIVE_SHA: ''
       DATABASE_URL: ''
       MEILI_HOST: ''
       MEILI_MASTER_KEY: ''
@@ -33,12 +33,21 @@ jobs:
         run: |
           node --check scripts/r04-principal-postdeploy-live.mjs
           node --test tests/r04-principal-postdeploy-contract.test.mjs
-      - name: Refuse moving production baseline
+      - name: Pin the actual current main SHA (PR base.sha can be stale)
         run: |
           set -euo pipefail
-          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
+          sha="$(git ls-remote origin refs/heads/main | cut -f1)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "NAWAA_EXPECT_LIVE_SHA=$sha" >> "$GITHUB_ENV"
+          echo "R04_PINNED_MAIN_SHA=$sha"
       - name: Probe eleven frozen intents via read-only public HTTP
         run: node scripts/r04-principal-postdeploy-live.mjs
+      - name: Refuse moving main after evidence collection
+        if: always()
+        run: |
+          set -euo pipefail
+          [[ "$NAWAA_EXPECT_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
       - name: Retain evidence on both PASS and FAIL
         if: always()
         uses: actions/upload-artifact@v4
