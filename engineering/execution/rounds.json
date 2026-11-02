@@ -113,8 +113,8 @@
       "status": "IN_PROGRESS",
       "baseSha": "69896f49c89a1534d62eb4a10a34da71ebfb6739",
       "blockers": [
-        "Only Q03/Q04/Q15/Q16 source-backed postdeploy ranking sample independently passed; broad bilingual graded top-10 judgments and UI/DOM parity remain uncertified.",
-        "Historical R04 evidence documents unjudged candidates and still-partial sources; do not claim a full-round quality certificate."
+        "Ten real bilingual sampled queries and four published DOM-SSE checks passed, but do not cover all 36 graded intents with independent human/merchant adjudication.",
+        "Published first-screen DOM parity is evidenced for Q03/Q04/Q15/Q16 only; full-category/variant/merchant UI acceptance remains unverified."
       ],
       "evidence": {
         "certification": "NOT_VERIFIED",
@@ -130,7 +130,13 @@
         "liveRankingAcceptanceRun": "https://github.com/moealf12/Nawaa/actions/runs/41345730730",
         "liveRankingAcceptanceArtifactId": 13098982850,
         "observed": "Q03/Q04/Q15/Q16: four out of four accepted; all four source-partial.",
-        "certificationLimitation": "Four cases do not meet full independently graded bilingual ranking/DOM requirements."
+        "certificationLimitation": "Four cases do not meet full independently graded bilingual ranking/DOM requirements.",
+        "publishedUiEvidencePrUrl": "https://github.com/moealf12/Nawaa/pull/261",
+        "publishedUiEvidenceMergeSha": "b29cd8194474d83525faceac8a05f42f1dc3f43c",
+        "publishedUiLiveAuditUrl": "https://github.com/moealf12/Nawaa/actions/runs/41509844134",
+        "publishedUiArtifactId": 13173032817,
+        "publishedUiAuditedSha": "d442e211da059040f6a3641927428b07508764df",
+        "publishedUiAuditSummary": "10/10 real bilingual queries/99 grouped entries provisionally judged; 4/4 exact-SSE published DOM order matched 10 visible groups, no fallback JSON, rank 1 grade 3; all ten query responses partial."
       }
     },
     {
