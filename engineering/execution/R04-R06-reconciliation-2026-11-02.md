@@ -26,7 +26,7 @@
 
 **Certification blockers:**
 1. The four-query postdeploy check and synthetic ranking benchmark do not establish broad independently graded results over the intended 36-intent bilingual corpus. Unknown/provisional classifications must not be silently counted as independently adjudicated.
-2. The recorded source-level first-screen grouping is not a DOM capture. No evidence reviewed here proves rendered UI ordering/identity parity across required first-screen categories.
+2. New [PR #261](https://github.com/moealf12/Nawaa/pull/261), merged `b29cd8194474d83525faceac8a05f42f1dc3f43c`, added actual **published browser first-screen parity for Q03/Q04/Q15/Q16**: [live Chromium run 41509844134](https://github.com/moealf12/Nawaa/actions/runs/41509844134), artifact `13173032817`, tested previous live SHA `d442e211da059040f6a3641927428b07508764df`. Each query showed 10 ordered product groups matching its **same SSE session**, rank one provisionally grade 3, zero known wrong or unjudged top-ten within these four, and zero extra JSON recovery requests; frontend `src/search-page.mjs` hash matched the tested repository file. The reused ten-query live ranking audit observed 99 first-ten groups with zero provisional unknown labels, but ALL ten searches were source-partial. This **narrows** the blocker to broader 36-intent/variant DOM and independently adjudicated labeling, not these four first-screen cases.
 3. Independent source partialness is separately tracked; do not use rank-quality PASS to claim that every merchant was queried or available.
 
 **Ledger decision:** retain R04 `IN_PROGRESS`; add linked historical evidence and explicit blockers. No fraudulent `customerAcceptance=PASS` for full round.
