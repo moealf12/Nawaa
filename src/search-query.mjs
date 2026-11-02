@@ -604,10 +604,10 @@ function prepareMatchContext(intent) {
 // type or suppresses explicitly requested accessories and included bundles.
 function contradictedPrincipalRetailItem(query, originalTitle) {
   const cameraRequest=(/\b(?:camera|mirrorless|dslr)\b/.test(query)||query.includes("كاميرا كانون")) &&
-    !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?)\b/.test(query) &&
-    !/(?:عدسه|حقيبه|حزام|غطاء|فلتر)/.test(query);
+    !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?|guides?|manuals?|books?|tutorials?|setup)\b/.test(query) &&
+    !/(?:عدسه|حقيبه|حزام|غطاء|فلتر|كتاب|دليل)/.test(query);
   const vacuumRequest=(/\b(?:dyson v\d+|vacuum cleaner)\b/.test(query)||query.includes("مكنسه دايسون")) &&
-    !/\b(?:toys?|pretend|children|kids?)\b/.test(query) &&
+    !/\b(?:toys?|pretend|children|kids?|filters?|attachments?|extension wand|cleaner head|floor tool|replacement parts?|holders?)\b/.test(query) &&
     !/(?:فلتر|ملحق|فرشاه|انبوب|قطعه)/.test(query);
   const officeChairRequest=(/\b(?:office chair|chair office)\b/.test(query)||query.includes("كرسي مكتب")) &&
     !/\b(?:repair|clamp|bracket|caster|wheels?|miniature|model|replacement|fix)\b/.test(query) &&
@@ -621,7 +621,7 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
     !/(?:سوار|شاحن|حمايه|زجاج|غطاء)/.test(query);
   const fullDiscDriveRequest=((/\bps5\b/.test(query) && /\b(?:disc drive|optical drive)\b/.test(query)) ||
     (query.includes("قارئ اقراص") && query.includes("بلايستيشن"))) &&
-    !/\b(?:housings?|shell|repair|connector|travel|case|replacement parts?)\b/.test(query) &&
+    !/\b(?:housings?|shell|repair|connector|modules?|travel|case|replacement parts?)\b/.test(query) &&
     !/(?:قطع|هيكل|موصل|تصليح)/.test(query);
   if (!(cameraRequest||vacuumRequest||officeChairRequest||
         coffeeBeansRequest||wholeWatchRequest||fullDiscDriveRequest)) return false;
