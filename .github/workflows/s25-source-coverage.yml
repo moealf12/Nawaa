@@ -1,0 +1,55 @@
+name: NAWAA S25 Saudi Source Coverage Audit
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit-s25-source-coverage.mjs'
+      - 'tests/s25-source-coverage-audit.test.mjs'
+      - '.github/workflows/s25-source-coverage.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nawaa-s25-coverage-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  source-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Exact-head checkout, not moving branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Refuse HEAD mismatch
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install existing pinned dependency graph
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Deterministic model, provenance and price-rejection tests
+        run: node --test tests/s25-source-coverage-audit.test.mjs
+      - name: Two Saudi catalog adapters, at most one source-owned PDP probe each
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: |
+          node scripts/audit-s25-source-coverage.mjs | tee s25-source-coverage.json
+      - name: Preserve aggregate only, short retention
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s25-coverage-${{ github.event.pull_request.head.sha }}
+          path: s25-source-coverage.json
+          if-no-files-found: ignore
+          retention-days: 7
