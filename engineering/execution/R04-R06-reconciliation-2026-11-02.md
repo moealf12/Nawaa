@@ -73,3 +73,12 @@ Latest R06-D tool merge: `d442e211da059040f6a3641927428b07508764df`; Render depl
 ## Known unresolved distinction
 
 The R04, R05 and R06 features may be deployed and useful while their round-wide governance certificates are still missing. The `rounds.json` evidence fields on this branch intentionally have `certification: "NOT_VERIFIED"` and do not grant automatic `VERIFIED` status. `R01–R03` are unchanged.
+
+
+### Full 36-intent LIVE corpus evidence and objective relevance failures — 2026-11-02
+- [PR #262](https://github.com/moealf12/Nawaa/pull/262) adds read-only 36-intent source-backed audit to the repository, merged at `42a38667116206e9b1b899d85ca47be1a86b3558`. Source LIVE SHA `b29cd8194474d83525faceac8a05f42f1dc3f43c`.
+- [GREEN current-live audit 41520143778](https://github.com/moealf12/Nawaa/actions/runs/41520143778), artifact `13176798630`: 36/36 observed, 36/36 partial, **560 source error events** summed per request (not unique incidents), 1,515 returned raw offer observations, 13 intent IDs without strictly qualified UI groups, 117 unjudged positions, 9 **rule-provisional only** NDCG queries, human-independent full-round certificate FALSE.
+- [RED test 41520038229](https://github.com/moealf12/Nawaa/actions/runs/41520038229): 7 PASS / 2 intentionally FAIL due missing source-error counter. [GREEN 41520143778](https://github.com/moealf12/Nawaa/actions/runs/41520143778): 9 PASS / 0 FAIL. Counter now reads exact `sourceErrors` and fails closed on absence.
+- The **known ranking failures** in [issue #263](https://github.com/moealf12/Nawaa/issues/263) are corroborated by actual public merchant titles in TWO production observations. Canon mirrorless camera → straps/lens; Dyson V15 → toy vacuum; office chair → 1:100 miniature; coffee beans → sprayer/stickers. These are substantive relevance errors that cannot be overwritten by a provisional `wrongTopOne:[]` field, which only evaluated rule-supported identities.
+- **Missing strict groups** do not assert out-of-stock; some corresponding API queries returned 1–5 offers below qualification thresholds. All sources remain partial, so human rating across 36 intents and broader DOM parity are still separately required.
+- R04 remains `IN_PROGRESS`; R05 `PLANNED`, R06 `PLANNED` by dependency schema. Do not claim the 36-query transport PASS establishes search quality PASS or proceed to R07 without closing these blockers.
