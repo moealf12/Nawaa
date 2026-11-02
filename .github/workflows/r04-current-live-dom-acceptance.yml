@@ -1,0 +1,61 @@
+name: NAWAA R04 Current Live Ranking and Published DOM Acceptance
+on:
+  pull_request:
+    paths:
+      - 'scripts/r04-dom-parity-contract.mjs'
+      - 'scripts/r04-published-dom-parity.mjs'
+      - 'tests/r04-dom-parity-contract.test.mjs'
+      - '.github/workflows/r04-current-live-dom-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r04-current-dom-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  r04-independent-live-dom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Unit and negative-control contract, and syntax
+        run: |
+          node --check scripts/r04-published-dom-parity.mjs
+          node --check scripts/r04-dom-parity-contract.mjs
+          node --test tests/r04-dom-parity-contract.test.mjs tests/r04-live-ranking-evidence.test.mjs
+      - name: Verify main did not advance since exact LIVE checkpoint
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
+      - name: Reuse existing ten-query LIVE ranking audit
+        run: node scripts/verify-r04-live-ranking.mjs
+      - name: Install disposable test-only browser
+        run: |
+          npm install --no-save --ignore-scripts --package-lock=false playwright@1.56.1
+          command -v google-chrome || command -v google-chrome-stable || command -v chromium
+      - name: Compare actual public DOM with the SAME SSE request and strict judgments
+        run: node scripts/r04-published-dom-parity.mjs
+      - name: Preserve reviewable evidence whether PASS or FAIL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-current-live-dom-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            r04-live-ranking-evidence.json
+            r04-published-dom-parity.json
+          if-no-files-found: warn
+          retention-days: 14
