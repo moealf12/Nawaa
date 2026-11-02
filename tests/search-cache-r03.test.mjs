@@ -40,14 +40,18 @@ test("R03 RED: revoked expired snapshot never resurrects through stale-if-error"
   assert.equal(cache.stats().entries,0);
 });
 
-test("R03: ordinary stale-if-error remains available without invalidation",async()=>{
+test("R03: bounded stale-while-revalidate remains available without invalidation",async()=>{
   let now=0,calls=0;
   const cache=createSearchCache(()=>++calls===1?completed("valid"):empty(),
     {...strict,now:()=>now,ttl:10,staleTtl:100});
-  await cache("phone");now=101;
+  await cache("phone");now=11;
   const result=await cache("phone");
-  assert.equal(result.cache.mode,"stale-if-error");
+  assert.equal(result.cache.mode,"stale");
   assert.deepEqual(result.offers,[{id:"valid"}]);
+  await drain();
+  assert.equal(calls,2,"the stale response must schedule just one background refresh");
+  now=100;
+  assert.equal(cache.peek("phone"),null,"exact hard expiry must revoke prior offer evidence");
 });
 
 test("R03: 100 simultaneous cache misses coalesce to one acquisition",async()=>{
