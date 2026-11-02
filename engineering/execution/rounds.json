@@ -115,7 +115,7 @@
       "blockers": [
         "All 36 bilingual intents were observed, but only 9 had computable rule-only provisional NDCG; 117 top-ten judgments remain UNKNOWN and no independently adjudicated full-corpus NDCG/MRR or relevance certificate exists.",
         "13 of 36 current LIVE intents had no strictly qualified UI groups; all 36 were PARTIAL (560 source error events summed across requests). This is not out-of-stock evidence.",
-        "Real merchant titles in issue #263 show major rank-one accessory/principal-item confusion (camera straps, toy vacuum, miniature office furniture, coffee sprayers/stickers); a separate bounded RED/GREEN ranking fix is required.",
+        "Issue #263's proven standalone peripheral principal-item cases were fixed and released by PR #264 (matcher replay and CI), but postdeploy real-source customer card acceptance, unseen title families and broad independent relevance remain open.",
         "Published first-screen DOM same-SSE parity was confirmed for Q03/Q04/Q15/Q16 only; remaining UI/category and full human adjudication are still open."
       ],
       "evidence": {
@@ -145,7 +145,13 @@
         "fullCorpusObservedSha": "b29cd8194474d83525faceac8a05f42f1dc3f43c",
         "fullCorpusAuditMergeSha": "42a38667116206e9b1b899d85ca47be1a86b3558",
         "fullCorpusResult": "36/36 observed; 36/36 partial; 560 per-request source errors; 13 with no strictly qualified groups; 117 unknown judgments; 9 rule-only NDCG values; human relevance certificate FALSE.",
-        "confirmedRelevanceFailureIssue": "https://github.com/moealf12/Nawaa/issues/263"
+        "confirmedRelevanceFailureIssue": "https://github.com/moealf12/Nawaa/issues/263",
+        "principalRetailIdentityFixPr": "https://github.com/moealf12/Nawaa/pull/264",
+        "principalRetailIdentityFixMergeSha": "26da1edfc7e8314bcf4b1dbf6b8380947dddec2d",
+        "principalRetailIdentityFixRenderDeploy": "dep-dbkfphavcj2c738sj7s0",
+        "principalRetailIdentityFixGreenCI": "https://github.com/moealf12/Nawaa/actions/runs/41524260375",
+        "principalRetailIdentityFixPostMergeCI": "https://github.com/moealf12/Nawaa/actions/runs/41525690709",
+        "principalRetailIdentityFixScope": "Nine recorded false-principal retail titles rejected in matcher replay; explicit accessories, real bundles and CPU contract preserved; exact production /health parity PASS, targeted postdeploy real-search card acceptance not certified."
       }
     },
     {
