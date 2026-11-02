@@ -603,18 +603,26 @@ function prepareMatchContext(intent) {
 // only vetoes a contradicted complete-product intent, never invents an item
 // type or suppresses explicitly requested accessories and included bundles.
 function contradictedPrincipalRetailItem(query, originalTitle) {
-  const cameraRequest=/\b(?:camera|mirrorless|dslr)\b/.test(query) &&
-    !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?)\b/.test(query);
-  const vacuumRequest=/\b(?:dyson v\d+|vacuum cleaner)\b/.test(query) &&
-    !/\b(?:toys?|pretend|children|kids?)\b/.test(query);
-  const officeChairRequest=/\b(?:office chair|chair office)\b/.test(query) &&
-    !/\b(?:repair|clamp|bracket|caster|wheels?|miniature|model|replacement|fix)\b/.test(query);
-  const coffeeBeansRequest=/\b(?:coffee beans|coffee coffee)\b/.test(query) &&
-    !/\b(?:spray|sprayer|stickers?|bottle|grinder|labels?)\b/.test(query);
-  const wholeWatchRequest=/\bapple watch\b/.test(query) &&
-    !/\b(?:straps?|wristbands?|bands?|loops?|cases?|chargers?)\b/.test(query);
-  const fullDiscDriveRequest=/\bps5\b/.test(query) && /\b(?:disc drive|optical drive)\b/.test(query) &&
-    !/\b(?:housings?|shell|repair|connector|travel|case|replacement parts?)\b/.test(query);
+  const cameraRequest=(/\b(?:camera|mirrorless|dslr)\b/.test(query)||query.includes("كاميرا كانون")) &&
+    !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?|guides?|manuals?|books?|tutorials?|setup)\b/.test(query) &&
+    !/(?:عدسه|حقيبه|حزام|غطاء|فلتر|كتاب|دليل)/.test(query);
+  const vacuumRequest=(/\b(?:dyson v\d+|vacuum cleaner)\b/.test(query)||query.includes("مكنسه دايسون")) &&
+    !/\b(?:toys?|pretend|children|kids?|filters?|attachments?|extension wand|cleaner head|floor tool|replacement parts?|holders?)\b/.test(query) &&
+    !/(?:فلتر|ملحق|فرشاه|انبوب|قطعه)/.test(query);
+  const officeChairRequest=(/\b(?:office chair|chair office)\b/.test(query)||query.includes("كرسي مكتب")) &&
+    !/\b(?:repair|clamp|bracket|caster|wheels?|miniature|model|replacement|fix)\b/.test(query) &&
+    !/(?:اصلاح|عجلات|مشبك|تصليح)/.test(query);
+  const coffeeBeansRequest=(/\b(?:coffee beans|coffee coffee)\b/.test(query)||
+    query.includes("بن قهوه")||query.includes("حبوب قهوه")) &&
+    !/\b(?:spray|sprayer|stickers?|bottle|grinder|labels?|mugs?|filters?|books?|cups?)\b/.test(query) &&
+    !/(?:كوب|كتاب|فلتر|بخاخ|ملصق|مطحنه)/.test(query);
+  const wholeWatchRequest=(/\bapple watch\b/.test(query)||query.includes("ساعه ابل")) &&
+    !/\b(?:straps?|wristbands?|bands?|loops?|cases?|chargers?|glass|screen|protector)\b/.test(query) &&
+    !/(?:سوار|شاحن|حمايه|زجاج|غطاء)/.test(query);
+  const fullDiscDriveRequest=((/\bps5\b/.test(query) && /\b(?:disc drive|optical drive)\b/.test(query)) ||
+    (query.includes("قارئ اقراص") && query.includes("بلايستيشن"))) &&
+    !/\b(?:housings?|shell|repair|connector|modules?|travel|case|replacement parts?)\b/.test(query) &&
+    !/(?:قطع|هيكل|موصل|تصليح)/.test(query);
   if (!(cameraRequest||vacuumRequest||officeChairRequest||
         coffeeBeansRequest||wholeWatchRequest||fullDiscDriveRequest)) return false;
 
@@ -623,6 +631,39 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
   // item from extras; "compatible with" must NOT be interpreted as inclusion.
   const subject=retail.replace(/\bcompatible with\b/g,"compatible_to")
     .split(/\b(?:with|including|includes)\b/,1)[0];
+  // R04 P2: recorded LIVE 2026-11-02 source titles, independent from
+  // merchant metadata/URL/price. A related book, repair part, cup or band
+  // cannot become the complete retail item through lexical overlap.
+  if(cameraRequest) {
+    const evidence=subject.match(/\b(?:pocket guide|quick setup|master your|mastering|ultimate guide|complete guide|secrets and techniques|user guide|guida utente|guia del usuario|sling bag|crossbody bag|kameratasche)\b|(?:كتاب|دليل)/);
+    const completeCamera=/(?:\bmirrorless camera lens kit\b|\b(?:mirrorless|digital) camera (?:body|kit)\b|\bcamera body\b)/.test(subject);
+    if(evidence && !completeCamera)return true;
+    if(/\b(?:compact digital camera|point and shoot camera)\b/.test(subject) &&
+      /\bmirrorless\b/.test(query))return true;
+  }
+  if(vacuumRequest &&
+    /\b(?:dryer vent cleaner kit|vacuum attachment|filter element|replacement rod|extension wand|cleaner head|floor tool|vacuum cleaner holder|filter replacement|filter accessories)\b/.test(subject))
+    return true;
+  if(officeChairRequest &&
+    /\b(?:folding chair|student chair)\b/.test(subject) &&
+    !/\boffice chair\b/.test(subject))return true;
+  if(coffeeBeansRequest &&
+    (/\b(?:coffee mugs?|coffee cups?|book of coffee|coffee filter|coffee cupping|coffee art|coffee grinder|coffee dripper|barista tools|pour over coffee set|luggage cup holder)\b/.test(subject)||
+     (/\b(?:mugs?|cups?|grinder|dripper|coffee mill|burr grinder|coffee server)\b/.test(subject)&&
+       !/\b(?:beans?|whole beans?)\b/.test(subject))||
+     /(?:كوب|اكواب|مطحنه|كتاب قهوه|فلتر قهوه)/.test(subject)))
+    return true;
+  // An explicitly different appliance brand is not the requested Dyson.
+  if(vacuumRequest && /\bdyson\b/.test(query) &&
+    /\beufy\b/.test(subject) && !/\bdyson\b/.test(subject))
+    return true;
+  if(wholeWatchRequest &&
+    /\b(?:band for apple watch|front glass replacement|display glass|tempered glass|tpu film|screen protector|replacement glass)\b/.test(subject))
+    return true;
+  if(fullDiscDriveRequest &&
+    /\b(?:disc drive module|disc drive connector|optical disc drive connector|connector module|kem 497aaa|replacement optical disc drive module)\b/.test(subject))
+    return true;
+
   if (cameraRequest) {
     const part=subject.match(/\b(?:lens(?:es)?|straps?|hand strap|wrist strap|camera bag|camera case|tripod)\b/);
     if (part) {
