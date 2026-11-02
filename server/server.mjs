@@ -364,7 +364,7 @@ async function searchExpansion(query, depth, {signal} = {}) {
   // Do not infer successful completion merely from a non-throwing adapter:
   // source-owned diagnostics can report rejected pages and failed PDPs.
   const amazonEvidenceError=amazonPartialEvidenceError(plan.amazonPageCount,amazon,"expansion");
-  if(amazonEvidenceError && !amazon.error && !(Array.isArray(amazon.errors)&&amazon.errors.length))
+  if(amazonEvidenceError && !amazon.error)
     errors.push(amazonEvidenceError);
   const storefrontSourceProblem=Array.isArray(storefront?.diagnostics) &&
     storefront.diagnostics.some(item=>Number(item?.failures||0)>0);
@@ -735,7 +735,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   providers.push({provider:"free-storefronts",sourceId:amazonSourceId,ok:!amazon.error && Boolean(amazon.offers?.length),pass:"primary",query:providerQuery,returnedOffers:amazon.offers?.length || 0,diagnostics:amazon.diagnostics || null,searchedMarkets:[{id:"amazon-sa",countryCode:"SA"}]});
   if(amazon.error) errors.push({provider:"free-storefronts",sourceId:amazonSourceId,pass:"primary",error:amazon.error});
   const amazonEvidenceError=amazonPartialEvidenceError(plan.amazonPageCount,amazon,"primary");
-  if(amazonEvidenceError && !amazon.error && !(Array.isArray(amazon.errors)&&amazon.errors.length))
+  if(amazonEvidenceError && !amazon.error)
     errors.push(amazonEvidenceError);
   const amazonValidated = dedupeNormalizedOffers(amazon.offers || [])
     .map((offer) => ({
