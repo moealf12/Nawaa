@@ -642,6 +642,25 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
   // item from extras; "compatible with" must NOT be interpreted as inclusion.
   const subject=retail.replace(/\bcompatible with\b/g,"compatible_to")
     .split(/\b(?:with|including|includes)\b/,1)[0];
+
+  // R04 P4: independently captured LIVE retail titles from run #41542664011.
+  // A named compatible model describes the *supported device*, not the
+  // independently sold holder, filter, gimbal, book or glass.
+  // This veto operates on the merchant's physical sold-title only, never
+  // price, brand metadata, URL, category similarity or vendor marketing.
+  if(vacuumRequest &&
+    /\b(?:accessories mount holder|accessory holder|mount holder|replacement filters?|mattress tool|replacement wand|cyclone assembly|runner spare|trigger lock|electric mop head|mop head attachment|vacuum attachments?|soft roller brush|brush replacement|docking stand|vacuum cleaner accessories)\b/.test(subject))
+    return true;
+  if(vacuumRequest && /\b(?:compatible_to|for dyson)\b/.test(subject) &&
+    !/^(?:dyson v\d+\b.*\b(?:vacuum cleaner|cordless vacuum)\b)/.test(subject))
+    return true;
+  if(cameraRequest &&
+    /(?:^canon rf\d+mm\b|\bgimbal stabilizer\b|\bgu[ií]a del usuario\b|\bmanual de usuario\b|\buser manual\b)/.test(subject))
+    return true;
+  if(wholeWatchRequest &&
+    /(?:^funda protectora\b|\bprotectora de pantalla\b|\bsolo loop band\b|\bstretch solo loop\b|\bcomparison guide\b|\bguide for seniors\b|\bmastering guide\b|\bstep by step manual\b)/.test(subject))
+    return true;
+
   // R04 P3: post-P2 exact-LIVE adverse retail subjects. Do not infer
   // principal identity from a matching brand/model in parts or book titles.
   // The original merchant sale title is authoritative; no source URL,
