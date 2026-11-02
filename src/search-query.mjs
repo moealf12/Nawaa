@@ -356,12 +356,15 @@ export function parseSearchIntent(value = "") {
   const brand = Object.keys(BRAND_CATEGORY_PRIORITIES).find(name => (' '+normalizedQuery+' ').includes(' '+name+' ')) || null;
   const categoryDefinition = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const kind = queryProductKind(normalizedQuery);
+  // R04 P0: a named model is specific even when a category regex spans the
+  // entire brand+model phrase (e.g. vacuum category /dyson v\d+/).
+  const model = normalizedQuery.match(MODEL_PATTERN)?.[0] || null;
   const category = kind === 'console' || kind === 'game' ? kind : categoryDefinition?.[0] || (kind === 'accessory' ? 'accessory' : null);
   // Remove structural category phrases globally before deciding whether a query
   // is broad discovery. This prevents multi-word families (Apple Watch, Galaxy
   // Tab, MacBook, etc.) from being misread as overly-specific free text.
   const residual = normalizedQuery.replace(categoryDefinition?.[2] || /$^/g, ' ').split(' ').filter(token => token && token !== brand);
-  const discoveryMode = !kind && !/\b\d+(?:gb|tb)\b/.test(normalizedQuery) && (residual.length === 0 || (!brand && !category && residual.length === 1)) ? (brand ? 'brand' : category ? 'category' : 'general') : 'specific';
+  const discoveryMode = !kind && !model && !/\b\d+(?:gb|tb)\b/.test(normalizedQuery) && (residual.length === 0 || (!brand && !category && residual.length === 1)) ? (brand ? 'brand' : category ? 'category' : 'general') : 'specific';
   const condition = normalizedQuery.match(/\b(refurbished|used|new)\b/)?.[1] || null;
   // RAM and SSD are independent properties. Preserve a separately specified
   // SSD capacity while excluding the RAM amount from the storage constraint.
@@ -371,7 +374,7 @@ export function parseSearchIntent(value = "") {
   return {
     normalizedQuery,
     providerQuery: normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim(),
-    model: normalizedQuery.match(MODEL_PATTERN)?.[0] || null,
+    model,
     storage: storageOnlyQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
     color: normalizedQuery.match(/\b(?:mist blue|desert titanium|natural titanium|black titanium|white titanium|cosmic orange|deep blue|black|white|lavender|sage|silver|gold|blue|green)\b/)?.[0] || null,
     condition,
@@ -405,6 +408,10 @@ export function buildProviderFallbackQueries(value = "") {
     }
   }
 
+  // Preserve a shopper's explicit model when Arabic/English category words
+  // cause the primary source query to be overly specific for a merchant.
+  // Result acceptance still matches the ORIGINAL shopper intent.
+  if (intent.model && intent.category && primary !== intent.model) push(intent.model + condition);
   if (intent.model && (intent.storage || intent.color)) push(intent.model + condition);
 
   let relaxed = primary;
@@ -877,6 +884,14 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const ramUnverified=Boolean(requestedRamGb!==null && offerCategory==="laptop" && evidenceRamGb===null);
   if (ramMismatch) confidence*=0.2;
   if (ramUnverified) confidence=Math.min(confidence,0.69);
+  // R04 P0: source URL, merchant brand and broad vacuum category must not
+  // substitute for a physical manufacturer's model in the actual sold title.
+  // A category regex can otherwise consume the entire 'dyson v15' query,
+  // leaving q=[] and incorrectly exact-matching books or other brands.
+  const requestedDysonModel=/^dyson v\d+$/.test(intent.model||"") ? intent.model : null;
+  const retailDysonModelMissing=Boolean(requestedDysonModel &&
+    !hasNormalizedPhrase(normalizeSearchQuery(offer?.title||""),requestedDysonModel));
+  if(retailDysonModelMissing)confidence=Math.min(confidence,0.69);
   confidence = Math.max(0, Math.min(1, confidence));
 
   const missingTerms = q.filter((token) => !titleTokens.has(token));
@@ -885,7 +900,8 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       !(!queryHasAccessoryIntent && titleHasAccessory) &&
       !hasUnrequestedVariant && !conflictingGalaxyModel &&
       !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch &&
-      !ramMismatch && !ramUnverified && !principalRetailConflict;
+      !ramMismatch && !ramUnverified && !principalRetailConflict &&
+      !retailDysonModelMissing;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
