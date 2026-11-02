@@ -46,7 +46,7 @@ test('catalog invalidation during an in-flight search refreshes instead of retur
 });
 
 
-test('expired good results survive a transient empty refresh', async () => {
+test('hard-expired good results are not revived after a transient empty refresh', async () => {
   const { createSearchCache } = await import('../server/search-cache.mjs');
   let now=0,calls=0;
   const cached=createSearchCache(async()=>{
@@ -55,12 +55,12 @@ test('expired good results survive a transient empty refresh', async () => {
   },{ttl:10,staleTtl:20,now:()=>now});
   assert.equal((await cached('iphone')).offers.length,1);
   now=25;
-  const rescued=await cached('iphone');
+  const refreshed=await cached('iphone');
   assert.equal(calls,2);
-  assert.equal(rescued.offers.length,1);
-  assert.equal(rescued.offers[0].title,'iPhone 17');
-  assert.equal(rescued.cache.mode,'stale-if-error');
-  assert.equal(rescued.cache.stale,true);
+  assert.deepEqual(refreshed.offers,[]);
+  assert.equal(refreshed.errors[0].error,'temporary provider timeout');
+  assert.equal(refreshed.cache.mode,'miss');
+  assert.equal(cached.peek('iphone'),null);
 });
 
 

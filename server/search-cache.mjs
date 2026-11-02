@@ -179,7 +179,7 @@ export function createSearchCache(search, {
     const entry = entries.get(key);
     if (entry) {
       const age = Math.max(0, now() - entry.at);
-      if (age < ttl) {
+      if (age < ttl && age < staleTtl) {
         touch(key, entry);
         return { ...clone(entry.result), cache:cacheMeta("fresh", age,
           {completeness:entry.completeness??"complete",refreshing:false}) };
@@ -190,10 +190,12 @@ export function createSearchCache(search, {
         return { ...clone(entry.result), cache:cacheMeta("stale", age,
           {completeness:entry.completeness??"complete",refreshing:true}) };
       }
-      // Keep the expired snapshot until refresh succeeds; it can rescue a
-      // transient provider/deadline failure instead of flashing zero results.
+      // The hard stale deadline is not a recoverable refresh failure. Drop
+      // expired price/availability evidence before waiting on a provider.
+      if (age >= staleTtl && entries.get(key) === entry) entries.delete(key);
     }
-    const previous = entry ? clone(entry.result) : null;
+    const previous = entry && Math.max(0,now()-entry.at) < staleTtl
+      ? clone(entry.result) : null;
     const refresh=startRefresh(key);
     const result = await refresh;
     // No raw cache key, query, URL or product evidence enters diagnostics.
@@ -212,6 +214,7 @@ export function createSearchCache(search, {
     }
     // R03: a revoked or replaced snapshot must never reappear after an async refresh.
     if (allowStale && (!result.offers?.length) && previous?.offers?.length
+        && Math.max(0,now()-entry.at) < staleTtl
         && generation === requestGeneration && entries.get(key) === entry) {
       touch(key, entry);
       return {
