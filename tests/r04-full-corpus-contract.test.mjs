@@ -6,7 +6,7 @@ import {validateR04Corpus,summarizeR04Judgments,summarizeR04LiveEvidence} from "
 const corpus=JSON.parse(readFileSync(new URL("../engineering/execution/search-truth-corpus.json",import.meta.url),"utf8"));
 const validSha="a".repeat(40);
 const row=i=>({id:"Q"+String(i).padStart(2,"0"),status:"OBSERVED",partial:true,
-  errors:2,firstTen:[{judgment:{grade:3}}],judgments:{ndcg10:null,unjudged:1}});
+  sourceErrors:2,firstTen:[{judgment:{grade:3}}],judgments:{ndcg10:null,unjudged:1}});
 test("R04 36: validate exact 18 paired bilingual intents",()=>{
   assert.deepEqual(validateR04Corpus(corpus),{pass:true,pairs:18,queries:36});
 });
@@ -59,4 +59,12 @@ test("R04 36: a failed request cannot masquerade as collected evidence",()=>{
   const result=summarizeR04LiveEvidence(rows,{expectedSha:validSha,observedSha:validSha});
   assert.equal(result.evidenceCollected,false);
   assert.deepEqual(result.requestFailures,["Q10"]);
+});
+
+test("R04 36: missing source error counters are UNKNOWN and block evidence certificate",()=>{
+  const rows=Array.from({length:36},(_,i)=>row(i+1));delete rows[4].sourceErrors;
+  const result=summarizeR04LiveEvidence(rows,{expectedSha:validSha,observedSha:validSha});
+  assert.equal(result.evidenceCollected,false);
+  assert.deepEqual(result.missingSourceErrorCounters,["Q05"]);
+  assert.equal(result.sourceErrorEvents,70);
 });
