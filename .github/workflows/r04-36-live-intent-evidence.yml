@@ -1,0 +1,51 @@
+name: NAWAA R04 Frozen 36-Intent Production Evidence
+on:
+  pull_request:
+    paths:
+      - 'scripts/r04-full-corpus-contract.mjs'
+      - 'scripts/r04-36-live-corpus-evidence.mjs'
+      - 'tests/r04-full-corpus-contract.test.mjs'
+      - '.github/workflows/r04-36-live-intent-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r04-36-intents-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-backed-r04-36:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify syntax and 36-intent negative controls
+        run: |
+          node --check scripts/r04-full-corpus-contract.mjs
+          node --check scripts/r04-36-live-corpus-evidence.mjs
+          node --test tests/r04-full-corpus-contract.test.mjs
+      - name: Guard production against advancing main
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
+      - name: Collect 36 current live intent reports at concurrency two
+        run: node scripts/r04-36-live-corpus-evidence.mjs
+      - name: Upload exact-revision reviewable evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-36-intent-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-36-live-corpus-evidence.json
+          retention-days: 14
+          if-no-files-found: warn
