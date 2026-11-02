@@ -648,7 +648,14 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
     /\b(?:folding chair|student chair)\b/.test(subject) &&
     !/\boffice chair\b/.test(subject))return true;
   if(coffeeBeansRequest &&
-    /\b(?:coffee mugs?|coffee cups?|book of coffee|coffee filter|coffee cupping|coffee art|coffee grinder|coffee dripper|barista tools|pour over coffee set|luggage cup holder)\b/.test(subject))
+    (/\b(?:coffee mugs?|coffee cups?|book of coffee|coffee filter|coffee cupping|coffee art|coffee grinder|coffee dripper|barista tools|pour over coffee set|luggage cup holder)\b/.test(subject)||
+     (/\b(?:mugs?|cups?|grinder|dripper|coffee mill|burr grinder|coffee server)\b/.test(subject)&&
+       !/\b(?:beans?|whole beans?)\b/.test(subject))||
+     /(?:كوب|اكواب|مطحنه|كتاب قهوه|فلتر قهوه)/.test(subject)))
+    return true;
+  // An explicitly different appliance brand is not the requested Dyson.
+  if(vacuumRequest && /\bdyson\b/.test(query) &&
+    /\beufy\b/.test(subject) && !/\bdyson\b/.test(subject))
     return true;
   if(wholeWatchRequest &&
     /\b(?:band for apple watch|front glass replacement|display glass|tempered glass|tpu film|screen protector|replacement glass)\b/.test(subject))
