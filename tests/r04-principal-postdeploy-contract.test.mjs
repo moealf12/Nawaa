@@ -48,3 +48,22 @@ test("R04 case IDs are unique and include each proven P1 issue type",()=>{
  for(const id of ["Q07","Q19","Q21","Q29","Q30","Q31","Q32","Q33"])
    assert.ok(CASE_IDS.includes(id));
 });
+
+test("R04 independent RED: newly observed LIVE wrong subjects must be detected",()=>{
+ const newFailures=[
+  ["Q07","Blu-ray DVD Disc Drive Module for PS5 CFI-1200 CFI-1215A Replacement KEM-497AAA Optical Disc Drive Connector"],
+  ["Q19","Canon EOS R100 Quick Setup Pocket Guide: Master Your Camera Settings"],
+  ["Q19","Canon EOS R8: Master Your Mirrorless Camera: Buttons Modes Settings"],
+  ["Q21","Dryer Vent Cleaner Kit for Dyson V15 V12 Vacuum Cleaner Vacuum Attachment Vent Lint Remover"],
+  ["Q21","Quick Release Extension Wand Compatible for Dyson V15 V11 V10 Stick Vacuum Cleaners"],
+  ["Q29","Folding Chair, PP Molded Seat and Backrest/Powder Coated Steel Leg and Frame, Black"],
+  ["Q30","Carnation Student Chair, with Wheels, Light Blue"],
+  ["Q32","Mustard Coffee Crew Mug, Dog Reusable Coffee Mug, Cold, Red"],
+  ["Q32","The Little Book of Coffee - A Collection of Quotes"],
+  ["Q33","1 Pack Silver Rhinestone Band for Apple Watch 42 44 45 49mm Series 10 11"],
+  ["Q33","ERYNK Display Glass Front Glass Replacement for Apple Watch Series 11 46 mm"],
+  ["Q33","WSKEN Pack of 4 for Apple Watch Series 11 Tempered Glass TPU Film"]
+ ];
+ for(const [id,title]of newFailures)
+   assert.equal(knownWrongRetailSubject(id,title),true,"FALSE_NEGATIVE "+id+": "+title);
+});
