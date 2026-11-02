@@ -20,7 +20,10 @@ const wrong=[
  ["Q32c","بن قهوة","MIBRU Coffee filter for american coffee 200mm B03"],
  ["Q33","Apple Watch Series 11","1 Pack Silver Rhinestone Band for Apple Watch 42 44 45 49mm Series 10 11"],
  ["Q33b","Apple Watch Series 11","ERYNK Display Glass Front Glass Replacement for Apple Watch Series 11 46 mm"],
- ["Q33c","Apple Watch Series 11","WSKEN Pack of 4 for Apple Watch Series 11 Tempered Glass TPU Film"]
+ ["Q33c","Apple Watch Series 11","WSKEN Pack of 4 for Apple Watch Series 11 Tempered Glass TPU Film"],
+ ["Q21d","Dyson V15 vacuum cleaner","Eufy Clean L60 Hybrid Robotic Vacuum Cleaner with Self-Empty Station"],
+ ["Q32d","بن قهوة","British Tea And Coffee Cups, 1745-1940"],
+ ["Q32e","بن قهوة","Mibru manual coffee ceramic burr grinder stainless steel coffee mill"]
 ];
 const positives=[
  ["Canon mirrorless camera","Canon EOS R50 Mirrorless Camera Lens Kit"],
@@ -47,7 +50,7 @@ const fixture=(query,title,id)=>({
  provider:"test_fixture",merchant:"TEST NOT LIVE",condition:"new",availability:"in_stock",
  productPrice:999,currency:"SAR",specs:{},observedAt:"2026-11-02T00:00:00Z"
 });
-test("R04 P2 RED: fifteen observed standalone retail subjects cannot exact-match the complete item",()=>{
+test("R04 P2 RED: eighteen observed standalone retail subjects cannot exact-match the complete item",()=>{
  for(const [id,query,title] of wrong){
    const x=fixture(query,title,id),m=assessOfferMatch(query,x);
    assert.equal(m.exactMatch,false,id+" falsely exact-matched "+title);
