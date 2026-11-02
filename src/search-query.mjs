@@ -618,7 +618,7 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
     !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?|guides?|manuals?|books?|tutorials?|setup)\b/.test(query) &&
     !/(?:عدسه|حقيبه|حزام|غطاء|فلتر|كتاب|دليل)/.test(query);
   const vacuumRequest=(/\b(?:dyson v\d+|vacuum cleaner)\b/.test(query)||query.includes("مكنسه دايسون")) &&
-    !/\b(?:toys?|pretend|children|kids?|filters?|attachments?|extension wand|cleaner head|floor tool|replacement parts?|holders?|hoses?|dust bins?|dustbins?|cyclones?|body|brushes?|accessories|spare parts?)\b/.test(query) &&
+    !/\b(?:toys?|pretend|children|kids?|filters?|attachments?|extension wand|replacement wands?|mattress tools?|mop heads?|trigger locks?|mount holders?|accessory holders?|docking stands?|cleaner head|floor tool|replacement parts?|holders?|hoses?|dust bins?|dustbins?|cyclones?|cyclone assemblies?|runner spares?|body|brushes?|accessories|spare parts?)\b/.test(query) &&
     !/(?:فلتر|ملحق|فرشاه|انبوب|قطعه)/.test(query);
   const officeChairRequest=(/\b(?:office chair|chair office)\b/.test(query)||query.includes("كرسي مكتب")) &&
     !/\b(?:repair|clamp|bracket|caster|wheels?|miniature|model|replacement|fix|headrests?|armrests?|cushions?|mats?|gas lifts?|spare parts?|hydraulic cylinders?|chair savers?)\b/.test(query) &&
