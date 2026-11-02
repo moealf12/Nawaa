@@ -1,0 +1,55 @@
+name: NAWAA R06-D Live Partial Recovery Acceptance
+on:
+  pull_request:
+    paths:
+      - 'scripts/r06-live-contract.mjs'
+      - 'scripts/r06-live-partial-acceptance.mjs'
+      - 'tests/r06-live-contract.test.mjs'
+      - '.github/workflows/r06-live-partial-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r06d-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-live-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate syntax and deterministic negative controls
+        run: |
+          node --check scripts/r06-live-contract.mjs
+          node --check scripts/r06-live-partial-acceptance.mjs
+          node --test tests/r06-live-contract.test.mjs
+      - name: Bind test to the unchanged production main commit
+        run: |
+          set -euo pipefail
+          CURRENT="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$CURRENT" = "$NAWAA_EXPECT_LIVE_SHA" || {
+            echo "Main moved after PR baseline: cannot assert exact live checkpoint"
+            exit 1
+          }
+      - name: Read-only bilingual JSON and SSE production acceptance
+        run: node scripts/r06-live-partial-acceptance.mjs
+      - name: Preserve sanitized exact-revision evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r06d-live-partial-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r06-live-partial-acceptance.json
+          retention-days: 14
+          if-no-files-found: warn
