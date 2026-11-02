@@ -25,6 +25,7 @@ export function classifySearchCacheAdmission(result,{requireExplicitComplete=fal
     typeof coverage.sourceFailures!=="object" ||
     Array.isArray(coverage.sourceFailures) ||
     !Object.hasOwn(coverage.sourceFailures,"errorsReported") ||
+    !Object.hasOwn(coverage,"providersPending") ||
     typeof coverage.deadlineExceeded!=="boolean"
   ))return deny("unknown","coverage_invalid");
   // Missing optional counters mean the provider did not observe them. Explicit

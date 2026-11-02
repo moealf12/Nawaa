@@ -868,6 +868,10 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       partial:deadlineExceeded || errors.length>0,
       complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
+      // All planned barriers settled only when the deadline was not exceeded.
+      // A timed-out wave cannot certify an exact pending count; never coerce
+      // unobserved completion evidence to zero for cache admission.
+      providersPending:deadlineExceeded ? null : 0,
       requestDeadlineMs,
       sourceFailures:summarizeSourceFailures(errors),
     },
