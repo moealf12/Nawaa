@@ -49,12 +49,16 @@ export function summarizeR04LiveEvidence(rows,{expectedSha,observedSha}={}){
   const wrongTopOne=list.filter(x=>x.firstTen?.[0]?.judgment?.grade===0).map(x=>x.id);
   const eligibleRows=list.filter(x=>x.judgments?.ndcg10!==null&&
     Number.isFinite(x.judgments?.ndcg10));
-  const sourceErrorEvents=list.reduce((n,x)=>n+(Number.isSafeInteger(x.errors)?x.errors:0),0);
+  const missingSourceErrorCounters=list.filter(x=>x.status==="OBSERVED" &&
+    (!Number.isSafeInteger(x.sourceErrors)||x.sourceErrors<0)).map(x=>x.id);
+  const sourceErrorEvents=list.reduce((n,x)=>n+
+    (Number.isSafeInteger(x.sourceErrors)&&x.sourceErrors>=0?x.sourceErrors:0),0);
   const exactRevision=typeof expectedSha==="string"&&expectedSha.length===40&&expectedSha===observedSha;
-  const evidenceCollected=attempted===36&&seen.size===36&&observed===36&&exactRevision;
+  const evidenceCollected=attempted===36&&seen.size===36&&observed===36&&
+    exactRevision&&missingSourceErrorCounters.length===0;
   return {attempted,observed,partial,requestFailures:failures,
     unknownJudgments:unknown,wrongTopOne,ruleNdcgQueries:eligibleRows.length,
-    sourceErrorEvents,exactRevision,evidenceCollected,
+    sourceErrorEvents,missingSourceErrorCounters,exactRevision,evidenceCollected,
     humanJudgmentCertified:false,rankingRoundCertified:false,
     evidenceState:evidenceCollected?"EVIDENCE_COLLECTED_NOT_CERTIFIED":"COLLECTION_INCOMPLETE"};
 }
