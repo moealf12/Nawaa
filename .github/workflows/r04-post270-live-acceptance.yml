@@ -1,0 +1,59 @@
+name: NAWAA R04 Post-270 Exact-LIVE Causal Acceptance
+on:
+  pull_request:
+    paths:
+      - 'scripts/r04-p0-post270-recall.mjs'
+      - '.github/workflows/r04-post270-live-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r04-post270-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  post270-live-recall:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify source and anti-book contract
+        run: |
+          node --check scripts/r04-p0-post270-recall.mjs
+          node --test tests/r04-p0-canonical-arabic-principal-recall.test.mjs
+      - name: Pin current main SHA independent of PR base
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(git ls-remote origin refs/heads/main | cut -f1)"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "NAWAA_EXPECT_LIVE_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "R04_POST270_MAIN_SHA=$SHA"
+          test "$SHA" = 'b77cc70c2cabfcaf0d3ef1bcfcbeb3c1a04a2f4b'
+      - name: Probe 11 production searches (read only)
+        run: node scripts/r04-p0-post270-recall.mjs
+      - name: Refuse moving main after observation
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$NAWAA_EXPECT_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
+      - name: Save evidence even when probe fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-post270-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-p0-post270-recall.json
+          if-no-files-found: warn
+          retention-days: 14
