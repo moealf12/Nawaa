@@ -623,10 +623,16 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
   // item from extras; "compatible with" must NOT be interpreted as inclusion.
   const subject=retail.replace(/\bcompatible with\b/g,"compatible_to")
     .split(/\b(?:with|including|includes)\b/,1)[0];
-  if (cameraRequest &&
-    /\b(?:lens(?:es)?|straps?|hand strap|wrist strap|camera bag|camera case|tripod)\b/.test(subject) &&
-    !/\b(?:eos r\d+|mirrorless camera body|mirrorless camera kit|digital camera body)\b/.test(subject))
-    return true;
+  if (cameraRequest) {
+    const part=subject.match(/\b(?:lens(?:es)?|straps?|hand strap|wrist strap|camera bag|camera case|tripod)\b/);
+    if (part) {
+      // An EOS compatibility model in a LENS title is not a camera body.
+      // Retail chassis evidence must precede the separately sold part.
+      const retailBeforePart=subject.slice(0,part.index);
+      const actualCameraBody=/(?:\beos r\d+\b.*\bmirrorless camera\b|\b(?:mirrorless|digital) camera (?:kit|body)\b|\bcamera body\b)/.test(retailBeforePart);
+      if (!actualCameraBody) return true;
+    }
+  }
   if (vacuumRequest && /\b(?:pretend play|toy vacuum|vacuum toy|kids? pretend|childrens? toy)\b/.test(subject))
     return true;
   if (officeChairRequest &&
