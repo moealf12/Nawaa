@@ -662,8 +662,14 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
   // an explicitly requested whole/roasted COFFEE BEANS retail product.
   // Sparse title evidence is intentionally insufficient for an EXACT match.
   if(coffeeBeansRequest) {
-    const beanEvidence=/\b(?:beans?|whole beans?|roasted arabica|arabica beans?|robusta beans?)\b/.test(retail)||
-      /(?:^|\s)بن(?:\s|$)|حبوب قهوه|قهوه محمصه|بن محمص|حبوب بن/.test(retail);
+    // normalizeSearchQuery aliases Arabic "بن" to "coffee"; inspect
+    // the original physical seller title before aliases erase bean nouns.
+    const rawRetail=String(originalTitle||"").normalize("NFKC").toLowerCase()
+      .replace(/[\u064B-\u065F\u0670\u0640]/g,"").replace(/[أإآ]/g,"ا")
+      .replace(/ى/g,"ي").replace(/ة/g,"ه")
+      .replace(/[^\p{L}\p{N}]+/gu," ").replace(/\s+/g," ").trim();
+    const beanEvidence=/\b(?:beans?|whole roasted|roasted arabica|arabica beans?|robusta beans?)\b/.test(retail)||
+      /(?:^|\s)بن(?:\s|$)|(?:^|\s)حبوب\s+(?:قهوه|بن)(?:\s|$)/.test(rawRetail);
     if(!beanEvidence) return true;
   }
 
