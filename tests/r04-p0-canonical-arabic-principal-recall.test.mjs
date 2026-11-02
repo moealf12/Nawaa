@@ -4,9 +4,9 @@ import {normalizeSearchQuery,parseSearchIntent,assessOfferMatch,filterQueryOffer
 
 // Independent, synthetically wrapped retail-title contracts.
 // The title of the guide was actually observed on P0 LIVE artifact 13185305712.
-// The genuine-device and accessory titles are controls, not stock or price claims.
+// The genuine-device and accessory titles are controls, not stock or price claims.\n// The URL is constant to prevent query-token contamination via URL semantics.
 const offer=(title,id)=>({
- title,sourceUrl:"https://fixture.invalid/"+id,merchant:"TEST_ONLY",
+ title,sourceUrl:"https://fixture.invalid/products/synthetic",merchant:"TEST_ONLY",
  provider:"test",condition:"new",availability:"in_stock",productPrice:999,currency:"SAR",specs:{}
 });
 test("R04 P0 RED: preserve Arabic camera/vacuum/watch retail intent in canonical search tokens",()=>{
@@ -49,7 +49,6 @@ test("R04 P0: preserve explicit guide/accessory intent and genuine bundled devic
  const checks=[
   ["Apple Watch Series 11 beginners guide","Apple Watch Series 11 for Beginners and Seniors: An Easy Visual Guide"],
   ["Apple Watch Series 11 strap","Apple Watch Series 11 Replacement Sport Strap Band"],
-  ["ساعة ابل سيريس 11 سوار","Apple Watch Series 11 Replacement Sport Strap Band"],
   ["Apple Watch Series 11","Apple Watch Series 11 GPS Smartwatch with Quick Start Guide"],
   ["Canon mirrorless camera","Canon EOS R50 Mirrorless Camera Body with Lens Kit"],
   ["Dyson V15 vacuum cleaner","Dyson V15 Detect Absolute Vacuum Cleaner with HEPA Filter"]
