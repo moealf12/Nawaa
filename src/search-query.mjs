@@ -604,7 +604,7 @@ function prepareMatchContext(intent) {
 // type or suppresses explicitly requested accessories and included bundles.
 function contradictedPrincipalRetailItem(query, originalTitle) {
   const cameraRequest=/\b(?:camera|mirrorless|dslr)\b/.test(query) &&
-    !/\b(?:lenses?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?)\b/.test(query);
+    !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?)\b/.test(query);
   const vacuumRequest=/\b(?:dyson v\d+|vacuum cleaner)\b/.test(query) &&
     !/\b(?:toys?|pretend|children|kids?)\b/.test(query);
   const officeChairRequest=/\b(?:office chair|chair office)\b/.test(query) &&
@@ -624,7 +624,7 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
   const subject=retail.replace(/\bcompatible with\b/g,"compatible_to")
     .split(/\b(?:with|including|includes)\b/,1)[0];
   if (cameraRequest &&
-    /\b(?:lenses?|straps?|hand strap|wrist strap|camera bag|camera case|tripod)\b/.test(subject) &&
+    /\b(?:lens(?:es)?|straps?|hand strap|wrist strap|camera bag|camera case|tripod)\b/.test(subject) &&
     !/\b(?:eos r\d+|mirrorless camera body|mirrorless camera kit|digital camera body)\b/.test(subject))
     return true;
   if (vacuumRequest && /\b(?:pretend play|toy vacuum|vacuum toy|kids? pretend|childrens? toy)\b/.test(subject))
