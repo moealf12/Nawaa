@@ -65,6 +65,10 @@ export async function runProductionAudit(){
    startedAt:new Date().toISOString(),mode:"READ_ONLY_POSTDEPLOY_JSON",
    source:"FROZEN_CORPUS_AND_INDEPENDENT_PRECOMMITTED_NEGATIVE_LABELS",
    fullR04Certified:false,domParityVerified:false,humanAdjudicated:false,
+   limitations:["Zero flagged known titles is not independently adjudicated precision.",
+     "Empty strict groups are distinct from clean product matches.",
+     "All offers are dynamic; no implied full-source recall, price or stock certification.",
+     "API-based first-screen projection is not actual browser DOM/SSE parity."],
    healthBefore:null,healthAfter:null,rows:[],fatal:null};
  try{
    if(!/^[a-f0-9]{40}$/.test(expected))throw Error("EXPECTED_SHA_INVALID");
