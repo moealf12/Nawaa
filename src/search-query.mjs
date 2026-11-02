@@ -607,10 +607,10 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
     !/\b(?:lens(?:es)?|straps?|wristbands?|bags?|cases?|covers?|tripods?|filters?|guides?|manuals?|books?|tutorials?|setup)\b/.test(query) &&
     !/(?:عدسه|حقيبه|حزام|غطاء|فلتر|كتاب|دليل)/.test(query);
   const vacuumRequest=(/\b(?:dyson v\d+|vacuum cleaner)\b/.test(query)||query.includes("مكنسه دايسون")) &&
-    !/\b(?:toys?|pretend|children|kids?|filters?|attachments?|extension wand|cleaner head|floor tool|replacement parts?|holders?)\b/.test(query) &&
+    !/\b(?:toys?|pretend|children|kids?|filters?|attachments?|accessories?|hoses?|dust bin|dustbin|brush(?: head)?|extension wand|cleaner head|floor tool|replacement parts?|holders?|cyclone|spare parts?)\b/.test(query) &&
     !/(?:فلتر|ملحق|فرشاه|انبوب|قطعه)/.test(query);
   const officeChairRequest=(/\b(?:office chair|chair office)\b/.test(query)||query.includes("كرسي مكتب")) &&
-    !/\b(?:repair|clamp|bracket|caster|wheels?|miniature|model|replacement|fix)\b/.test(query) &&
+    !/\b(?:repair|clamp|bracket|casters?|wheels?|miniature|model|replacement|fix|headrest|armrest|attachments?|cushions?|chair saver)\b/.test(query) &&
     !/(?:اصلاح|عجلات|مشبك|تصليح)/.test(query);
   const coffeeBeansRequest=(/\b(?:coffee beans|coffee coffee)\b/.test(query)||
     query.includes("بن قهوه")||query.includes("حبوب قهوه")) &&
@@ -647,6 +647,32 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
   if(officeChairRequest &&
     /\b(?:folding chair|student chair)\b/.test(subject) &&
     !/\boffice chair\b/.test(subject))return true;
+
+  // R04 P3: generalized sold-SUBJECT evidence from exact-LIVE P2 replay.
+  // Compatibility ("for Dyson V15"/"office chair") is not proof that
+  // a separately sold hose, repair kit, armrest or dust bin is the device.
+  // The optional included accessory after "with/includes" is outside subject.
+  if(vacuumRequest &&
+    /\b(?:vacuum cleaner hose|vacuum hose|replacement hose|attachment accessories|accessories kit|attachment kit|dust bin|dustbin|floor brush|brush head|main body|cyclone|filter element|replacement filter|replacement rod|extension wand|cleaner head|floor tool|replacement part|vacuum attachment|vacuum cleaner holder)\b/.test(subject))
+    return true;
+  if(officeChairRequest &&
+    /\b(?:fix sinking chair|chair saver|chair repair|height adjustable repair kit|repair kit|cylinder replacement|swivel caster|caster wheels?|stationary foot|chair headrest|headrest attachment|armrest cushions?|chair armrest|armrest pillow|elbow pillow|chair replacement|chair wheels? replacement)\b/.test(subject))
+    return true;
+  // A packaged drink, book, appliance or barista set must not satisfy
+  // an explicitly requested whole/roasted COFFEE BEANS retail product.
+  // Sparse title evidence is intentionally insufficient for an EXACT match.
+  if(coffeeBeansRequest) {
+    // normalizeSearchQuery aliases Arabic "بن" to "coffee"; inspect
+    // the original physical seller title before aliases erase bean nouns.
+    const rawRetail=String(originalTitle||"").normalize("NFKC").toLowerCase()
+      .replace(/[\u064B-\u065F\u0670\u0640]/g,"").replace(/[أإآ]/g,"ا")
+      .replace(/ى/g,"ي").replace(/ة/g,"ه")
+      .replace(/[^\p{L}\p{N}]+/gu," ").replace(/\s+/g," ").trim();
+    const beanEvidence=/\b(?:beans?|whole roasted|roasted arabica|arabica beans?|robusta beans?)\b/.test(retail)||
+      /(?:^|\s)بن(?:\s|$)|(?:^|\s)حبوب\s+(?:قهوه|بن)(?:\s|$)/.test(rawRetail);
+    if(!beanEvidence) return true;
+  }
+
   if(coffeeBeansRequest &&
     (/\b(?:coffee mugs?|coffee cups?|book of coffee|coffee filter|coffee cupping|coffee art|coffee grinder|coffee dripper|barista tools|pour over coffee set|luggage cup holder)\b/.test(subject)||
      (/\b(?:mugs?|cups?|grinder|dripper|coffee mill|burr grinder|coffee server)\b/.test(subject)&&
