@@ -14,8 +14,8 @@ export function knownWrongRetailSubject(id,title){
  if(id==="Q19")return /\b(?:camera hand strap|wrist strap|camera strap|prime lens|ef 50mm|camera bag|pocket guide|quick setup|master your mirrorless camera|mastering|ultimate guide|secrets and techniques|user guide|sling bag|crossbody bag|kameratasche)\b/.test(t)&&
    !/\b(?:eos r\d+.*mirrorless camera (?:body|kit)|camera body)\b/.test(t);
  if(id==="Q21")return /\b(?:pretend play|toy vacuum|vacuum toy|kids? pretend|dryer vent cleaner kit|vacuum attachment|filter element|replacement rod|extension wand|cleaner head|floor tool|vacuum cleaner holder)\b/.test(t)&&!/^(?:dyson v15.*vacuum cleaner\b)/.test(t);
- if(id==="Q29")return /\b(?:miniature|miniatures|dollhouse|1:100|1 100|folding chair|student chair)\b/.test(t)&&!/\boffice chair\b/.test(t);
- if(id==="Q30")return /\b(?:sagging fix clamp|height[- ]lock bracket|chair repair clamp|folding chair|student chair)\b/.test(t)&&!/\boffice chair\b/.test(t);
+ if(id==="Q29")return /\b(?:miniature|miniatures|dollhouse|1:100|1 100)\b/.test(t)||(/\b(?:folding chair|student chair)\b/.test(t)&&!/\boffice chair\b/.test(t));
+ if(id==="Q30")return /\b(?:sagging fix clamp|height[- ]lock bracket|chair repair clamp)\b/.test(t)||(/\b(?:folding chair|student chair)\b/.test(t)&&!/\boffice chair\b/.test(t));
  if(id==="Q31")return /\b(?:empty makeup sprayer|empty spray bottle|empty bottle|coffee beans sprayer)\b/.test(t);
  if(id==="Q32")return /\b(?:stickers?|coffee cup sticker|coffee mug|coffee cups|book of coffee|coffee filter|coffee cupping techniques|coffee art|coffee grinder|coffee dripper|barista tools)\b/.test(t);
  if(id==="Q33")return /\b(?:braided sport loop|watch strap|watch band|wristbands?|band for apple watch|front glass replacement|tempered glass|tpu film)\b/.test(t)&&
