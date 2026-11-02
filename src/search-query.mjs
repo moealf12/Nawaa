@@ -1,5 +1,9 @@
 // Shared by the API and browser: aliases affect matching and provider queries alike.
 const ALIASES = [
+  // R04-P0: structural Arabic retail concepts are required by live source titles.
+  // Preserve the two-word mirrorless descriptor as one scoped concept.
+  ["بدون مراه", "mirrorless"], ["كاميرا", "camera"],
+  ["مكنسه", "vacuum"], ["سيريس", "series"],
   ["قهوه", "coffee"], ["بن", "coffee"], ["قميص", "shirt"], ["ملابس", "clothing"],
   ["اي فون", "iphone"], ["ايفون", "iphone"], ["اير بودز", "airpods"], ["ايربودز", "airpods"],
   ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"], ["للبلايستيشن", "playstation"],
@@ -616,8 +620,8 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
     query.includes("بن قهوه")||query.includes("حبوب قهوه")) &&
     !/\b(?:spray|sprayer|stickers?|bottle|grinder|labels?|mugs?|filters?|books?|cups?)\b/.test(query) &&
     !/(?:كوب|كتاب|فلتر|بخاخ|ملصق|مطحنه)/.test(query);
-  const wholeWatchRequest=(/\bapple watch\b/.test(query)||query.includes("ساعه ابل")) &&
-    !/\b(?:straps?|wristbands?|bands?|loops?|cases?|chargers?|glass|screen|protector)\b/.test(query) &&
+  const wholeWatchRequest=(/\b(?:apple watch|watch apple)\b/.test(query)||query.includes("ساعه ابل")) &&
+    !/\b(?:straps?|wristbands?|bands?|loops?|cases?|chargers?|glass|screen|protector|bracelets?|guides?|manuals?|books?)\b/.test(query) &&
     !/(?:سوار|شاحن|حمايه|زجاج|غطاء)/.test(query);
   const fullDiscDriveRequest=((/\bps5\b/.test(query) && /\b(?:disc drive|optical drive)\b/.test(query)) ||
     (query.includes("قارئ اقراص") && query.includes("بلايستيشن"))) &&
@@ -673,6 +677,14 @@ function contradictedPrincipalRetailItem(query, originalTitle) {
     return true;
   if(wholeWatchRequest &&
     /\b(?:band for apple watch|front glass replacement|display glass|tempered glass|tpu film|screen protector|replacement glass)\b/.test(subject))
+    return true;
+  // R04-P0: the public Apple Watch 11 result was a beginner's BOOK, not a
+  // wearable. The sold subject must never inherit device identity from its
+  // subject matter. Exclude only when the retail title establishes guide/book
+  // evidence but NOT an actual smartwatch sold with an included guide.
+  if(wholeWatchRequest &&
+    /\b(?:for beginners|beginners guide|seniors guide|visual guide|user guide|user manual|instruction manual|handbook|step by step guide|how to use)\b/.test(subject) &&
+    !/\b(?:gps smartwatch|smartwatch|watch body|gps cellular|aluminum case|titanium case)\b/.test(subject))
     return true;
   if(fullDiscDriveRequest &&
     /\b(?:disc drive module|disc drive connector|optical disc drive connector|connector module|kem 497aaa|replacement optical disc drive module)\b/.test(subject))
