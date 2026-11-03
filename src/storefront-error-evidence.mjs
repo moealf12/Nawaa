@@ -10,7 +10,8 @@ const FAILURE_CLASSES=new Set([
   "HTTP_REDIRECT_CHANGED","PRODUCT_IDENTITY_MISMATCH",
   "EXTRACTION_FAILURE","CATALOG_RESULT_NOT_FOUND",
   "SOURCE_TRANSPORT_FAILURE","PRICE_EVIDENCE_INCOMPLETE",
-  "NO_VERIFIED_STRUCTURED_PRICE_PDP"
+  "NO_VERIFIED_STRUCTURED_PRICE_PDP",
+  "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN"
 ]);
 export function storefrontSourceFailure(storeId,error,{observedFailureClass=null}={}){
   // A source id must come from our static storefront registry, not a URL.
