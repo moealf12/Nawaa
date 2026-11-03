@@ -1295,6 +1295,7 @@ async function loadMoreRemote(query) {
   renderProduct(state.product, query);
   els.status.textContent = state.overflowCursor ? "نسترجع بقية النتائج المكتشفة…" : "نوسّع البحث إلى مصادر ونتائج إضافية…";
 
+  let completionStatus=null;
   try {
     let cursor = state.nextCursor;
     let pageCursor = state.overflowCursor;
@@ -1326,10 +1327,10 @@ async function loadMoreRemote(query) {
     state.remoteExhausted = !(cursor || pageCursor);
     state.visibleCounts = {};
     renderProduct(state.product,query);
-    els.status.textContent = added > 0
+    completionStatus = added > 0
       ? `أضفنا ${arabicCount(added, "offer")} جديدًا · الإجمالي ${arabicCount(state.product.offers.length, "offer")}`
       : (state.remoteExhausted ? "اكتمل أعمق نطاق بحث متاح حاليًا" : "لم تظهر نتائج جديدة في هذه الدفعة");
-    if (lastData?.errors?.length) els.status.textContent += " · بعض المصادر أعادت نتائج جزئية";
+    if (lastData?.errors?.length) completionStatus += " · بعض المصادر أعادت نتائج جزئية";
   } catch (error) {
     if (requestId !== state.requestId) return;
     console.warn("NAWAA remote expansion failed",error);
@@ -1338,9 +1339,9 @@ async function loadMoreRemote(query) {
       // Never jump past missing pages to the next acquisition depth.
       state.nextCursor=null;
       state.remoteExhausted=true;
-      els.status.textContent="انتهت صلاحية دفعة النتائج السابقة؛ أعد البحث لاستعادتها دون فقد أو تخمين.";
+      completionStatus="انتهت صلاحية دفعة النتائج السابقة؛ أعد البحث لاستعادتها دون فقد أو تخمين.";
     } else {
-      els.status.textContent=error?.status===429
+      completionStatus=error?.status===429
         ? "تم بلوغ حد الطلبات مؤقتًا؛ أعد المحاولة بعد قليل"
         : "تعذر جلب نتائج إضافية حاليًا";
     }
@@ -1348,6 +1349,9 @@ async function loadMoreRemote(query) {
     if (requestId === state.requestId) {
       state.remoteLoading = false;
       if (state.product) renderProduct(state.product,query);
+      // The product re-render updates the generic status; preserve the real
+      // pagination outcome (especially 410 expiry and partial source failures).
+      if(completionStatus) els.status.textContent=completionStatus;
     }
   }
 }
