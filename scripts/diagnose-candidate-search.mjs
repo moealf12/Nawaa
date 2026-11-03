@@ -57,12 +57,13 @@ async function query(text){
       !/\bconsole\b.*\b(?:with|includes?|including)\b/i.test(o.title||''));
     const result={
       q:text,status:r.status,elapsedMs:Date.now()-start,
-      count:offers.length,exact:exact.length,structurallyValid:structurallyValid.length,
+      count:offers.length,hasOffersArray:Array.isArray(data.offers),exact:exact.length,
+      structurallyValid:structurallyValid.length,
       // Numbers/booleans only: the pre-existing primary coverage failure
       // remains visible without copying raw provider errors to the summary.
       sourceErrorCount:Array.isArray(data.errors)?data.errors.length:null,
-      partial:data.coverage?.partial===true,
-      deadlineExceeded:data.coverage?.deadlineExceeded===true,
+      partial:typeof data.coverage?.partial==='boolean'?data.coverage.partial:null,
+      deadlineExceeded:typeof data.coverage?.deadlineExceeded==='boolean'?data.coverage.deadlineExceeded:null,
       providersPending:data.coverage?.providersPending??null,
       merchants:[...new Set(offers.map(o=>o.merchant).filter(Boolean))].slice(0,15),
       providerSummary:(data.providers||[]).filter(p=>(p.returnedOffers||0)>0).map(p=>({sourceId:p.sourceId,offers:p.returnedOffers})),
@@ -154,7 +155,8 @@ try{
     const result=await query(queryText);
     p36Results.push({
       id,status:result.status,elapsedMs:result.elapsedMs,
-      offers:result.count??null,valid:result.structurallyValid??null,
+      offers:result.count??null,hasOffersArray:result.hasOffersArray??false,
+      valid:result.structurallyValid??null,
       exact:result.exact??null,partial:result.partial??null,
       deadlineExceeded:result.deadlineExceeded??null,
       providersPending:result.providersPending??null,
@@ -163,7 +165,8 @@ try{
     });
   }
   const p36Passed=p36Results.every(x=>x.status===200&&
-    Number.isInteger(x.offers)&&x.offers>=0&&x.valid===x.offers&&
+    x.hasOffersArray===true&&Number.isInteger(x.offers)&&x.offers>=0&&
+    x.valid===x.offers&&
     (x.partial===true||x.partial===false));
   console.log('R04_P36_CANDIDATE_CRITICAL '+JSON.stringify({
     candidateOnly:true,baselineComparison:false,
