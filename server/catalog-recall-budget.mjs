@@ -10,7 +10,7 @@
 export function createBoundedCatalogRecall({
   read,
   configured,
-  budgetMs=1200,
+  budgetMs=2000,
   maxInFlight=2,
 }={}){
   if(typeof read!=="function"||typeof configured!=="function")
