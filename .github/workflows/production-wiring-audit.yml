@@ -8,6 +8,8 @@ on:
       - 'search.html'
       - 'product.html'
       - 'src/search-page.mjs'
+      - 'src/search-result-presentation.mjs'
+      - 'src/search-result-intelligence.mjs'
       - 'src/product-page.mjs'
       - 'scripts/verify-production-wiring.mjs'
       - 'tests/production-wiring-contract.test.mjs'
@@ -57,4 +59,8 @@ jobs:
           echo "NAWAA_AUDITED_REPO_DIR=$GITHUB_WORKSPACE/released" >> "$GITHUB_ENV"
 
       - name: Verify published Pages and Render assets, CORS, and exact live SHA
-        run: node candidate/scripts/verify-production-wiring.mjs
+        # A PR's newly added browser module is not published on main yet.
+        # The live baseline MUST use its own released audit manifest; the
+        # candidate audit contract is independently tested with fixtures above.
+        # Once merged, workflow_dispatch on main uses the new audit manifest.
+        run: node released/scripts/verify-production-wiring.mjs
