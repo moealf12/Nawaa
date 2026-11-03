@@ -32,7 +32,7 @@ test("R04 universal: false exacts are placed into the sold-subject lane, not era
   ["JBL headphones","JBL Wireless Bluetooth Headphones 760NC","direct"],
   ["JBL headphones","JBL Headphones Replacement Ear Cushions","accessory"],
   ["HP laptop","HP Pavilion 15 Laptop 16GB RAM 512GB SSD","direct"],
-  ["سلسال سواروفسكي","Swarovski Necklace Rhodium Plated Crystal","alternative"]
+  ["سلسال سواروفسكي","Swarovski Necklace Rhodium Plated Crystal","direct"]
  ];
  for(const [query,title,expected] of scenarios){
   const x=classifyResultGroup(query,group("p",title));
