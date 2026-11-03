@@ -1,4 +1,5 @@
 import { persistOffers, recordOffer, searchPersistedOffers } from "./persistence.mjs";
+import { probeDatabaseOnStartup } from "./database-startup-probe.mjs";
 import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
 import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
@@ -1345,4 +1346,6 @@ server.maxRequestsPerSocket = 100;
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`NAWAA search backend listening on :${PORT}`);
+  // Opt-in one-shot proof; never blocks HTTP startup or persists test offers.
+  void probeDatabaseOnStartup();
 });
