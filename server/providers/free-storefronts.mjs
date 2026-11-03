@@ -4,6 +4,13 @@ import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryO
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
+const SOURCE_DENIAL_STATES=new Set([
+  "HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED",
+  "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN",
+]);
+const SOURCE_COOLDOWN_STATES=new Set([
+  "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN",
+]);
 import {storefrontSourceFailure} from "../../src/storefront-error-evidence.mjs";
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
@@ -1722,8 +1729,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       // public category catalog remains rendered and price-bearing. Fall back to a
       // deterministic family catalog before declaring the provider unavailable.
       if(store.id === "virgin-ae" &&
-          sourceAccessFailure !== "HTTP_403_ACCESS_DENIED" &&
-          sourceAccessFailure !== "HTTP_429_RATE_LIMITED") {
+          !SOURCE_DENIAL_STATES.has(sourceAccessFailure)) {
         const catalogUrl = virginAeCatalogUrl(query);
         if (catalogUrl) {
           try {
@@ -1741,8 +1747,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }
     // Never probe another endpoint to work around an explicit access refusal,
     // including IKEA and other sources with secondary API fallback strategies.
-    if(!html && (sourceAccessFailure === "HTTP_403_ACCESS_DENIED" ||
-                 sourceAccessFailure === "HTTP_429_RATE_LIMITED")) {
+    if(!html && SOURCE_DENIAL_STATES.has(sourceAccessFailure)) {
       // Preserve structured access-denial evidence across the searchStore
       // exception boundary. A cooldown is not a transport failure, empty
       // catalog or a stockout, even if its message contains no "HTTP 403".
@@ -2137,12 +2142,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     };
   } catch (error) {
     if(options.signal?.aborted) throw options.signal.reason || error;
-    sourceReliability.record(store.id, {
-      transportOk:false,
-      offers:0,
-      latencyMs:Date.now() - started,
-      relevant:true,
-    });
+    // A policy cooldown did not contact the merchant. Treating it as a new
+    // transport failure would artificially compound the reliability penalty.
+    if(!SOURCE_COOLDOWN_STATES.has(classifySourceError(error).failureClass))
+      sourceReliability.record(store.id, {
+        transportOk:false,
+        offers:0,
+        latencyMs:Date.now() - started,
+        relevant:true,
+      });
     throw error;
   }
 }
