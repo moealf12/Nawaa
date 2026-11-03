@@ -1,14 +1,6 @@
 name: NAWAA Hero Hologram Browser Acceptance
 
 on:
-  push:
-    branches:
-      - 'design/hero-hologram-*'
-    paths:
-      - 'index.html'
-      - 'assets/nawaa-hero-sculpture.png'
-      - 'scripts/hero-hologram-browser.mjs'
-      - '.github/workflows/hero-hologram-browser.yml'
   pull_request:
     paths:
       - 'index.html'
@@ -16,6 +8,10 @@ on:
       - 'scripts/hero-hologram-browser.mjs'
       - '.github/workflows/hero-hologram-browser.yml'
   workflow_dispatch:
+
+concurrency:
+  group: nawaa-hero-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
