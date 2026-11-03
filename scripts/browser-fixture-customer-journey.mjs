@@ -181,9 +181,9 @@ function searchPayload(q,cursor) {
     return {offers,errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
   }
-  if(q.includes('fixture-iphone-models')) {
+  if(q==='iPhone 17'||q.includes('fixture-iphone-models')) {
     const template=offer(1);
-    const first={...template,merchant:'eXtra',title:'Apple iPhone 17 256GB Black',
+    const first={...template,merchant:'eXtra',title:q.includes('fixture-iphone-models') ? 'Fixture iPhone Models Apple iPhone 17 256GB Black' : 'Apple iPhone 17 256GB Black',
       sourceUrl:'https://www.example.org/iphone-model-a',
       specs:{brand:'Apple',deviceType:'iPhone 17',storage:'256GB',color:'Black',modelNumber:'MG674AH/A'}};
     const second={...first,merchant:'Jarir',
@@ -193,15 +193,15 @@ function searchPayload(q,cursor) {
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
   }
   if(q.includes('fixture-detail-pending')) return {
-    offers:[{...offer(5),image:'https://nawaa-detail-pending.invalid/photo.png'}],
+    offers:[{...offer(5),title:'Fixture Detail Pending Laptop',image:'https://nawaa-detail-pending.invalid/photo.png'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
   if(q.includes('fixture-detail-loaded')) return {
-    offers:[{...offer(5),image:'https://nawaa-detail-loaded.invalid/photo.svg'}],
+    offers:[{...offer(5),title:'Fixture Detail Loaded Laptop',image:'https://nawaa-detail-loaded.invalid/photo.svg'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
   if(q.includes('fixture-pending-image')) return {
-    offers:[{...offer(5),image:'https://nawaa-pending.invalid/delayed-product.jpg'}],
+    offers:[{...offer(5),title:'Fixture Pending Image Laptop',image:'https://nawaa-pending.invalid/delayed-product.jpg'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
   if(q.includes('fixture-no-results')) return {
@@ -440,7 +440,7 @@ try{
     detailBefore.fallbackText.includes('جاري تحميل صورة')&&
     detailBefore.status==='status',detailBefore);
   assertCheck('detail_merchant_model_price_provenance_preserved',
-    detailBefore.title==='HP Pavilion Laptop Model 05 512GB Silver'&&
+    detailBefore.title==='Fixture Detail Pending Laptop'&&
     detailBefore.model?.includes('HP-LAP-05')&&
     detailBefore.merchant?.includes('Jarir')&&
     detailBefore.price?.includes(new Intl.NumberFormat('ar-SA').format(2515))&&
@@ -515,7 +515,7 @@ try{
   await imgTab.screenshot({path:'browser-artifacts/fixture-mobile-image-fallback.png',fullPage:true});
   // The same visible phone/model/storage/color may have DIFFERENT manufacturer
   // codes: preserve separate groups, and show the distinguishing codes.
-  const duplicated=await navigate('fixture-iphone-models');
+  const duplicated=await navigate('iPhone 17');
   await duplicated.locator('#results .match-result-card').first().waitFor();
   const duplicateCards=duplicated.locator('#results .match-result-card');
   const duplicateCount=await duplicateCards.count();
