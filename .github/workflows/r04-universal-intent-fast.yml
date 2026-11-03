@@ -1,0 +1,29 @@
+name: NAWAA R04 Universal Intent Fast Contracts
+on:
+  pull_request:
+    paths:
+      - 'src/search-result-intelligence.mjs'
+      - 'src/search-page.mjs'
+      - 'tests/r04-universal-result-intelligence.test.mjs'
+      - '.github/workflows/r04-universal-intent-fast.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  classify-and-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Static module parsing and import consistency
+        run: |
+          node --check src/search-result-intelligence.mjs
+          node --check src/search-page.mjs
+      - name: Deterministic taxonomy, scale and deep-link UI contracts
+        run: node --test tests/r04-universal-result-intelligence.test.mjs tests/ui-flow.test.mjs
