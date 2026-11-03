@@ -539,6 +539,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   if(signal?.aborted) forwardAbort();
   else signal?.addEventListener("abort",forwardAbort,{once:true});
   let offers=[],providers=[],errors=[];
+  let localCatalogEvidence={configured:false,offers:[]};
   let accepting=true,primaryCompleted=0,amazonSettled=false,localSettled=false;
   let emissions=Promise.resolve();
   const emit=(progress={})=>{
@@ -557,6 +558,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
     searchIndexedOffers(query).catch(()=>({offers:[]})),
     safeCatalogRecall(query,0),
   ]).then(async ([indexed,persisted])=>{
+    localCatalogEvidence=persisted;
     localSettled=true;
     if(!accepting)return;
     offers.push(...(indexed.offers||[]),...(persisted.offers||[]));
@@ -656,6 +658,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
       complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
       streamDeadlineMs,
+      catalogRecall:summarizeCatalogRecall(localCatalogEvidence,catalogRecallPlan(0)),
       providersPending,
       sourceFailures:summarizeSourceFailures(errors),
       acquisitionDepth:plan.depth,
