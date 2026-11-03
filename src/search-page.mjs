@@ -15,6 +15,7 @@ import {
 } from "./search-core.mjs";
 import {selectSearchStreamResult,needsExtraSourceRecovery,mergeExtraSourceRecovery,needsEmptyPartialRecovery,mergeEmptyPartialRecovery} from "./search-stream.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
+import {buildIntentAwareResultLanes} from "./search-result-intelligence.mjs";
 import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
 
 const $ = (selector) => document.querySelector(selector);
@@ -933,16 +934,28 @@ function renderProduct(product, query) {
   const groups = groupComparableOffers(filteredOffers, state.mode);
 
   const intent = parseSearchIntent(isLikelyUrl(query) ? product.model : query);
-  const exactGroups = groups.filter((group) =>
-    group.bestOffer?.exactMatch === true &&
-    (group.bestOffer?.matchConfidence || 0) >= 0.9 &&
-    group.bestOffer?.condition === (intent.condition || "new")
-  );
-  const discoverySections = buildDiscoverySections(query, exactGroups);
+  // Partition every acquired comparable identity into the shopper's
+  // requested product, alternatives, independently sold accessories, guides
+  // or lower-evidence results. Never erase a group because it is not exact.
+  const classified = buildIntentAwareResultLanes(query, groups);
+  const directGroups = classified.primaryGroups.filter(group=>
+    group.bestOffer?.condition === (intent.condition || "new"));
+  const discoverySections = buildDiscoverySections(query, directGroups);
+  const exactGroups = discoverySections.flatMap(section=>section.groups);
   const displayedSections = state.category === 'all' ? discoverySections : discoverySections.filter(section => section.key === state.category);
-  const selectorGroups = state.selectedGroupKey ? exactGroups.filter(group => group.key === state.selectedGroupKey) : discoverySections.flatMap(section=>section.groups);
-  const selectorGroupKeys = new Set(exactGroups.map((group) => group.key));
-  const relatedGroups = groups.filter((group) => !selectorGroupKeys.has(group.key));
+  const selectorGroups = state.selectedGroupKey ? exactGroups.filter(group => group.key === state.selectedGroupKey) : exactGroups;
+  const selectorGroupKeys = new Set(exactGroups.map(group=>group.key));
+  // Even an inconsistent source category or an unavailable condition must
+  // remain reachable in another section; this preserves 100% partitioning.
+  const unplacedDirect = groups.filter(group=>
+    classified.primaryGroups.includes(group) && !selectorGroupKeys.has(group.key));
+  const secondarySections = classified.secondarySections.map(section=>({...section,groups:[...section.groups]}));
+  if(unplacedDirect.length){
+    const alternatives=secondarySections.find(section=>section.key==="alternative");
+    if(alternatives)alternatives.groups.push(...unplacedDirect);
+    else secondarySections.unshift({key:"alternative",label:"منتجات مشابهة وبدائل",groups:unplacedDirect});
+  }
+  const relatedGroups = secondarySections.flatMap(section=>section.groups);
   // Duplicate-looking names can refer to distinct regional manufacturer
   // models or unverified merchant SKUs. Annotate rather than merge them.
   const cardNameCounts = new Map();
@@ -1121,9 +1134,7 @@ function renderProduct(product, query) {
 
     ${state.nextCursor ? `<div class="remote-more"><button type="button" class="show-category" id="loadMoreRemote" ${state.remoteLoading ? "disabled" : ""}>${state.remoteLoading ? "جاري توسيع البحث…" : "جلب نتائج إضافية من مصادر أكثر"}</button><small>يطلب هذا بحثًا أعمق من الخادم؛ لا يكرر كشف النتائج الموجودة في الصفحة.</small></div>` : state.remoteExhausted ? '<div class="remote-more exhausted"><small>وصلنا إلى أعمق نطاق بحث متاح حاليًا لهذه الجلسة.</small></div>' : ""}
 
-    ${additionalResultsSection("نسخ ومنتجات أخرى", relatedGroups.filter(group => !["game","accessory"].includes(describeProduct(group.bestOffer).kind)))}
-    ${additionalResultsSection("ألعاب للجهاز", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "game"))}
-    ${additionalResultsSection("ملحقات وإكسسوارات", relatedGroups.filter(group => describeProduct(group.bestOffer).kind === "accessory"))}
+    ${secondarySections.map(section=>additionalResultsSection(section.label,section.groups)).join('')}
 
     <div class="integrity-note">
       <strong>قاعدة نواة:</strong>
