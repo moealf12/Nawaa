@@ -56,6 +56,18 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
           if(futureResult.status!==400)throw Error('future_dated_cursor_accepted');
           const json=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query));
           if(json.status!==200)throw Error('plain_search_failed');
+          const firstWave=JSON.parse(json.body);
+          if(firstWave.coverage?.wavePage?.offset!==0 ||
+              typeof firstWave.coverage.wavePage.total!=='number' ||
+              !Object.hasOwn(firstWave,'overflowCursor'))
+            throw Error('json_missing_wave_pagination_contract');
+          if(snapshot.coverage?.wavePage?.offset!==0 ||
+              !Object.hasOwn(snapshot,'overflowCursor'))
+            throw Error('sse_missing_wave_pagination_contract');
+          const malformedWave=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query)+'&pageCursor=not.a.signed.wave');
+          if(malformedWave.status!==400)throw Error('invalid_wave_cursor_accepted');
+          const crossed=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query)+'&pageCursor='+encodeURIComponent(snapshot.nextCursor));
+          if(crossed.status!==400)throw Error('depth_cursor_accepted_as_wave_cursor');
           const cached=await fetchLocal(port,'/api/search/stream?q='+encodeURIComponent(query));
           const cachedLast=snapshots(cached.body).at(-1);
           if(!cachedLast?.nextCursor)throw Error('cached_sse_missing_cursor');
@@ -64,6 +76,8 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
             nextCursor:true,wrongQueryRejected:true,
             tamperedRejected:true,expiredRejected:true,futureRejected:true,
             cachedCursor:true,cachedMode:cachedLast.cache?.mode||null,
+            jsonWaveEnvelope:true,sseWaveEnvelope:true,
+            malformedWaveRejected:true,crossedCursorRejected:true,
           }));
         } catch(e){console.log('FAIL '+e.stack);process.exitCode=1}
         finally{this.close(()=>process.exit(process.exitCode||0))}
@@ -88,4 +102,8 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
   assert.equal(result.expiredRejected,true);
   assert.equal(result.futureRejected,true);
   assert.equal(result.cachedCursor,true);
+  assert.equal(result.jsonWaveEnvelope,true);
+  assert.equal(result.sseWaveEnvelope,true);
+  assert.equal(result.malformedWaveRejected,true);
+  assert.equal(result.crossedCursorRejected,true);
 });
