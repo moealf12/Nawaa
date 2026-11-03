@@ -316,7 +316,8 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.equal(requestsForWave[2].searchParams.get("cursor"),"depth-1-signed");
   assert.equal(requestsForWave[2].searchParams.has("pageCursor"),false);
   assert.equal(requestsForWave.length,3);
-  assert.match(element("#searchStatus").textContent,/الإجمالي/);
+  assert.equal((element("#results").innerHTML.match(/class="match-result-card/g)||[]).length,4,
+    "four distinct offers from the original and two signed page types remain visible");
 
   // A restarted instance or expired 120-second snapshot cannot silently
   // skip the missing wave and pretend its inventory is exhausted.
