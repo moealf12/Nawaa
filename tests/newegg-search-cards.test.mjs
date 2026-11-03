@@ -56,3 +56,23 @@ test("conditions distinguished without stock or Saudi shipping assertions",()=>{
   assert.equal(offer.availability,undefined);
   assert.equal(offer.canShipToSaudi,undefined);
 });
+
+
+test("Newegg is disabled from the NAWAA router and direct acquisition by default",async()=>{
+  const {configuredFreeStorefronts,routeFreeStorefronts,searchFreeStorefrontById}=await import("../server/providers/free-storefronts.mjs");
+  const previous=process.env.NAWAA_NEWEGG_SCRAPING_ENABLED;
+  try{
+    delete process.env.NAWAA_NEWEGG_SCRAPING_ENABLED;
+    assert.equal(configuredFreeStorefronts().some(x=>x.id==="newegg-global"),false);
+    assert.equal(routeFreeStorefronts("ssd").some(x=>x.store.id==="newegg-global"),false);
+    const disabled=await searchFreeStorefrontById("newegg-global","ssd");
+    assert.equal(disabled.offers.length,0);
+    assert.equal(disabled.diagnostics.status,"SOURCE_DISABLED");
+    process.env.NAWAA_NEWEGG_SCRAPING_ENABLED="1";
+    assert.equal(configuredFreeStorefronts().some(x=>x.id==="newegg-global"),true);
+    assert.equal(routeFreeStorefronts("ssd").some(x=>x.store.id==="newegg-global"),true);
+  }finally{
+    if(previous===undefined)delete process.env.NAWAA_NEWEGG_SCRAPING_ENABLED;
+    else process.env.NAWAA_NEWEGG_SCRAPING_ENABLED=previous;
+  }
+});
