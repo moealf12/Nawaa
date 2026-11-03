@@ -58,7 +58,8 @@ export async function writeThroughFreshLiveObservations(query,offers,{
     try{
       const result=await record({
         ...offer,
-        query:String(query||""),
+        // Never persist an individual shopper search string alongside a price.
+        // The source identifier is sufficient for catalog attribution.
         sourceName:offer.provider||offer.merchant||"live-retailer",
       });
       if(result?.recorded)recorded++;else failed++;
