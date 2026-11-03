@@ -45,8 +45,11 @@ export async function validateAsosLiveSearch({
     }
     results.push({productId:candidate.productId,variantId:candidate.variantId,...evidence});
     if(evidence.verified)accepted.push({...candidate,
-      availability:"in_stock",price:evidence.price,
-      observedAt:evidence.observedAt,priceEvidence:"EXACT_VARIANT_PDP_VERIFIED"});
+      // Do not claim that a particular size can be purchased.
+      availability:"unknown",colourwayAvailability:evidence.colourwayAvailability,
+      sizeAvailability:"unknown",sizeStockVerified:false,
+      price:evidence.price,observedAt:evidence.observedAt,
+      priceEvidence:"COLOURWAY_PDP_PRICE_PARITY_ONLY"});
   }
   const unknown=results.filter(x=>x.availability==="unknown").length;
   const outOfStock=results.filter(x=>x.availability==="out_of_stock").length;
@@ -54,6 +57,7 @@ export async function validateAsosLiveSearch({
     diagnostics:{status:accepted.length?"VERIFIED_PDP_CANDIDATES":"NO_VERIFIED_PDP_CANDIDATES",
       source:"asos-global",customerPublishable:false,
       validated:accepted.length,unknown,outOfStock,
+      sizeStockVerified:0,shippingToSaudiVerified:false,
       checked:results.length,pdpBudget:budget,searchCards:parsed.diagnostics},
   };
 }
