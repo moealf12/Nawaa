@@ -64,6 +64,16 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
           if(snapshot.coverage?.wavePage?.offset!==0 ||
               !Object.hasOwn(snapshot,'overflowCursor'))
             throw Error('sse_missing_wave_pagination_contract');
+          if(firstWave.coverage.resultLimit!==1000 ||
+              snapshot.coverage.resultLimit!==1000 ||
+              expanded.coverage.resultLimit!==1000 ||
+              firstWave.offers.length>120 || snapshot.offers.length>120 ||
+              expanded.offers.length>180)
+            throw Error('thousand_result_budget_broke_progressive_page_limits');
+          if(!Number.isInteger(firstWave.coverage.rankedCandidates) ||
+              !Number.isInteger(snapshot.coverage.rankedCandidates) ||
+              !Number.isInteger(expanded.coverage.rankedCandidates))
+            throw Error('ranked_candidate_coverage_missing');
           const malformedWave=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query)+'&pageCursor=not.a.signed.wave');
           if(malformedWave.status!==400)throw Error('invalid_wave_cursor_accepted');
           const crossed=await fetchLocal(port,'/api/search?q='+encodeURIComponent(query)+'&pageCursor='+encodeURIComponent(snapshot.nextCursor));
