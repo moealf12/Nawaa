@@ -377,4 +377,24 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.doesNotMatch(element("#results").innerHTML,/id="loadMoreRemote"/);
   assert.match(element("#searchStatus").textContent,/لم يمكن حفظ بقية نتائج الموجة/);
 
+  // A 1000-result acquisition limit cannot be mistaken for exhaustion of
+  // global inventory; the first HTTP batch stays small.
+  const largeBudgetOffers=[offer,{...offer,merchant:"Jarir",
+    sourceUrl:"https://example.com/model-variant-budget",
+    specs:{...offer.specs,modelNumber:"MG674LL/A"}}];
+  globalThis.fetch=async ()=>({ok:true,text:async()=>JSON.stringify({
+    offers:largeBudgetOffers,nextCursor:null,overflowCursor:null,
+    providers:[],errors:[],
+    coverage:{resultLimit:1000,rankedCandidates:1201,
+      resultLimitReached:true,availableOffers:1000,returnedOffers:2,
+      wavePage:{offset:0,returned:2,total:1000,remaining:998}},
+  })});
+  element("#searchInput").value="iPhone 17 budget window";
+  element("#searchForm").events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.match(element("#results").innerHTML,/بلغ البحث حد ١٠٠٠ نتيجة/);
+  assert.match(element("#searchStatus").textContent,/سعة هذه الموجة ١٠٠٠ نتيجة/);
+  assert.doesNotMatch(element("#results").innerHTML,/NO LIVE OFFERS/,
+    "a capped wave still publishes its genuine observed offers");
+
 });
