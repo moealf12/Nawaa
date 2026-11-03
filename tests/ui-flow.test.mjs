@@ -286,4 +286,54 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.match(element('#results').innerHTML,/NO LIVE OFFERS/);
   assert.doesNotMatch(element('#results').innerHTML,/PARTIAL SEARCH/);
 
+  // R04 P0: same-wave signed pagination is consumed BEFORE the next merchant
+  // acquisition depth. Neither request may drop already-rendered offers.
+  const requestsForWave=[];
+  const waveOffers=manyOffers.slice(0,4);
+  globalThis.fetch=async url=>{
+    const request=new URL(String(url));
+    requestsForWave.push(request);
+    const payload=request.searchParams.has("pageCursor")
+      ? {offers:[waveOffers[2]],overflowCursor:null,nextCursor:"depth-1-signed",errors:[]}
+      : request.searchParams.has("cursor")
+        ? {offers:[waveOffers[3]],overflowCursor:null,nextCursor:null,errors:[]}
+        : {offers:waveOffers.slice(0,2),overflowCursor:"signed-wave-1",
+            nextCursor:"depth-1-signed",errors:[]};
+    return {ok:true,text:async()=>JSON.stringify(payload)};
+  };
+  element("#searchInput").value="hp laptop";
+  element("#searchForm").events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.match(element("#results").innerHTML,/عرض بقية النتائج المكتشفة/);
+  assert.equal(requestsForWave.length,1);
+  element("#loadMoreRemote").events.click();
+  await new Promise(resolve=>setTimeout(resolve,35));
+  assert.equal(requestsForWave[1].searchParams.get("pageCursor"),"signed-wave-1");
+  assert.equal(requestsForWave[1].searchParams.has("cursor"),false);
+  assert.match(element("#results").innerHTML,/جلب نتائج إضافية من مصادر أكثر/);
+  element("#loadMoreRemote").events.click();
+  await new Promise(resolve=>setTimeout(resolve,35));
+  assert.equal(requestsForWave[2].searchParams.get("cursor"),"depth-1-signed");
+  assert.equal(requestsForWave[2].searchParams.has("pageCursor"),false);
+  assert.equal(requestsForWave.length,3);
+  assert.equal((element("#results").innerHTML.match(/class="match-result-card/g)||[]).length,4,
+    "four distinct offers from the original and two signed page types remain visible");
+
+  // A restarted instance or expired 120-second snapshot cannot silently
+  // skip the missing wave and pretend its inventory is exhausted.
+  globalThis.fetch=async url=>{
+    const request=new URL(String(url));
+    return request.searchParams.has("pageCursor")
+      ? {ok:false,status:410,text:async()=>JSON.stringify({error:"wave_cursor_expired"})}
+      : {ok:true,text:async()=>JSON.stringify({
+          offers:waveOffers.slice(0,2),overflowCursor:"expired-wave",
+          nextCursor:"depth-1-signed",errors:[]})};
+  };
+  element("#searchInput").value="hp laptop";
+  element("#searchForm").events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  element("#loadMoreRemote").events.click();
+  await new Promise(resolve=>setTimeout(resolve,35));
+  assert.match(element("#searchStatus").textContent,/انتهت صلاحية دفعة النتائج/);
+
 });

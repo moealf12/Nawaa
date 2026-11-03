@@ -16,6 +16,10 @@ jobs:
       - run: npm ci
       - name: Unit tests
         run: npm test
+      - name: Live eXtra category audit (403 remains a real failure)
+        env:
+          NAWAA_EXTRA_LIVE_DIAGNOSTIC: '1'
+        run: node --test tests/extra-live-diagnostic.test.mjs
       - name: Live search verification
         shell: bash
         run: |
