@@ -937,7 +937,10 @@ function renderProduct(product, query) {
   // Partition every acquired comparable identity into the shopper's
   // requested product, alternatives, independently sold accessories, guides
   // or lower-evidence results. Never erase a group because it is not exact.
-  const classified = buildIntentAwareResultLanes(query, groups);
+  // URL comparison must classify against the resolved product identity, not
+  // literal https://... tokens. Preserve the existing URL deep-link flow.
+  const classificationQuery = isLikelyUrl(query) ? (product.model || product.nameAr || query) : query;
+  const classified = buildIntentAwareResultLanes(classificationQuery, groups);
   const directGroups = classified.primaryGroups.filter(group=>
     group.bestOffer?.condition === (intent.condition || "new"));
   const discoverySections = buildDiscoverySections(query, directGroups);
