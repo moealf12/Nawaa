@@ -97,7 +97,9 @@ jobs:
           DATABASE_SSL: "false"
           MEILI_HOST: ""
           MEILI_MASTER_KEY: ""
-        run: node --test tests/postgres-provenance.test.mjs
+        run: |
+          node --test tests/postgres-provenance.test.mjs
+          node --test tests/r04-p3-postgres-live-provenance.test.mjs
 
   disposable-meilisearch-restart:
     # Real Meilisearch process in a temporary CI Docker service; no production writes.

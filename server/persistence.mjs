@@ -94,7 +94,7 @@ export async function recordOffer(offerData={}){
          product_price=excluded.product_price,total_sar=excluded.total_sar,sku=excluded.sku,
          availability=excluded.availability,match_confidence=excluded.match_confidence,
          exact_match=excluded.exact_match,observed_at=excluded.observed_at,payload=excluded.payload
-       where nawaa_offers.observed_at <= excluded.observed_at`,
+       where nawaa_offers.observed_at < excluded.observed_at`,
       [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
     );
     await tx.query("COMMIT");
@@ -138,7 +138,7 @@ export async function persistOffers(query,offers=[]){
           match_confidence=excluded.match_confidence,
           exact_match=excluded.exact_match,observed_at=excluded.observed_at,
           payload=excluded.payload
-        where nawaa_offers.observed_at <= excluded.observed_at`,
+        where nawaa_offers.observed_at < excluded.observed_at`,
       [key,query,o.title,o.brand||o.specs?.brand||null,o.merchant||null,
        o.merchantCountryCode||null,o.sourceUrl,o.imageUrl||o.image||null,
        o.currency||null,o.productPrice??null,o.totalSAR??null,
@@ -152,43 +152,55 @@ export async function persistOffers(query,offers=[]){
 }
 
 
-export async function searchPersistedOffers(query,{limit=120,maxAgeHours=168}={}){
-  // Legacy durable documents stay in PostgreSQL for audit; shopper search
-  // must not revive old price/stock as fresh just because a record is indexed.
-  const maxCustomerEvidenceAgeMs=45_000;
+// This is an optional read of real, source-timestamped catalog evidence.
+// Never touch schema from a search read: a missing table is not a reason to
+// execute production DDL. Never manufacture source freshness from DB now().
+export async function searchPersistedOffers(query,{
+  limit=120,offset=0,now=Date.now(),
+}={}){
+  if(!Number.isFinite(now)||!Number.isSafeInteger(limit)||limit<1||limit>500||
+    !Number.isSafeInteger(offset)||offset<0||offset+limit>1000)
+    throw new RangeError("invalid_persisted_page");
   const client=await db();
-  if(!client||!String(query||"").trim()) return {configured:Boolean(client),offers:[]};
-  await initPersistence();
-  const q=String(query).trim();
-  const result=await client.query(`
-    select payload, observed_at
-    from nawaa_offers
-    where observed_at >= now() - ($2::text || ' hours')::interval
-      and observed_at >= now() - ($4::bigint * interval '1 millisecond')
-      and observed_at <= now() + interval '1 minute'
-      and (
-        to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(brand,''))
-          @@ plainto_tsquery('simple',$1)
-        or title ilike '%' || $1 || '%'
-        or brand ilike '%' || $1 || '%'
-      )
-    order by
-      ts_rank(
-        to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(brand,'')),
-        plainto_tsquery('simple',$1)
-      ) desc,
-      observed_at desc
-    limit $3
-  `,[q,String(Math.max(1,Number(maxAgeHours)||168)),Math.max(1,Math.min(500,Number(limit)||120)),maxCustomerEvidenceAgeMs]);
-  return {
-    configured:true,
-    offers:result.rows.map(row=>({
-      ...(row.payload||{}),
-      // Historical matching flags can belong to an earlier query or a retired
-      // classifier. The actual current query must always recompute them.
+  const q=String(query||"").trim();
+  if(!client||!q)return {configured:Boolean(client),offers:[],
+    offset,limit,fetchedRows:0,rejectedStale:0};
+  const evidenceMs=45_000;
+  const result=await client.query({
+    text:`select payload, observed_at
+      from nawaa_offers
+      where observed_at >= now() - ($2::bigint * interval '1 millisecond')
+        and observed_at <= now() + interval '1 minute'
+        and (
+          to_tsvector('simple',coalesce(title,'') || ' ' || coalesce(brand,''))
+            @@ plainto_tsquery('simple',$1)
+          or strpos(lower(title),lower($1)) > 0
+          or strpos(lower(coalesce(brand,'')),lower($1)) > 0
+        )
+      order by
+        ts_rank(
+          to_tsvector('simple',coalesce(title,'') || ' ' || coalesce(brand,'')),
+          plainto_tsquery('simple',$1)
+        ) desc, observed_at desc, offer_key asc
+      limit $3 offset $4`,
+    values:[q,evidenceMs,limit,offset],
+    query_timeout:900,
+  });
+  let rejectedStale=0;
+  const offers=[];
+  for(const row of result.rows||[]){
+    const observedTime=row.observed_at instanceof Date
+      ?row.observed_at.getTime():Date.parse(row.observed_at);
+    if(!Number.isFinite(observedTime)||observedTime>now+60_000||
+        now-observedTime>evidenceMs){rejectedStale++;continue;}
+    if(!row.payload||typeof row.payload!=="object")continue;
+    offers.push({
+      ...row.payload,
       exactMatch:false,matchConfidence:0,
       dataKind:"persisted",
-      observedAt:row.observed_at instanceof Date ? row.observed_at.toISOString() : row.observed_at
-    }))
-  };
+      observedAt:new Date(observedTime).toISOString(),
+    });
+  }
+  return {configured:true,offers,offset,limit,
+    fetchedRows:(result.rows||[]).length,rejectedStale};
 }

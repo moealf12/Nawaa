@@ -3,6 +3,11 @@ on:
   pull_request:
     paths:
       - 'server/server.mjs'
+      - 'server/persistence.mjs'
+      - 'server/catalog-write-through.mjs'
+      - 'server/catalog-recall-evidence.mjs'
+      - 'tests/r04-p3-postgres-catalog.test.mjs'
+      - 'tests/r04-p3-postgres-read-http.test.mjs'
       - 'server/search-index.mjs'
       - 'server/index-recall-plan.mjs'
       - 'tests/r04-index-staged-recall.test.mjs'

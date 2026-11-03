@@ -1,4 +1,4 @@
-import { persistOffers, recordOffer, searchPersistedOffers } from "./persistence.mjs";
+import { persistOffers, recordOffer, searchPersistedOffers, persistenceConfigured } from "./persistence.mjs";
 import { probeDatabaseOnStartup } from "./database-startup-probe.mjs";
 import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
 import { sourceCoverageSummary } from "../src/source-registry.mjs";
@@ -49,6 +49,29 @@ import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEP
 import {createSearchWavePages} from "./search-wave-pages.mjs";
 import {prepareSearchResultWindow} from "./search-result-window.mjs";
 import {summarizeWaveSourceEvidence} from "./search-coverage-evidence.mjs";
+import {scheduleCatalogWrite} from "./catalog-write-through.mjs";
+import {catalogRecallPlan,summarizeCatalogRecall} from "./catalog-recall-evidence.mjs";
+
+function writeObservedLiveCatalog(query, offers){
+  // Never wait on the optional storage accelerator or let a failing DB
+  // change the customer-visible search response. Sources remain independent.
+  void scheduleCatalogWrite(query,offers).then(result=>{
+    if(result.configured && (result.attempted>0 || result.skipped))
+      console.info("NAWAA_CATALOG_WRITE "+JSON.stringify({
+        attempted:result.attempted,recorded:result.recorded,failed:result.failed,
+        skipped:result.skipped||null,
+      }));
+  }).catch(()=>console.warn("NAWAA_CATALOG_WRITE_FAILED"));
+}
+function safeCatalogRecall(query,depth){
+  const plan=catalogRecallPlan(depth);
+  if(OMEGA_INDEX_ONLY||!persistenceConfigured())
+    return Promise.resolve({configured:false,offers:[],fetchedRows:0});
+  return searchPersistedOffers(query,plan).catch(()=>({
+    configured:true,offers:[],error:"catalog_recall_unavailable",
+  }));
+}
+
 import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
@@ -386,8 +409,9 @@ async function searchExpansion(query, depth, {signal} = {}) {
     :searchIndexedOffers(query,{...indexPage,signal:indexSignal})
       .catch(()=>({configured:searchIndexConfigured(),offers:[],
         error:"index_recall_unavailable"}));
-  const [amazon,storefront,indexEvidence]=await Promise.all([
-    amazonPromise,storefrontPromise,indexPromise,
+  const catalogPage=catalogRecallPlan(depth);
+  const [amazon,storefront,indexEvidence,catalogEvidence]=await Promise.all([
+    amazonPromise,storefrontPromise,indexPromise,safeCatalogRecall(query,depth),
   ]);
   const providers=[];
   const errors=[];
@@ -402,11 +426,12 @@ async function searchExpansion(query, depth, {signal} = {}) {
 
   const offers=retainRelatedOffers(query, await canonicalCandidates([
     ...(amazon.offers||[]),...(storefront.offers||[]),
-    ...(indexEvidence.offers||[]),
+    ...(indexEvidence.offers||[]),...(catalogEvidence.offers||[]),
   ],true));
   const {allSelectedOffers,selectedOffers,rankedCandidates,resultLimit,
     resultLimitReached}=prepareSearchResultWindow(offers,plan);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
+  writeObservedLiveCatalog(query,selectedOffers);
   // Do not infer successful completion merely from a non-throwing adapter:
   // source-owned diagnostics can report rejected pages and failed PDPs.
   const amazonEvidenceError=amazonPartialEvidenceError(plan.amazonPageCount,amazon,"expansion");
@@ -427,6 +452,7 @@ async function searchExpansion(query, depth, {signal} = {}) {
     coverage:{
       ...sourceCoverageSummary(sources),
       indexRecall:compactIndexRecallEvidence(indexEvidence,indexPage),
+      catalogRecall:summarizeCatalogRecall(catalogEvidence,catalogPage),
       amazonDirectOffers:(amazon.offers||[]).length,
       returnedOffers:selectedOffers.length,
       availableOffers:allSelectedOffers.length,
@@ -514,6 +540,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   if(signal?.aborted) forwardAbort();
   else signal?.addEventListener("abort",forwardAbort,{once:true});
   let offers=[],providers=[],errors=[];
+  let localCatalogEvidence={configured:false,offers:[]};
   let accepting=true,primaryCompleted=0,amazonSettled=false,localSettled=false;
   let emissions=Promise.resolve();
   const emit=(progress={})=>{
@@ -528,11 +555,17 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
 
   // Launch the catalog, core providers, and Amazon concurrently. Slow sources
   // are never allowed to postpone stream completion indefinitely.
-  const localPromise=searchIndexedOffers(query).catch(()=>({offers:[]})).then(async local=>{
+  const localPromise=Promise.all([
+    searchIndexedOffers(query).catch(()=>({offers:[]})),
+    safeCatalogRecall(query,0),
+  ]).then(async ([indexed,persisted])=>{
+    localCatalogEvidence=persisted;
     localSettled=true;
     if(!accepting)return;
-    offers.push(...(local?.offers||[]));
-    if(local?.offers?.length)await emit({completed:primaryCompleted,pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
+    offers.push(...(indexed.offers||[]),...(persisted.offers||[]));
+    if(indexed.offers?.length||persisted.offers?.length)
+      await emit({completed:primaryCompleted,
+        pending:Math.max(0,primaryCount-primaryCompleted)+Number(!amazonSettled)});
   });
 
   const amazonPromise=OMEGA_INDEX_ONLY ? Promise.resolve().then(()=>{ amazonSettled=true; }) : searchFreeStorefrontById("amazon-sa",providerQuery,{
@@ -611,6 +644,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   const {allSelectedOffers,selectedOffers,rankedCandidates,resultLimit,
     resultLimitReached}=prepareSearchResultWindow(assessed,plan);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
+  writeObservedLiveCatalog(query,selectedOffers);
   const waveResult = {
     providersConfigured:configuredProviders(),
     coverage:{
@@ -625,6 +659,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
       complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
       streamDeadlineMs,
+      catalogRecall:summarizeCatalogRecall(localCatalogEvidence,catalogRecallPlan(0)),
       providersPending,
       sourceFailures:summarizeSourceFailures(errors),
       acquisitionDepth:plan.depth,
@@ -775,8 +810,8 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       () => ({ configured:false, offers:[] }),
     )),
     observeBarrier("persisted",beforeRequestDeadline(
-      () => Promise.resolve({ configured:false, offers:[] }),
-      () => ({ configured:false, offers:[] }),
+      () => safeCatalogRecall(query,0),
+      () => ({ configured:persistenceConfigured(), offers:[],error:"catalog_deadline_exceeded" }),
     )),
   ]);
   const primaryAcquiredMs = performance.now() - pipelineStarted;
@@ -895,12 +930,14 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   // shopper response. Write-through happens asynchronously after live results
   // are ready; failures are intentionally isolated from the search request.
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind === "live")).catch(() => {});
+  writeObservedLiveCatalog(query,selectedOffers);
 
   const waveResult = {
     providersConfigured: configuredProviders(),
     coverage: {
       ...sourceCoverageSummary(sources),
       amazonDirectOffers: amazonValidated.length,
+      catalogRecall:summarizeCatalogRecall(persisted,catalogRecallPlan(0)),
       returnedOffers: selectedOffers.length,
       availableOffers: allSelectedOffers.length,
       rankedCandidates,resultLimit,resultLimitReached,
@@ -1062,6 +1099,10 @@ const server = http.createServer(async (req, res) => {
       service: "nawaa-search",
       apiVersion: "0.6.0",
       revision: process.env.RENDER_GIT_COMMIT || null,
+      storageCapabilities:{
+        postgresConfigured:persistenceConfigured(),
+        meilisearchConfigured:searchIndexConfigured(),
+      },
       liveProviders: {
         extra: true,
         jarir: true,
