@@ -44,6 +44,8 @@ import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 import {createSearchWavePages} from "./search-wave-pages.mjs";
+import {prepareSearchResultWindow} from "./search-result-window.mjs";
+import {summarizeWaveSourceEvidence} from "./search-coverage-evidence.mjs";
 import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
@@ -333,8 +335,11 @@ function withWavePagination(result,query,depth,allOffers,pageSize){
   return {...result,offers:first,overflowCursor:cursor,
     coverage:{...result.coverage,
       availableOffers:approved.length,returnedOffers:first.length,
+      acquisitionEvidence:summarizeWaveSourceEvidence(result.providers,result.errors),
       returnedMerchants:new Set(first.map(offerMerchantKey)).size,
-      truncated:approved.length>first.length,
+      // A capped window is not proof that all acquired results were shown.
+      truncated:approved.length>first.length ||
+        result.coverage?.resultLimitReached===true,
       overflowUnavailable:unavailable,
       wavePage:{offset:0,returned:first.length,total:approved.length,
         remaining:approved.length-first.length}}};
@@ -379,8 +384,8 @@ async function searchExpansion(query, depth, {signal} = {}) {
   }
 
   const offers=retainRelatedOffers(query, await canonicalCandidates([...(amazon.offers||[]),...(storefront.offers||[])],true));
-  const allSelectedOffers=selectDiverseOffers(offers,Infinity);
-  const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
+  const {allSelectedOffers,selectedOffers,rankedCandidates,resultLimit,
+    resultLimitReached}=prepareSearchResultWindow(offers,plan);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
   // Do not infer successful completion merely from a non-throwing adapter:
   // source-owned diagnostics can report rejected pages and failed PDPs.
@@ -404,6 +409,7 @@ async function searchExpansion(query, depth, {signal} = {}) {
       amazonDirectOffers:(amazon.offers||[]).length,
       returnedOffers:selectedOffers.length,
       availableOffers:allSelectedOffers.length,
+      rankedCandidates,resultLimit,resultLimitReached,
       returnedMerchants:new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated:selectedOffers.length<allSelectedOffers.length,
       exhaustive:false,
@@ -418,6 +424,7 @@ async function searchExpansion(query, depth, {signal} = {}) {
         productPagesPerStore:plan.productPageLimit,
         jarirCatalogResults:0,
         responseOffers:plan.returnLimit,
+        perWaveResults:plan.resultLimit,
       },
       fallbackUsed:false,
       partial,complete:!partial,
@@ -438,7 +445,7 @@ function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
   const started=PROFILE_SEARCH_STREAM ? performance.now() : 0;
   const assessed=retainRelatedOffers(query, offers);
   const afterMatching=PROFILE_SEARCH_STREAM ? performance.now() : 0;
-  const selected=selectDiverseOffers(assessed,Infinity).slice(0,acquisitionPlan(0,configuredFreeStorefronts().length).returnLimit);
+  const selected=selectDiverseOffers(assessed,acquisitionPlan(0,configuredFreeStorefronts().length).returnLimit);
   const afterSelection=PROFILE_SEARCH_STREAM ? performance.now() : 0;
   const snapshot = {
     providersConfigured:configuredProviders(),
@@ -580,8 +587,8 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   });
 
   const assessed=retainRelatedOffers(query, await canonicalCandidates(offers,true));
-  const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
-  const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
+  const {allSelectedOffers,selectedOffers,rankedCandidates,resultLimit,
+    resultLimitReached}=prepareSearchResultWindow(assessed,plan);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
   const waveResult = {
     providersConfigured:configuredProviders(),
@@ -589,6 +596,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
       ...sourceCoverageSummary(currentSources()),
       returnedOffers:selectedOffers.length,
       availableOffers:allSelectedOffers.length,
+      rankedCandidates,resultLimit,resultLimitReached,
       returnedMerchants:new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated:selectedOffers.length<allSelectedOffers.length,
       exhaustive:false,
@@ -832,8 +840,8 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   offers = OMEGA_CANONICAL ? retainRelatedOffers(query,offers) : dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
 
   const sources = currentSources();
-  const allSelectedOffers = selectDiverseOffers(offers, Infinity);
-  const selectedOffers = allSelectedOffers.slice(0, plan.returnLimit);
+  const {allSelectedOffers,selectedOffers,rankedCandidates,resultLimit,
+    resultLimitReached}=prepareSearchResultWindow(offers,plan);
   // A busy event loop can delay timer callbacks beyond the nominal 12s budget.
   // Mark the actual observed overrun without dropping any completed valid offers.
   deadlineExceeded = observedDeadlineExceeded(deadlineExceeded, requestDeadlineAt);
@@ -874,6 +882,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       amazonDirectOffers: amazonValidated.length,
       returnedOffers: selectedOffers.length,
       availableOffers: allSelectedOffers.length,
+      rankedCandidates,resultLimit,resultLimitReached,
       returnedMerchants: new Set(selectedOffers.map(offerMerchantKey)).size,
       truncated: selectedOffers.length < allSelectedOffers.length,
       exhaustive: false,
@@ -887,6 +896,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         productPagesPerStore:plan.productPageLimit,
         jarirCatalogResults:plan.jarirLimit,
         responseOffers:plan.returnLimit,
+        perWaveResults:plan.resultLimit,
       },
       fallbackUsed: Boolean(fallbackQuery),
       partial:deadlineExceeded || errors.length>0,

@@ -47,6 +47,7 @@ const state = {
   nextCursor: null,
   overflowCursor: null,
   waveOverflowUnavailable: false,
+  resultWindowCapped: false,
   eventSource: null,
   remoteLoading: false,
   remoteExhausted: false,
@@ -1160,6 +1161,8 @@ function renderProduct(product, query) {
 
     ${state.nextCursor || state.overflowCursor ? `<div class="remote-more"><button type="button" class="show-category" id="loadMoreRemote" ${state.remoteLoading ? "disabled" : ""}>${state.remoteLoading ? "جاري جلب النتائج…" : state.overflowCursor ? "عرض بقية النتائج المكتشفة" : "جلب نتائج إضافية من مصادر أكثر"}</button><small>${state.overflowCursor ? "يكمل نفس نتائج البحث دون إعادة طلب المتاجر أو تغيير الأسعار المرصودة." : "يوسّع نطاق البحث إلى مصادر إضافية."}</small></div>` : state.waveOverflowUnavailable ? '<div class="remote-more exhausted"><small>تعذر حفظ بقية النتائج المكتشفة ضمن حدود ذاكرة الخادم؛ أعد البحث لاستعادتها، وهذا لا يعني نفاد مخزون المتاجر.</small></div>' : state.remoteExhausted ? '<div class="remote-more exhausted"><small>وصلنا إلى أعمق نطاق بحث متاح حاليًا لهذه الجلسة.</small></div>' : ""}
 
+    ${state.resultWindowCapped ? '<div class="remote-more exhausted"><small>بلغ البحث حد ١٠٠٠ نتيجة مؤهلة ضمن إحدى موجات المصادر؛ قد تبقى نتائج إضافية خارج هذا الحد، ولا يعني ذلك نفاد المنتجات في المتاجر.</small></div>' : ''}
+
     ${secondarySections.map(section=>additionalResultsSection(section.label,section.groups)).join('')}
 
     <div class="integrity-note">
@@ -1321,6 +1324,7 @@ async function loadMoreRemote(query) {
       if (Array.isArray(data.offers)) recordPriceHistory(data.offers);
       if (!sameWave || data.nextCursor !== undefined)cursor=data.nextCursor || null;
       pageCursor=data.overflowCursor || null;
+      if(data.coverage?.resultLimitReached===true) state.resultWindowCapped=true;
       if(data.coverage?.overflowUnavailable===true){
         state.waveOverflowUnavailable=true;
         cursor=null;pageCursor=null;
@@ -1338,6 +1342,8 @@ async function loadMoreRemote(query) {
     if (lastData?.errors?.length) completionStatus += " · بعض المصادر أعادت نتائج جزئية";
     if(state.waveOverflowUnavailable)
       completionStatus += " · لم يمكن حفظ بقية نتائج الموجة؛ أعد البحث لاستعادتها.";
+    if(state.resultWindowCapped)
+      completionStatus += " · إحدى موجات البحث تجاوزت حد ١٠٠٠ نتيجة، وقد تبقى نتائج خارج النطاق المعروض.";
   } catch (error) {
     if (requestId !== state.requestId) return;
     console.warn("NAWAA remote expansion failed",error);
@@ -1386,6 +1392,7 @@ async function runSearch(rawQuery) {
   state.nextCursor = null;
   state.overflowCursor = null;
   state.waveOverflowUnavailable = false;
+  state.resultWindowCapped = false;
   state.remoteLoading = false;
   state.remoteExhausted = false;
   saveRecent(query);
@@ -1510,6 +1517,7 @@ async function runSearch(rawQuery) {
       state.nextCursor = data.nextCursor || null;
       state.overflowCursor = data.overflowCursor || null;
       state.waveOverflowUnavailable = data.coverage?.overflowUnavailable === true;
+      state.resultWindowCapped = data.coverage?.resultLimitReached === true;
       if(state.waveOverflowUnavailable){
         // Never silently advance beyond unretained results within a wave.
         state.nextCursor=null;state.overflowCursor=null;
@@ -1537,6 +1545,8 @@ async function runSearch(rawQuery) {
         if (coverageNotice) els.status.textContent += " · " + coverageNotice;
         if(state.waveOverflowUnavailable)
           els.status.textContent += " · لم يمكن حفظ بقية نتائج هذه الموجة؛ أعد البحث ولا تعتبرها غير متوفرة.";
+        if(state.resultWindowCapped)
+          els.status.textContent += " · سعة هذه الموجة ١٠٠٠ نتيجة، وقد توجد نتائج أخرى خارجها.";
         else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";
         return;
       }
