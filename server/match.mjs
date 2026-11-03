@@ -27,7 +27,16 @@ export function dedupeNormalizedOffers(offers = []) {
     const condition=String(offer.condition||"new").trim().toLowerCase();
     const seller=String(offer.seller?.name||offer.merchant||"").trim();
     const stableListingId=String(offer.sourceListingId||"").trim();
-    const identity=[offer.provider,country,condition,physicalSku,model,seller];
+    // Explicit customer-selectable variants may share one product-page URL,
+    // identical titles and even a merchant SKU. Never fuse known differing specs.
+    const specs=offer.specs||{};
+    const variantFields=[
+      offer.variantId,offer.sourceMeta?.variantId,
+      specs.storage,specs.ram,specs.color,specs.size,
+      specs.screenSize,specs.processor,specs.network,
+      specs.sim,specs.edition,
+    ].map(value=>value==null?"":typeof value==="object"?JSON.stringify(value):String(value));
+    const identity=[offer.provider,country,condition,physicalSku,model,seller,...variantFields];
     const key=stableListingId
       ? normalizeSearchText([...identity,"listing",stableListingId].join("|"))
       : normalizeSearchText([
