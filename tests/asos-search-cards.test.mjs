@@ -97,7 +97,7 @@ test("never promote prices from carousel, rejected cards or invalid currency",()
 test("rejects inconsistent accessible sale prices and inverted discounts",()=>{
   const bad=product("206633512","Nike shoes",{price:"£139.99",was:"£109.99"});
   const inconsistent=product("202389207","Nike shoes",{price:"£89.99",was:"£109.99"})
-    .replace('current price: £89.99','current price: £9.99');
+    .replaceAll('current price: £89.99','current price: £9.99');
   const r=parse(page(bad,inconsistent));
   assert.equal(r.candidates.length,0);
   assert.equal(r.diagnostics.rejectedCards,2);
