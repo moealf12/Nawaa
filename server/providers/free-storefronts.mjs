@@ -1255,7 +1255,9 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeou
         "upgrade-insecure-requests":"1",
         "user-agent":USER_AGENT,
       }),
-      redirect:"follow",
+      // ASOS source requests must never follow potentially off-origin redirects.
+      // Other merchants retain the legacy fetch behavior.
+      redirect:storeId==="asos-global"?"manual":"follow",
       signal:requestSignal,
     },{sourceId:storeId});
     if(amazon)headersMs=Math.round(performance.now()-start);
