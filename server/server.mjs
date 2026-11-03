@@ -43,6 +43,7 @@ import { normalizeIngestBatch } from "./ingestion.mjs";
 import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
+import {createSearchWavePages} from "./search-wave-pages.mjs";
 import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
@@ -322,6 +323,23 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
   };
 }
 
+// A depth cursor acquires more merchants; an overflow cursor replays only
+// the remainder of the exact immutable, customer-safe acquired wave.
+const searchWavePages=createSearchWavePages();
+function withWavePagination(result,query,depth,allOffers,pageSize){
+  const approved=enforceCustomerOfferPublication({...result,offers:allOffers}).offers;
+  const first=approved.slice(0,pageSize);
+  const {cursor,unavailable}=searchWavePages.remember(query,depth,approved,pageSize,result);
+  return {...result,offers:first,overflowCursor:cursor,
+    coverage:{...result.coverage,
+      availableOffers:approved.length,returnedOffers:first.length,
+      returnedMerchants:new Set(first.map(offerMerchantKey)).size,
+      truncated:approved.length>first.length,
+      overflowUnavailable:unavailable,
+      wavePage:{offset:0,returned:first.length,total:approved.length,
+        remaining:approved.length-first.length}}};
+}
+
 async function searchExpansion(query, depth, {signal} = {}) {
   query = normalizeSearchQuery(query);
   const plan = acquisitionPlan(depth, configuredFreeStorefronts().length);
@@ -379,7 +397,7 @@ async function searchExpansion(query, depth, {signal} = {}) {
   const sourceFailures=summarizeSourceFailures(errors);
   const partial=errors.length>0 || sourceFailures.errorsReported>0;
   const sources=currentSources();
-  return {
+  const waveResult = {
     providersConfigured:configuredProviders(),
     coverage:{
       ...sourceCoverageSummary(sources),
@@ -413,6 +431,7 @@ async function searchExpansion(query, depth, {signal} = {}) {
     offers:selectedOffers,
     errors,
   };
+  return withWavePagination(waveResult, query,depth,allSelectedOffers,plan.returnLimit);
 }
 
 function progressiveSnapshot(query, offers, providers, errors, progress = {}) {
@@ -564,7 +583,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   const allSelectedOffers=selectDiverseOffers(assessed,Infinity);
   const selectedOffers=allSelectedOffers.slice(0,plan.returnLimit);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
-  return {
+  const waveResult = {
     providersConfigured:configuredProviders(),
     coverage:{
       ...sourceCoverageSummary(currentSources()),
@@ -588,6 +607,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
     offers:selectedOffers,
     errors,
   };
+  return withWavePagination(waveResult, query,0,allSelectedOffers,plan.returnLimit);
 }
 
 async function searchAll(query, { depth = 0, signal } = {}) {
@@ -847,7 +867,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   // are ready; failures are intentionally isolated from the search request.
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind === "live")).catch(() => {});
 
-  return {
+  const waveResult = {
     providersConfigured: configuredProviders(),
     coverage: {
       ...sourceCoverageSummary(sources),
@@ -885,6 +905,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
     offers: selectedOffers,
     errors,
   };
+  return withWavePagination(waveResult, query,0,allSelectedOffers,plan.returnLimit);
 }
 
 const searchCacheKey = (query, depth) => JSON.stringify([query, depth]);
@@ -911,7 +932,7 @@ function enforceRateLimit(req, res, scope, policy, origin = "*") {
 const ebayDeletion = createEbayDeletionHandler({
   token: process.env.EBAY_DELETION_VERIFICATION_TOKEN,
   endpoint: process.env.EBAY_DELETION_ENDPOINT,
-  onDelete: () => cachedSearch.clear("ebay_deletion"),
+  onDelete: () => { cachedSearch.clear("ebay_deletion"); searchWavePages.clear(); },
 });
 const internalAudit = createInternalAuditHandler();
 
@@ -982,6 +1003,7 @@ const server = http.createServer(async (req, res) => {
       const records=[];
       for(const offer of valid) records.push(await recordOffer({...offer,sourceName:source,query:source}));
       cachedSearch.clear("ingest");
+      searchWavePages.clear();
       return jsonResponse(res,201,{accepted:valid.length,recorded:records.length},origin||"*");
     } catch(error) {
       const message=error instanceof Error?error.message:String(error);
@@ -1180,6 +1202,34 @@ const server = http.createServer(async (req, res) => {
         res.end();
       }
       return;
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/search" &&
+      url.searchParams.has("pageCursor")) {
+    if (!enforceRateLimit(req,res,"search-wave-page",
+        {capacity:30,refillPerSecond:0.5},origin||"*"))return;
+    const q=String(url.searchParams.get("q")||"").trim();
+    const token=String(url.searchParams.get("pageCursor")||"");
+    if(q.length<2||q.length>180||url.searchParams.has("cursor")||
+        url.searchParams.has("url"))
+      return jsonResponse(res,400,{error:"invalid_wave_cursor"},origin||"*");
+    const normalized=normalizeSearchQuery(q);
+    try{
+      const page=searchWavePages.page(normalized,token);
+      const safe=await canonicalResponse(page,normalized);
+      const nextCursor=page.acquisitionDepth<MAX_SEARCH_DEPTH
+        ?encodeSearchCursor(normalized,page.acquisitionDepth+1):null;
+      res.setHeader("cache-control","no-store");
+      return jsonResponse(res,200,{query:q,comparisonQuery:null,
+        destinationCountry:"SA",observedAt:new Date().toISOString(),
+        nextCursor,...safe},origin||"*");
+    }catch(error){
+      const code=String(error?.message||"");
+      const expired=code==="expired_wave_cursor"||
+        code==="wave_snapshot_unavailable";
+      return jsonResponse(res,expired?410:400,
+        {error:expired?"wave_cursor_expired":"invalid_wave_cursor"},origin||"*");
     }
   }
 
