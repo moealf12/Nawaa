@@ -3,8 +3,8 @@
 // Concurrency=2; no retries, scraping, browser spoofing, secret or production writes.
 import {readFileSync,writeFileSync} from "node:fs";
 import {createHash} from "node:crypto";
-import {groupComparableOffers,buildDiscoverySections} from "../src/search-core.mjs";
-import {parseSearchIntent} from "../src/search-query.mjs";
+import {groupComparableOffers} from "../src/search-core.mjs";
+import {buildSearchPresentationSections} from "../src/search-result-presentation.mjs";
 import {provisionalLabel} from "./verify-r04-live-ranking.mjs";
 import {validateR04Corpus,summarizeR04Judgments,summarizeR04LiveEvidence} from "./r04-full-corpus-contract.mjs";
 
@@ -59,7 +59,10 @@ function publicSourceRef(value){
 async function probe(q){
   const row={id:q.id,language:q.language,group:q.group,query:q.query,
     status:"NOT_RUN",offers:0,groupCount:0,firstTen:[],judgments:null,partial:null,
-    sourceErrors:null,pending:null,cacheMode:null,elapsedMs:null,reason:null};
+    sourceErrors:null,sourceFailureTypes:null,pending:null,cacheMode:null,
+    elapsedMs:null,serverDurationMs:null,deadlineExceeded:null,
+    primaryGroups:null,relatedGroups:null,presentedGroups:null,
+    relatedLanes:null,firstRelated:[],reason:null};
   try{
     const response=await fetchJson("/api/search?q="+encodeURIComponent(q.query));
     row.elapsedMs=response.elapsedMs;
@@ -71,14 +74,30 @@ async function probe(q){
     row.sourceErrors=Array.isArray(body.errors)?body.errors.length:null;
     row.pending=body.coverage?.providersPending??null;
     row.cacheMode=body.cache?.mode??null;
+    row.serverDurationMs=Number.isFinite(body.durationMs)?body.durationMs:null;
+    row.deadlineExceeded=body.coverage?.deadlineExceeded===true;
+    row.sourceFailureTypes=body.coverage?.sourceFailures?.types??null;
     const allGroups=groupComparableOffers(body.offers,"lowest");
     row.groupCount=allGroups.length;
-    const intent=parseSearchIntent(q.query);
-    const exactGroups=allGroups.filter(g=>g.bestOffer?.exactMatch===true&&
-      (g.bestOffer?.matchConfidence||0)>=0.9 &&
-      g.bestOffer?.condition===(intent.condition||"new"));
-    const sections=buildDiscoverySections(q.query,exactGroups);
-    const firstTen=sections.flatMap(s=>s.groups.slice(0,10)).slice(0,10);
+    // Precisely the same partition used by src/search-page.mjs, not an
+    // independently invented strict-threshold surrogate for the customer UI.
+    const presentation=buildSearchPresentationSections(q.query,allGroups);
+    const {discoverySections,exactGroups,secondarySections,relatedGroups,
+      partitionedGroups}=presentation;
+    if(partitionedGroups!==allGroups.length)
+      throw Error("PRESENTATION_PARTITION_LOSS");
+    row.primaryGroups=exactGroups.length;
+    row.relatedGroups=relatedGroups.length;
+    row.presentedGroups=partitionedGroups;
+    row.relatedLanes=Object.fromEntries(secondarySections.map(section=>
+      [section.key,section.groups.length]));
+    // Preserve an inspectable, bounded sample of alternatives. Never promote
+    // these into ranking metrics for certified principal matches.
+    row.firstRelated=relatedGroups.slice(0,3).map(group=>({
+      title:safe(group.bestOffer?.title),
+      merchant:safe(group.bestOffer?.merchant),
+    }));
+    const firstTen=discoverySections.flatMap(s=>s.groups.slice(0,10)).slice(0,10);
     const kind=knownKinds.get(q.id)||null;
     row.firstTen=firstTen.map((group,rank)=>{
       const offer=group.bestOffer||{};
@@ -91,14 +110,21 @@ async function probe(q){
         sourcePathDigest:source.pathHash,judgment:label};
     });
     row.judgments=summarizeR04Judgments(row.firstTen.map(x=>x.judgment));
-    if(!firstTen.length)row.reason="NO_STRICT_UI_GROUPS_TO_JUDGE";
+    if(!firstTen.length)
+      row.reason=relatedGroups.length
+        ?"NO_VERIFIED_PRINCIPAL_RELATED_RESULTS_PRESENT"
+        :"NO_PRESENTED_RESULT_GROUPS";
   }catch(e){
     row.status="REQUEST_FAILED";row.reason=safe(e?.name||"UNKNOWN_ERROR");
   }
   console.log("R04_36_QUERY "+JSON.stringify({id:row.id,status:row.status,offers:row.offers,
-    groups:row.groupCount,visible:row.firstTen.length,judged:row.judgments?.judged??0,
+    groups:row.groupCount,primaryGroups:row.primaryGroups,
+    relatedGroups:row.relatedGroups,relatedLanes:row.relatedLanes,
+    visible:row.firstTen.length,judged:row.judgments?.judged??0,
     unjudged:row.judgments?.unjudged??0,metric:row.judgments?.status,
-    partial:row.partial,sourceErrors:row.sourceErrors,elapsedMs:row.elapsedMs,
+    partial:row.partial,sourceErrors:row.sourceErrors,
+    sourceFailureTypes:row.sourceFailureTypes,serverDurationMs:row.serverDurationMs,
+    deadlineExceeded:row.deadlineExceeded,elapsedMs:row.elapsedMs,
     reason:row.reason}));
   return row;
 }
@@ -120,7 +146,14 @@ report.completedAt=new Date().toISOString();
 report.summary=summarizeR04LiveEvidence(report.rows.filter(Boolean),{
   expectedSha:EXPECTED,observedSha:report.healthAfter?.revision??null,
 });
-report.summary.resultsWithoutStrictUiGroups=report.rows.filter(x=>x?.status==="OBSERVED"&&!x.firstTen?.length).map(x=>x.id);
+report.summary.resultsWithoutStrictUiGroups=report.rows.filter(x=>x?.status==="OBSERVED"&&
+  x.primaryGroups===0).map(x=>x.id);
+report.summary.resultsWithOnlyRelatedGroups=report.rows.filter(x=>
+  x?.status==="OBSERVED"&&x.primaryGroups===0&&x.relatedGroups>0).map(x=>x.id);
+report.summary.resultsWithNoPresentedGroups=report.rows.filter(x=>
+  x?.status==="OBSERVED"&&x.presentedGroups===0).map(x=>x.id);
+report.summary.partitionedWithoutLoss=report.rows.every(x=>
+  x?.status!=="OBSERVED"||x.presentedGroups===x.groupCount);
 report.summary.observedOffers=report.rows.reduce((n,x)=>n+(x?.offers||0),0);
 report.summary.corpusFrozen=validateR04Corpus(corpus).pass;
 report.summary.result=!report.fatal&&report.summary.evidenceCollected?"EVIDENCE_COLLECTED":"COLLECTION_FAILED";
