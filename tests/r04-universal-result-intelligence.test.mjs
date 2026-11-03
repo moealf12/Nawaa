@@ -28,7 +28,7 @@ test("R04 universal: false exacts are placed into the sold-subject lane, not era
   ["office chair","Ergonomic Office Chair with Lumbar Support","direct"],
   ["office chair","Office Chair Height Lock Bracket Repair Kit","accessory"],
   ["coffee beans","Brazil Arabica Whole Coffee Beans 1kg","direct"],
-  ["coffee beans","Barista Coffee Grinder with Burr","other"],
+  ["coffee beans","Barista Coffee Grinder with Burr","accessory"],
   ["JBL headphones","JBL Wireless Bluetooth Headphones 760NC","direct"],
   ["JBL headphones","JBL Headphones Replacement Ear Cushions","accessory"],
   ["HP laptop","HP Pavilion 15 Laptop 16GB RAM 512GB SSD","direct"],
