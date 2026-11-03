@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - 'server/match.mjs'
+      - 'src/search-page.mjs'
+      - 'src/search-result-presentation.mjs'
+      - 'tests/r04-p32-search-presentation-parity.test.mjs'
       - 'scripts/r04-full-corpus-contract.mjs'
       - 'scripts/r04-36-live-corpus-evidence.mjs'
       - 'tests/r04-full-corpus-contract.test.mjs'

@@ -15,7 +15,7 @@ import {
 } from "./search-core.mjs";
 import {selectSearchStreamResult,needsExtraSourceRecovery,mergeExtraSourceRecovery,needsEmptyPartialRecovery,mergeEmptyPartialRecovery} from "./search-stream.mjs";
 import {coverageStatusText} from "./search-coverage-status.mjs";
-import {buildIntentAwareResultLanes} from "./search-result-intelligence.mjs";
+import {buildSearchPresentationSections} from "./search-result-presentation.mjs";
 import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
 
 const $ = (selector) => document.querySelector(selector);
@@ -936,53 +936,16 @@ function renderProduct(product, query) {
   const summary = summarizeOffers(product.offers);
   const groups = groupComparableOffers(filteredOffers, state.mode);
 
-  const intent = parseSearchIntent(isLikelyUrl(query) ? product.model : query);
-  // Partition every acquired comparable identity into the shopper's
-  // requested product, alternatives, independently sold accessories, guides
-  // or lower-evidence results. Never erase a group because it is not exact.
-  // URL comparison must classify against the resolved product identity, not
-  // literal https://... tokens. Preserve the existing URL deep-link flow.
-  const classificationQuery = isLikelyUrl(query) ? (product.model || product.nameAr || query) : query;
-  const classified = buildIntentAwareResultLanes(classificationQuery, groups);
-  const directGroups = classified.primaryGroups.filter(group=>
-    group.bestOffer?.condition === (intent.condition || "new"));
-  const discoverySections = buildDiscoverySections(query, directGroups);
-  // An exact, title-evidenced complete principal can be mistaken for a
-  // peripheral by a broad source category regex (e.g. a complete PS5 console
-  // with an INCLUDED USB hub). Do not lose the fully identified principal
-  // solely because a secondary included noun was indexed as accessory.
-  // Direct classification already checks the actual sold retail title,
-  // shopper role and model. A standalone hub never reaches this branch.
-  if(intent.category){
-    const allocated = new Set(discoverySections.flatMap(section=>section.groups).map(g=>g.key));
-    const disputed = directGroups.filter(group=>!allocated.has(group.key) &&
-      group.bestOffer?.exactMatch===true &&
-      (group.bestOffer?.matchConfidence||0)>=0.9);
-    if(disputed.length){
-      let primarySection=discoverySections.find(section=>section.key===intent.category);
-      if(!primarySection){
-        primarySection={key:intent.category,label:categoryLabel(intent.category),groups:[]};
-        discoverySections.push(primarySection);
-      }
-      const allowed=new Set([...primarySection.groups,...disputed].map(g=>g.key));
-      primarySection.groups=directGroups.filter(g=>allowed.has(g.key));
-    }
-  }
-  const exactGroups = discoverySections.flatMap(section=>section.groups);
-  const displayedSections = state.category === 'all' ? discoverySections : discoverySections.filter(section => section.key === state.category);
-  const selectorGroups = state.selectedGroupKey ? exactGroups.filter(group => group.key === state.selectedGroupKey) : exactGroups;
-  const selectorGroupKeys = new Set(exactGroups.map(group=>group.key));
-  // Even an inconsistent source category or an unavailable condition must
-  // remain reachable in another section; this preserves 100% partitioning.
-  const unplacedDirect = groups.filter(group=>
-    classified.primaryGroups.includes(group) && !selectorGroupKeys.has(group.key));
-  const secondarySections = classified.secondarySections.map(section=>({...section,groups:[...section.groups]}));
-  if(unplacedDirect.length){
-    const alternatives=secondarySections.find(section=>section.key==="alternative");
-    if(alternatives)alternatives.groups.push(...unplacedDirect);
-    else secondarySections.unshift({key:"alternative",label:"منتجات مشابهة وبدائل",groups:unplacedDirect});
-  }
-  const relatedGroups = secondarySections.flatMap(section=>section.groups);
+  // Share EXACT customer section construction with the production audit.
+  // Weakly matched offers are kept in secondary lanes, not silently erased.
+  const classificationQuery=isLikelyUrl(query)
+    ? (product.model||product.nameAr||query):query;
+  const {intent,discoverySections,exactGroups,secondarySections,relatedGroups}=
+    buildSearchPresentationSections(query,groups,{classificationQuery});
+  const displayedSections=state.category==="all"
+    ? discoverySections:discoverySections.filter(section=>section.key===state.category);
+  const selectorGroups=state.selectedGroupKey
+    ? exactGroups.filter(group=>group.key===state.selectedGroupKey):exactGroups;
   // Duplicate-looking names can refer to distinct regional manufacturer
   // models or unverified merchant SKUs. Annotate rather than merge them.
   const cardNameCounts = new Map();

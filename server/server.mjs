@@ -110,6 +110,7 @@ const STATIC_FILES = new Map([
   ["/src/search-core.mjs", "src/search-core.mjs"],
   ["/src/search-query.mjs", "src/search-query.mjs"],
   ["/src/search-result-intelligence.mjs", "src/search-result-intelligence.mjs"],
+  ["/src/search-result-presentation.mjs", "src/search-result-presentation.mjs"],
   ["/src/search-stream.mjs", "src/search-stream.mjs"],
   ["/src/search-coverage-status.mjs", "src/search-coverage-status.mjs"],
   ["/src/product-page.mjs", "src/product-page.mjs"],

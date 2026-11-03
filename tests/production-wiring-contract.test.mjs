@@ -33,12 +33,12 @@ test("both published entrypoints resolve to the same Render API and local candid
   assert.equal(resolved.quoteHost,"nawaa-store-jeddah.moezz12.chatgpt.site");
 });
 
-test("live wiring audit verifies twenty-two published asset copies plus revision and CORS, without merchant requests",async()=>{
+test("live wiring audit verifies twenty-six published asset copies plus revision and CORS, without merchant requests",async()=>{
   const {fn,calls}=fakeFetch();
   const res=await verifyPublishedWiring({fetchImpl:fn,files:original,expectedSha:SHA});
   assert.equal(res.result,"PASS");
-  assert.equal(res.assetPairsVerified,22);
-  assert.equal(calls.length,24);
+  assert.equal(res.assetPairsVerified,26);
+  assert.equal(calls.length,28);
   assert.ok(calls.every(x=>x.url.startsWith(PAGES+"/")||x.url.startsWith(API+"/")));
   assert.equal(calls.some(x=>x.url.includes("/api/search")),false);
   assert.equal(calls.some(x=>x.url.includes("unbxd")||x.url.includes("jarir.com")),false);

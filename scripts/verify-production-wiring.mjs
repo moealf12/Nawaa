@@ -16,6 +16,7 @@ const ASSETS=Object.freeze([
   "index.html","config.js","search.html","src/search-page.mjs",
   "product.html","src/product-page.mjs",
   "src/search-core.mjs","src/search-query.mjs","src/search-stream.mjs",
+  "src/search-result-intelligence.mjs","src/search-result-presentation.mjs",
   "src/search-coverage-status.mjs","src/product-card-presentation.mjs"
 ]);
 const sha256=x=>createHash("sha256").update(x).digest("hex");
