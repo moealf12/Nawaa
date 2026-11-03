@@ -96,5 +96,5 @@ test("R04 P3: unavailable DB is NOT merchant out of stock",()=>{
  assert.equal(unavailable.status,"failed");
  assert.equal(unavailable.error,"catalog_recall_unavailable");
  assert.equal(unavailable.exhaustive,false);
- assert.equal(summarizeCatalogRecall({configured:false,offers:[]},pages[0]).status,"unconfigured");
+ assert.equal(summarizeCatalogRecall({configured:false,offers:[]},catalogRecallPlan(0)).status,"unconfigured");
 });
