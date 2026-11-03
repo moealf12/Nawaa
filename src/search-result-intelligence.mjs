@@ -6,8 +6,8 @@ import {normalizeSearchQuery, parseSearchIntent, productCategory} from "./search
 // These are *retail sold-subject* roles, not product-specific exclusion rules.
 // Evidence is taken from the actual retail title before any "with/including"
 // package extras. Do not use SEO URL or merchant/brand metadata to promote.
-const GUIDE=/(?:^| )(?:user (?:guide|manual)|(?:visual|comparison|mastering|setup|beginner'?s?|seniors?|instruction|step by step|complete) (?:guide|manual)|handbook|how to (?:use|master)|book(?:s)?|tutorial|guia (?:del )?usuario|gu[ií]a del usuario|guida utente|manual de usuario|دليل|كتاب|كتيب)(?: |$)/iu;
-const ACCESSORY=/(?:^| )(?:replacement|compatible with|compatible for|protective|protector|screen protector|tempered glass|case|cover|strap|band|wristband|watchband|bracelet|loop band|holder|mount|dock|docking stand|filter|hose|wand|nozzle|attachment|brush head|cleaner head|spare|spare part|repair|charger|charging cable|lens|tripod|gimbal|housing|shell|funda|protectora|pantalla|pelicula|pel[ií]cula|cargador|correa|سوار|حزام|فلتر|غطاء|حامل|حمايه|شاحن|عدسه|قطعه غيار|كفر|جراب)(?: |$)/iu;
+const GUIDE=/(?:^| )(?:guide for (?:seniors?|beginners?)|user (?:guide|manual)|(?:visual|comparison|mastering|setup|beginner'?s?|seniors?|instruction|step by step|complete) (?:guide|manual)|handbook|how to (?:use|master)|book(?:s)?|tutorial|guia (?:del )?usuario|gu[ií]a del usuario|guida utente|manual de usuario|دليل|كتاب|كتيب)(?: |$)/iu;
+const ACCESSORY=/(?:^| )(?:replacement|compatible with|compatible for|protective|protector|screen protector|tempered glass|case|cover|strap|band|wristband|watchband|bracelet|loop band|holder|mount|dock|docking stand|filter|hose|wand|nozzle|attachment|brush head|cleaner head|spare|spare part|repair|controller|charger|charging cable|lens|tripod|gimbal|housing|shell|funda|protectora|pantalla|pelicula|pel[ií]cula|cargador|correa|سوار|حزام|فلتر|غطاء|حامل|حمايه|شاحن|عدسه|قطعه غيار|كفر|جراب)(?: |$)/iu;
 const ACCESSORY_NOUN=/(?:^| )(?:lens|filters?|wands?|cases?|covers?|holders?|straps?|bands?|loops?|hoses?|nozzles?|tripods?|gimbals?|protectors?|chargers?|attachments?|brushes?|mop heads?|screen glass|disc drive|optical drive|controllers?|مستلزمات|ملحقات|اكسسوارات|سوار|عدسه|فلتر|غطاء|شاحن)(?: |$)/iu;
 const PRINCIPAL=/(?:^| )(?:camera body|mirrorless camera|digital camera|dslr camera|vacuum cleaner|cordless vacuum|robot vacuum|smartwatch|watch series|iphone|smartphone|mobile phone|console|gaming console|office chair|coffee beans|whole beans|laptop|notebook|headphones?|earbuds?|speaker|television|tv|washing machine|refrigerator|perfume|necklace|jewellery|jewelry|ساعة|كاميرا|مكنسه|هاتف|لابتوب)(?: |$)/iu;
 const EXCLUSIONS_FOR_QUERY=/(?:^| )(?:replacement|accessory|spare|filter|lens|case|cover|strap|band|holder|guide|manual|book|protector|gimbal|wand|charger|controller|disc drive|optical drive|ملحقات|اكسسوارات|قطع غيار|فلتر|عدسه|غطاء|سوار|كتاب|دليل)(?: |$)/iu;
@@ -40,9 +40,9 @@ export function inferSoldSubjectRole(title=""){
    return "guide";
  // An explicit sold accessory/part is an accessory even when a compatible
  // principal model is also mentioned in the SEO title.
- const strongPart=/\b(?:replacement|compatible_to|protector|protectora|funda|strap|bands?|holder|filters?|wand|attachment|mop head|screen glass|charger|spare parts?|gimbal|tripod|lens)\b/.test(primary) ||
+ const strongPart=/\b(?:replacement|compatible_to|protector|protectora|funda|strap|bands?|holder|filters?|wand|attachment|mop head|screen glass|charger|spare parts?|gimbal|tripod|lens|controller)\b/.test(primary) ||
    /(?:ملحقات|اكسسوارات|قطع غيار|فلتر|حمايه|حامل|سوار|كفر)/u.test(primary);
- const completeFirst=/\b(?:camera body|mirrorless camera|digital camera|vacuum cleaner|cordless vacuum|smartwatch|office chair|iphone|laptop|console)\b/.test(primary.split(/\b(?:replacement|compatible_to|protectora|protector|holder|filter|strap|band|wand)\b/,1)[0]);
+ const completeFirst=/\b(?:camera body|mirrorless camera|digital camera|vacuum cleaner|cordless vacuum|smartwatch|office chair|iphone|laptop|console)\b/.test(primary.split(/\b(?:replacement|compatible_to|protectora|protector|holder|filter|strap|band|wand|lens|controller|gimbal|tripod|charger)\b/,1)[0]);
  if(strongPart && !completeFirst)return "accessory";
  if(ACCESSORY.test(primary) && !whole)return "accessory";
  // "Canon RF50mm" or "Nikon 50mm" are separately sold lenses, not camera
