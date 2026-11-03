@@ -183,7 +183,7 @@ function searchPayload(q,cursor) {
   }
   if(q==='iPhone 17'||q.includes('fixture-iphone-models')) {
     const template=offer(1);
-    const first={...template,merchant:'eXtra',title:'Apple iPhone 17 256GB Black',
+    const first={...template,merchant:'eXtra',title:q.includes('fixture-iphone-models') ? 'Fixture iPhone Models Apple iPhone 17 256GB Black' : 'Apple iPhone 17 256GB Black',
       sourceUrl:'https://www.example.org/iphone-model-a',
       specs:{brand:'Apple',deviceType:'iPhone 17',storage:'256GB',color:'Black',modelNumber:'MG674AH/A'}};
     const second={...first,merchant:'Jarir',
