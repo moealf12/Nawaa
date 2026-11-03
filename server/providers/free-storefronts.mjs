@@ -1228,7 +1228,10 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeou
       if(!access.allowed){
         const denied=access.failureClass==="HTTP_403_ACCESS_DENIED";
         const error=new Error(denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN");
-        error.failureClass=denied?"HTTP_403_ACCESS_DENIED":"HTTP_429_RATE_LIMITED";
+        // This is a local policy short-circuit, NOT a fresh upstream HTTP
+        // response. Distinguish it from a merchant-observed 403/429 in all
+        // downstream source forensics while preserving partial coverage.
+        error.failureClass=denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN";
         throw error;
       }
     }
