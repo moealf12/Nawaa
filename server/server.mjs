@@ -51,6 +51,7 @@ import {prepareSearchResultWindow} from "./search-result-window.mjs";
 import {summarizeWaveSourceEvidence} from "./search-coverage-evidence.mjs";
 import {scheduleCatalogWrite} from "./catalog-write-through.mjs";
 import {catalogRecallPlan,summarizeCatalogRecall} from "./catalog-recall-evidence.mjs";
+import {createBoundedCatalogRecall} from "./catalog-recall-budget.mjs";
 
 function writeObservedLiveCatalog(query, offers){
   // Never wait on the optional storage accelerator or let a failing DB
@@ -63,13 +64,18 @@ function writeObservedLiveCatalog(query, offers){
       }));
   }).catch(()=>console.warn("NAWAA_CATALOG_WRITE_FAILED"));
 }
-function safeCatalogRecall(query,depth){
+// The historical 12-second request deadline is for merchant evidence, not
+// optional DB pool waits. Read-side catalog costs are bounded and shared across
+// JSON, SSE, and cursor expansion; no unbounded queue is admitted to the pool.
+const boundedCatalogRecall=createBoundedCatalogRecall({
+  read:searchPersistedOffers,configured:persistenceConfigured,
+  budgetMs:1200,maxInFlight:2,
+});
+function safeCatalogRecall(query,depth,signal){
   const plan=catalogRecallPlan(depth);
-  if(OMEGA_INDEX_ONLY||!persistenceConfigured())
+  if(OMEGA_INDEX_ONLY)
     return Promise.resolve({configured:false,offers:[],fetchedRows:0});
-  return searchPersistedOffers(query,plan).catch(()=>({
-    configured:true,offers:[],error:"catalog_recall_unavailable",
-  }));
+  return boundedCatalogRecall(query,plan,{signal});
 }
 
 import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
@@ -412,7 +418,7 @@ async function searchExpansion(query, depth, {signal} = {}) {
         error:"index_recall_unavailable"}));
   const catalogPage=catalogRecallPlan(depth);
   const [amazon,storefront,indexEvidence,catalogEvidence]=await Promise.all([
-    amazonPromise,storefrontPromise,indexPromise,safeCatalogRecall(query,depth),
+    amazonPromise,storefrontPromise,indexPromise,safeCatalogRecall(query,depth,signal),
   ]);
   const providers=[];
   const errors=[];
@@ -558,7 +564,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   // are never allowed to postpone stream completion indefinitely.
   const localPromise=Promise.all([
     searchIndexedOffers(query).catch(()=>({offers:[]})),
-    safeCatalogRecall(query,0),
+    safeCatalogRecall(query,0,controller.signal),
   ]).then(async ([indexed,persisted])=>{
     localCatalogEvidence=persisted;
     localSettled=true;
@@ -811,7 +817,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       () => ({ configured:false, offers:[] }),
     )),
     observeBarrier("persisted",beforeRequestDeadline(
-      () => safeCatalogRecall(query,0),
+      () => safeCatalogRecall(query,0,requestController.signal),
       () => ({ configured:persistenceConfigured(), offers:[],error:"catalog_deadline_exceeded" }),
     )),
   ]);
