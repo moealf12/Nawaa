@@ -96,6 +96,16 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
 
 /* Hero-only hologram phase: no changes to search, pricing or product cards. */
 .hero-center{width:100%;min-width:0;display:flex;flex-direction:column;align-items:center;position:relative}
+
+/* Keep the approved title visually separate from the luminous sculpture on all screens. */
+.hero-center .hero-visual{height:clamp(355px,32vw,470px);min-height:355px;max-height:none}
+.hero-center .hero-title{position:relative;left:auto;bottom:auto;transform:none;width:100%;max-width:100%;margin:-9px auto 12px;padding:0 8px}
+.hero-center .hero-title h1{font-size:clamp(54px,6.7vw,98px);line-height:1.12;letter-spacing:-.045em}
+.hero-center .hero-title h1 span{color:#d6bbff;-webkit-text-stroke:0;font-weight:750}
+.hero-center .hero-title small{font-size:9px;letter-spacing:.17em}
+@media(max-width:900px){
+ .hero-center .hero-visual{height:55svh;min-height:400px;max-height:500px}
+}
 .hero-center .hero-visual{width:100%;--tilt-x:0deg;--tilt-y:0deg;--glare-x:50%;--glare-y:50%;--hero-scroll-y:0px;--hero-scroll-rot:-5deg}
 .hero-tilt{position:relative;width:min(640px,88%);height:100%;display:grid;place-items:center;transform-style:preserve-3d;transform:perspective(1050px) translate3d(0,var(--hero-scroll-y),0) rotateZ(var(--hero-scroll-rot)) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));transition:transform .25s cubic-bezier(.18,.75,.2,1);touch-action:pan-y;isolation:isolate}
 .hero-tilt .hero-sculpture{display:block;width:100%;height:100%;max-height:100%;object-fit:contain;transform:none!important;animation:hero-holo-float 7s ease-in-out infinite}
