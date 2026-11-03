@@ -13,6 +13,9 @@ import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../sr
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
+import {extractNeweggSearchCards,neweggSearchUrl} from "../../src/newegg-search-cards.mjs";
+
+const neweggScrapingEnabled=()=>process.env.NAWAA_NEWEGG_SCRAPING_ENABLED==="1";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -162,8 +165,8 @@ const STORES = [
     productPath:/\/listing\/\d+(?:[/?#]|$)/i,
   },
   {
-    id:"newegg-global", name:"Newegg", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["phone","laptop","desktop","monitor","audio","camera","accessory","network","appliance"],
-    search:(q)=>"https://www.newegg.com/global/sa-en/p/pl?d="+encodeURIComponent(q),
+    id:"newegg-global", name:"Newegg", countryCode:"US", countryNameAr:"الولايات المتحدة", categories:["*"],
+    search:neweggSearchUrl,
     productPath:/\/p\/(?!pl(?:[/?#]|$))[A-Z0-9-]+(?:[/?#]|$)/i,
   },
   {
@@ -1529,6 +1532,7 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const intent = parseSearchIntent(normalizedQuery);
   const stable = options.stable === true;
   const routed = STORES
+    .filter((store)=>store.id!=="newegg-global" || neweggScrapingEnabled())
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
@@ -1599,6 +1603,10 @@ export function selectedStores(query) {
 }
 
 export async function searchFreeStorefrontById(storeId, query, options = {}) {
+  if(storeId==="newegg-global" && !neweggScrapingEnabled()) return {
+    storeId,candidates:0,offers:[],failures:0,searchUrl:null,
+    diagnostics:{status:"SOURCE_DISABLED",reason:"NEWEGG_PERMISSION_REQUIRED",customerPublishable:false},
+  };
   // Stable catalog-level 404 classification, never a fake retailer HTTP response.
   // Explicit legacy calls short-circuit without DNS, fetch, or retry.
   const retired=retiredSourceRecord(storeId);
@@ -1766,8 +1774,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const noonLiveHtmlCards = store.id === "noon-sa" && noonHtmlSearchContextValid
       ? extractNoonSaudiSearchCardEvidence(html,query,{limit:100})
       : null;
+    const neweggEvidence=store.id==="newegg-global" && html && !searchDiagnostics?.blockedReason
+      ? extractNeweggSearchCards(html,query,{requestedUrl:searchUrl,finalUrl:searchPageFinalUrl}) : null;
     const aliexpressProductLinkTrust = {rejectedProductLinks:0,rejectionSamples:[]};
     const htmlFirstOffers =
+      store.id === "newegg-global" ? (neweggEvidence?.offers || []) :
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query, aliexpressProductLinkTrust) :
       store.id === "temu-global" ? extractTemuSearchOffers(html, query) :
       store.id === "bestbuy-us" ? extractBestBuySearchOffers(html, query) :
@@ -1899,7 +1910,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
     // JSON-LD is only a fallback when the already-priced search adapters
     // produced nothing. Parsing it when those results win is discarded work.
-    const jsonLdOffers = html && !htmlFirstOffers.length && !primarySearchOffers.length
+    const jsonLdOffers = store.id!=="newegg-global" && html && !htmlFirstOffers.length && !primarySearchOffers.length
       ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query)
         .filter(offer => !store.euSource ||
           (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)))
@@ -1907,7 +1918,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // A generic JSON-LD fallback could revive a recommendation's price after
     // Noon-specific SKU/seller/variant binding rejected it. Keep this source
     // strictly attached to its scoped first-party evidence adapter.
-    const directSearchOffers = store.id==="noon-sa" ? htmlFirstOffers :
+    const directSearchOffers = (store.id==="noon-sa" || store.id==="newegg-global") ? htmlFirstOffers :
       htmlFirstOffers.length ? htmlFirstOffers :
       primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
     // Only independently search-priced Thomann cards can earn a search/PDP
@@ -1926,7 +1937,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // A source search card gives no proof of the seller/buybox on the
     // selected PDP. Do not expose Amazon DE prices to shoppers in this pilot.
     const amazonDePriceHold=amazonDeCustomerPriceDecision({sourceId:store.id});
-    const independentlyPricedOffers = amazonDePriceHold.customerPublishable
+    const independentlyPricedOffers = store.id==="newegg-global" ? [] : amazonDePriceHold.customerPublishable
       ? (thomannParity ? thomannParity.accepted : directSearchOffers)
       : [];
     // Scan more links in the already loaded search HTML when structured cards
@@ -1983,7 +1994,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // customer-facing output. Keep the exact legacy scan on every recovery path.
     const hasMatchingDirectOffers=directOffers.length>0 &&
       filterQueryOffers(matchingQuery,directOffers).offers.length>0;
-    const links=html && !hasMatchingDirectOffers
+    const links=html && !hasMatchingDirectOffers && store.id!=="newegg-global"
       ? extractProductLinks(html,searchUrl,store,query,discoveryLimit)
       : [];
     const recoveryPlan=selectStorefrontRecoveryLinks({
@@ -1996,6 +2007,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // No secondary PDP probes for Amazon DE while prices are held. Search
     // acquisition is one transparent request, without retries or alternate routes.
     const resolutionLinks = !amazonDePriceHold.customerPublishable ||
+      store.id==="newegg-global" ||
       store.id==="noon-sa" ||
       (thomannFamilyRequested && directSearchOffers.length)
       ? [] : recoveryPlan.links;
@@ -2080,6 +2092,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       diagnostics:{
         queryFilter,
         ...(noonSearchCardDiagnostics?{noonSearchCards:noonSearchCardDiagnostics}:{}),
+        ...(store.id==="newegg-global"?{neweggCards:{
+          status:neweggEvidence?.diagnostics.status || "SOURCE_HTML_UNAVAILABLE",
+          parsedCards:neweggEvidence?.diagnostics.cardsSeen || 0,
+          pricedCards:neweggEvidence?.diagnostics.pricedCards || 0,
+          conflicts:neweggEvidence?.diagnostics.conflicts || 0,
+          customerPublishable:false,shippingToSaudiVerified:false,
+          withheldCandidates:directSearchOffers.length,
+        }}:{}),
         ...(store.id==="thomann-de"?{
           variantRejected,
           pdpPriceParity:thomannParity?.diagnostics || [],
@@ -2145,7 +2165,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
 }
 
 export function configuredFreeStorefronts() {
-  return STORES.map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
+  return STORES.filter(store=>store.id!=="newegg-global" || neweggScrapingEnabled()).map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
 }
 
 export async function searchFreeStorefronts(query, options = {}) {
