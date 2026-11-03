@@ -4,6 +4,7 @@
 // merchants, other providers, Amazon's independent route, or future requests.
 const NON_RETRYABLE_IN_REQUEST=new Set([
   "HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED",
+  "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN",
 ]);
 
 export function retryDeniedStorefrontIds(errors,{registeredIds}={}){
