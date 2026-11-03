@@ -58,6 +58,21 @@ test("R04 P3.1: model, SKU, condition and destination market never collapse into
   }
 });
 
+test("R04 P3.1: same PDP, title and model never merge explicit color, RAM, storage or seller choices",()=>{
+  const variants=[
+    [offer({specs:{modelNumber:"CFI-2016B30Y",storage:"512GB"}}),
+     offer({specs:{modelNumber:"CFI-2016B30Y",storage:"1TB"},originalProductPrice:2299})],
+    [offer({specs:{modelNumber:"CFI-2016B30Y",color:"Black"}}),
+     offer({specs:{modelNumber:"CFI-2016B30Y",color:"White"}})],
+    [offer({specs:{modelNumber:"CFI-2016B30Y",ram:"8GB"}}),
+     offer({specs:{modelNumber:"CFI-2016B30Y",ram:"16GB"}})],
+    [offer({seller:{name:"Merchant A"}}),
+     offer({seller:{name:"Merchant B"}})],
+  ];
+  for(const [a,b] of variants)
+    assert.equal(dedupeNormalizedOffers([a,b]).length,2);
+});
+
 test("R04 P3.1: provider and independent product links remain distinct, even for an identical title",()=>{
   const entries=[
     offer(),
