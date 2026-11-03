@@ -43,7 +43,7 @@ export function inferSoldSubjectRole(title=""){
  const strongPart=/\b(?:replacement|compatible_to|protector|protectora|funda|strap|bands?|holder|filters?|wand|attachment|mop head|screen glass|charger|spare parts?|gimbal|tripod|lens|controller|case|cover|protective|screen protector)\b/.test(primary) ||
    /(?:ملحقات|اكسسوارات|قطع غيار|فلتر|حمايه|حامل|سوار|كفر)/u.test(primary);
  const completeFirst=/\b(?:camera body|mirrorless camera|digital camera|vacuum cleaner|cordless vacuum|smartwatch|office chair|iphone|laptop|console)\b/.test(primary.split(/\b(?:replacement|compatible_to|protectora|protector|holder|filter|strap|band|wand|lens|controller|gimbal|tripod|charger|case|cover|protective|screen protector)\b/,1)[0]);
- if(strongPart && !completeFirst)return "accessory";
+ // Only an explicit complete-product bundle/kit can keep a part noun in\n // the physical sold subject. A bare model before "protective case" is\n // compatibility text, not evidence that the complete phone is being sold.\n if(strongPart && !(completeFirst && /\b(?:bundle|kit)\b/.test(primary)))return "accessory";
  if(ACCESSORY.test(primary) && !whole)return "accessory";
  // "Canon RF50mm" or "Nikon 50mm" are separately sold lenses, not camera
  // bodies. The manufacturer name is not enough to make them a principal.
