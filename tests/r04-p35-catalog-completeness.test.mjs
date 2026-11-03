@@ -102,6 +102,7 @@ test("R04-P3.5: all JSON/SSE/expansion responses pass through the same final com
   const src=readFileSync(new URL("../server/server.mjs",import.meta.url),"utf8");
   assert.match(src,/function withWavePagination\(/);
   assert.match(src,/guardCatalogRecallCompleteness\(result\.coverage\)/);
+  assert.match(src,/remember\(query,depth,approved,pageSize,guarded\)/,"overflow cursor must retain the same fail-closed coverage");
   const uses=(src.match(/return withWavePagination\(/g)||[]).length;
   assert.equal(uses,3,"depth expansion, streaming and synchronous JSON must all be guarded");
   assert.match(src,/catalogRecallFailureClass\(persisted\)/,"low-cardinality production diagnostics distinguish DB overload from query failure");
