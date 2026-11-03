@@ -47,9 +47,12 @@ export function inferSoldSubjectRole(title=""){
    return "guide";
  // An explicit sold accessory/part is an accessory even when a compatible
  // principal model is also mentioned in the SEO title.
- const strongPart=/\b(?:replacement|compatible_to|protector|protectora|funda|strap|bands?|holder|filters?|wand|attachment|mop head|screen glass|charger|spare parts?|gimbal|tripod|lens|grinder|controller|case|cover|protective|screen protector|repair|bracket|height lock)\b/.test(primary) ||
+ const strongPart=/\b(?:replacement|compatible_to|protector|protectora|funda|strap|bands?|holder|filters?|wand|attachment|mop head|screen glass|charger|spare parts?|gimbal|tripod|lens|grinder|controller|disc drive|optical drive|case|cover|protective|screen protector|repair|bracket|height lock)\b/.test(primary) ||
    /(?:ملحقات|اكسسوارات|قطع غيار|فلتر|حمايه|حامل|سوار|كفر)/u.test(primary);
- const completeFirst=/\b(?:camera body|mirrorless camera|digital camera|vacuum cleaner|cordless vacuum|smartwatch|office chair|iphone|laptop|console)\b/.test(primary.split(/\b(?:replacement|compatible_to|protectora|protector|holder|filter|strap|band|wand|lens|controller|gimbal|tripod|grinder|charger|case|cover|protective|screen protector)\b/,1)[0]);
+ const completeFirst=/\b(?:camera body|mirrorless camera|digital camera|vacuum cleaner|cordless vacuum|smartwatch|office chair|iphone|laptop|console)\b/.test(primary.split(/\b(?:replacement|compatible_to|protectora|protector|holder|filter|strap|band|wand|lens|controller|disc drive|optical drive|gimbal|tripod|grinder|charger|case|cover|protective|screen protector)\b/,1)[0]);
+ // Optical/disc drives sold separately are accessories even when their SEO
+ // titles mention a compatible console. Included complete-console bundles
+ // remain products through the retail-subject and bundle checks below.
  // Only an explicit complete-product bundle/kit can keep a part noun in
  // the physical sold subject. A bare model before "protective case" is
  // compatibility text, not evidence that the complete phone is being sold.
