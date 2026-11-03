@@ -1,7 +1,7 @@
 // R04: universal, non-destructive classification of already acquired offers.
 // This module neither fetches sources nor changes merchant evidence, identity,
 // price, availability, cache admission, or the published API schema.
-import {normalizeSearchQuery, parseSearchIntent, productCategory} from "./search-query.mjs";
+import {normalizeSearchQuery, parseSearchIntent, describeProduct} from "./search-query.mjs";
 
 // These are *retail sold-subject* roles, not product-specific exclusion rules.
 // Evidence is taken from the actual retail title before any "with/including"
@@ -40,13 +40,13 @@ export function inferSoldSubjectRole(title=""){
    return "guide";
  // An explicit sold accessory/part is an accessory even when a compatible
  // principal model is also mentioned in the SEO title.
- const strongPart=/\b(?:replacement|compatible_to|protector|protectora|funda|strap|bands?|holder|filters?|wand|attachment|mop head|screen glass|charger|spare parts?|gimbal|tripod|lens|controller|case|cover|protective|screen protector)\b/.test(primary) ||
+ const strongPart=/\b(?:replacement|compatible_to|protector|protectora|funda|strap|bands?|holder|filters?|wand|attachment|mop head|screen glass|charger|spare parts?|gimbal|tripod|lens|controller|case|cover|protective|screen protector|repair|bracket|height lock)\b/.test(primary) ||
    /(?:ملحقات|اكسسوارات|قطع غيار|فلتر|حمايه|حامل|سوار|كفر)/u.test(primary);
  const completeFirst=/\b(?:camera body|mirrorless camera|digital camera|vacuum cleaner|cordless vacuum|smartwatch|office chair|iphone|laptop|console)\b/.test(primary.split(/\b(?:replacement|compatible_to|protectora|protector|holder|filter|strap|band|wand|lens|controller|gimbal|tripod|charger|case|cover|protective|screen protector)\b/,1)[0]);
  // Only an explicit complete-product bundle/kit can keep a part noun in
  // the physical sold subject. A bare model before "protective case" is
  // compatibility text, not evidence that the complete phone is being sold.
- if(strongPart && !(completeFirst && /\b(?:bundle|kit)\b/.test(primary)))return "accessory";
+ if(strongPart && !(completeFirst && /\b(?:bundle|kit)\b/.test(primary) && !/\b(?:repair|replacement|spare|protector|protective|bracket|filter|case)\b/.test(primary)))return "accessory";
  if(ACCESSORY.test(primary) && !whole)return "accessory";
  // "Canon RF50mm" or "Nikon 50mm" are separately sold lenses, not camera
  // bodies. The manufacturer name is not enough to make them a principal.
@@ -69,8 +69,9 @@ function querySubjectRole(query,intent){
 const LANES=Object.freeze({
  alternative:{key:"alternative",label:"منتجات مشابهة وبدائل",order:1},
  accessory:{key:"accessory",label:"ملحقات وقطع متوافقة",order:2},
- guide:{key:"guide",label:"أدلة ومحتوى عن المنتج",order:3},
- other:{key:"other",label:"نتائج أخرى للتحقق",order:4}
+ game:{key:"game",label:"ألعاب للجهاز",order:3},
+ guide:{key:"guide",label:"أدلة ومحتوى عن المنتج",order:4},
+ other:{key:"other",label:"نتائج أخرى للتحقق",order:5}
 });
 
 export function classifyResultGroup(query,group,intent=parseSearchIntent(query)){
@@ -83,7 +84,8 @@ export function classifyResultGroup(query,group,intent=parseSearchIntent(query))
  const matched=offer.exactMatch===true&&Number(offer.matchConfidence)>=.9;
  const compatibleRole=role===requestedRole||(role==="product"&&requestedRole==="product");
  let lane="other", reason="insufficient_subject_evidence";
- if(role==="guide"&&requestedRole!=="guide"){lane="guide";reason="separately_sold_documentation";}
+ if(describeProduct(offer).kind==="game" && intent.kind!=="game" && /\bps[45]\b/.test(normalizeSearchQuery(query))){lane="game";reason="separate_game_for_console";}
+ else if(role==="guide"&&requestedRole!=="guide"){lane="guide";reason="separately_sold_documentation";}
  else if(role==="accessory"&&requestedRole!=="accessory"){lane="accessory";reason="separately_sold_part_or_accessory";}
  else if(matched&&compatibleRole&&evidence.modelVerified&&
    evidence.coverage>=.67){
