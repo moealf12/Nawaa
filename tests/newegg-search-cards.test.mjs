@@ -24,7 +24,6 @@ test("search URL is generic and encodes Unicode",()=>{
 });
 test("only a matching first-party listing context can be parsed",()=>{
   assert.equal(verifyNeweggSearchContext({requestedUrl:searchUrl,finalUrl:searchUrl,query}),true);
-  assert.equal(parse(page(card("N82E16820147922","Samsung SSD 990 1TB","189")),{...parse(page(card("N82E16820147922","Samsung SSD 990 1TB","189")))});
   assert.equal(parse(page(card("N82E16820147922","Samsung SSD","189")),{finalUrl:"https://www.newegg.com/"}).offers.length,0);
   assert.equal(parse(page(card("N82E16820147922","Samsung SSD","189")),{finalUrl:"https://bad.example/p/pl?d=samsung%20ssd"}).offers.length,0);
 });
