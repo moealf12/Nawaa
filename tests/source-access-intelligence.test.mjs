@@ -236,7 +236,7 @@ test("R05: 403 circuit-breaker limits real storefront fetches but never re-label
     }
     await assert.rejects(searchFreeStorefrontById("lulu-sa","iphone 17",{perStore:2}),err=>
       err?.message==="SOURCE_ACCESS_DENIED_COOLDOWN" &&
-      err?.failureClass==="HTTP_403_ACCESS_DENIED");
+      err?.failureClass==="SOURCE_ACCESS_DENIED_COOLDOWN");
     assert.equal(calls,2,"blocked merchant must not generate a third request during cooldown");
   }finally{
     globalThis.fetch=original;
@@ -275,8 +275,9 @@ test("R05: aggregate storefront response retains source-owned 403 cooldown evide
       assert.equal(result.offers.length,0);
       assert.equal(result.errors.length,1);
       assert.equal(result.errors[0].sourceId,id);
-      assert.equal(result.errors[0].failureClass,"HTTP_403_ACCESS_DENIED",
-        "cooldown must never be reported as a transport failure or inventory absence");
+      assert.equal(result.errors[0].failureClass,
+        i<2?"HTTP_403_ACCESS_DENIED":"SOURCE_ACCESS_DENIED_COOLDOWN",
+        "only actual HTTP responses can be labeled HTTP_403; local policy skips remain distinct");
     }
     assert.equal(calls,2,"third query should not hit repeatedly denying merchant");
   }finally{
