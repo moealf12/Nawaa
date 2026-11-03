@@ -37,6 +37,7 @@ import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
 import { createSearchCache, classifySearchCacheAdmission } from "./search-cache.mjs";
 import { amazonPartialEvidenceError } from "./amazon-page-evidence.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
+import {retryDeniedStorefrontIds} from "./source-fallback-policy.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
@@ -167,7 +168,7 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
-function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, plan = acquisitionPlan(0, configuredFreeStorefronts().length), onOffers } = {}) {
+function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, skipFailedStorefrontIds = [], plan = acquisitionPlan(0, configuredFreeStorefronts().length), onOffers } = {}) {
   const tasks = [];
   const add = (id, run, { explicit = false, deadlineMs = null } = {}) => {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run, deadlineMs });
@@ -195,7 +196,7 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
     add("free-storefronts", (signal) => searchFreeStorefronts(providerQuery, {
       signal,
       matchingQuery,
-      excludeStoreIds:["amazon-sa"],
+      excludeStoreIds:["amazon-sa",...skipFailedStorefrontIds],
       storeOffset:plan.storefrontOffset,
       storeLimit:plan.storefrontLimit,
       stableRouting:true,
@@ -863,7 +864,16 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   const needsRecallExpansion =
     relevantPrimary.length < minimumUsefulOffers ||
     (broadDiscovery && primaryMerchants < 2 && relevantPrimary.length < 40);
+  let hardDeniedFallbackStores=0;
   if (needsRecallExpansion) {
+    // These stores already proved HTTP 403/429 in this very request. Avoid
+    // immediate repeat traffic to inaccessible endpoints, while retaining
+    // their primary failure evidence and replacing their fallback slots with
+    // other eligible merchants. No cross-request or future-depth blacklist.
+    const retryDeniedIds=retryDeniedStorefrontIds(primary.errors,{
+      registeredIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
+    });
+    hardDeniedFallbackStores=retryDeniedIds.length;
     const fallbackQueries = buildProviderFallbackQueries(query);
     fallbackQuery = fallbackQueries[0] || null;
     // Brand-only searches need breadth across product families. Run up to four
@@ -875,6 +885,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
     if (expansionQueries.length) {
       const expansions = await Promise.all(expansionQueries.map((candidate) => beforeRequestDeadline(
         () => runProviderPass(candidate, "fallback", query, { plan,signal:requestController.signal,
+          skipFailedStorefrontIds:retryDeniedIds,
           onTrace:(event)=>traceProvider(event,"fallback") }),
         () => ({ providers:[], errors:[], offers:[] }),
       )));
@@ -928,6 +939,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       selectedOffers:selectedOffers.length,
       deadlineExceeded,
       fallbackUsed:Boolean(fallbackQuery),
+      hardDeniedFallbackStores,
       providerTimings,
       primaryComponents,
     }));
