@@ -362,11 +362,14 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
 // the remainder of the exact immutable, customer-safe acquired wave.
 const searchWavePages=createSearchWavePages();
 function withWavePagination(result,query,depth,allOffers,pageSize){
-  const approved=enforceCustomerOfferPublication({...result,offers:allOffers}).offers;
+  // Guard before retaining a replay: cursor pages must never inherit a
+  // false-complete snapshot from the pre-publication wave.
+  const guarded={...result,coverage:guardCatalogRecallCompleteness(result.coverage)};
+  const approved=enforceCustomerOfferPublication({...guarded,offers:allOffers}).offers;
   const first=approved.slice(0,pageSize);
-  const {cursor,unavailable}=searchWavePages.remember(query,depth,approved,pageSize,result);
-  return {...result,offers:first,overflowCursor:cursor,
-    coverage:{...guardCatalogRecallCompleteness(result.coverage),
+  const {cursor,unavailable}=searchWavePages.remember(query,depth,approved,pageSize,guarded);
+  return {...guarded,offers:first,overflowCursor:cursor,
+    coverage:{...guarded.coverage,
       availableOffers:approved.length,returnedOffers:first.length,
       acquisitionEvidence:summarizeWaveSourceEvidence(result.providers,result.errors),
       returnedMerchants:new Set(first.map(offerMerchantKey)).size,
