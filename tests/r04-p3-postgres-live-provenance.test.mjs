@@ -24,6 +24,8 @@ test("R04 P3: real PostgreSQL commits verified source time and replays only its 
       dataKind:"live",matchConfidence:1,exactMatch:true,
     };
     await recordOffer({...base,productPrice:2500,observedAt});
+    // Equal-time price changes are ambiguous and cannot mutate canonical state.
+    await recordOffer({...base,productPrice:150,observedAt});
     await recordOffer({...base,productPrice:100,observedAt:oldTime});
     const result=await searchPersistedOffers("R04P3",{limit:120,now:Date.now()});
     const selected=result.offers.find(x=>x.sourceUrl===sourceUrl);
