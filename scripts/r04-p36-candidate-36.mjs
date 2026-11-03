@@ -26,7 +26,8 @@ const PORT=await new Promise((resolve,reject)=>{
 });
 const base="http://127.0.0.1:"+PORT;
 const child=spawn(process.execPath,["server/server.mjs"],{
-  env:{...process.env,PORT:String(PORT),NODE_ENV:"test",
+  env:{...process.env,PORT:String(PORT),NODE_ENV:"production",
+    NAWAA_CANONICAL_INDEX_TEST:"0",NAWAA_OMEGA_INDEX_ONLY:"0",
     DATABASE_URL:"",MEILI_HOST:"",MEILI_MASTER_KEY:"",
     NOON_ENABLED:"false",EBAY_ENABLED:"false",CARREFOUR_ENABLED:"false"},
   stdio:["ignore","pipe","pipe"],
@@ -73,6 +74,9 @@ async function probe(q){
       try {const url=new URL(o.sourceUrl);return url.protocol==="https:";}catch{return false;}
     });
     if(!valid)throw Error("INVALID_OFFER_CONTRACT");
+    // Production-like live mode has neither a fixture index nor a persisted
+    // catalog. Every candidate offer must come from an actual live connector.
+    if(body.offers.some(o=>o.dataKind!=="live"))throw Error("NON_LIVE_OFFER_IN_ACCEPTANCE");
     const grouped=groupComparableOffers(body.offers,"lowest");
     const sections=buildSearchPresentationSections(q.query,grouped);
     if(sections.partitionedGroups!==grouped.length)throw Error("PRESENTATION_PARTITION_LOSS");
@@ -87,6 +91,12 @@ async function probe(q){
       deadlineExceeded:body.coverage.deadlineExceeded===true,
       providersPending:body.coverage.providersPending??null,
       sourceErrors:failures.reported,sourceErrorBreakdown:failures,
+      localCooldownSkips:failures.buckets.reduce((n,b)=>n+
+        (b.failureClass==="SOURCE_ACCESS_DENIED_COOLDOWN"||
+         b.failureClass==="SOURCE_RATE_LIMIT_COOLDOWN"?b.count:0),0),
+      observedUpstreamDenials:failures.buckets.reduce((n,b)=>n+
+        (b.failureClass==="HTTP_403_ACCESS_DENIED"||
+         b.failureClass==="HTTP_429_RATE_LIMITED"?b.count:0),0),
     };
     console.log("R04_P36_CANDIDATE_QUERY "+JSON.stringify({
       id:row.id,status:row.status,elapsedMs:row.elapsedMs,
@@ -126,17 +136,30 @@ const summary={
   sourceErrorEvents:observed.reduce((n,x)=>n+x.sourceErrors,0),
   observedOffers:observed.reduce((n,x)=>n+x.offers,0),
   intentsWithoutPrincipal:observed.filter(x=>x.primaryGroups===0).map(x=>x.id),
+  livePolicyCooldownSkips:observed.reduce((n,x)=>n+(x.localCooldownSkips||0),0),
+  actualUpstreamDenialErrors:observed.reduce((n,x)=>n+(x.observedUpstreamDenials||0),0),
   failureAttribution:mergeSourceErrorEvidence(observed.map(x=>x.sourceErrorBreakdown)),
   result:!fatal&&observed.length===36
     ?"CANDIDATE_EVIDENCE_COLLECTED_NOT_CERTIFIED":"CANDIDATE_COLLECTION_FAILED",
 };
+const releaseGaps=[
+  ...(summary.requestFailures.length?["REQUEST_FAILURES"]:[]),
+  ...(summary.deadlineExceeded?["INTERNAL_SEARCH_DEADLINES"]:[]),
+  ...(summary.intentsWithoutPrincipal.length?["MISSING_PRINCIPAL_GROUPS"]:[]),
+];
+summary.releaseGatePassed=releaseGaps.length===0;
+summary.releaseGaps=releaseGaps;
 const report={schemaVersion:"nawaa.r04.p36.disposable-candidate.v1",
   mode:"DISPOSABLE_CANDIDATE_ONLY",sha:SHA,startedAt,
   completedAt:new Date().toISOString(),source:"frozen-36-intent-corpus",
   databaseConfigured:false,meilisearchConfigured:false,
+  runMode:"REAL_PUBLIC_MERCHANT_REQUESTS_NO_FIXTURES",
   notEvidenceOf:["currently deployed production code","same-environment causal A/B",
     "every merchant is accessible","human relevance certification","global p95 latency"],
   fatal,summary,rows};
 writeFileSync("r04-p36-candidate-36-evidence.json",JSON.stringify(report,null,2)+"\n");
 console.log("R04_P36_CANDIDATE_SUMMARY "+JSON.stringify({sha:SHA,...summary}));
+// Collection success is not release approval. A real 200 with unrelated
+// products or an internal deadline is not a passing customer acceptance.
 if(summary.result!=="CANDIDATE_EVIDENCE_COLLECTED_NOT_CERTIFIED")process.exitCode=1;
+else if(!summary.releaseGatePassed)process.exitCode=2;
