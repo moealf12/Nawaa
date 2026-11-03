@@ -21,7 +21,8 @@ export function oliveYoungSearchUrl(query) {
 export function oliveYoungProductIdentity(value){
   try {
     const u=new URL(value);
-    const id=u.searchParams.get("prdtNo");
+    const ids=u.searchParams.getAll("prdtNo");
+    const id=ids.length===1?ids[0]:null;
     if(u.origin!==ORIGIN||u.username||u.password||u.port||
        u.pathname!=="/product/detail"||!ID.test(id||"")||
        [...u.searchParams.keys()].some(k=>!["prdtNo","accParam"].includes(k)))
@@ -48,6 +49,7 @@ export function observeOliveYoungSearch(html,{query,requestedUrl,finalUrl}={}){
     actual=new URL(finalUrl||requestedUrl);
     if(!clean(query)||[url,actual].some(u=>u.origin!==ORIGIN||
       u.pathname!=="/global/search/results"||
+      u.searchParams.getAll("query").length!==1||
       clean(u.searchParams.get("query"))!==clean(query)||
       u.username||u.password||u.port))
       return no("SEARCH_CONTEXT_MISMATCH");
@@ -61,7 +63,9 @@ export function observeOliveYoungSearch(html,{query,requestedUrl,finalUrl}={}){
   const header=text.match(/Results for\s*['‘’"]([^'‘’"]+)['‘’"]/i);
   if(!header||clean(header[1]).toLocaleLowerCase()!==clean(query).toLocaleLowerCase())
     return no("SEARCH_QUERY_EVIDENCE_MISSING");
-  const match=text.match(/\b([\d,]+)\s*items\b/i);
+  // SSR joins adjacent DOM text nodes without separators: "1,301itemsMost Popular".
+  // Do not require a word boundary after "items" when the next label starts uppercase.
+  const match=text.match(/\b([\d,]+)\s*items(?=$|[^a-z]|[A-Z])/);
   const count=match?Number(match[1].replaceAll(",","")):null;
   // Search currently returns a valid count (e.g. 1301) but NO SSR product
   // links or priced cards. A filter's price range must not become a product.
