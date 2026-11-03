@@ -55,7 +55,7 @@ const STORES = [
     brands:["olive young","oliveyoung"],
     categories:["beauty","perfume","grocery","accessory","other"],
     search:oliveYoungSearchUrl,
-    productPath:/^\/product\/detail\?prdtNo=GA\d{6,12}(?:&|$)/i,
+    productPath:/\/product\/detail\?(?:[^#]*&)?prdtNo=GA\d{6,12}(?:&|$)/i,
   },
   // GCC discovery tier: trusted regional storefronts are searched after Saudi sources
   // and before the wider global catalog. Shipping to Saudi is metadata, never a gate.
