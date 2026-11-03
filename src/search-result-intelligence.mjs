@@ -86,7 +86,7 @@ export function classifyResultGroup(query,group,intent=parseSearchIntent(query))
  if(role==="guide"&&requestedRole!=="guide"){lane="guide";reason="separately_sold_documentation";}
  else if(role==="accessory"&&requestedRole!=="accessory"){lane="accessory";reason="separately_sold_part_or_accessory";}
  else if(matched&&compatibleRole&&evidence.modelVerified&&
-   (evidence.coverage>=.5 || (intent.category&&role==="product"&&evidence.overlap>0))){
+   evidence.coverage>=.67){
    lane="direct";reason="title_evidenced_match";
  }else if(role===requestedRole&&evidence.coverage>0) {
    lane="alternative";reason="related_subject_unverified_variant";
