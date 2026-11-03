@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CATALOG_WRITE_WINDOW_MS,CATALOG_WRITE_LIMIT,
   selectFreshLiveObservations,writeThroughFreshLiveObservations,
+  CATALOG_MAX_PENDING_BATCHES,createCatalogWriteQueue,
 } from "../server/catalog-write-through.mjs";
 import {catalogRecallPlan,summarizeCatalogRecall} from "../server/catalog-recall-evidence.mjs";
 
@@ -97,4 +98,49 @@ test("R04 P3: unavailable DB is NOT merchant out of stock",()=>{
  assert.equal(unavailable.error,"catalog_recall_unavailable");
  assert.equal(unavailable.exhaustive,false);
  assert.equal(summarizeCatalogRecall({configured:false,offers:[]},catalogRecallPlan(0)).status,"unconfigured");
+});
+
+test("R04 P3: bursty catalog writes never exceed three queued batches or one active writer",async()=>{
+  let active=0,peak=0;
+  const order=[];
+  const queue=createCatalogWriteQueue({
+    configured:()=>true,
+    writer:async(query,offers)=>{
+      active++;peak=Math.max(peak,active);
+      order.push(query);
+      assert.equal(offers.length,1);
+      await new Promise(resolve=>setImmediate(resolve));
+      active--;
+      return {configured:true,attempted:1,recorded:1,failed:0};
+    },
+  });
+  const valid={...fresh(0),observedAt:new Date(Date.now()-1000).toISOString()};
+  assert.equal(CATALOG_MAX_PENDING_BATCHES,3);
+  const calls=["q1","q2","q3","q4"].map(x=>queue.submit(x,[valid]));
+  assert.equal(queue.stats().pending,3);
+  const result=await Promise.all(calls);
+  assert.deepEqual(order,["q1","q2","q3"]);
+  assert.equal(result.filter(x=>x.recorded===1).length,3);
+  assert.equal(result[3].skipped,"catalog_backpressure");
+  assert.equal(peak,1);
+  assert.equal(active,0);
+  assert.equal(queue.stats().pending,0);
+});
+test("R04 P3: failed async catalog writer releases the lane for later verified observations",async()=>{
+  let count=0;
+  const queue=createCatalogWriteQueue({
+    configured:()=>true,
+    writer:async()=>{
+      count++;
+      if(count===1)throw new Error("redacted_db_driver_failure");
+      return {configured:true,attempted:1,recorded:1,failed:0};
+    },
+  });
+  const freshOffer={...fresh(1),observedAt:new Date(Date.now()-1000).toISOString()};
+  const one=queue.submit("one",[freshOffer]);
+  const two=queue.submit("two",[freshOffer]);
+  await assert.rejects(one,/redacted_db_driver_failure/);
+  const recovered=await two;
+  assert.equal(recovered.recorded,1);
+  assert.equal(queue.stats().pending,0);
 });
