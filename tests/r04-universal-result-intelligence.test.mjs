@@ -98,3 +98,21 @@ test("R04 universal: unknown titles and missing offers have their own lower-evid
  assert.equal(rows.partitionedGroups,2);
  assert.equal(rows.primaryGroups.length,0);
 });
+
+test("R04 universal: URL deep-link iPhone 17 original verified cards remain primary",async()=>{
+ const {groupComparableOffers,buildDiscoverySections}=await import("../src/search-core.mjs");
+ const base={
+   merchant:"eXtra",title:"Apple iPhone 17 256GB Black",sourceUrl:"https://example.com/black",
+   productPrice:3999,condition:"new",exactMatch:true,matchConfidence:1,dataKind:"live",
+   availability:"in_stock",canShipToSaudi:true,shipping:null,importCost:0,tax:null,
+   mandatoryFees:0,discount:0,specs:{brand:"Apple",deviceType:"iPhone 17",storage:"256GB",
+     color:"Black",modelNumber:"MG674AH/A"}};
+ const all=[base,{...base,title:"Apple iPhone 17 256GB White",sourceUrl:"https://example.com/white",
+   specs:{...base.specs,color:"White",modelNumber:"MG684AH/A"}}];
+ const grouped=groupComparableOffers(all,"lowest");
+ const classified=buildIntentAwareResultLanes("ايفون 17",grouped);
+ assert.equal(classified.primaryGroups.length,2,
+   "iPhone direct lanes "+JSON.stringify(classified.secondarySections.map(x=>({key:x.key,titles:x.groups.map(g=>g.bestOffer.title)}))));
+ const cats=buildDiscoverySections("ايفون 17",classified.primaryGroups);
+ assert.equal(cats.reduce((n,x)=>n+x.groups.length,0),2);
+});
