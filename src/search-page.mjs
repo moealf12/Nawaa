@@ -46,6 +46,7 @@ const state = {
   selectedGroupKey: null,
   nextCursor: null,
   overflowCursor: null,
+  waveOverflowUnavailable: false,
   eventSource: null,
   remoteLoading: false,
   remoteExhausted: false,
@@ -1157,7 +1158,7 @@ function renderProduct(product, query) {
 
     ${!state.comparisonOpen ? '<details class="selected-comparison" hidden></details>' : ""}
 
-    ${state.nextCursor || state.overflowCursor ? `<div class="remote-more"><button type="button" class="show-category" id="loadMoreRemote" ${state.remoteLoading ? "disabled" : ""}>${state.remoteLoading ? "جاري جلب النتائج…" : state.overflowCursor ? "عرض بقية النتائج المكتشفة" : "جلب نتائج إضافية من مصادر أكثر"}</button><small>${state.overflowCursor ? "يكمل نفس نتائج البحث دون إعادة طلب المتاجر أو تغيير الأسعار المرصودة." : "يوسّع نطاق البحث إلى مصادر إضافية."}</small></div>` : state.remoteExhausted ? '<div class="remote-more exhausted"><small>وصلنا إلى أعمق نطاق بحث متاح حاليًا لهذه الجلسة.</small></div>' : ""}
+    ${state.nextCursor || state.overflowCursor ? `<div class="remote-more"><button type="button" class="show-category" id="loadMoreRemote" ${state.remoteLoading ? "disabled" : ""}>${state.remoteLoading ? "جاري جلب النتائج…" : state.overflowCursor ? "عرض بقية النتائج المكتشفة" : "جلب نتائج إضافية من مصادر أكثر"}</button><small>${state.overflowCursor ? "يكمل نفس نتائج البحث دون إعادة طلب المتاجر أو تغيير الأسعار المرصودة." : "يوسّع نطاق البحث إلى مصادر إضافية."}</small></div>` : state.waveOverflowUnavailable ? '<div class="remote-more exhausted"><small>تعذر حفظ بقية النتائج المكتشفة ضمن حدود ذاكرة الخادم؛ أعد البحث لاستعادتها، وهذا لا يعني نفاد مخزون المتاجر.</small></div>' : state.remoteExhausted ? '<div class="remote-more exhausted"><small>وصلنا إلى أعمق نطاق بحث متاح حاليًا لهذه الجلسة.</small></div>' : ""}
 
     ${secondarySections.map(section=>additionalResultsSection(section.label,section.groups)).join('')}
 
@@ -1320,6 +1321,10 @@ async function loadMoreRemote(query) {
       if (Array.isArray(data.offers)) recordPriceHistory(data.offers);
       if (!sameWave || data.nextCursor !== undefined)cursor=data.nextCursor || null;
       pageCursor=data.overflowCursor || null;
+      if(data.coverage?.overflowUnavailable===true){
+        state.waveOverflowUnavailable=true;
+        cursor=null;pageCursor=null;
+      }
       lastData = data;
     }
     state.nextCursor = cursor;
@@ -1331,6 +1336,8 @@ async function loadMoreRemote(query) {
       ? `أضفنا ${arabicCount(added, "offer")} جديدًا · الإجمالي ${arabicCount(state.product.offers.length, "offer")}`
       : (state.remoteExhausted ? "اكتمل أعمق نطاق بحث متاح حاليًا" : "لم تظهر نتائج جديدة في هذه الدفعة");
     if (lastData?.errors?.length) completionStatus += " · بعض المصادر أعادت نتائج جزئية";
+    if(state.waveOverflowUnavailable)
+      completionStatus += " · لم يمكن حفظ بقية نتائج الموجة؛ أعد البحث لاستعادتها.";
   } catch (error) {
     if (requestId !== state.requestId) return;
     console.warn("NAWAA remote expansion failed",error);
@@ -1339,6 +1346,7 @@ async function loadMoreRemote(query) {
       // Never jump past missing pages to the next acquisition depth.
       state.nextCursor=null;
       state.remoteExhausted=true;
+      state.waveOverflowUnavailable=true;
       completionStatus="انتهت صلاحية دفعة النتائج السابقة؛ أعد البحث لاستعادتها دون فقد أو تخمين.";
     } else {
       completionStatus=error?.status===429
@@ -1377,6 +1385,7 @@ async function runSearch(rawQuery) {
   state.query = query;
   state.nextCursor = null;
   state.overflowCursor = null;
+  state.waveOverflowUnavailable = false;
   state.remoteLoading = false;
   state.remoteExhausted = false;
   saveRecent(query);
@@ -1500,6 +1509,11 @@ async function runSearch(rawQuery) {
       }
       state.nextCursor = data.nextCursor || null;
       state.overflowCursor = data.overflowCursor || null;
+      state.waveOverflowUnavailable = data.coverage?.overflowUnavailable === true;
+      if(state.waveOverflowUnavailable){
+        // Never silently advance beyond unretained results within a wave.
+        state.nextCursor=null;state.overflowCursor=null;
+      }
       state.remoteExhausted = !(state.nextCursor || state.overflowCursor);
       if (Array.isArray(data.offers) && data.offers.length) {
         recordPriceHistory(data.offers);
@@ -1521,6 +1535,8 @@ async function runSearch(rawQuery) {
         els.status.textContent = `بحث حي: ${arabicCount(data.offers.length, "offer")} · ${arabicCount(countries, "country")} · ${data.providersConfigured?.length || 0} موصلات · ${attempted} أسواق/متاجر تم فحصها`;
         const coverageNotice=coverageStatusText(data.coverage,data.errors);
         if (coverageNotice) els.status.textContent += " · " + coverageNotice;
+        if(state.waveOverflowUnavailable)
+          els.status.textContent += " · لم يمكن حفظ بقية نتائج هذه الموجة؛ أعد البحث ولا تعتبرها غير متوفرة.";
         else if (data.cache?.hit) els.status.textContent += " · رصد منذ " + Math.ceil(data.cache.ageMs / 1000) + " ثانية";
         return;
       }
