@@ -42,6 +42,29 @@ test("R04 universal: false exacts are placed into the sold-subject lane, not era
   assert.equal(x.lane,expected,query+": "+title+": "+JSON.stringify(x));
  }
 });
+test("R04 P3.2: standalone optical and disc drives are accessories, explicitly requested drives are direct",()=>{
+ const standalone=[
+   "Sony Disc Drive for PlayStation 5 Digital Edition Slim, White",
+   "Disc Drive for PS5 Console",
+   "External Optical Drive for Laptop",
+ ];
+ for(const title of standalone){
+   assert.equal(inferSoldSubjectRole(title),"accessory",title);
+ }
+ const drive=group("disc-drive","Sony Disc Drive for PlayStation 5 Digital Edition Slim");
+ assert.equal(classifyResultGroup("PS5 disc drive",drive).lane,"direct");
+ assert.equal(classifyResultGroup("PS5",drive).lane,"accessory");
+ // Inclusion does not transform the complete console into a separately sold
+ // optical drive; with/+ and an explicit complete bundle keep the principal.
+ for(const title of [
+   "Sony PS5 Console with Disc Drive",
+   "Sony PS5 Console + Disc Drive Bundle",
+   "Sony PS5 Console Disc Drive Bundle",
+ ]){
+   assert.equal(inferSoldSubjectRole(title),"product",title);
+ }
+});
+
 test("R04 universal: explicit accessories and guides are promoted when shopper requests them",()=>{
  for(const [query,title] of [
    ["Dyson V15 filter","Walntec Replacement Filters for Dyson V15 Detect"],
