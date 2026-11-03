@@ -55,7 +55,7 @@ test("R04: token tampering, query mismatch, offset forgery and depth token confu
   assert.throws(()=>pages.page("iPhone 17",token),/wave_snapshot_unavailable/);
 });
 
-test("R04: 2-minute expiry is explicit, not a false empty inventory claim",()=>{
+test("R04: five-minute expiry is explicit, not a false empty inventory claim",()=>{
   let t=1000;
   const pages=createSearchWavePages({now:()=>t});
   const token=pages.remember("HP laptop",0,offers(121),120,meta).cursor;
