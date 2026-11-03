@@ -30,7 +30,10 @@ function listing(){
 test("exact PDP identity, market, colour, GBP price and variant stock attest",()=>{
   const e=check(pdp());
   assert.equal(e.verified,true);assert.equal(e.price,89.99);
-  assert.equal(e.availability,"in_stock");
+  assert.equal(e.availability,"unknown"); // a colourway signal is not size-level stock
+  assert.equal(e.colourwayAvailability,"in_stock");
+  assert.equal(e.sizeAvailability,"unknown");
+  assert.equal(e.sizeStockVerified,false);
 });
 test("HTTP 200 error shell never verifies stock, even with a true availability hint",()=>{
   assert.equal(check(pdp({errorShell:true})).reason,"HTTP_200_PDP_ERROR_SHELL");
