@@ -69,9 +69,10 @@ function cardPrice($,card,id){
   if(sale.length&&listPrice!==null&&listPrice<current)return null;
   const accessible=clean(priceRow.attr("aria-label"));
   if(accessible){
-    const labelCurrent=accessible.match(/(?:current\s+price|price)\s*:\s*(£\s*[\d,.]+)/i)?.[1];
+    const labelCurrent=(accessible.match(/\bcurrent\s+price\s*:\s*(£\s*[\d,]+(?:\.\d{2})?)/i) ||
+      accessible.match(/^price\s*:\s*(£\s*[\d,]+(?:\.\d{2})?)\s*$/i))?.[1];
     if(labelCurrent===undefined||parseAsosGBP(labelCurrent)!==current)return null;
-    const labelWas=accessible.match(/original\s+price\s*:\s*(£\s*[\d,.]+)/i)?.[1];
+    const labelWas=accessible.match(/\boriginal\s+price\s*:\s*(£\s*[\d,]+(?:\.\d{2})?)/i)?.[1];
     if(labelWas!==undefined&&(listPrice===null||parseAsosGBP(labelWas)!==listPrice))return null;
   }
   return {price:current,listPrice};
