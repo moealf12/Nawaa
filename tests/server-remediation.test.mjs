@@ -126,6 +126,7 @@ test.skip('cached recall retains provenance and is never written back as a fresh
 test('ingestion returns a stable error without exposing database details',async()=>{
  const fakePersistence=`
    export async function persistOffers(){return {saved:0};}
+   export const persistenceConfigured=()=>false;
    export async function searchPersistedOffers(){return {configured:true,offers:[]};}
    export async function recordOffer(){throw new Error('password authentication failed for user secret');}
  `;
