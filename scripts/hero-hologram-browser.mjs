@@ -64,8 +64,10 @@ try{
   assert.equal(await page.locator("#heroVisual").getAttribute("data-motion"),"off");
   await page.locator("#heroPause").click();
   await page.emulateMedia({reducedMotion:"reduce"});
+  await page.waitForFunction(() => document.querySelector("#heroVisual").dataset.motion === "off", null, {timeout:2500});
   assert.equal(await page.locator("#heroVisual").getAttribute("data-motion"),"off");
   await page.emulateMedia({reducedMotion:"no-preference"});
+  await page.waitForFunction(() => document.querySelector("#heroVisual").dataset.motion === "on", null, {timeout:2500});
   const box=await page.locator("#heroTilt").boundingBox();
   const x=box.x+box.width*.75,y=box.y+box.height*.4;
   if(mobile)await page.locator("#heroTilt").dispatchEvent("pointermove",{pointerType:"touch",clientX:x,clientY:y});
