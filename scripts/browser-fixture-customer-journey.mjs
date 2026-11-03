@@ -181,7 +181,7 @@ function searchPayload(q,cursor) {
     return {offers,errors:[],providers:[],
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
   }
-  if(q.includes('fixture-iphone-models')) {
+  if(q==='iPhone 17'||q.includes('fixture-iphone-models')) {
     const template=offer(1);
     const first={...template,merchant:'eXtra',title:'Apple iPhone 17 256GB Black',
       sourceUrl:'https://www.example.org/iphone-model-a',
@@ -440,7 +440,7 @@ try{
     detailBefore.fallbackText.includes('جاري تحميل صورة')&&
     detailBefore.status==='status',detailBefore);
   assertCheck('detail_merchant_model_price_provenance_preserved',
-    detailBefore.title==='HP Pavilion Laptop Model 05 512GB Silver'&&
+    detailBefore.title==='Fixture Detail Pending Laptop'&&
     detailBefore.model?.includes('HP-LAP-05')&&
     detailBefore.merchant?.includes('Jarir')&&
     detailBefore.price?.includes(new Intl.NumberFormat('ar-SA').format(2515))&&
@@ -515,7 +515,7 @@ try{
   await imgTab.screenshot({path:'browser-artifacts/fixture-mobile-image-fallback.png',fullPage:true});
   // The same visible phone/model/storage/color may have DIFFERENT manufacturer
   // codes: preserve separate groups, and show the distinguishing codes.
-  const duplicated=await navigate('fixture-iphone-models');
+  const duplicated=await navigate('iPhone 17');
   await duplicated.locator('#results .match-result-card').first().waitFor();
   const duplicateCards=duplicated.locator('#results .match-result-card');
   const duplicateCount=await duplicateCards.count();
