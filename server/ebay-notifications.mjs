@@ -26,6 +26,14 @@ export function createEbayPublicKeyLoader({fetchImpl = fetch, getToken = getEbay
 
 export function createEbayDeletionHandler({token, endpoint, getPublicKey = createEbayPublicKeyLoader(), onDelete}) {
   const ready = /^[a-zA-Z0-9_-]{32,80}$/.test(token || '') && /^https:\/\//.test(endpoint || '');
+  // Idempotency applies ONLY after signature and event-type verification.
+  // Keep bounded opaque event IDs (never customer account data) in memory.
+  // Repeated delivery of the same successfully processed eBay notification
+  // must not restart every in-flight customer search generation.
+  const processedIds = new Map();
+  const processingById = new Map();
+  const replayTtlMs = 24 * 60 * 60 * 1000;
+  const maxRememberedIds = 512;
   const reply = (res, status, data) => {
     res.writeHead(status, {'content-type':'application/json', 'cache-control':'no-store'});
     res.end(data ? JSON.stringify(data) : '');
@@ -65,9 +73,38 @@ export function createEbayDeletionHandler({token, endpoint, getPublicKey = creat
     } catch {}
     if (!valid) return reply(res,412,{error:'Invalid signature'});
     const data = payload?.notification?.data;
-    if (payload?.metadata?.topic !== 'MARKETPLACE_ACCOUNT_DELETION' || !payload?.notification?.notificationId || !data || ![data.username,data.userId,data.eiasToken].some(value=>typeof value === 'string' && value.length)) return reply(res,400,{error:'Invalid deletion notification'});
-    try { await onDelete(); }
-    catch { return reply(res,503,{error:'Deletion processing failed; retry later'}); }
+    const notificationId = payload?.notification?.notificationId;
+    if (payload?.metadata?.topic !== 'MARKETPLACE_ACCOUNT_DELETION' ||
+        typeof notificationId !== 'string' || !notificationId.length ||
+        notificationId.length > 256 || !data ||
+        ![data.username,data.userId,data.eiasToken].some(value=>typeof value === 'string' && value.length))
+      return reply(res,400,{error:'Invalid deletion notification'});
+
+    const expiresAt = processedIds.get(notificationId);
+    if (expiresAt !== undefined) {
+      if (Date.now() < expiresAt) return reply(res,204);
+      processedIds.delete(notificationId);
+    }
+    // Concurrent verified retries share one processing attempt. Only
+    // successful completion is remembered; a failure must remain retryable.
+    let processing = processingById.get(notificationId);
+    if (!processing) {
+      processing = Promise.resolve().then(()=>onDelete());
+      processingById.set(notificationId,processing);
+    }
+    try {
+      await processing;
+    } catch {
+      if (processingById.get(notificationId) === processing)
+        processingById.delete(notificationId);
+      return reply(res,503,{error:'Deletion processing failed; retry later'});
+    }
+    if (processingById.get(notificationId) === processing) {
+      processingById.delete(notificationId);
+      while (processedIds.size >= maxRememberedIds)
+        processedIds.delete(processedIds.keys().next().value);
+      processedIds.set(notificationId,Date.now()+replayTtlMs);
+    }
     return reply(res,204);
   };
 }

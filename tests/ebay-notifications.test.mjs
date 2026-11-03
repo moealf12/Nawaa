@@ -23,15 +23,76 @@ test('challenge hashes configured canonical endpoint, independent of incoming ho
  assert.equal(JSON.parse(response.response).challengeResponse,createHash('sha256').update('challenge'+token+endpoint).digest('hex'));
  assert.equal((await request(handler,'GET')).status,400);
 });
-test('signed deletion clears state before acknowledging; repeats are safe',async()=>{
+test('signed deletion acknowledges repeated notificationId without repeating cache invalidation',async()=>{
  let deleted=0; const handler=createEbayDeletionHandler({token,endpoint,getPublicKey:async()=>publicKey,onDelete:()=>{deleted++;}});
  const body=JSON.stringify(payload);
  assert.equal((await request(handler,'POST',body,signed(body))).status,204);
  assert.equal((await request(handler,'POST',body,signed(body))).status,204);
- assert.equal(deleted,2);
+ assert.equal(deleted,1,'identical signed notification must not restart all active search generations');
+ const next=JSON.stringify({...payload,notification:{...payload.notification,notificationId:'event-2'}});
+ assert.equal((await request(handler,'POST',next,signed(next))).status,204);
+ assert.equal(deleted,2,'different real deletion events still trigger independent invalidation');
  assert.equal((await request(handler,'POST',body.replace('seller','tampered'),signed(body))).status,412);
  assert.equal((await request(handler,'POST',body)).status,412);assert.equal(deleted,2);
 });
+
+test('simultaneous retries of one verified deletion coalesce to one processing attempt',async()=>{
+ let deleted=0,release,markStarted;
+ const started=new Promise(resolve=>markStarted=resolve);
+ const hold=new Promise(resolve=>release=resolve);
+ const handler=createEbayDeletionHandler({token,endpoint,getPublicKey:async()=>publicKey,onDelete:async()=>{deleted++;markStarted();await hold;}});
+ const body=JSON.stringify(payload);
+ const first=request(handler,'POST',body,signed(body));
+ await started;
+ const second=request(handler,'POST',body,signed(body));
+ await Promise.resolve();
+ assert.equal(deleted,1);
+ release();
+ const results=await Promise.all([first,second]);
+ assert.deepEqual(results.map(x=>x.status),[204,204]);
+ assert.equal(deleted,1);
+});
+
+test('a failed deletion does not poison idempotency and is retryable with the same signed notificationId',async()=>{
+ let calls=0;const handler=createEbayDeletionHandler({token,endpoint,getPublicKey:async()=>publicKey,onDelete:async()=>{
+   if(++calls===1)throw Error('temporary processing failure');
+ }});
+ const body=JSON.stringify(payload);
+ assert.equal((await request(handler,'POST',body,signed(body))).status,503);
+ assert.equal((await request(handler,'POST',body,signed(body))).status,204);
+ assert.equal((await request(handler,'POST',body,signed(body))).status,204);
+ assert.equal(calls,2);
+});
+test('R04 P3.3: duplicate signed notification cannot restart an already replaced live search',async()=>{
+ const signal=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+ const firstStarted=signal(),replacementStarted=signal(),replacementDone=signal();
+ let calls=0;
+ const cache=createSearchCache(async()=>{
+   const index=++calls;
+   if(index===1){firstStarted.resolve();return new Promise(()=>{});}
+   if(index===2){replacementStarted.resolve();await replacementDone.promise;}
+   return {offers:[{title:'new',productPrice:2000}],errors:[],
+     coverage:{complete:true,partial:false,deadlineExceeded:false,providersPending:0,
+       sourceFailures:{errorsReported:0}}};
+ });
+ const handler=createEbayDeletionHandler({token,endpoint,getPublicKey:async()=>publicKey,
+   onDelete:()=>cache.clear('ebay_deletion')});
+ const shopper=cache('PS5',{allowStale:false});
+ await firstStarted.promise;
+ const body=JSON.stringify(payload);
+ assert.equal((await request(handler,'POST',body,signed(body))).status,204);
+ await replacementStarted.promise;
+ assert.equal(calls,2);
+ assert.equal((await request(handler,'POST',body,signed(body))).status,204);
+ assert.equal(calls,2,'replayed deletion must not cancel the replacement acquisition');
+ replacementDone.resolve();
+ const actual=await shopper;
+ assert.equal(actual.offers[0].productPrice,2000);
+ assert.equal(calls,2);
+ assert.equal((await cache('PS5',{allowStale:false})).offers[0].productPrice,2000);
+ assert.equal(calls,2);
+});
+
 test('processing failures and public key outages are retryable, unrelated topics rejected',async()=>{
  const body=JSON.stringify(payload);
  let handler=createEbayDeletionHandler({token,endpoint,getPublicKey:async()=>{throw Error('offline');},onDelete:()=>{}});
