@@ -63,9 +63,10 @@ export function verifyNeweggSearchContext({requestedUrl,finalUrl,query}={}){
   try{
     const req=new URL(requestedUrl);
     const fin=new URL(finalUrl||requestedUrl);
+    const normalizedQuery=String(query??"").trim().replace(/\s+/g," ");
     return req.origin===ORIGIN&&fin.origin===ORIGIN&&
       req.pathname==="/p/pl"&&fin.pathname==="/p/pl"&&
-      req.searchParams.get("d")===query&&fin.searchParams.get("d")===query;
+      req.searchParams.get("d")===normalizedQuery&&fin.searchParams.get("d")===normalizedQuery;
   }catch{return false;}
 }
 // Strictly extract the visible US-listing price; no crossed-out or sidebar prices.
