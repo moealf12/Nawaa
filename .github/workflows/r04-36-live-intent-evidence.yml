@@ -2,6 +2,8 @@ name: NAWAA R04 Frozen 36-Intent Production Evidence
 on:
   pull_request:
     paths:
+      - 'server/server.mjs'
+      - 'server/catalog-recall-budget.mjs'
       - 'server/match.mjs'
       - 'src/search-page.mjs'
       - 'src/search-result-presentation.mjs'
