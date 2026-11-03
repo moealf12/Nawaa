@@ -93,6 +93,50 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.glow,.orbit,.marquee-track{animation:none}.hero-sculpture,.reveal,.card img,.card-arrow{transition:none!important}.reveal{transform:none;filter:none}}
 
+
+/* Hero-only hologram phase: no changes to search, pricing or product cards. */
+.hero-center{width:100%;min-width:0;display:flex;flex-direction:column;align-items:center;position:relative}
+
+/* Keep the approved title visually separate from the luminous sculpture on all screens. */
+.hero-center .hero-visual{height:clamp(355px,32vw,470px);min-height:355px;max-height:none}
+.hero-center .hero-title{position:relative;left:auto;bottom:auto;transform:none;width:100%;max-width:100%;margin:-9px auto 12px;padding:0 8px}
+.hero-center .hero-title h1{font-size:clamp(54px,6.7vw,98px);line-height:1.12;letter-spacing:-.045em}
+.hero-center .hero-title h1 span{color:#d6bbff;-webkit-text-stroke:0;font-weight:750}
+.hero-center .hero-title small{font-size:9px;letter-spacing:.17em}
+@media(max-width:900px){
+ .hero-center .hero-visual{height:55svh;min-height:400px;max-height:500px}
+}
+.hero-center .hero-visual{width:100%;--tilt-x:0deg;--tilt-y:0deg;--glare-x:50%;--glare-y:50%;--hero-scroll-y:0px;--hero-scroll-rot:-5deg}
+.hero-tilt{position:relative;width:min(640px,88%);height:100%;display:grid;place-items:center;transform-style:preserve-3d;transform:perspective(1050px) translate3d(0,var(--hero-scroll-y),0) rotateZ(var(--hero-scroll-rot)) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));transition:transform .25s cubic-bezier(.18,.75,.2,1);touch-action:pan-y;isolation:isolate}
+.hero-tilt .hero-sculpture{display:block;width:100%;height:100%;max-height:100%;object-fit:contain;transform:none!important;animation:hero-holo-float 7s ease-in-out infinite}
+.hero-sheen{position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(circle at var(--glare-x) var(--glare-y),rgba(255,255,255,.5),transparent 31%),linear-gradient(115deg,transparent 19%,rgba(71,192,255,.35) 34%,rgba(239,129,255,.5) 49%,rgba(255,214,157,.32) 61%,transparent 78%);background-size:100% 100%,230% 100%;background-position:center,0% center;-webkit-mask-image:url("assets/nawaa-hero-sculpture.png");mask-image:url("assets/nawaa-hero-sculpture.png");-webkit-mask-position:center;mask-position:center;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-size:contain;mask-size:contain;mix-blend-mode:screen;opacity:0;transition:opacity .35s;animation:hero-holo-sweep 7.5s ease-in-out infinite}
+.holo-aura{position:absolute;inset:12%;border-radius:50%;z-index:-1;background:conic-gradient(from 20deg,transparent,rgba(75,147,255,.24),transparent,rgba(246,117,218,.21),transparent);filter:blur(31px);opacity:0;transform:scale(.9);transition:opacity .35s;animation:hero-holo-aura 9s linear infinite;pointer-events:none}
+.hero-visual[data-hologram="on"] .hero-sheen{opacity:.75}
+.hero-visual[data-hologram="on"] .holo-aura{opacity:1}
+.hero-visual[data-hologram="off"] .hero-sheen,.hero-visual[data-hologram="off"] .holo-aura{opacity:0}
+.hero-controls{position:relative;z-index:5;display:flex;gap:8px;align-items:center;justify-content:center;direction:rtl;margin:4px auto 0;padding:5px;border:1px solid rgba(166,197,255,.24);border-radius:18px;background:rgba(12,30,52,.73);box-shadow:0 10px 35px rgba(0,0,0,.16);backdrop-filter:blur(14px)}
+.hero-controls button{min-height:44px;min-width:73px;padding:9px 14px;border:1px solid transparent;border-radius:13px;background:transparent;color:#d4e0f0;cursor:pointer;transition:background .2s,color .2s,box-shadow .2s;font-size:13px;font-weight:650}
+.hero-controls button[aria-pressed="true"]{background:linear-gradient(135deg,rgba(110,170,245,.34),rgba(145,99,230,.22));border-color:rgba(182,209,255,.45);box-shadow:0 0 20px rgba(111,145,242,.2);color:#fff}
+
+@media(max-width:900px){
+ .hero-center .hero-title{position:relative;left:auto;bottom:auto;transform:none;max-width:100%;margin:-8px auto 18px;padding:0 12px;overflow:visible}
+ .hero-center .hero-title h1{font-size:clamp(47px,12vw,92px);line-height:1.15;letter-spacing:-.045em}
+ .hero-center .hero-title h1 span{color:#d6bbff;-webkit-text-stroke:0;font-weight:750}
+ .hero-center .hero-title small{font-size:9px;letter-spacing:.16em}
+}
+@media(max-width:560px){
+ .hero-center .hero-title{margin:-10px auto 16px;padding:0 8px}
+ .hero-center .hero-title h1{font-size:clamp(43px,13.2vw,62px);line-height:1.14}
+}
+.hero-controls button:focus-visible{outline:2px solid #b2d8ff;outline-offset:3px}
+.hero-controls .hero-motion-toggle{min-width:44px;width:44px;padding:0;border:1px solid rgba(181,211,248,.25)}
+.hero-visual[data-motion="off"] .hero-tilt .hero-sculpture,.hero-visual[data-motion="off"] .hero-sheen,.hero-visual[data-motion="off"] .holo-aura,.hero-visual[data-motion="off"] .orbit,.hero-visual[data-motion="off"] .glow{animation-play-state:paused!important}
+@keyframes hero-holo-float{0%,100%{translate:0 0}50%{translate:0 -7px}}
+@keyframes hero-holo-sweep{0%,100%{background-position:center,0% center}50%{background-position:center,100% center}}
+@keyframes hero-holo-aura{to{rotate:360deg}}
+@media(max-width:560px){.hero-center{max-width:100%}.hero-tilt{width:min(92%,420px)}.hero-center .hero-visual .hero-sculpture{width:100%;max-width:100%;height:100%;object-fit:contain}.hero-controls{margin-top:0;max-width:calc(100% - 8px)}.hero-controls button{padding:9px 10px;min-width:70px}.hero-controls .hero-motion-toggle{min-width:44px}}
+@media(prefers-reduced-motion:reduce){.hero-tilt,.hero-controls button{transition:none!important}.hero-tilt .hero-sculpture,.hero-sheen,.holo-aura{animation:none!important}.hero-visual .hero-tilt{transform:none!important}.hero-visual .hero-sheen{opacity:0!important}}
+
 /* NAWAA Search Engine */
 .search-engine{padding:100px 5vw;background:#07111d;color:#f5f0e8;border-top:1px solid rgba(255,255,255,.12)}
 .search-engine .search-wrap{max-width:1180px;margin:auto}.search-engine h2{font-size:clamp(38px,6vw,82px);margin:10px 0 18px;line-height:1.05}.search-engine .lead{max-width:760px;color:#aab8c8;line-height:1.9}
@@ -115,10 +159,21 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
  <section class="hero">
   <div class="shell hero-grid">
    <aside class="hero-side right"><span class="eyebrow">SAUDI CURATED COMMERCE</span><p>متجر سعودي قيد الإطلاق. لا نبيع قبل أن نعرف بالضبط ماذا يصل إليك.</p></aside>
-   <div class="hero-visual" id="heroVisual">
+   <div class="hero-center">
+   <div class="hero-visual" id="heroVisual" data-hologram="on" data-motion="on" data-visible="true">
     <div class="glow"></div><div class="orbit o1"></div><div class="orbit o2"></div>
-    <img class="hero-sculpture" id="sculpture" src="assets/nawaa-hero-sculpture.png" alt="منحوتة تجريدية تمثل هوية نواة" />
-    <div class="hero-title"><h1>نبحث قبل<br><span>أن تشتري.</span></h1><small>NAWAA / CURATED WITH A REASON</small></div>
+    <div class="holo-aura" aria-hidden="true"></div>
+    <div class="hero-tilt" id="heroTilt">
+     <img class="hero-sculpture" id="sculpture" src="assets/nawaa-hero-sculpture.png" alt="منحوتة نواة الزجاجية ذات الحلقات المتداخلة" />
+     <span class="hero-sheen" aria-hidden="true"></span>
+    </div>
+   </div>
+   <div class="hero-title"><h1>نبحث قبل<br><span>أن تشتري.</span></h1><small>NAWAA / CURATED WITH A REASON</small></div>
+   <div class="hero-controls" role="group" aria-label="طريقة عرض مجسم نواة">
+    <button type="button" id="heroOriginal" aria-pressed="false">الأصل</button>
+    <button type="button" id="heroHologram" aria-pressed="true">هولوغرام</button>
+    <button type="button" class="hero-motion-toggle" id="heroPause" aria-label="إيقاف حركة المجسم" aria-pressed="false" title="إيقاف الحركة">Ⅱ</button>
+   </div>
    </div>
    <aside class="hero-side left"><span class="eyebrow">01 / WHY NAWAA</span><p>الفائدة، الجودة، تكلفة الوصول، ومسؤولية المورد. أربع بوابات قبل أي زر شراء.</p></aside>
   </div>
@@ -201,15 +256,58 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
  <div class="drawer" id="drawer" aria-hidden="true"><div class="drawer-panel"><div class="drawer-top"><b>نواة.</b><button class="drawer-close" id="drawerClose" type="button" aria-label="إغلاق">×</button></div><h3 id="drawerTitle">التفاصيل</h3><p id="drawerBody"></p><nav class="drawer-nav" id="drawerNav"><a href="#about">الفكرة</a><a href="#selection">قيد المراجعة</a><a href="#price">منطق السعر</a><a href="#process">كيف نختار</a><a href="#faq">الأسئلة</a></nav><ul id="drawerFacts"><li><span>الحالة</span><b>قيد التقييم</b></li><li><span>البيع</span><b>غير مفعّل</b></li><li><span>المعيار</span><b>فائدة + مواصفة + تكلفة</b></li></ul></div></div>
 <script src="./config.js"></script>
 <script>
-const nav=document.getElementById('nav'), progress=document.getElementById('progress'), sculpture=document.getElementById('sculpture');
+const nav=document.getElementById('nav'), progress=document.getElementById('progress'), sculpture=document.getElementById('sculpture'), heroVisual=document.getElementById('heroVisual'), heroTilt=document.getElementById('heroTilt');
 let latestY=0, ticking=false;
 function update(){
  const y=latestY, max=document.documentElement.scrollHeight-innerHeight;
  progress.style.width=(max>0?(y/max)*100:0)+'%'; nav.classList.toggle('scrolled',y>24);
- if(!matchMedia('(prefers-reduced-motion: reduce)').matches){sculpture.style.transform=`translate3d(0,${Math.min(y*.06,42)}px,0) rotate(${(-5+y*.018)%360}deg) scale(${1-Math.min(y/9000,.055)})`}
+ if(!matchMedia('(prefers-reduced-motion: reduce)').matches){heroVisual.style.setProperty('--hero-scroll-y',Math.min(y*.06,42)+'px');heroVisual.style.setProperty('--hero-scroll-rot',(-5+y*.018)+'deg')}
  ticking=false;
 }
 addEventListener('scroll',()=>{latestY=scrollY;if(!ticking){requestAnimationFrame(update);ticking=true}},{passive:true}); update();
+
+/* Scoped Hero Hologram: never changes product, search, or API behavior. */
+const heroOriginal=document.getElementById('heroOriginal'), heroHologram=document.getElementById('heroHologram'), heroPause=document.getElementById('heroPause');
+const heroReduced=matchMedia('(prefers-reduced-motion: reduce)');
+let hologramEnabled=true, motionRequested=true, heroInView=true, heroPointerFrame=0, heroPointerEvent=null;
+function resetHeroTilt(){if(heroPointerFrame)cancelAnimationFrame(heroPointerFrame);heroPointerFrame=0;heroPointerEvent=null;heroVisual.style.setProperty('--tilt-x','0deg');heroVisual.style.setProperty('--tilt-y','0deg');heroVisual.style.setProperty('--glare-x','50%');heroVisual.style.setProperty('--glare-y','50%')}
+function syncHeroMode(){
+ const canMove=motionRequested&&!heroReduced.matches&&heroInView;
+ heroVisual.dataset.hologram=hologramEnabled?'on':'off';
+ heroVisual.dataset.motion=canMove?'on':'off';
+ heroOriginal.setAttribute('aria-pressed',String(!hologramEnabled));
+ heroHologram.setAttribute('aria-pressed',String(hologramEnabled));
+ heroPause.setAttribute('aria-pressed',String(!motionRequested));
+ heroPause.setAttribute('aria-label',motionRequested?'إيقاف حركة المجسم':'استئناف حركة المجسم');
+ heroPause.setAttribute('title',motionRequested?'إيقاف الحركة':'استئناف الحركة');
+ heroPause.textContent=motionRequested?'Ⅱ':'▶';
+ if(!canMove||!hologramEnabled)resetHeroTilt();
+}
+heroOriginal.addEventListener('click',()=>{hologramEnabled=false;syncHeroMode()});
+heroHologram.addEventListener('click',()=>{hologramEnabled=true;syncHeroMode()});
+heroPause.addEventListener('click',()=>{motionRequested=!motionRequested;syncHeroMode()});
+heroTilt.addEventListener('pointermove',(event)=>{
+ if(!hologramEnabled||!motionRequested||heroReduced.matches||!heroInView)return;
+ heroPointerEvent={x:event.clientX,y:event.clientY};
+ if(heroPointerFrame)return;
+ heroPointerFrame=requestAnimationFrame(()=>{
+  heroPointerFrame=0;const point=heroPointerEvent;heroPointerEvent=null;if(!point)return;
+  const rect=heroTilt.getBoundingClientRect();if(!rect.width||!rect.height)return;
+  const nx=Math.max(-1,Math.min(1,2*(point.x-rect.left)/rect.width-1));
+  const ny=Math.max(-1,Math.min(1,2*(point.y-rect.top)/rect.height-1));
+  heroVisual.style.setProperty('--tilt-x',(-ny*6).toFixed(2)+'deg');
+  heroVisual.style.setProperty('--tilt-y',(nx*6).toFixed(2)+'deg');
+  heroVisual.style.setProperty('--glare-x',((nx+1)*50).toFixed(1)+'%');
+  heroVisual.style.setProperty('--glare-y',((ny+1)*50).toFixed(1)+'%');
+ });
+},{passive:true});
+heroTilt.addEventListener('pointerleave',resetHeroTilt);
+heroTilt.addEventListener('pointercancel',resetHeroTilt);
+const heroObserver=new IntersectionObserver(entries=>{heroInView=entries[0]?.isIntersecting??true;syncHeroMode()},{threshold:0});
+heroObserver.observe(heroVisual);
+heroReduced.addEventListener?.('change',syncHeroMode);
+syncHeroMode();
+
 const io=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in')}),{threshold:.12,rootMargin:'0px 0px -7% 0px'});document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 const drawer=document.getElementById('drawer'),dt=document.getElementById('drawerTitle'),db=document.getElementById('drawerBody'),drawerNav=document.getElementById('drawerNav'),drawerFacts=document.getElementById('drawerFacts');
 function openDrawer(title,body,mode='detail'){dt.textContent=title;db.textContent=body;drawerNav.style.display=mode==='menu'?'block':'none';drawerFacts.style.display=mode==='menu'?'none':'block';drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');document.body.style.overflow='hidden'}
