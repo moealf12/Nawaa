@@ -63,6 +63,36 @@ test('a failed deletion does not poison idempotency and is retryable with the sa
  assert.equal((await request(handler,'POST',body,signed(body))).status,204);
  assert.equal(calls,2);
 });
+test('R04 P3.3: duplicate signed notification cannot restart an already replaced live search',async()=>{
+ const signal=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+ const firstStarted=signal(),replacementStarted=signal(),replacementDone=signal();
+ let calls=0;
+ const cache=createSearchCache(async()=>{
+   const index=++calls;
+   if(index===1){firstStarted.resolve();return new Promise(()=>{});}
+   if(index===2){replacementStarted.resolve();await replacementDone.promise;}
+   return {offers:[{title:'new',productPrice:2000}],errors:[],
+     coverage:{complete:true,partial:false,deadlineExceeded:false,providersPending:0,
+       sourceFailures:{errorsReported:0}}};
+ });
+ const handler=createEbayDeletionHandler({token,endpoint,getPublicKey:async()=>publicKey,
+   onDelete:()=>cache.clear('ebay_deletion')});
+ const shopper=cache('PS5',{allowStale:false});
+ await firstStarted.promise;
+ const body=JSON.stringify(payload);
+ assert.equal((await request(handler,'POST',body,signed(body))).status,204);
+ await replacementStarted.promise;
+ assert.equal(calls,2);
+ assert.equal((await request(handler,'POST',body,signed(body))).status,204);
+ assert.equal(calls,2,'replayed deletion must not cancel the replacement acquisition');
+ replacementDone.resolve();
+ const actual=await shopper;
+ assert.equal(actual.offers[0].productPrice,2000);
+ assert.equal(calls,2);
+ assert.equal((await cache('PS5',{allowStale:false})).offers[0].productPrice,2000);
+ assert.equal(calls,2);
+});
+
 test('processing failures and public key outages are retryable, unrelated topics rejected',async()=>{
  const body=JSON.stringify(payload);
  let handler=createEbayDeletionHandler({token,endpoint,getPublicKey:async()=>{throw Error('offline');},onDelete:()=>{}});
