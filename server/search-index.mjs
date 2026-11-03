@@ -1,4 +1,5 @@
 import {isExcludedMerchantSource} from "../src/source-registry.mjs";
+import {validateIndexPage,filterFreshIndexedHits} from "./index-recall-plan.mjs";
 // A searchable copy is NOT a new merchant observation. Do not mint fresh
 // price/stock timestamps on reindexing, cache warmup, or process restart.
 // Customer cache currently uses a 45-second fresh window. Keep the index
@@ -82,27 +83,32 @@ async function writeOffers(offers=[]){
   if(Number.isInteger(task?.taskUid))await target.waitForTask(task.taskUid,{timeOutMs:15_000,intervalMs:100});
   return {configured:true,indexed:accepted.length,skippedOlder:docs.length-accepted.length};
 }
-export async function searchIndexedOffers(query,{limit=80,now=Date.now()}={}){
-  if(process.env.NODE_ENV==='test'&&process.env.NAWAA_CANONICAL_INDEX_TEST==='1')
-    return (await import('./omega-canonical-index.mjs')).guardedCanonicalSearch(query,{limit,now});
+export async function searchIndexedOffers(query,{
+  limit=80,offset=0,now=Date.now(),signal,
+}={}){
+  const page=validateIndexPage({offset,limit});
+  if(process.env.NODE_ENV==='test'&&process.env.NAWAA_CANONICAL_INDEX_TEST==='1'){
+    // Only the disposable canonical proof supports bounded first-page replay;
+    // avoid presenting its 500-hit test ceiling as a production capability.
+    if(offset>=500)return {configured:true,offers:[],offset,limit,
+      fetchedHits:0,estimatedTotalHits:null,canonicalTestLimitReached:true};
+    const result=await (await import('./omega-canonical-index.mjs'))
+      .guardedCanonicalSearch(query,{limit:Math.min(500,offset+limit),now});
+    return {...result,offers:(result.offers||[]).slice(offset,offset+limit),
+      offset,limit,fetchedHits:(result.offers||[]).length,estimatedTotalHits:null};
+  }
   const target=await index();
-  if(!target||!String(query||"").trim())return {configured:Boolean(target),offers:[]};
-  const result=await target.search(String(query),{limit,
+  if(!target||!String(query||"").trim())
+    return {configured:Boolean(target),offers:[],offset,limit,
+      fetchedHits:0,estimatedTotalHits:null};
+  const result=await target.search(String(query),{...page,
     attributesToRetrieve:["title","brand","merchant","merchantCountryCode",
       "productPrice","totalSAR","currency","sourceUrl","imageUrl","sku",
       "condition","availability","matchConfidence","exactMatch","observedAt",
-      "sourceMeta","specs"]});
-  const offers=(result.hits||[]).filter(hit=>{
-    // Exclusion must hold for pre-existing Meilisearch documents as well.
-    if(isExcludedMerchantSource({name:hit.merchant,baseUrl:hit.sourceUrl}))return false;
-    const timestamp=Date.parse(hit.observedAt);
-    const age=now-timestamp;
-    return Number.isFinite(timestamp)&&age>=-60_000&&age<=INDEXED_OFFER_FRESH_MS;
-  }).map(hit=>({
-    ...hit,
-    // No historical exact=true or confidence from another query/older rules.
-    exactMatch:false,matchConfidence:0,
-    dataKind:"indexed",
-  }));
-  return {configured:true,offers};
+      "sourceMeta","specs"]},signal?{signal}:undefined);
+  const raw=Array.isArray(result.hits)?result.hits:[];
+  const filtered=filterFreshIndexedHits(raw,{now,freshMs:INDEXED_OFFER_FRESH_MS});
+  return {configured:true,...filtered,offset,limit,fetchedHits:raw.length,
+    estimatedTotalHits:Number.isSafeInteger(result.estimatedTotalHits)
+      ?result.estimatedTotalHits:null};
 }
