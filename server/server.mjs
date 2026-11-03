@@ -40,7 +40,9 @@ import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
 import { normalizeIngestBatch } from "./ingestion.mjs";
-import { indexOffers, searchIndexedOffers } from "./search-index.mjs";
+import { indexOffers, searchIndexedOffers, searchIndexConfigured } from "./search-index.mjs";
+import {indexRecallPlan,INDEX_RECALL_TIMEOUT_MS,
+  compactIndexRecallEvidence} from "./index-recall-plan.mjs";
 import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 import {createSearchWavePages} from "./search-wave-pages.mjs";
@@ -371,7 +373,21 @@ async function searchExpansion(query, depth, {signal} = {}) {
       }).catch(error=>({provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],errors:[{error:error instanceof Error?error.message:String(error)}],diagnostics:[]}))
     : Promise.resolve({provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],errors:[],diagnostics:[]});
 
-  const [amazon,storefront] = await Promise.all([amazonPromise,storefrontPromise]);
+  // The normal wave already searched the first 80 fresh indexed documents.
+  // Expansion waves only inspect their own non-overlapping ranges; this is a
+  // bounded optional accelerator, not a substitute for live merchant proof.
+  const indexPage=indexRecallPlan(depth);
+  const indexSignal=signal
+    ?AbortSignal.any([signal,AbortSignal.timeout(INDEX_RECALL_TIMEOUT_MS)])
+    :AbortSignal.timeout(INDEX_RECALL_TIMEOUT_MS);
+  const indexPromise=OMEGA_INDEX_ONLY
+    ?Promise.resolve({configured:false,offers:[],fetchedHits:0})
+    :searchIndexedOffers(query,{...indexPage,signal:indexSignal})
+      .catch(()=>({configured:searchIndexConfigured(),offers:[],
+        error:"index_recall_unavailable"}));
+  const [amazon,storefront,indexEvidence]=await Promise.all([
+    amazonPromise,storefrontPromise,indexPromise,
+  ]);
   const providers=[];
   const errors=[];
   if(plan.amazonPageCount>0) {
@@ -383,7 +399,10 @@ async function searchExpansion(query, depth, {signal} = {}) {
     errors.push(...(storefront.errors||[]).map(error=>({provider:"free-storefronts",sourceId:"free-storefronts",pass:"expansion",...error})));
   }
 
-  const offers=retainRelatedOffers(query, await canonicalCandidates([...(amazon.offers||[]),...(storefront.offers||[])],true));
+  const offers=retainRelatedOffers(query, await canonicalCandidates([
+    ...(amazon.offers||[]),...(storefront.offers||[]),
+    ...(indexEvidence.offers||[]),
+  ],true));
   const {allSelectedOffers,selectedOffers,rankedCandidates,resultLimit,
     resultLimitReached}=prepareSearchResultWindow(offers,plan);
   void indexOffers(selectedOffers.filter(offer=>offer.dataKind==="live")).catch(()=>{});
@@ -406,6 +425,7 @@ async function searchExpansion(query, depth, {signal} = {}) {
     providersConfigured:configuredProviders(),
     coverage:{
       ...sourceCoverageSummary(sources),
+      indexRecall:compactIndexRecallEvidence(indexEvidence,indexPage),
       amazonDirectOffers:(amazon.offers||[]).length,
       returnedOffers:selectedOffers.length,
       availableOffers:allSelectedOffers.length,
