@@ -30,7 +30,14 @@ export function inferSoldSubjectRole(title=""){
  if(!normalized)return "unknown";
  // Inclusion markers matter: a complete device "with a case/guide" is still
  // the complete device. "Compatible with" never grants package inclusion.
- const primary=normalized.replace(/\bcompatible with\b/g,"compatible_to")
+ // Retail bundles may join the principal sold item and included extras
+ // with " + " / " & " rather than "with". Split BEFORE normalization,
+ // which intentionally removes punctuation (but preserve model suffixes such
+ // as S25+ without surrounding spaces). Accessories listed after a complete
+ // console must not redefine the item being sold.
+ const retailSubject=String(title).split(/\s+(?:\+|&)\s+/u,1)[0];
+ const primary=normalizeSearchQuery(retailSubject)
+   .replace(/\bcompatible with\b/g,"compatible_to")
    .split(/\b(?:with|including|includes)\b/,1)[0].trim();
  const whole=PRINCIPAL.test(primary);
  const documentation=GUIDE.test(primary)||
