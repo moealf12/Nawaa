@@ -50,7 +50,7 @@ test("R04 P3: do not create a catalog on unconfigured DB",async()=>{
 
 test("R04 P3: per-observation errors isolate rather than corrupt other real sources",async()=>{
  const seen=[];
- const result=await writeThroughFreshLiveObservations("iphone",[fresh(0),fresh(1),fresh(2)],{
+ const result=await writeThroughFreshLiveObservations("iphone",[fresh(0),fresh(1),{...fresh(2),query:"sensitive-search"}],{
    configured:()=>true,now:NOW,
    record:async x=>{
      seen.push(x);
