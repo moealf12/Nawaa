@@ -85,6 +85,11 @@ export function verifyAsosPdpEvidence(html,candidate,{finalUrl,observedAt=new Da
   if(selected.availability!=="in_stock")
     return no("PDP_VARIANT_OUT_OF_STOCK","out_of_stock");
   if(selected.price!==candidate.price)return no("SEARCH_PDP_PRICE_MISMATCH");
-  return {verified:true,reason:"EXACT_VARIANT_PRICE_AND_STOCK",
-    availability:"in_stock",price:selected.price,currency:"GBP",observedAt};
+  // A colourway-wide schema.org InStock signal does NOT prove any selected
+  // size is buyable. Only PDP price and colourway stock signalling are verified.
+  // Do not publish in-stock status until a size-specific checkout offer is proven.
+  return {verified:true,reason:"COLOURWAY_PRICE_PARITY_SIZE_UNKNOWN",
+    availability:"unknown",colourwayAvailability:"in_stock",
+    sizeAvailability:"unknown",sizeStockVerified:false,
+    price:selected.price,currency:"GBP",observedAt};
 }
