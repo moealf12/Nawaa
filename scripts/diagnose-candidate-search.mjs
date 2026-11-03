@@ -58,6 +58,12 @@ async function query(text){
     const result={
       q:text,status:r.status,elapsedMs:Date.now()-start,
       count:offers.length,exact:exact.length,structurallyValid:structurallyValid.length,
+      // Numbers/booleans only: the pre-existing primary coverage failure
+      // remains visible without copying raw provider errors to the summary.
+      sourceErrorCount:Array.isArray(data.errors)?data.errors.length:null,
+      partial:data.coverage?.partial===true,
+      deadlineExceeded:data.coverage?.deadlineExceeded===true,
+      providersPending:data.coverage?.providersPending??null,
       merchants:[...new Set(offers.map(o=>o.merchant).filter(Boolean))].slice(0,15),
       providerSummary:(data.providers||[]).filter(p=>(p.returnedOffers||0)>0).map(p=>({sourceId:p.sourceId,offers:p.returnedOffers})),
       failures:(data.errors||[]).slice(0,7).map(e=>({id:e.sourceId,code:String(e.error||e.message||'').slice(0,110)})),
@@ -134,6 +140,37 @@ try{
   const stream=await measureStreamFirstOffer('iPhone 17');
   const iphone=await query('iPhone 17');
   const ps5=await query('PS5');
+  // R04-P3.6 candidate-only probes of three intents that failed with 30s
+  // timeouts in old production audit 41726259270. This is NOT evidence
+  // that old production's subsequent successful audit was due to this PR.
+  // Sequential, no retries, no paid services, no production writes.
+  const p36Cases=[
+    ['Q15','HP laptop 16GB RAM'],
+    ['Q16','لابتوب اتش بي 16 رام'],
+    ['Q26','حذاء نايك رياضي'],
+  ];
+  const p36Results=[];
+  for(const [id,queryText] of p36Cases){
+    const result=await query(queryText);
+    p36Results.push({
+      id,status:result.status,elapsedMs:result.elapsedMs,
+      offers:result.count??null,valid:result.structurallyValid??null,
+      exact:result.exact??null,partial:result.partial??null,
+      deadlineExceeded:result.deadlineExceeded??null,
+      providersPending:result.providersPending??null,
+      sourceErrors:result.sourceErrorCount??null,
+      failure:result.error?'CANDIDATE_REQUEST_FAILED':null,
+    });
+  }
+  const p36Passed=p36Results.every(x=>x.status===200&&
+    Number.isInteger(x.offers)&&x.offers>=0&&x.valid===x.offers&&
+    (x.partial===true||x.partial===false));
+  console.log('R04_P36_CANDIDATE_CRITICAL '+JSON.stringify({
+    candidateOnly:true,baselineComparison:false,
+    measuredInDisposableRunner:true,productionWrite:false,
+    reported:p36Results.length,passed:p36Passed,results:p36Results,
+  }));
+  if(!p36Passed)process.exitCode=8;
   // v15.14: bounded read-only real Constructor search and raw vs adapter
   // evidence. This is diagnostic-only (no provider, product or DB writes).
   // Intercept existing PUBLIC adapter fetch rather than guessing new endpoints
