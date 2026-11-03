@@ -42,7 +42,7 @@ test("query deep link starts exactly one live search and URL submission requests
     "the shopper search must not wait for a redundant health warmup");
   assert.equal(new URL(requests[0]).pathname, "/api/search",
     "send the actual search immediately, including on a cold API instance");
-  assert.equal((element("#results").innerHTML.match(/data-group-key=/g) || []).length, 2, element("#results").innerHTML.slice(0,1800));
+  assert.equal((element("#results").innerHTML.match(/data-group-key=/g) || []).length, 2, JSON.stringify({status:element("#searchStatus").textContent,html:element("#results").innerHTML.slice(0,1800),requests}));
   assert.ok(element("#results").innerHTML.indexOf("مقارنة عروض النسخة المختارة") < element("#results").innerHTML.indexOf("المواصفات الموحّدة"), "merchant comparison should be honest and precede optional specifications");
   assert.match(element("#results").innerHTML, /id="availabilityFilter"/);
   assert.match(element("#results").innerHTML, /id="merchantFilter"/);
