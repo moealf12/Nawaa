@@ -2,6 +2,9 @@ name: NAWAA Real Browser Customer Journey
 on:
   pull_request:
     paths:
+      - 'server/server.mjs'
+      - 'server/search-offer-admission.mjs'
+      - 'tests/r04-p0-search-offer-admission.test.mjs'
       - 'src/search-page.mjs'
       - 'src/product-page.mjs'
       - 'search.html'
