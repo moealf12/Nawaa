@@ -944,6 +944,27 @@ function renderProduct(product, query) {
   const directGroups = classified.primaryGroups.filter(group=>
     group.bestOffer?.condition === (intent.condition || "new"));
   const discoverySections = buildDiscoverySections(query, directGroups);
+  // An exact, title-evidenced complete principal can be mistaken for a
+  // peripheral by a broad source category regex (e.g. a complete PS5 console
+  // with an INCLUDED USB hub). Do not lose the fully identified principal
+  // solely because a secondary included noun was indexed as accessory.
+  // Direct classification already checks the actual sold retail title,
+  // shopper role and model. A standalone hub never reaches this branch.
+  if(intent.category){
+    const allocated = new Set(discoverySections.flatMap(section=>section.groups).map(g=>g.key));
+    const disputed = directGroups.filter(group=>!allocated.has(group.key) &&
+      group.bestOffer?.exactMatch===true &&
+      (group.bestOffer?.matchConfidence||0)>=0.9);
+    if(disputed.length){
+      let primarySection=discoverySections.find(section=>section.key===intent.category);
+      if(!primarySection){
+        primarySection={key:intent.category,label:categoryLabel(intent.category),groups:[]};
+        discoverySections.push(primarySection);
+      }
+      const allowed=new Set([...primarySection.groups,...disputed].map(g=>g.key));
+      primarySection.groups=directGroups.filter(g=>allowed.has(g.key));
+    }
+  }
   const exactGroups = discoverySections.flatMap(section=>section.groups);
   const displayedSections = state.category === 'all' ? discoverySections : discoverySections.filter(section => section.key === state.category);
   const selectorGroups = state.selectedGroupKey ? exactGroups.filter(group => group.key === state.selectedGroupKey) : exactGroups;
