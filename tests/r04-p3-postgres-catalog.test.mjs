@@ -60,7 +60,7 @@ test("R04 P3: per-observation errors isolate rather than corrupt other real sour
  });
  assert.deepEqual(result,{configured:true,attempted:3,recorded:2,failed:1});
  assert.equal(seen.length,3);
- assert.ok(seen.every(x=>x.query==="iphone"&&x.sourceName==="jarir-direct"));
+ assert.ok(seen.every(x=>!Object.hasOwn(x,"query")&&x.sourceName==="jarir-direct"));
  assert.deepEqual(seen.map(x=>x.observedAt),
    [fresh(0).observedAt,fresh(1).observedAt,fresh(2).observedAt]);
 });
