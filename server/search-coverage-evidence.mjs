@@ -6,8 +6,8 @@ export function summarizeWaveSourceEvidence(providers=[],errors=[]){
   const issues=Array.isArray(errors)?errors:[];
   let reportedOffers=0,withOffers=0,explicitSuccess=0,explicitNoSuccess=0,unknown=0;
   for(const row of reports){
-    const raw=Number(row?.returnedOffers);
-    const n=Number.isSafeInteger(raw)&&raw>0?raw:0;
+    const raw=row?.returnedOffers;
+    const n=typeof raw==="number"&&Number.isSafeInteger(raw)&&raw>0?raw:0;
     reportedOffers=Math.min(Number.MAX_SAFE_INTEGER,reportedOffers+n);
     if(n>0)withOffers++;
     if(row?.ok===true)explicitSuccess++;
