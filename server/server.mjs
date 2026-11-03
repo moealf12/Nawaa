@@ -49,16 +49,17 @@ import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEP
 import {createSearchWavePages} from "./search-wave-pages.mjs";
 import {prepareSearchResultWindow} from "./search-result-window.mjs";
 import {summarizeWaveSourceEvidence} from "./search-coverage-evidence.mjs";
-import {writeThroughFreshLiveObservations} from "./catalog-write-through.mjs";
+import {scheduleCatalogWrite} from "./catalog-write-through.mjs";
 import {catalogRecallPlan,summarizeCatalogRecall} from "./catalog-recall-evidence.mjs";
 
 function writeObservedLiveCatalog(query, offers){
   // Never wait on the optional storage accelerator or let a failing DB
   // change the customer-visible search response. Sources remain independent.
-  void writeThroughFreshLiveObservations(query,offers).then(result=>{
-    if(result.configured && result.attempted>0)
+  void scheduleCatalogWrite(query,offers).then(result=>{
+    if(result.configured && (result.attempted>0 || result.skipped))
       console.info("NAWAA_CATALOG_WRITE "+JSON.stringify({
         attempted:result.attempted,recorded:result.recorded,failed:result.failed,
+        skipped:result.skipped||null,
       }));
   }).catch(()=>console.warn("NAWAA_CATALOG_WRITE_FAILED"));
 }
