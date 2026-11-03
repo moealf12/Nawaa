@@ -1335,7 +1335,9 @@ async function loadMoreRemote(query) {
     console.warn("NAWAA remote expansion failed",error);
     if (error?.status === 410) {
       state.overflowCursor=null;
-      state.remoteExhausted=!state.nextCursor;
+      // Never jump past missing pages to the next acquisition depth.
+      state.nextCursor=null;
+      state.remoteExhausted=true;
       els.status.textContent="انتهت صلاحية دفعة النتائج السابقة؛ أعد البحث لاستعادتها دون فقد أو تخمين.";
     } else {
       els.status.textContent=error?.status===429
