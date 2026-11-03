@@ -359,7 +359,8 @@ assert.ok(temuStructuredLinks.every((entry) => entry.url.includes("temu.com/sa-e
 assert.ok(temuStructuredLinks.some((entry) => entry.url.includes("601100089500228")));
 assert.ok(temuStructuredLinks.some((entry) => entry.url.includes("601100089500229")));
 assert.ok(selectedStores("فستان شي ان", 8).some((store) => store.id === "shein-sa"));
-assert.ok(selectedStores("لابتوب", 8).some((store) => store.id === "newegg-global"));
+// Newegg requires explicit merchant authorization before storefront acquisition.
+assert.ok(!selectedStores("لابتوب", 8).some((store) => store.id === "newegg-global"));
 assert.ok(configuredFreeStorefronts().length >= 15);
 
 const fashionRoutes = routeFreeStorefronts("فستان شي ان", 8);
@@ -378,7 +379,7 @@ assert.ok(laptopRoutes.length <= 8);
 // Expanded routing must preserve established global recall even as higher-priority
 // Saudi/GCC electronics sources are added ahead of them.
 const expandedLaptopRoutes = routeFreeStorefronts("لابتوب hp", 16);
-assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "newegg-global"));
+assert.ok(!expandedLaptopRoutes.some((route) => route.store.id === "newegg-global"));
 assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bestbuy-us"));
 assert.ok(expandedLaptopRoutes.some((route) => route.store.id === "bhphoto-us"));
 
