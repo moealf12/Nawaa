@@ -20,8 +20,8 @@ export function createSearchOfferAdmission(query,{legacyFloor=0.35}={}){
   const qt=[...new Set(terms(query))];
   const minimum=qt.length===1?1:2;
   return offer=>{
-    const score=Number(offer?.matchConfidence);
-    if(!Number.isFinite(score)||score<0||score>1)return false;
+    const score=offer?.matchConfidence;
+    if(typeof score!=="number"||!Number.isFinite(score)||score<0||score>1)return false;
     if(score>=legacyFloor)return true;
     if(qt.length===0)return false;
     const title=String(offer?.title||"");
