@@ -95,7 +95,7 @@ test("missing user-authorized runtime switches stay disabled, with no outgoing r
     const {searchFreeStorefrontById,routeFreeStorefronts,configuredFreeStorefronts}=
       await import("../server/providers/free-storefronts.mjs");
     assert.equal(routeFreeStorefronts("asos dresses").some(x=>x.store.id==="asos-global"),false);
-    assert.equal(configuredFreeStorefronts().some(x=>x.id==="asos-global"),false);
+    assert.equal(configuredFreeStorefronts().some(x=>x.id==="asos-global"),true); // registered, but not routed
     const disabled=await searchFreeStorefrontById("asos-global","nike shoes");
     assert.equal(disabled.diagnostics.status,"SOURCE_DISABLED");
     process.env.NAWAA_ASOS_LIVE_ENABLED="1";
