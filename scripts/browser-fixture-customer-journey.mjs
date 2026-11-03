@@ -193,15 +193,15 @@ function searchPayload(q,cursor) {
       coverage:{partial:false,deadlineExceeded:false,providersPending:0},nextCursor:null};
   }
   if(q.includes('fixture-detail-pending')) return {
-    offers:[{...offer(5),image:'https://nawaa-detail-pending.invalid/photo.png'}],
+    offers:[{...offer(5),title:'Fixture Detail Pending Laptop',image:'https://nawaa-detail-pending.invalid/photo.png'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
   if(q.includes('fixture-detail-loaded')) return {
-    offers:[{...offer(5),image:'https://nawaa-detail-loaded.invalid/photo.svg'}],
+    offers:[{...offer(5),title:'Fixture Detail Loaded Laptop',image:'https://nawaa-detail-loaded.invalid/photo.svg'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
   if(q.includes('fixture-pending-image')) return {
-    offers:[{...offer(5),image:'https://nawaa-pending.invalid/delayed-product.jpg'}],
+    offers:[{...offer(5),title:'Fixture Pending Image Laptop',image:'https://nawaa-pending.invalid/delayed-product.jpg'}],
     errors:[],providers:[],coverage:{partial:false,deadlineExceeded:false,providersPending:0},
     nextCursor:null};
   if(q.includes('fixture-no-results')) return {
