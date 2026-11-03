@@ -1,4 +1,5 @@
 import { persistOffers, recordOffer, searchPersistedOffers } from "./persistence.mjs";
+import { probeDatabaseOnStartup } from "./database-startup-probe.mjs";
 import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
 import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
@@ -373,9 +374,9 @@ async function searchExpansion(query, depth, {signal} = {}) {
       }).catch(error=>({provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],errors:[{error:error instanceof Error?error.message:String(error)}],diagnostics:[]}))
     : Promise.resolve({provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],errors:[],diagnostics:[]});
 
-  // The normal wave already searched the first 80 fresh indexed documents.
-  // Expansion waves only inspect their own non-overlapping ranges; this is a
-  // bounded optional accelerator, not a substitute for live merchant proof.
+  // The initial wave has already searched the first 80 indexed documents.
+  // Expansion only reads its own disjoint positions. Fresh index evidence
+  // cannot substitute for a direct merchant observation.
   const indexPage=indexRecallPlan(depth);
   const indexSignal=signal
     ?AbortSignal.any([signal,AbortSignal.timeout(INDEX_RECALL_TIMEOUT_MS)])
@@ -1365,4 +1366,6 @@ server.maxRequestsPerSocket = 100;
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`NAWAA search backend listening on :${PORT}`);
+  // Opt-in one-shot proof; never blocks HTTP startup or persists test offers.
+  void probeDatabaseOnStartup();
 });
