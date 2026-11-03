@@ -1,0 +1,48 @@
+name: NAWAA R04 P3.6 Disposable Candidate 36-Intent Evidence
+on:
+  pull_request:
+    paths:
+      - 'scripts/r04-p36-candidate-36.mjs'
+      - 'server/source-fallback-policy.mjs'
+      - 'server/server.mjs'
+      - 'server/providers/free-storefronts.mjs'
+      - 'scripts/r04-source-failure-forensics.mjs'
+      - '.github/workflows/r04-p36-disposable-candidate-36.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r04-p36-candidate-36-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  candidate-36-source-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Collect all 36 frozen intents against local candidate (read-only public sources)
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+          NOON_ENABLED: 'false'
+          CARREFOUR_ENABLED: 'false'
+          EBAY_ENABLED: 'false'
+        run: node scripts/r04-p36-candidate-36.mjs
+      - name: Retain bounded candidate evidence with exact commit provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-p36-candidate-36-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-p36-candidate-36-evidence.json
+          retention-days: 7
+          if-no-files-found: warn
