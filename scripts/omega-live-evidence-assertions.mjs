@@ -5,11 +5,14 @@
 // A separate mandatory canonicalReadBoundary assertion proves hydration
 // even when later merchant discovery no longer produces that identity.
 import assert from "node:assert/strict";
+import {canonicalOfferIdentity} from "../server/canonical-offer-identity.mjs";
 
 function sameIdentity(offer, identity){
-  return offer?.sourceUrl===identity?.sourceUrl &&
-    String(offer?.condition||"new").toLowerCase()===
-    String(identity?.condition||"new").toLowerCase();
+  // URL alone is not the canonical offer key: country, physical SKU and MPN
+  // can distinguish legitimate variants listed under a single product URL.
+  const candidate=canonicalOfferIdentity(offer);
+  const expected=canonicalOfferIdentity(identity);
+  return Boolean(candidate&&expected&&candidate.offerKey===expected.offerKey);
 }
 
 function assertState(candidate,state){
