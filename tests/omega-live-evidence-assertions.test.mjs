@@ -30,6 +30,9 @@ test("R04 P3: an independently missing live listing is NOT fabricated as an out-
   assert.deepEqual(verifyLiveCanonicalExposure([
     {...canonical,sourceUrl:"https://example.org/other"},
     {...canonical,condition:"renewed"},
+    {...canonical,sku:"another-sku"},
+    {...canonical,merchantCountryCode:"DE"},
+    {...canonical,specs:{modelNumber:"CFI-1234"}},
   ],input()),{observed:false,matched:0});
 });
 test("R04 P3: authoritative PostgreSQL canonical hydration is mandatory and exact",()=>{
