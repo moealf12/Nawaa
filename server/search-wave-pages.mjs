@@ -7,7 +7,9 @@ const material=process.env.NAWAA_CURSOR_SECRET || process.env.NAWAA_INGEST_TOKEN
 const secret=createHash("sha256").update(material).update(":nawaa-wave-v1").digest();
 const fingerprint=query=>createHash("sha256").update(String(query)).digest("base64url").slice(0,22);
 const mac=body=>createHmac("sha256",secret).update(body).digest("base64url");
-export const SEARCH_WAVE_TTL_MS=120_000;
+// Five minutes accommodates manual paging through 1,000 offers; the bounded
+// 32 MiB LRU-like snapshot store may evict earlier under real memory pressure.
+export const SEARCH_WAVE_TTL_MS=300_000;
 
 function encode(query,id,offset,time){
   const body=Buffer.from(JSON.stringify({v:2,k:"wave",q:fingerprint(query),id,o:offset,t:time})).toString("base64url");
