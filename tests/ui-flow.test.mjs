@@ -319,7 +319,7 @@ test("query deep link starts exactly one live search and URL submission requests
   assert.equal((element("#results").innerHTML.match(/class="match-result-card/g)||[]).length,4,
     "four distinct offers from the original and two signed page types remain visible");
 
-  // A restarted instance or expired 120-second snapshot cannot silently
+  // A restarted instance or expired signed snapshot cannot silently
   // skip the missing wave and pretend its inventory is exhausted.
   globalThis.fetch=async url=>{
     const request=new URL(String(url));
