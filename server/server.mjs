@@ -45,6 +45,7 @@ import { createRateLimiter, requestClientKey } from "./rate-limit.mjs";
 import { acquisitionPlan, decodeSearchCursor, encodeSearchCursor, MAX_SEARCH_DEPTH } from "./search-cursor.mjs";
 import {createSearchWavePages} from "./search-wave-pages.mjs";
 import {prepareSearchResultWindow} from "./search-result-window.mjs";
+import {summarizeWaveSourceEvidence} from "./search-coverage-evidence.mjs";
 import {quoteWorkflowEnabled, handleQuoteWorkflow} from "./quote-workflow.mjs";
 
 const PORT = Number(process.env.PORT || 10000);
@@ -334,6 +335,7 @@ function withWavePagination(result,query,depth,allOffers,pageSize){
   return {...result,offers:first,overflowCursor:cursor,
     coverage:{...result.coverage,
       availableOffers:approved.length,returnedOffers:first.length,
+      acquisitionEvidence:summarizeWaveSourceEvidence(result.providers,result.errors),
       returnedMerchants:new Set(first.map(offerMerchantKey)).size,
       // A capped window is not proof that all acquired results were shown.
       truncated:approved.length>first.length ||
