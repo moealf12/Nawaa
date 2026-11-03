@@ -56,10 +56,12 @@ export async function writeThroughFreshLiveObservations(query,offers,{
   // queries, product details, DB exceptions or credentials in logs.
   for(const offer of eligible){
     try{
+      // A provider object may itself include a `query` field; discard that
+      // untrusted property as well as our own shopper search argument.
+      const {query:_ignoredSearch, ...sourceEvidence}=offer;
       const result=await record({
-        ...offer,
-        // Never persist an individual shopper search string alongside a price.
-        // The source identifier is sufficient for catalog attribution.
+        ...sourceEvidence,
+        // Catalog attribution is merchant/source identity, never shopper PII.
         sourceName:offer.provider||offer.merchant||"live-retailer",
       });
       if(result?.recorded)recorded++;else failed++;
