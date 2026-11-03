@@ -70,6 +70,13 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
               firstWave.offers.length>120 || snapshot.offers.length>120 ||
               expanded.offers.length>180)
             throw Error('thousand_result_budget_broke_progressive_page_limits');
+          if(!Object.hasOwn(firstWave.coverage,'catalogRecall') ||
+              !Object.hasOwn(snapshot.coverage,'catalogRecall') ||
+              !Object.hasOwn(expanded.coverage,'catalogRecall') ||
+              firstWave.coverage.catalogRecall.exhaustive!==false ||
+              snapshot.coverage.catalogRecall.exhaustive!==false ||
+              expanded.coverage.catalogRecall.exhaustive!==false)
+            throw Error('postgres_catalog_recall_parity_missing');
           if(!Number.isInteger(firstWave.coverage.rankedCandidates) ||
               !Number.isInteger(snapshot.coverage.rankedCandidates) ||
               !Number.isInteger(expanded.coverage.rankedCandidates))
