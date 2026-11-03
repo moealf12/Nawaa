@@ -94,7 +94,7 @@ export async function recordOffer(offerData={}){
          product_price=excluded.product_price,total_sar=excluded.total_sar,sku=excluded.sku,
          availability=excluded.availability,match_confidence=excluded.match_confidence,
          exact_match=excluded.exact_match,observed_at=excluded.observed_at,payload=excluded.payload
-       where nawaa_offers.observed_at <= excluded.observed_at`,
+       where nawaa_offers.observed_at < excluded.observed_at`,
       [key,query,title,offerData.brand||offerData.specs?.brand||null,offerData.merchant||null,offerData.merchantCountryCode||null,sourceUrl,offerData.imageUrl||null,currency,price,offerData.totalSAR??null,offerData.sku||null,condition,offerData.availability||null,offerData.matchConfidence??null,offerData.exactMatch===true,observedAt,JSON.stringify(normalized)]
     );
     await tx.query("COMMIT");
@@ -138,7 +138,7 @@ export async function persistOffers(query,offers=[]){
           match_confidence=excluded.match_confidence,
           exact_match=excluded.exact_match,observed_at=excluded.observed_at,
           payload=excluded.payload
-        where nawaa_offers.observed_at <= excluded.observed_at`,
+        where nawaa_offers.observed_at < excluded.observed_at`,
       [key,query,o.title,o.brand||o.specs?.brand||null,o.merchant||null,
        o.merchantCountryCode||null,o.sourceUrl,o.imageUrl||o.image||null,
        o.currency||null,o.productPrice??null,o.totalSAR??null,
