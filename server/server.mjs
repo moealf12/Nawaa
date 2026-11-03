@@ -69,7 +69,7 @@ function writeObservedLiveCatalog(query, offers){
 // JSON, SSE, and cursor expansion; no unbounded queue is admitted to the pool.
 const boundedCatalogRecall=createBoundedCatalogRecall({
   read:searchPersistedOffers,configured:persistenceConfigured,
-  budgetMs:1200,maxInFlight:2,
+  budgetMs:2000,maxInFlight:2,
 });
 function safeCatalogRecall(query,depth,signal){
   const plan=catalogRecallPlan(depth);
