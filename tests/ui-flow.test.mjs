@@ -336,4 +336,45 @@ test("query deep link starts exactly one live search and URL submission requests
   await new Promise(resolve=>setTimeout(resolve,35));
   assert.match(element("#searchStatus").textContent,/انتهت صلاحية دفعة النتائج/);
 
+  // Memory admission denial must never masquerade as complete acquisition
+  // or let the shopper leap over lost wave results to the next source depth.
+  let overflowRequests=0;
+  globalThis.fetch=async ()=>{
+    overflowRequests++;
+    return {ok:true,text:async()=>JSON.stringify({
+      offers:waveOffers.slice(0,2),overflowCursor:null,
+      nextCursor:"do-not-skip-to-depth-one",errors:[],
+      coverage:{overflowUnavailable:true,truncated:true,
+        availableOffers:300,returnedOffers:2,partial:true},
+    })};
+  };
+  element("#searchInput").value="hp laptop";
+  element("#searchForm").events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(overflowRequests,1);
+  assert.match(element("#results").innerHTML,/تعذر حفظ بقية النتائج المكتشفة/);
+  assert.doesNotMatch(element("#results").innerHTML,/id="loadMoreRemote"/);
+  assert.match(element("#searchStatus").textContent,/لم يمكن حفظ بقية نتائج/);
+
+  let pageRequests=0;
+  globalThis.fetch=async url=>{
+    pageRequests++;
+    const u=new URL(String(url));
+    const data=u.searchParams.has("pageCursor")
+      ? {offers:[waveOffers[2]],overflowCursor:null,
+          nextCursor:"do-not-skip-to-depth-one",errors:[],
+          coverage:{overflowUnavailable:true,truncated:true}}
+      : {offers:waveOffers.slice(0,2),overflowCursor:"valid-wave",
+          nextCursor:"do-not-skip-to-depth-one",errors:[]};
+    return {ok:true,text:async()=>JSON.stringify(data)};
+  };
+  element("#searchInput").value="hp laptop";
+  element("#searchForm").events.submit({preventDefault(){}});
+  await new Promise(resolve=>setImmediate(resolve));
+  element("#loadMoreRemote").events.click();
+  await new Promise(resolve=>setTimeout(resolve,35));
+  assert.equal(pageRequests,2);
+  assert.doesNotMatch(element("#results").innerHTML,/id="loadMoreRemote"/);
+  assert.match(element("#searchStatus").textContent,/لم يمكن حفظ بقية نتائج الموجة/);
+
 });
