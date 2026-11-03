@@ -69,3 +69,43 @@ export async function writeThroughFreshLiveObservations(query,offers,{
   }
   return {configured:true,attempted:eligible.length,recorded,failed};
 }
+
+export const CATALOG_MAX_PENDING_BATCHES=3;
+
+// One serialized write lane across concurrent shopper searches. The Render
+// free instance can no longer accumulate unbounded independent 64-transaction
+// jobs if a PostgreSQL connection stalls or merchants produce a burst of data.
+export function createCatalogWriteQueue({
+  configured=persistenceConfigured,
+  writer=writeThroughFreshLiveObservations,
+  maxPending=CATALOG_MAX_PENDING_BATCHES,
+}={}){
+  if(!Number.isSafeInteger(maxPending)||maxPending<1||maxPending>8)
+    throw new RangeError("invalid_catalog_queue_capacity");
+  let pending=0;
+  let tail=Promise.resolve();
+  return {
+    submit(query,offers){
+      if(!configured())return Promise.resolve({
+        configured:false,attempted:0,recorded:0,failed:0,
+      });
+      if(pending>=maxPending)return Promise.resolve({
+        configured:true,attempted:0,recorded:0,failed:0,
+        skipped:"catalog_backpressure",
+      });
+      const candidates=selectFreshLiveObservations(offers);
+      if(!candidates.length)return Promise.resolve({
+        configured:true,attempted:0,recorded:0,failed:0,
+      });
+      pending++;
+      const job=tail.then(()=>writer(query,candidates));
+      tail=job.catch(()=>{});
+      return job.finally(()=>{pending--;});
+    },
+    stats:()=>({pending,maxPending}),
+  };
+}
+
+const defaultCatalogWriteQueue=createCatalogWriteQueue();
+export const scheduleCatalogWrite=(query,offers)=>
+  defaultCatalogWriteQueue.submit(query,offers);
