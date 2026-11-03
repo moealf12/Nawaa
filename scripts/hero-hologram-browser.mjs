@@ -54,10 +54,8 @@ try{
   assert.ok(geometry.searchPresent,"original search form survives");
   assert.ok(geometry.scrollWidth<=geometry.viewport+1,"horizontal overflow: "+JSON.stringify(geometry));
   assert.ok(geometry.left>=-2&&geometry.right<=geometry.viewport+2,"art frame clipped: "+JSON.stringify(geometry));
-  if(mobile){
-   const spacing=await page.evaluate(()=>({titleTop:document.querySelector(".hero-title").getBoundingClientRect().top,artBottom:document.querySelector("#heroVisual").getBoundingClientRect().bottom}));
-   assert.ok(spacing.titleTop>=spacing.artBottom-22,"mobile headline overlaps art: "+JSON.stringify(spacing));
-  }
+  const spacing=await page.evaluate(()=>({titleTop:document.querySelector(".hero-title").getBoundingClientRect().top,artBottom:document.querySelector("#heroVisual").getBoundingClientRect().bottom}));
+  assert.ok(spacing.titleTop>=spacing.artBottom-22,"headline overlaps hero art on "+name+": "+JSON.stringify(spacing));
   await page.screenshot({path:join(artifacts,name+"-hologram.png")});
   await page.locator("#heroOriginal").click();
   assert.equal(await page.locator("#heroVisual").getAttribute("data-hologram"),"off");
