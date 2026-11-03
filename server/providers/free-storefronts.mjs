@@ -2180,8 +2180,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
 }
 
 export function configuredFreeStorefronts() {
-  return STORES.filter(store=>store.id!=="asos-global"||asosLiveConfigured())
-    .map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
+  // Catalog registration does not imply active acquisition. The route and
+  // direct-search gates separately enforce source authorization.
+  return STORES.map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
 }
 
 export async function searchFreeStorefronts(query, options = {}) {
