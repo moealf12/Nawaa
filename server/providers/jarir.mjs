@@ -35,7 +35,10 @@ function firstImage(chunk, title) {
     const alt = String(attr(tag, "alt") || "").toLowerCase();
     if (alt && normalizedTitle && alt === normalizedTitle) return src;
   }
-  return tags.length ? attr(tags[0], "src") : null;
+  // Search tile markup can contain promotional or neighboring product images.
+  // Without an exact alt-to-title match, the image association is unproven.
+  // Preserve the priced product card but leave its image unknown.
+  return null;
 }
 
 function firstProductUrl(chunk, productId) {
