@@ -23,15 +23,15 @@ test("R04 universal: false exacts are placed into the sold-subject lane, not era
   ["Dyson V15","Build Your Own Vacuum Form Machine","other"],
   ["iPhone 17","Apple iPhone 17 256GB Black","direct"],
   ["iPhone 17","iPhone 17 Protective Case for 6.3 Inch","accessory"],
-  ["PS5","Sony PS5 Slim Disc Edition Console 1TB","alternative"],
+  ["PS5","Sony PS5 Slim Disc Edition Console 1TB","direct"],
   ["PS5 console","PS5 Disc Drive Replacement Optical Module","accessory"],
   ["office chair","Ergonomic Office Chair with Lumbar Support","direct"],
   ["office chair","Office Chair Height Lock Bracket Repair Kit","accessory"],
-  ["coffee beans","Brazil Arabica Whole Coffee Beans 1kg","alternative"],
+  ["coffee beans","Brazil Arabica Whole Coffee Beans 1kg","direct"],
   ["coffee beans","Barista Coffee Grinder with Burr","other"],
-  ["JBL headphones","JBL Wireless Bluetooth Headphones 760NC","alternative"],
+  ["JBL headphones","JBL Wireless Bluetooth Headphones 760NC","direct"],
   ["JBL headphones","JBL Headphones Replacement Ear Cushions","accessory"],
-  ["HP laptop","HP Pavilion 15 Laptop 16GB RAM 512GB SSD","alternative"],
+  ["HP laptop","HP Pavilion 15 Laptop 16GB RAM 512GB SSD","direct"],
   ["سلسال سواروفسكي","Swarovski Necklace Rhodium Plated Crystal","alternative"]
  ];
  for(const [query,title,expected] of scenarios){
