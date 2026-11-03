@@ -98,7 +98,7 @@ export function createSearchWavePages({
         returnedMerchants:new Set(offers.map(o=>JSON.stringify([
           o?.provider||"",o?.merchant||o?.providerMarket||""
         ]))).size,
-        truncated:more,
+        truncated:more||meta.coverage?.resultLimitReached===true,
         wavePage:{offset:payload.o,returned:offers.length,
           total:entry.count,remaining:entry.count-end},
         overflowUnavailable:false},
