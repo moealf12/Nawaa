@@ -45,6 +45,7 @@ const state = {
   comparisonOpen: false,
   selectedGroupKey: null,
   nextCursor: null,
+  overflowCursor: null,
   eventSource: null,
   remoteLoading: false,
   remoteExhausted: false,
@@ -1156,7 +1157,7 @@ function renderProduct(product, query) {
 
     ${!state.comparisonOpen ? '<details class="selected-comparison" hidden></details>' : ""}
 
-    ${state.nextCursor ? `<div class="remote-more"><button type="button" class="show-category" id="loadMoreRemote" ${state.remoteLoading ? "disabled" : ""}>${state.remoteLoading ? "جاري توسيع البحث…" : "جلب نتائج إضافية من مصادر أكثر"}</button><small>يطلب هذا بحثًا أعمق من الخادم؛ لا يكرر كشف النتائج الموجودة في الصفحة.</small></div>` : state.remoteExhausted ? '<div class="remote-more exhausted"><small>وصلنا إلى أعمق نطاق بحث متاح حاليًا لهذه الجلسة.</small></div>' : ""}
+    ${state.nextCursor || state.overflowCursor ? `<div class="remote-more"><button type="button" class="show-category" id="loadMoreRemote" ${state.remoteLoading ? "disabled" : ""}>${state.remoteLoading ? "جاري جلب النتائج…" : state.overflowCursor ? "عرض بقية النتائج المكتشفة" : "جلب نتائج إضافية من مصادر أكثر"}</button><small>${state.overflowCursor ? "يكمل نفس نتائج البحث دون إعادة طلب المتاجر أو تغيير الأسعار المرصودة." : "يوسّع نطاق البحث إلى مصادر إضافية."}</small></div>` : state.remoteExhausted ? '<div class="remote-more exhausted"><small>وصلنا إلى أعمق نطاق بحث متاح حاليًا لهذه الجلسة.</small></div>' : ""}
 
     ${secondarySections.map(section=>additionalResultsSection(section.label,section.groups)).join('')}
 
@@ -1286,21 +1287,27 @@ function mergeSearchOffers(current = [], incoming = []) {
 }
 
 async function loadMoreRemote(query) {
-  if (!state.nextCursor || state.remoteLoading || !state.product) return;
+  if (!(state.nextCursor || state.overflowCursor) || state.remoteLoading || !state.product) return;
   const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
   if (!apiBase) return;
   const requestId = state.requestId;
   state.remoteLoading = true;
   renderProduct(state.product, query);
-  els.status.textContent = "نوسّع البحث إلى مصادر ونتائج إضافية…";
+  els.status.textContent = state.overflowCursor ? "نسترجع بقية النتائج المكتشفة…" : "نوسّع البحث إلى مصادر ونتائج إضافية…";
 
   try {
     let cursor = state.nextCursor;
+    let pageCursor = state.overflowCursor;
     let added = 0;
     let lastData = null;
-    for (let step=0; step<2 && cursor && added===0; step+=1) {
+    for (let step=0; step<2 && (cursor || pageCursor) && added===0; step+=1) {
+      // Drain an immutable acquisition wave BEFORE requesting more merchants.
+      // Depth cursors and within-wave cursors are independent signed contracts.
+      const sameWave=Boolean(pageCursor);
+      const token=sameWave ? pageCursor : cursor;
       const data = await fetchJsonWithRetry(
-        apiBase + "/api/search?q=" + encodeURIComponent(query) + "&cursor=" + encodeURIComponent(cursor),
+        apiBase + "/api/search?q=" + encodeURIComponent(query) +
+          (sameWave ? "&pageCursor=" : "&cursor=") + encodeURIComponent(token),
         {headers:{accept:"application/json"}},
         2
       );
@@ -1310,11 +1317,13 @@ async function loadMoreRemote(query) {
       added = merged.length - before;
       state.product = {...state.product,offers:merged};
       if (Array.isArray(data.offers)) recordPriceHistory(data.offers);
-      cursor = data.nextCursor || null;
+      if (!sameWave || data.nextCursor !== undefined)cursor=data.nextCursor || null;
+      pageCursor=data.overflowCursor || null;
       lastData = data;
     }
     state.nextCursor = cursor;
-    state.remoteExhausted = !cursor;
+    state.overflowCursor = pageCursor;
+    state.remoteExhausted = !(cursor || pageCursor);
     state.visibleCounts = {};
     renderProduct(state.product,query);
     els.status.textContent = added > 0
@@ -1324,7 +1333,15 @@ async function loadMoreRemote(query) {
   } catch (error) {
     if (requestId !== state.requestId) return;
     console.warn("NAWAA remote expansion failed",error);
-    els.status.textContent = error?.status === 429 ? "تم بلوغ حد الطلبات مؤقتًا؛ أعد المحاولة بعد قليل" : "تعذر توسيع البحث حاليًا";
+    if (error?.status === 410) {
+      state.overflowCursor=null;
+      state.remoteExhausted=!state.nextCursor;
+      els.status.textContent="انتهت صلاحية دفعة النتائج السابقة؛ أعد البحث لاستعادتها دون فقد أو تخمين.";
+    } else {
+      els.status.textContent=error?.status===429
+        ? "تم بلوغ حد الطلبات مؤقتًا؛ أعد المحاولة بعد قليل"
+        : "تعذر جلب نتائج إضافية حاليًا";
+    }
   } finally {
     if (requestId === state.requestId) {
       state.remoteLoading = false;
@@ -1353,6 +1370,7 @@ async function runSearch(rawQuery) {
   }
   state.query = query;
   state.nextCursor = null;
+  state.overflowCursor = null;
   state.remoteLoading = false;
   state.remoteExhausted = false;
   saveRecent(query);
@@ -1475,7 +1493,8 @@ async function runSearch(rawQuery) {
         if (requestId !== state.requestId) return;
       }
       state.nextCursor = data.nextCursor || null;
-      state.remoteExhausted = !state.nextCursor;
+      state.overflowCursor = data.overflowCursor || null;
+      state.remoteExhausted = !(state.nextCursor || state.overflowCursor);
       if (Array.isArray(data.offers) && data.offers.length) {
         recordPriceHistory(data.offers);
         const liveProduct = {
