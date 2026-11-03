@@ -3,6 +3,7 @@ import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
 import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
+import { createSearchOfferAdmission } from "./search-offer-admission.mjs";
 import {enforceCustomerOfferPublication} from "./customer-offer-output.mjs";
 import http from "node:http";
 import {beginProcessPressure,endProcessPressure,processPressureBetween} from "./search-process-pressure.mjs";
@@ -239,12 +240,13 @@ function retainRelatedOffers(query, offers = []) {
   // Preserve the original matching function and thresholds; prepare only the
   // query-side context once per nonempty batch, never once per merchant offer.
   const assess=createOfferMatchAssessor(query);
+  const admit=createSearchOfferAdmission(query);
   return dedupeNormalizedOffers(offers)
     .map(offer => ({ ...offer, ...assess(offer), dataKind:offer.dataKind || "live" }))
-    // Keep strong matches first, but do not erase useful cross-merchant alternatives.
-    // A 0.35 floor still rejects unrelated/category-mismatched noise because those
-    // are heavily penalized by assessOfferMatch (0.2x / 0.12x).
-    .filter(offer => (offer.matchConfidence || 0) >= 0.35)
+    // Admit title-evidenced weak alternatives into secondary result lanes.
+    // A numeric match threshold is NOT a proof that an acquired offer is irrelevant.
+    // Exact/variant certification and merchant provenance remain unchanged.
+    .filter(admit)
     .sort((a,b) => (b.matchConfidence || 0) - (a.matchConfidence || 0));
 }
 
@@ -738,13 +740,14 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   const amazonEvidenceError=amazonPartialEvidenceError(plan.amazonPageCount,amazon,"primary");
   if(amazonEvidenceError && !amazon.error)
     errors.push(amazonEvidenceError);
+  const admitSearchOffer=createSearchOfferAdmission(query);
   const amazonValidated = dedupeNormalizedOffers(amazon.offers || [])
     .map((offer) => ({
       ...offer,
       ...assessSearchOffer(offer),
       dataKind:"live",
     }))
-    .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
+    .filter(admitSearchOffer);
   let offers = primary.offers;
   let fallbackQuery = null;
 
@@ -803,7 +806,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       ...assessSearchOffer(offer),
       dataKind: offer.dataKind || "live",
     }))
-    .filter((offer) => (offer.matchConfidence || 0) >= 0.65);
+    .filter(admitSearchOffer);
   // Amazon search cards are scored once against the shopper query above.
   // Merge those validated offers without scoring them a second time.
   offers = OMEGA_CANONICAL ? retainRelatedOffers(query,offers) : dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
