@@ -7,13 +7,13 @@ import { chromium, webkit } from "playwright";
 const root=resolve(import.meta.dirname,"..");
 const artifacts=join(root,"browser-artifacts","hero-hologram");
 await mkdir(artifacts,{recursive:true});
-const allowed=new Set(["/","/index.html","/config.js","/assets/nawaa-hero-sculpture.png"]);
+const allowed=new Set(["/","/index.html","/config.js","/assets/nawaa-hero-sculpture.png","/assets/nawaa-work-study.jpg","/assets/nawaa-home.jpg"]);
 const server=createServer(async(req,res)=>{
  const path=new URL(req.url,"http://127.0.0.1").pathname;
  if(!allowed.has(path)){res.writeHead(404);res.end("Not Found");return;}
  try{
   const body=await readFile(resolve(root,path==="/"?"index.html":path.slice(1)));
-  res.writeHead(200,{"content-type":extname(path)===".png"?"image/png":extname(path)===".js"?"text/javascript":"text/html; charset=utf-8","content-length":body.length});
+  res.writeHead(200,{"content-type":extname(path)===".png"?"image/png":extname(path)===".jpg"?"image/jpeg":extname(path)===".js"?"text/javascript":"text/html; charset=utf-8","content-length":body.length});
   res.end(body);
  }catch(e){res.writeHead(500);res.end(String(e));}
 });
