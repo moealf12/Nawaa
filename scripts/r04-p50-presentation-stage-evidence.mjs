@@ -8,6 +8,15 @@ import {buildSearchPresentationSections} from "../src/search-result-presentation
 // Preserve the raw value in product output and variant identity; audit only.
 const KNOWN_CONDITIONS=new Set(["new","used","refurbished","open_box","renewed"]);
 const validCount=n=>Number.isSafeInteger(n)&&n>=0&&n<=1000;
+const SAFE_PROVIDER_IDS=new Set([
+  "jarir-direct","sharafdg-algolia","extra-unbxd","virgin-ae",
+  "free-storefronts","amazon-creators","amazon-sa","noon-catalog",
+  "ebay","swarovski-direct","shopify","carrefour",
+]);
+const safeProvider=offer=>{
+  const p=offer?.provider;
+  return typeof p==="string"&&SAFE_PROVIDER_IDS.has(p)?p:"other";
+};
 
 export function auditPresentationStages(query,groups,sections=null){
   if(typeof query!=="string"||!Array.isArray(groups)||
@@ -25,6 +34,8 @@ export function auditPresentationStages(query,groups,sections=null){
   const targetKnown=KNOWN_CONDITIONS.has(desired);
   const rawAllowed=[],unknown=[],mismatched=[];
   let unrecognizedConditionCodes=0,renewedAliasCount=0;
+  let literalUnknown=0,missingCondition=0,otherUnrecognized=0;
+  const unknownByProvider={};
   for(const group of direct){
     const condition=group.bestOffer?.condition;
     if(condition===desired)rawAllowed.push(group);
@@ -32,6 +43,12 @@ export function auditPresentationStages(query,groups,sections=null){
       unknown.push(group);
       if(condition!==null&&condition!==undefined&&condition!=="")
         unrecognizedConditionCodes++;
+      if(condition==="unknown")literalUnknown++;
+      else if(condition===null||condition===undefined||condition==="")
+        missingCondition++;
+      else otherUnrecognized++;
+      const provider=safeProvider(group.bestOffer);
+      unknownByProvider[provider]=(unknownByProvider[provider]||0)+1;
     }else{
       mismatched.push(group);
       if(condition==="renewed")renewedAliasCount++;
@@ -55,6 +72,9 @@ export function auditPresentationStages(query,groups,sections=null){
     conditionMatched:rawAllowed.length,
     conditionUnknown:unknown.length,
     conditionUnrecognizedCodes:unrecognizedConditionCodes,
+    conditionLiteralUnknown:literalUnknown,
+    conditionMissing:missingCondition,
+    conditionOtherUnrecognized:otherUnrecognized,
     conditionKnownRenewedAlias:renewedAliasCount,
     conditionExplicitMismatch:mismatched.length,
     initialDiscoveryPlaced:initialSet.size,
@@ -80,6 +100,10 @@ export function auditPresentationStages(query,groups,sections=null){
     counts.classifierDirect===
       counts.conditionMatched+counts.conditionUnknown+counts.conditionExplicitMismatch&&
     counts.conditionUnrecognizedCodes<=counts.conditionUnknown&&
+    counts.conditionUnknown===counts.conditionLiteralUnknown+
+      counts.conditionMissing+counts.conditionOtherUnrecognized&&
+    Object.values(unknownByProvider).every(validCount)&&
+    Object.values(unknownByProvider).reduce((a,b)=>a+b,0)===counts.conditionUnknown&&
     counts.conditionKnownRenewedAlias<=counts.conditionExplicitMismatch&&
     counts.conditionMatched===
       counts.initialDiscoveryPlaced+counts.rescuedByExactTitleEvidence+
@@ -94,7 +118,7 @@ export function auditPresentationStages(query,groups,sections=null){
     classifier:"EXACT_CUSTOMER_PRESENTATION_WITH_PURE_DISCOVERY_REPLAY",
     requestedCondition:actual.intent?.condition?"explicit":"default_new",
     conditionUnknownMeans:"NOT_PROVEN_NEW",
-    ...counts,
+    ...counts,unknownByProvider,
     safety:"OBSERVATION_ONLY_NO_PRODUCT_PROMOTION",
     nextProbe:counts.unplacedUnknownCondition>0?
       "VERIFY_SOURCE_CONDITION_PROVENANCE":
