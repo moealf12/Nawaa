@@ -7,7 +7,12 @@ import {normalizeSearchQuery} from "./search-query.mjs";
 
 const MAX_HTML=8_000_000;
 const MAX_CARDS=100;
-const PRICE=/^\d{1,8}(?:\.\d{1,2})?$/;
+// Reject ambiguous monetary text instead of silently removing separators.
+const PLAIN_MONEY=/^(?:0|[1-9]\d{0,7})(?:\.\d{1,2})?$/;
+const COMMA_GROUPED=/^[1-9]\d{0,2}(?:,\d{3})+(?:\.\d{1,2})?$/;
+const COMMA_DECIMAL=/^(?:0|[1-9]\d{0,7}),\d{1,2}$/;
+const EURO_GROUPED=/^[1-9]\d{0,2}(?:\.\d{3})+,\d{1,2}$/;
+const SPACE_GROUPED=/^[1-9]\d{0,2}(?: \d{3})+(?:[.,]\d{1,2})?$/;
 const OFFER_CODE=/^[a-z0-9-]{1,100}$/i;
 
 function sourceImage(raw) {
@@ -35,10 +40,27 @@ function cardUrlInfo(raw) {
 }
 
 function cardPrice(text) {
-  const raw=String(text||"").replace(/[\uE000,\s]/g,"");
-  if(!PRICE.test(raw))return null;
-  const value=Number(raw);
-  return Number.isFinite(value)&&value>0?value:null;
+  const raw=String(text??"").trim()
+    .replace(/\uE000/g,"")
+    .replace(/[\u00a0\u202f]/g," ")
+    .replace(/[٠-٩]/g,d=>String(d.charCodeAt(0)-0x0660))
+    .replace(/[۰-۹]/g,d=>String(d.charCodeAt(0)-0x06f0))
+    .replace(/\u066c/g,",")
+    .replace(/\u066b/g,".");
+  let decimal;
+  if(PLAIN_MONEY.test(raw)||COMMA_GROUPED.test(raw))
+    decimal=raw.replace(/,/g,"");
+  else if(COMMA_DECIMAL.test(raw)||EURO_GROUPED.test(raw))
+    decimal=raw.replace(/\./g,"").replace(",",".");
+  else if(SPACE_GROUPED.test(raw))
+    decimal=raw.replace(/ /g,"").replace(",",".");
+  else return null;
+  const amount=Number(decimal);
+  // A price is an observed amount, not a currency or market attestation.
+  // Canonical integer cents prevent false duplicate-price conflicts.
+  if(!Number.isFinite(amount)||amount<=0||amount>99_999_999.99)return null;
+  const cents=Math.round(amount*100);
+  return cents>0?cents/100:null;
 }
 
 export function extractNoonSaudiSearchCardEvidence(html, query, {limit=100}={}) {
