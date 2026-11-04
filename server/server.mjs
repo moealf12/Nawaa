@@ -725,14 +725,23 @@ async function searchAll(query, { depth = 0, signal } = {}) {
     if(!requestController.signal.aborted)requestController.abort(signal.reason);
   },{once:true});
   let deadlineExceeded = false;
-  const beforeRequestDeadline = async (operation, fallback) => {
-    const remaining = requestDeadlineAt - Date.now();
-    if (remaining <= 0) {
+  const beforeRequestDeadline = async (operation, fallback, {reserveMs=0,onBudget}={}) => {
+    // A secondary discovery pass must not consume the time needed to match,
+    // de-duplicate and publish primary source evidence. Source-budget expiry
+    // stays visibly partial; only the REAL full-request expiry sets the
+    // request-level deadlineExceeded flag.
+    const remaining = requestDeadlineAt - Date.now() - reserveMs;
+    const exhausted = () => {
+      if(reserveMs>0) {
+        onBudget?.();
+        return fallback();
+      }
       deadlineExceeded = true;
       if(!requestController.signal.aborted)
         requestController.abort(new Error("search_deadline_exceeded"));
       return fallback();
-    }
+    };
+    if (remaining <= 0) return exhausted();
     const timeout = Symbol("search-request-deadline");
     let timeoutId;
     try {
@@ -741,10 +750,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         new Promise((resolve) => { timeoutId = setTimeout(() => resolve(timeout), remaining); }),
       ]);
       if (result !== timeout) return result;
-      deadlineExceeded = true;
-      if(!requestController.signal.aborted)
-        requestController.abort(new Error("search_deadline_exceeded"));
-      return fallback();
+      return exhausted();
     } finally {
       clearTimeout(timeoutId);
     }
@@ -884,12 +890,32 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       ? fallbackQueries.slice(0, 4)
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
-      const expansions = await Promise.all(expansionQueries.map((candidate) => beforeRequestDeadline(
-        () => runProviderPass(candidate, "fallback", query, { plan,signal:requestController.signal,
-          skipFailedStorefrontIds:retryDeniedIds,
-          onTrace:(event)=>traceProvider(event,"fallback") }),
-        () => ({ providers:[], errors:[], offers:[] }),
-      )));
+      const expansions = await Promise.all(expansionQueries.map((candidate) => {
+        const completedFallbackChunks=[];
+        const controller=new AbortController();
+        const fallbackSignal=AbortSignal.any([requestController.signal,controller.signal]);
+        return beforeRequestDeadline(
+          () => runProviderPass(candidate, "fallback", query, {
+            plan,signal:fallbackSignal,
+            skipFailedStorefrontIds:retryDeniedIds,
+            onChunk:chunk=>{completedFallbackChunks.push(chunk);},
+            onTrace:(event)=>traceProvider(event,"fallback"),
+          }),
+          () => {
+            // Never erase verified offers from a fast provider when another
+            // fallback merchant reaches the independent discovery budget.
+            // Preserve all completed source errors, and expose the missing
+            // coverage as a partial source pass, not a fake empty catalog.
+            const completed=mergeProviderChunks(completedFallbackChunks);
+            return {...completed,errors:[...completed.errors,{
+              provider:"search",sourceId:"search",pass:"fallback",
+              error:"fallback_budget_limited",
+            }]};
+          },
+          {reserveMs:1800,
+            onBudget:()=>controller.abort(new Error("fallback_budget_limited"))}
+        );
+      }));
       for (const fallback of expansions) {
         providers = providers.concat(fallback.providers);
         errors = errors.concat(fallback.errors);
