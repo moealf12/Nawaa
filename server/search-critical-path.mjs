@@ -10,7 +10,14 @@ const ID=/^[0-9a-f]{16}$/;
 const finite=n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<600000;
 const ms=n=>finite(n)?Math.round(n):null;
 const nonnegative=n=>Number.isSafeInteger(n)&&n>=0&&n<=1_000_000?n:null;
-const id=n=>typeof n==="string"&&/^[a-z0-9][a-z0-9:_-]{1,55}$/i.test(n)?n.toLowerCase():"unknown";
+const PROVIDERS=new Set([
+  "extra-unbxd","jarir-direct","virgin-ae","sharafdg-algolia",
+  "swarovski-direct","amazon-creators","free-storefronts",
+  "carrefour-ksa","noon-catalog","ebay","shopify",
+]);
+export function safeSearchTraceProviderId(n){
+  return typeof n==="string"&&PROVIDERS.has(n)?n:"unknown";
+}
 const components=new Set(["amazon-sa","provider-pass","meilisearch","persisted"]);
 const FROZEN_PROVIDER_CAP=24;
 export function newSearchDiagnosticId(){return randomBytes(8).toString("hex");}
@@ -57,7 +64,7 @@ export function searchCriticalPathEvidence({
     .filter(b=>b.settledAtMs>=last-3).map(b=>b.component).sort();
   const providerSpans=(Array.isArray(providerTimings)?providerTimings:[])
     .slice(0,FROZEN_PROVIDER_CAP).map(item=>({
-      sourceId:id(item?.sourceId),
+      sourceId:safeSearchTraceProviderId(item?.sourceId),
       pass:item?.pass==="fallback"?"fallback":"primary",
       wallMs:ms(item?.providerWallMs),
       callbackQueueMs:ms(item?.queueMs),
