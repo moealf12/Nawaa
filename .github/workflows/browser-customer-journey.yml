@@ -100,8 +100,12 @@ jobs:
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
         run: node scripts/browser-v218-matrix.mjs
-      - name: Require LIVE published GitHub Pages and Render UI
-        continue-on-error: false
+      # Before a merge this URL runs OLD main, not this PR. It is a real
+      # production baseline, not a valid candidate pass/fail gate. Requiring
+      # old production to be healthy would deadlock a fix for old production.
+      # Mandatory exact-SHA LIVE Chromium acceptance runs after deployment.
+      - name: Observe LIVE published site as predeploy baseline (not candidate gate)
+        continue-on-error: true
         env:
           NODE_ENV: test
         run: node scripts/browser-customer-journey.mjs published
