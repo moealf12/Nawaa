@@ -32,7 +32,57 @@ const child=spawn(process.execPath,["server/server.mjs"],{
     NOON_ENABLED:"false",EBAY_ENABLED:"false",CARREFOUR_ENABLED:"false"},
   stdio:["ignore","pipe","pipe"],
 });
-child.stdout.on("data",()=>{}); // Drain pipe, never persist raw source logs.
+// The candidate was previously discarding the only per-stage evidence of
+// 12-second Q08 tails. Preserve *only* low-cardinality, sanitized, aggregate
+// slow-pipeline events already emitted by server.mjs; never source URLs,
+// titles, query strings, prices, response bodies or arbitrary log lines.
+// Requests run with concurrency=2, so these events are deliberately NOT
+// attributed to a particular query without a proven request correlation ID.
+let outputBuffer="";
+let slowPipelineEvents=0;
+const safeNumber=v=>Number.isFinite(v)?Math.max(0,Math.round(v)):null;
+child.stdout.on("data",chunk=>{
+  outputBuffer+=String(chunk);
+  if(outputBuffer.length>32768)outputBuffer=outputBuffer.slice(-16384);
+  const lines=outputBuffer.split("\n");
+  outputBuffer=lines.pop()||"";
+  for(const line of lines){
+    const marker="NAWAA_SEARCH_JSON_PIPELINE ";
+    const idx=line.indexOf(marker);
+    if(idx<0||slowPipelineEvents>=36)continue;
+    try{
+      const raw=JSON.parse(line.slice(idx+marker.length));
+      const onlyKnownSources=(Array.isArray(raw.providerTimings)?raw.providerTimings:[])
+        .slice(0,24).map(v=>({
+          sourceId:/^[a-z0-9:_-]{2,56}$/i.test(v?.sourceId)?v.sourceId:"unknown",
+          pass:v?.pass==="fallback"?"fallback":"primary",
+          providerWallMs:safeNumber(v?.providerWallMs),
+          queueMs:safeNumber(v?.queueMs),
+          offers:safeNumber(v?.offers),
+        }));
+      const barriers=(Array.isArray(raw.primaryComponents)?raw.primaryComponents:[])
+        .slice(0,6).map(v=>({
+          component:["amazon-sa","provider-pass","meilisearch","persisted"].includes(v?.component)
+            ?v.component:"unknown",
+          settledAtMs:safeNumber(v?.settledAtMs),
+          failed:v?.failed===true,
+        }));
+      slowPipelineEvents++;
+      console.log("R04_P36_UNATTRIBUTED_SLOW_PIPELINE "+JSON.stringify({
+        unattributedConcurrentRequests:true,
+        primaryAcquiredMs:safeNumber(raw.primaryAcquiredMs),
+        preSelectionMs:safeNumber(raw.preSelectionMs),
+        finalizationMs:safeNumber(raw.finalizationMs),
+        totalMs:safeNumber(raw.totalMs),
+        deadlineExceeded:raw.deadlineExceeded===true,
+        fallbackUsed:raw.fallbackUsed===true,
+        hardDeniedFallbackStores:safeNumber(raw.hardDeniedFallbackStores),
+        providerTimings:onlyKnownSources,
+        primaryComponents:barriers,
+      }));
+    }catch{}
+  }
+});
 child.stderr.on("data",()=>{});
 const startedAt=new Date().toISOString(), rows=Array(36).fill(null);
 const knownFailureNames=new Set(["TimeoutError","AbortError","SyntaxError","TypeError"]);
