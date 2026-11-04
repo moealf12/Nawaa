@@ -65,6 +65,11 @@ def safe_headers(response):
 
 
 def network_error(error):
+    # Programmer errors must never be misreported as access denial or TLS.
+    if isinstance(error, (TypeError, AttributeError, NameError)):
+        return "CLIENT_IMPLEMENTATION_ERROR"
+    if isinstance(error, json.JSONDecodeError):
+        return "INVALID_JSON"
     source = str(error).lower()
     if "timeout" in source:
         return "TIMEOUT"
@@ -83,7 +88,7 @@ def read_json_bounded(response):
         raise ValueError("BODY_TOO_LARGE")
     chunks = []
     total = 0
-    for chunk in response.iter_content(chunk_size=32768):
+    for chunk in response.iter_content():
         total += len(chunk)
         if total > MAX_BODY_BYTES:
             raise ValueError("BODY_TOO_LARGE")
@@ -117,13 +122,14 @@ try:
         try:
             # Redirects are disabled; do not borrow cookies from a different host.
             report["requestCount"] += 1
-            with session.get(WARMUP, timeout=12, allow_redirects=False,
-                             stream=True) as response:
+            with session.stream("GET", WARMUP, timeout=12, allow_redirects=False) as response:
                 warm["status"] = response.status_code
+                warm["httpVersion"] = str(response.http_version)[:35]
                 warm.update(safe_headers(response))
                 warm["state"] = "HTTP_OK" if response.status_code == 200 else "HTTP_" + str(response.status_code)
         except Exception as exc:
             warm["state"] = network_error(exc)
+            warm["exceptionType"] = type(exc).__name__[:60]
         report["observations"].append(warm)
 
         search = {
@@ -138,9 +144,10 @@ try:
                 "referer": ORIGIN + "/saudi-en/",
             }
             report["requestCount"] += 1
-            with session.get(SEARCH, headers=headers, timeout=12,
-                             allow_redirects=False, stream=True) as response:
+            with session.stream("GET", SEARCH, headers=headers, timeout=12,
+                                allow_redirects=False) as response:
                 search["status"] = response.status_code
+                search["httpVersion"] = str(response.http_version)[:35]
                 search.update(safe_headers(response))
                 if response.status_code != 200:
                     search["state"] = "HTTP_" + str(response.status_code)
@@ -165,6 +172,7 @@ try:
             search["state"] = str(exc)[:60]
         except Exception as exc:
             search["state"] = network_error(exc)
+            search["exceptionType"] = type(exc).__name__[:60]
         report["observations"].append(search)
         report["conclusion"] = search["state"]
 except Exception:
