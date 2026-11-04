@@ -130,12 +130,14 @@ def inspect_dom(body, market):
 
     bs_links = [
         node.get("href")
-        for node in soup.find_all("a", href=True, limit=MAX_ANCHORS)
+        for node in soup.find_all("a", href=lambda value: (
+            isinstance(value, str) and "/p/" in value
+        ), limit=MAX_ANCHORS)
     ]
-    lx_links = tree.xpath("//a[@href]/@href")[:MAX_ANCHORS]
+    lx_links = tree.xpath("//a[contains(@href, '/p/')]/@href")[:MAX_ANCHORS]
     sx_links = [
         node.attributes.get("href")
-        for node in lex.css("a[href]")[:MAX_ANCHORS]
+        for node in lex.css('a[href*="/p/"]')[:MAX_ANCHORS]
     ]
     observations = {}
     sets = {}
