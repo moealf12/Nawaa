@@ -81,18 +81,25 @@ const PRODUCT_HEADERS = {
   pragma: "no-cache",
 };
 
-async function fetchHtmlWithMockableFetch(target, redirects, signal) {
+const emitPdp=(onPdpStage,stage)=>{
+  if(typeof onPdpStage!=="function")return;
+  try{onPdpStage(stage);}catch{}
+};
+async function fetchHtmlWithMockableFetch(target, redirects, signal, onPdpStage) {
+  emitPdp(onPdpStage,"request_started");
   const response = await fetch(target.parsed, {
     redirect: "manual",
     headers: productPageRequestHeaders(target.parsed.href, PRODUCT_HEADERS),
     signal: signal ? AbortSignal.any([signal,AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
   });
+  emitPdp(onPdpStage,"headers_received");
   if ([301,302,303,307,308].includes(response.status)) {
+    emitPdp(onPdpStage,"redirect");
     await response.body?.cancel();
     if (redirects >= MAX_REDIRECTS) throw new Error("Too many redirects");
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without location");
-    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal});
+    return fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal,onPdpStage});
   }
   if (!response.ok) throw new Error("Product page returned " + response.status);
   const type = response.headers.get("content-type") || "";
@@ -109,13 +116,15 @@ async function fetchHtmlWithMockableFetch(target, redirects, signal) {
   }
   const merged=new Uint8Array(total);let offset=0;
   for(const chunk of chunks){merged.set(chunk,offset);offset+=chunk.byteLength;}
+  emitPdp(onPdpStage,"body_complete");
   return {finalUrl:target.parsed.href,html:new TextDecoder().decode(merged)};
 }
 
-function fetchHtmlPinned(target, redirects, signal) {
+function fetchHtmlPinned(target, redirects, signal, onPdpStage) {
   return new Promise((resolve, reject) => {
     if(signal?.aborted)return reject(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
     const hostname = target.parsed.hostname.replace(/^\[|\]$/g, "");
+    emitPdp(onPdpStage,"request_started");
     const request = https.request({
       protocol:"https:",
       hostname,
@@ -130,13 +139,15 @@ function fetchHtmlPinned(target, redirects, signal) {
         else callback(null,target.address,target.family);
       },
     }, (response) => {
+      emitPdp(onPdpStage,"headers_received");
       const status = response.statusCode || 0;
       if ([301,302,303,307,308].includes(status)) {
+        emitPdp(onPdpStage,"redirect");
         response.resume();
         if (redirects >= MAX_REDIRECTS) return reject(new Error("Too many redirects"));
         const location = response.headers.location;
         if (!location) return reject(new Error("Redirect without location"));
-        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal}).then(resolve,reject);
+        fetchHtmlSafe(new URL(location, target.parsed).href, redirects + 1, {signal,onPdpStage}).then(resolve,reject);
         return;
       }
       if (status < 200 || status >= 300) {
@@ -155,7 +166,17 @@ function fetchHtmlPinned(target, redirects, signal) {
         chunks.push(chunk);
       });
       response.on("error",reject);
-      response.on("end",()=>resolve({finalUrl:target.parsed.href,html:Buffer.concat(chunks,total).toString("utf8")}));
+      response.on("end",()=>{
+        emitPdp(onPdpStage,"body_complete");
+        resolve({finalUrl:target.parsed.href,html:Buffer.concat(chunks,total).toString("utf8")});
+      });
+    });
+    // The transport uses pinned DNS and agent:false. These socket events
+    // observe TCP/TLS boundaries but cannot prove the cause of a stall.
+    if(typeof onPdpStage==="function")request.once("socket",socket=>{
+      emitPdp(onPdpStage,"socket_assigned");
+      socket.once("connect",()=>emitPdp(onPdpStage,"tcp_connected"));
+      socket.once("secureConnect",()=>emitPdp(onPdpStage,"tls_ready"));
     });
     const abort=()=>request.destroy(signal.reason instanceof Error?signal.reason:new Error("Product page request aborted"));
     signal?.addEventListener("abort",abort,{once:true});
@@ -166,18 +187,19 @@ function fetchHtmlPinned(target, redirects, signal) {
   });
 }
 
-export async function fetchHtmlSafe(url, redirects = 0, {signal} = {}) {
+export async function fetchHtmlSafe(url, redirects = 0, {signal,onPdpStage} = {}) {
   if(isRetiredSourceUrl(url)){
     const error=new Error("SOURCE_RETIRED");
     error.sourceCatalogCode=404;
     throw error;
   }
   const target = await resolvePublicHttpsTarget(url);
+  emitPdp(onPdpStage,"dns_complete");
   if(signal?.aborted)throw signal.reason instanceof Error?signal.reason:new Error("Product page request aborted");
   if (process.env.NAWAA_TEST_TRANSPORT === "fetch" || process.env.NODE_TEST_CONTEXT) {
-    return fetchHtmlWithMockableFetch(target, redirects, signal);
+    return fetchHtmlWithMockableFetch(target, redirects, signal, onPdpStage);
   }
-  return fetchHtmlPinned(target, redirects, signal);
+  return fetchHtmlPinned(target, redirects, signal, onPdpStage);
 }
 
 function decodeHtml(value = "") {
@@ -579,6 +601,7 @@ export async function extractProductDocument(url, options = {}) {
     throw failure;
   }
   const candidates = extractionCandidates(fetched.html, fetched.finalUrl);
+  emitPdp(options.onPdpStage,"candidates_extracted");
   if(amazonIdentity && candidates.length===0){
     const failure=new Error("AMAZON_DE_SCOPED_OFFER_NOT_OBSERVED");
     failure.failureClass="UNVERIFIED_PRODUCT_OFFER";
@@ -660,6 +683,7 @@ export async function resolveProductUrl(url, options = {}) {
   const priceSAR = originalPrice !== null && originalCurrency
     ? await moneyToSAR(originalPrice, originalCurrency).catch(() => null)
     : null;
+  emitPdp(options.onPdpStage,"price_selected");
 
   const country = inferCountry(finalUrl, originalCurrency);
   // The Amazon DE marketplace location cannot establish a third-party seller's country.
