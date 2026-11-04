@@ -131,3 +131,17 @@ class AmazonPdpTests(unittest.TestCase):
         from nawaa_store_hunter import parse_amazon_us_pdp
         html = '<span id="productTitle">Soundcore Q20i Wireless Bluetooth Black Headphones</span><div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">$5.99</span></span></div>'
         self.assertEqual(parse_amazon_us_pdp(html, "https://www.amazon.com/dp/B0C3HCD34R"), [])
+
+
+    def test_product_specs_and_bundle_prices_never_become_main_offer(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        html = """<link rel="canonical" href="https://www.amazon.com/dp/B0C3HCD34R" />
+        <input id="ASIN" value="B0C3HCD34R" />
+        <span id="productTitle">Soundcore Q20i Wireless Bluetooth Black Headphones</span>
+        <img id="landingImage" src="https://m.media-amazon.com/images/I/pdp.jpg" />
+        <div id="ProductSpecs-1"><span class="a-price"><span class="a-offscreen">$12.99</span></span></div>
+        <div id="sims-productBundle_feature_div_0"><span class="a-price"><span class="a-offscreen">$40.00</span></span></div>"""
+        product = parse_amazon_us_pdp(html, "https://www.amazon.com/dp/B0C3HCD34R")[0]
+        self.assertIsNone(product.price)
+        self.assertIsNone(product.currency)
+        self.assertIn("AMAZON_PDP_PRIMARY_PRICE_NOT_EVIDENCED", product.issues)
