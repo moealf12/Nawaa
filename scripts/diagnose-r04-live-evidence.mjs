@@ -52,6 +52,8 @@ if(output.provenance){
     "**Source-error events / truncated tail:** "+
       output.sample.sourceErrorEvents+" / "+
       output.sample.sourceErrorEventsOutsideTop32,
+    "**Source error classification unknown (lower bound):** "+
+      output.sample.sourceUnclassifiedEventsAtLeast,
     "**Source event accounting:** "+output.sample.sourceErrorReconciliation,
     "",
     "## Priority investigations (symptoms, not causal conclusions)",
