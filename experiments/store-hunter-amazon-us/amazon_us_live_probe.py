@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import asdict
-from nawaa_store_hunter import Scraper, parse_jsonld, parse_html_cards, parse_microdata, parse_meta_product
+from nawaa_store_hunter import Scraper, parse_jsonld, parse_html_cards, parse_microdata, parse_meta_product, parse_amazon_us_pdp
 
 async def main():
     query = os.environ.get("AMAZON_US_QUERY", "wireless headphones")
@@ -24,7 +24,8 @@ async def main():
     # This ASIN was observed in the prior 2026-11-04 LIVE Amazon search artifact.
     # It is diagnostic-only, not a hardcoded product for the universal scraper.
     pdp_diagnostic = {"attempted": False, "html_received": False,
-                      "structured_candidates": 0, "candidates_with_price": 0,
+                      "structured_candidates": 0, "pdp_asin_bound_candidates": 0, "pdp_main_buybox_prices": 0, "pdp_verified_images": 0,
+                      "candidates_with_price": 0,
                       "candidates_with_image": 0, "dom_price_nodes": 0}
     try:
         result = await scraper.search()
@@ -58,6 +59,10 @@ async def main():
                 pdp_diagnostic["html_received"] = True
                 from bs4 import BeautifulSoup
                 parsed = parse_jsonld(body, pdp_url) + parse_microdata(body, pdp_url) + parse_meta_product(body, pdp_url)
+                amazon_pdp = parse_amazon_us_pdp(body, pdp_url)
+                pdp_diagnostic["pdp_asin_bound_candidates"] = len(amazon_pdp)
+                pdp_diagnostic["pdp_main_buybox_prices"] = sum(bool(p.price and p.currency) for p in amazon_pdp)
+                pdp_diagnostic["pdp_verified_images"] = sum(bool(p.image) for p in amazon_pdp)
                 pdp_diagnostic["structured_candidates"] = len(parsed)
                 pdp_diagnostic["candidates_with_price"] = sum(bool(p.price and p.currency) for p in parsed)
                 pdp_diagnostic["candidates_with_image"] = sum(bool(p.image) for p in parsed)
