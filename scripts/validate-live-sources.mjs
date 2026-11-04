@@ -26,7 +26,7 @@ const CASES = [
   ["virgin-ae","airpods"],["xcite-kw","airpods"],["lulu-ae","airpods"],
 ];
 
-let live = 0;
+let validatedCases = 0;
 const rows = [];
 for (const [store, query] of CASES) {
   const started = Date.now();
@@ -42,7 +42,7 @@ for (const [store, query] of CASES) {
       Number.isFinite(o.productPrice) && o.productPrice > 0
     );
     const status = valid.length ? "LIVE_VALIDATED" : "PROBED";
-    if (valid.length) live++;
+    if (valid.length) validatedCases++;
     rows.push({store,query,status,candidates:result.candidates,offers:offers.length,valid:valid.length,ms:Date.now()-started,error:result.diagnostics?.primarySearchError || null,
       candidateSamples:result.diagnostics?.candidateSamples || [],
       failureSamples:result.diagnostics?.failureSamples || [],
@@ -59,12 +59,24 @@ for (const [store, query] of CASES) {
 console.table(rows);
 const failed = rows.filter((row) => row.status === "PROBED_FAILED").length;
 const probedOnly = rows.filter((row) => row.status === "PROBED").length;
-const liveSources = rows.filter((row) => row.status === "LIVE_VALIDATED").map((row) => row.store);
-const report = {checked:CASES.length,liveValidated:live,liveSources,probedOnly,failed,rows};
+// Distinct merchants, not the number of passing query/merchant pairs.
+// Repeating a single accessible merchant must never manufacture breadth.
+const liveSources = [...new Set(rows
+  .filter(row=>row.status==="LIVE_VALIDATED").map(row=>row.store))].sort();
+const uniqueLiveStores = liveSources.length;
+const report = {
+  checked:CASES.length,
+  liveValidated:uniqueLiveStores,
+  liveValidatedCases:validatedCases,
+  uniqueLiveStores,
+  liveSources,probedOnly,failed,rows,
+  evidenceMode:"REAL_PUBLIC_MERCHANT_HTTP_ONLY",
+  sourceCoverageCertified:false,
+};
 console.log(JSON.stringify(report,null,2));
 await import("node:fs").then(({writeFileSync}) => writeFileSync("live-source-validation.json", JSON.stringify(report,null,2)));
 const minimumLive = Number(process.env.MIN_LIVE_SOURCES || 8);
-if (live < minimumLive) {
-  console.error(`VALIDATION_GATE_FAILED: ${live}/${minimumLive} required sources reached LIVE_VALIDATED.`);
+if (uniqueLiveStores < minimumLive) {
+  console.error(`VALIDATION_GATE_FAILED: ${uniqueLiveStores}/${minimumLive} unique live stores; ${validatedCases} validated query-store observations.`);
   process.exitCode = 1;
 }
