@@ -95,13 +95,14 @@ async function probe(q){
       throw Error("INVALID_SEARCH_RESPONSE");
     const body=response.body;
     row.status="OBSERVED";row.offers=body.offers.length;
-    row.partial=body.coverage?.partial===true;
+    row.partial=typeof body.coverage?.partial==="boolean"?body.coverage.partial:null;
     row.sourceErrors=Array.isArray(body.errors)?body.errors.length:null;
     row.pending=body.coverage?.providersPending??null;
     row.cacheMode=body.cache?.mode??null;
     row.serverDurationMs=Number.isFinite(body.durationMs)?body.durationMs:null;
-    row.deadlineExceeded=body.coverage?.deadlineExceeded===true;
-    row.catalogRecallStatus=["failed","success","unconfigured","skipped"].includes(
+    row.deadlineExceeded=typeof body.coverage?.deadlineExceeded==="boolean"?
+      body.coverage.deadlineExceeded:null;
+    row.catalogRecallStatus=["failed","observed","unconfigured"].includes(
       body.coverage?.catalogRecall?.status)?body.coverage.catalogRecall.status:null;
     row.sourceFailureTypes=body.coverage?.sourceFailures?.types??null;
     row.sourceErrorBreakdown=aggregateSourceErrorEvidence(body.errors);
