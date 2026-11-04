@@ -2047,9 +2047,18 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           ...(store.id==="thomann-de"?{priceEvidence:"PDP_OBSERVED_ONLY"}:{}),
         },
       }));
-    markStoreStage("pdp_resolved",{
-      pdpAttempts:resolutionLinks.length,resolvedOffers:resolvedOffers.length,
-    });
+    if(stageStarted){
+      const rejected=settled.filter(item=>item.status==="rejected");
+      const unpriced=settled.filter(item=>item.status==="fulfilled"&&
+        !Number.isFinite(item.value?.productPrice));
+      const timedOut=rejected.filter(item=>
+        classifySourceError(item.reason).failureClass==="HTTP_TIMEOUT");
+      markStoreStage("pdp_resolved",{
+        pdpAttempts:resolutionLinks.length,resolvedOffers:resolvedOffers.length,
+        pdpRejected:rejected.length,pdpUnpriced:unpriced.length,
+        pdpTimedOut:timedOut.length,
+      });
+    }
     const allOffers = [...directOffers, ...resolvedOffers];
     const variantEligible = store.id==="thomann-de"
       ? allOffers.filter(offer=>thomannVariantMatchesQuery(matchingQuery,offer.title,offer.sourceUrl))
