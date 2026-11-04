@@ -92,7 +92,7 @@ for(const spec of cases){
       !response.ok?"HTTP_"+response.status:
       "HTTP_OK";
     if(response.ok)Object.assign(record,await readJson(response));
-    response.body?.cancel().catch(()=>{});
+    if(response.body && !response.body.locked)await response.body.cancel().catch(()=>{});
   }catch(err){
     record.state=classify(err);
   }finally{
