@@ -1,0 +1,45 @@
+name: EXPERIMENT Amazon US Store Hunter Live (no-deploy)
+on:
+  push:
+    branches:
+      - experiment/store-hunter-amazon-us-isolated-20261105
+    paths:
+      - experiments/store-hunter-amazon-us/**
+      - .github/workflows/experiment-store-hunter-amazon-us.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: experiment-store-hunter-amazon-us-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  amazon-us-live:
+    if: github.ref == 'refs/heads/experiment/store-hunter-amazon-us-isolated-20261105'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install standalone extractor dependencies (no production service)
+        run: |
+          python -m pip install --disable-pip-version-check 'httpx>=0.27,<1' 'beautifulsoup4>=4.12,<5' 'playwright>=1.50,<2'
+          python -m playwright install --with-deps chromium
+      - name: Verify isolated Python files
+        run: python -m py_compile experiments/store-hunter-amazon-us/*.py
+      - name: Amazon US one-query live test (no bypass; bounded)
+        env:
+          AMAZON_US_QUERY: wireless headphones
+          PYTHONPATH: experiments/store-hunter-amazon-us
+        run: python experiments/store-hunter-amazon-us/amazon_us_live_probe.py
+      - name: Preserve real live results and diagnostics regardless of pass/fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: experiment-amazon-us-store-hunter-live
+          path: artifacts/amazon-us-live.json
+          if-no-files-found: warn
+          retention-days: 3
