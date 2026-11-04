@@ -1,0 +1,53 @@
+name: NAWAA R04 Post-272 Dyson Exact-LIVE Acceptance
+on:
+  pull_request:
+    paths:
+      - 'scripts/r04-post272-live.mjs'
+      - '.github/workflows/r04-post272-live.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r04-post272-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  post272-exact-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify test syntax and frozen matcher regression
+        run: |
+          node --check scripts/r04-post272-live.mjs
+          node --test tests/r04-p0-dyson-model-recall.test.mjs
+      - name: Pin current production to exact merged commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = '35082765cfa63ab4100dfe757bf772b1b47a9e71'
+      - name: Check public health, run bounded source-backed searches, check health
+        run: node scripts/r04-post272-live.mjs
+      - name: Reject moving main after audit
+        if: always()
+        shell: bash
+        run: |
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = '35082765cfa63ab4100dfe757bf772b1b47a9e71'
+      - name: Preserve exact-lived evidence on both success and failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-post272-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-post272-live.json
+          retention-days: 14
+          if-no-files-found: warn
