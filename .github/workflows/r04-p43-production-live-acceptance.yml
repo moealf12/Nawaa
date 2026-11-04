@@ -1,0 +1,143 @@
+name: NAWAA R04 P43 Exact SHA LIVE Production Acceptance
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.github/workflows/r04-p43-production-live-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production-36:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    concurrency:
+      group: nawaa-production-live-probes
+      queue: max
+      cancel-in-progress: false
+    env:
+      NAWAA_EXPECT_LIVE_SHA: 0176faf13f7349c0f4ba19d80405146d6e1ddf4f
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0176faf13f7349c0f4ba19d80405146d6e1ddf4f
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Guard exact main SHA and real Render health HTTP
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$NAWAA_EXPECT_LIVE_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
+          node scripts/r04-p38-postdeploy-sha.mjs
+      - name: Two independent 36-intent LIVE production rounds, concurrency two
+        run: |
+          set -uo pipefail
+          failed=0
+          for round in 1 2; do
+            echo "R04_P43_START_ROUND=$round"
+            node scripts/r04-36-live-corpus-evidence.mjs
+            code=$?
+            if test -f r04-36-live-corpus-evidence.json; then
+              cp r04-36-live-corpus-evidence.json "r04-p43-round-$round.json"
+              ROUND="$round" node --input-type=module -e '
+                import {readFileSync} from "node:fs";
+                const d=JSON.parse(readFileSync("r04-36-live-corpus-evidence.json","utf8"));
+                const rows=d.rows||[];
+                const observed=rows.filter(r=>r?.status==="OBSERVED");
+                const missing=observed.filter(r=>!(r.primaryGroups>0)).map(r=>r.id);
+                const deadlines=observed.filter(r=>r.deadlineExceeded).map(r=>r.id);
+                const failures=rows.filter(r=>r?.status!=="OBSERVED").map(r=>r?.id||"MISSING");
+                const exact=d.healthBefore?.revision===process.env.NAWAA_EXPECT_LIVE_SHA &&
+                  d.healthAfter?.revision===process.env.NAWAA_EXPECT_LIVE_SHA;
+                const ms=observed.map(r=>r.elapsedMs).filter(Number.isFinite).sort((a,b)=>a-b);
+                const pct=p=>ms.length?ms[Math.ceil(p*ms.length)-1]:null;
+                const pass=exact&&d.summary?.result==="EVIDENCE_COLLECTED"&&
+                  observed.length===36&&failures.length===0&&missing.length===0&&deadlines.length===0;
+                console.log("R04_P43_ROUND "+JSON.stringify({
+                  round:process.env.ROUND,pass,sha:process.env.NAWAA_EXPECT_LIVE_SHA,
+                  observed:observed.length,failures,missingPrimary:missing,deadlines,
+                  offers:observed.reduce((n,r)=>n+(r.offers||0),0),
+                  sourceErrors:observed.reduce((n,r)=>n+(r.sourceErrors||0),0),
+                  partial:observed.filter(r=>r.partial).length,
+                  sampleP50Ms:pct(.5),sampleP95Ms:pct(.95),
+                  note:"fixed corpus latency sample, not live traffic P95"
+                }));
+                if(!pass)process.exit(2);
+              '
+              if test "$?" -ne 0; then failed=1; fi
+            else
+              echo "MISSING_LIVE_ROUND_REPORT"
+              failed=1
+            fi
+            if test "$code" -ne 0; then failed=1; fi
+          done
+          if test "$failed" -ne 0; then
+            echo "R04_P43_TWO_ROUND_GATE=FAIL"
+            exit 1
+          fi
+          echo "R04_P43_TWO_ROUND_GATE=PASS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r04-p43-two-live-production-rounds
+          path: r04-p43-round-*.json
+          retention-days: 14
+          if-no-files-found: warn
+  published-browser:
+    needs: production-36
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: nawaa-production-live-probes
+      queue: max
+      cancel-in-progress: false
+    env:
+      NAWAA_EXPECT_LIVE_SHA: 0176faf13f7349c0f4ba19d80405146d6e1ddf4f
+      NODE_ENV: production
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 0176faf13f7349c0f4ba19d80405146d6e1ddf4f
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Recheck real deployed SHA before browser
+        run: |
+          test "$(git rev-parse HEAD)" = "$NAWAA_EXPECT_LIVE_SHA"
+          node scripts/r04-p38-postdeploy-sha.mjs
+      - name: Install test-only Chromium dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm install --no-save --ignore-scripts --package-lock=false playwright@1.56.1
+      - name: Check system Chromium
+        run: command -v google-chrome || command -v google-chrome-stable || command -v chromium
+      - name: LIVE published PS5 customer flow
+        env:
+          NAWAA_BROWSER_QUERY: PS5
+        run: node scripts/browser-customer-journey.mjs published
+      - name: LIVE published Arabic Dior customer flow
+        env:
+          NAWAA_BROWSER_QUERY: عطر ديور رجالي
+        run: node scripts/browser-customer-journey.mjs published
+      - name: LIVE published Apple Watch customer flow
+        env:
+          NAWAA_BROWSER_QUERY: Apple Watch Series 11
+        run: node scripts/browser-customer-journey.mjs published
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r04-p43-live-published-browser
+          path: browser-artifacts/
+          retention-days: 14
+          if-no-files-found: warn
