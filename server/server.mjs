@@ -837,7 +837,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         plan, signal:requestController.signal,
         onChunk: (chunk) => { completedPrimaryChunks.push(chunk); },
         onTrace:(event)=>traceProvider(event,"primary"),
-        onStoreTrace:event=>recordStoreTrace(event,"primary"),
+        onStoreTrace:SEARCH_TRACE_ENABLED?event=>recordStoreTrace(event,"primary"):undefined,
       }),
       () => {
         const completed = mergeProviderChunks(completedPrimaryChunks);
@@ -927,7 +927,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
             skipFailedStorefrontIds:retryDeniedIds,
             onChunk:chunk=>{completedFallbackChunks.push(chunk);},
             onTrace:(event)=>traceProvider(event,"fallback"),
-            onStoreTrace:event=>recordStoreTrace(event,"fallback"),
+            onStoreTrace:SEARCH_TRACE_ENABLED?event=>recordStoreTrace(event,"fallback"):undefined,
           }),
           () => {
             // Never erase verified offers from a fast provider when another
