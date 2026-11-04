@@ -415,8 +415,8 @@ def script_shape(soup, item):
                     result["closestPriceNumericCandidates"].append(
                         [value for value in amounts[:4]]
                     )
-        if len(result["inlineScriptEnvelopeDiagnostics"]) < 10:
-            start = body.lstrip()[:180]
+        if item["offerCode"] in body and len(result["inlineScriptEnvelopeDiagnostics"]) < 10:
+            start = body.lstrip()[:350]
             # Whitelist only leading JavaScript identifiers, not string values.
             start = re.sub(r'["][^"]{0,100}["]', '"STRING"', start)
             start = re.sub(r"['][^']{0,100}[']", "'STRING'", start)
@@ -430,6 +430,10 @@ def script_shape(soup, item):
                 "containsSku": item["sku"] in body,
                 "containsJsonParse": "JSON.parse" in body,
                 "containsWindow": "window." in body,
+                "containsAssignment": "=" in body[:200],
+                "containsJsonStringify": "JSON.stringify" in body,
+                "containsProductKey": "product" in body[:500].lower(),
+                "containsAppData": "__" in body[:200],
             })
         if len(body) > 3_000_000:
             continue
