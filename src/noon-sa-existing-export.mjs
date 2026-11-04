@@ -110,13 +110,21 @@ function noonIdentity(raw){
     return {...identity,offerCode};
   }catch{return null}
 }
+// Strictly parses existing seller/affiliate export prices, without currency
+// conversion, ambiguous decimal separators, scientific notation or sign marks.
+// Allows a *correctly grouped* thousands comma and Arabic-Indic numerals.
 function price(raw){
-  const value=typeof raw==="number"?String(raw):
-    typeof raw==="string"?raw.trim():"";
-  if(!/^(?:[1-9]\d{0,6}|0\.\d{1,2}|[1-9]\d{0,6}\.\d{1,2})$/.test(value))
-    return null;
-  const n=Number(value);
-  return Number.isFinite(n)&&n>0&&n<=10_000_000?n:null;
+  if(typeof raw!=="number"&&typeof raw!=="string")return null;
+  const digits=String(raw).trim()
+    .replace(/[٠-٩]/g,c=>String(c.charCodeAt(0)-0x0660))
+    .replace(/[۰-۹]/g,c=>String(c.charCodeAt(0)-0x06f0))
+    .replace(/\u066C/g,",").replace(/\u066B/g,".");
+  const ungrouped=/^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/;
+  const grouped=/^[1-9]\d{0,2}(?:,\d{3})+(?:\.\d{1,2})?$/;
+  if(!ungrouped.test(digits)&&!grouped.test(digits))return null;
+  const n=Number(digits.replace(/,/g,""));
+  return Number.isFinite(n)&&n>0&&n<=10_000_000&&
+    Math.abs(n*100-Math.round(n*100))<1e-6?n:null;
 }
 function isoTime(raw){
   if(typeof raw!=="string"||raw.length>40||raw.length<20||
@@ -155,7 +163,8 @@ function observation(row,map){
     return {error:"SKU_MISMATCH"};
   const amount=price(value("price"));
   const currency=value("currency");
-  const priceValid=amount!==null&&currency==="SAR";
+  const priceValid=amount!==null&&
+    typeof currency==="string"&&currency.trim().toUpperCase()==="SAR";
   const sourceTime=isoTime(value("observed_at"));
   const code=value("offer_code");
   if(code!=null&&String(code).trim()!==""&&id.offerCode!==String(code).trim())
