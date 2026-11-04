@@ -38,10 +38,12 @@ const approvedArabicDeltas=[
   ["كمبيوتر مكتبي","desktop"],["للالعاب","gaming"],
   ["رجالي","men"],["رياضيه","sports"],["للرياضه","sports"],["رياضي","sports"],
 ];
-const escapeRegex=v=>v.replace(/[.*+?^\x24{}()|[\]\\]/g,"\\for(const input of inputs){
-  const a=versions[0].fn(input),b=versions[1].fn(input);
-  assert.equal(b,a,'query normalization changed: '+JSON.stringify(input));
-}");
+const escapeRegex=value=>{
+  // All approved legacy-normalized terms are literal Arabic/ASCII letters
+  // and spaces. Reject regex meta characters instead of interpolating them.
+  if(!/^[\\p{L} ]+$/u.test(value))throw Error("UNSAFE_REVIEWED_DELTA");
+  return value;
+};
 const reviewedProjection=before=>{
   let result=before;
   for(const [original,replacement] of approvedArabicDeltas)
