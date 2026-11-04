@@ -64,6 +64,21 @@ async def main():
                 pdp_diagnostic["pdp_asin_bound_candidates"] = len(amazon_pdp)
                 pdp_diagnostic["pdp_main_buybox_prices"] = sum(bool(p.price and p.currency) for p in amazon_pdp)
                 pdp_diagnostic["pdp_verified_images"] = sum(bool(p.image) for p in amazon_pdp)
+                pdp_diagnostic["pdp_parser_issues"] = sorted({issue for p in amazon_pdp for issue in p.issues})
+                soup = BeautifulSoup(body, "html.parser")
+                pdp_diagnostic["price_region_nodes"] = {
+                    "corePrice_feature": len(soup.select("#corePrice_feature_div .a-price:not(.a-text-price) .a-offscreen")),
+                    "corePriceDisplay_desktop": len(soup.select("#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price) .a-offscreen")),
+                    "apex_desktop": len(soup.select("#apex_desktop .a-price:not(.a-text-price) .a-offscreen")),
+                    "centerCol": len(soup.select("#centerCol .a-price:not(.a-text-price) .a-offscreen")),
+                    "buybox": len(soup.select("#buybox .a-price:not(.a-text-price) .a-offscreen")),
+                    "priceblock_dealprice": len(soup.select("#priceblock_dealprice")),
+                    "priceblock_ourprice": len(soup.select("#priceblock_ourprice")),
+                }
+                pdp_diagnostic["has_main_title"] = bool(soup.select_one("#productTitle"))
+                pdp_diagnostic["has_selected_asin"] = bool(soup.select_one("input#ASIN[value], input[name='ASIN'][value]"))
+                pdp_diagnostic["has_canonical"] = bool(soup.select_one("link[rel='canonical'][href]"))
+
                 pdp_diagnostic["structured_candidates"] = len(parsed)
                 pdp_diagnostic["candidates_with_price"] = sum(bool(p.price and p.currency) for p in parsed)
                 pdp_diagnostic["candidates_with_image"] = sum(bool(p.image) for p in parsed)
