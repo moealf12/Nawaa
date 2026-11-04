@@ -131,7 +131,9 @@ export async function evaluateCosrxSearch({
   let candidates=listing.candidates;
   let fallbackDiagnostics=null;
   let fallbackError=null;
-  // Fallback only when SSR had *zero* cards, never when cards existed\n  // but were rejected due to conflicting product or price evidence.\n  if(!candidates.length&&listing.diagnostics.status==="SEARCH_NO_VISIBLE_CARDS"){
+  // Fallback only when SSR had zero cards, never after rejected evidence.
+  // Conflicting price/product cards must not be bypassed.
+  if(!candidates.length&&listing.diagnostics.status==="SEARCH_NO_VISIBLE_CARDS"){
     try{
       const url=cosrxSuggestUrl(query);
       const response=await fetchSuggestJson(query,{signal});
