@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "scripts/noon-sa-live-acceptance.mjs"
+      - "scripts/noon-sa-transport-matrix.mjs"
       - ".github/workflows/noon-sa-live-acceptance.yml"
       - "server/providers/free-storefronts.mjs"
       - "src/noon-sa-catalog.mjs"
@@ -27,6 +28,22 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci --ignore-scripts
+      - name: Install ephemeral Playwright Chromium for isolated live probe
+        continue-on-error: true
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Live transport differential (session versus real browser)
+        continue-on-error: true
+        run: node scripts/noon-sa-transport-matrix.mjs
+      - name: Archive transport matrix whether access passes or fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-sa-transport-matrix
+          path: noon-sa-transport-matrix.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Real Noon Saudi search acquisition (no fixtures, no retry)
         run: node scripts/noon-sa-live-acceptance.mjs
       - name: Persist machine-readable source result
