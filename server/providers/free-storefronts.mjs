@@ -1,4 +1,5 @@
 import {safeStorefrontStage,safeStorefrontOutcome} from "../storefront-merchant-evidence.mjs";
+import {createPdpMilestoneProbe,summarizePdpAttemptPhases} from "../pdp-phase-diagnostics.mjs";
 import { resolveProductUrl } from "../url-resolver.mjs";
 import {readAmazonHtmlStream} from "../amazon-body-stream.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
@@ -2021,7 +2022,31 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id==="noon-sa" ||
       (thomannFamilyRequested && directSearchOffers.length)
       ? [] : recoveryPlan.links;
-    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
+    // Shadow trace existing PDPs only. Collection cannot add a request, alter
+    // pricing, retry a failure or interfere with cancellation.
+    const pdpAttempts=stageStarted?[]:null;
+    const settled = await Promise.allSettled(resolutionLinks.map(async (candidate,index) => {
+      const probe=pdpAttempts?createPdpMilestoneProbe():null;
+      try{
+        const product=await resolveProductUrl(candidate.url,{
+          signal:options.signal,
+          ...(probe?{onPdpStage:stage=>probe.mark(stage)}:{}),
+        });
+        if(probe)pdpAttempts[index]={...probe.snapshot(),
+          totalMs:probe.elapsedMs?.()??null,
+          outcome:Number.isFinite(product?.productPrice)?"succeeded":"unpriced"};
+        return product;
+      }catch(error){
+        if(probe)pdpAttempts[index]={...probe.snapshot(),
+          totalMs:probe.elapsedMs?.()??null,outcome:"rejected",
+          failureClass:classifySourceError(error).failureClass};
+        throw error;
+      }
+    }));
+    if(pdpAttempts){
+      const summary=summarizePdpAttemptPhases(pdpAttempts.filter(Boolean));
+      try{options.onPdpSummary?.(summary);}catch{}
+    }
     const resolvedOffers = settled
       .filter((result) => amazonDePriceHold.customerPublishable &&
         result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
