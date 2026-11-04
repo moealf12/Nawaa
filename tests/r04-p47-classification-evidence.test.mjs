@@ -34,6 +34,19 @@ test("evidence report does not expose sensitive text, arbitrary URLs, prices or 
     "customer@example.com","token=secret"])
     assert.equal(json.includes(v),false,v);
 });
+test("overlapping alternative classifier gates identify evidence gaps without promotion",()=>{
+  const g=[{bestOffer:{title:"RTX 5070 GPU accessory",
+    exactMatch:false,matchConfidence:.52}},{bestOffer:{
+    title:"gaming desktop RTX 5070",exactMatch:true,matchConfidence:.99}}];
+  const q=summarizeGroupClassificationEvidence(query,g);
+  assert.equal(q.alternativeGroupsAudited,q.laneCounts.alternative||0);
+  assert.equal(Object.values(q.alternativeGateCombinations).reduce((a,b)=>a+b,0),
+    q.alternativeGroupsAudited);
+  assert.equal(q.gateEvidenceLevel,
+    "OBSERVED_OVERLAPPING_CONDITIONS_NOT_CAUSAL_PROOF");
+  assert.ok(q.alternateGateMisses.sourceExactFalse>=0);
+  assert.ok(!JSON.stringify(q).includes("GPU accessory"));
+});
 test("input bounds make missing and truncated evidence explicit",()=>{
   assert.throws(()=>summarizeGroupClassificationEvidence(query,{}),/INVALID_CLASSIFIER/);
   assert.throws(()=>summarizeGroupClassificationEvidence(query,[],{maxGroups:5000}),
