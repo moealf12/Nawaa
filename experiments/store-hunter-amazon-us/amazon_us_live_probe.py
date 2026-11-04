@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime, timezone
-from nawaa_store_hunter import Scraper
+from nawaa_store_hunter import Scraper, parse_jsonld, parse_html_cards
 
 async def main():
     query = os.environ.get("AMAZON_US_QUERY", "wireless headphones")
@@ -19,8 +19,29 @@ async def main():
     )
     # Do not spray generic non-Amazon search routes.
     scraper.search_targets = lambda _: [("https://www.amazon.com/s", {"k": query})]
+    browser_diagnostic = {"attempted": False, "html_received": False, "parsed_items": 0}
     try:
         result = await scraper.search()
+        # Single diagnostic retry with an ordinary Chromium browser, NOT stealth,
+        # proxies, CAPTCHA solving, or identity spoofing.
+        if result.get("count", 0) == 0 and any(
+            d.get("method") == "search-html" and d.get("status") == "HTTP_ERROR"
+            for d in result.get("diagnostics", [])
+        ):
+            from urllib.parse import quote
+            url = "https://www.amazon.com/s?k=" + quote(query)
+            browser_diagnostic["attempted"] = True
+            html = await scraper.browser_fetch(url)
+            browser_diagnostic["html_received"] = bool(html)
+            if html:
+                candidates = parse_jsonld(html, url) + parse_html_cards(
+                    html, url, "https://www.amazon.com", 5
+                )
+                browser_diagnostic["parsed_items"] = len(candidates)
+                browser_diagnostic["complete_items"] = sum(
+                    bool(p.title and p.url and p.price and p.currency == "USD" and p.image)
+                    for p in candidates
+                )
     except Exception as exc:
         result = {
             "store": "https://www.amazon.com", "query": query,
@@ -42,6 +63,7 @@ async def main():
         "query": query,
         "source": "LIVE_REMOTE_HTTP",
         "status": result.get("status"),
+        "browser_diagnostic": browser_diagnostic,
         "count": len(products),
         "priced_usd_with_image": len(complete),
         "pdp_correlated": len(correlated),
