@@ -62,6 +62,7 @@ const frameParser=createBoundedLogFrameParser(line=>{
           const raw=JSON.parse(line.slice(pos+marker.length));
           const traceId=marker.includes("CRITICAL_PATH")?raw?.generationId:raw?.requestId;
           if(/^[a-f0-9]{16}$/.test(traceId||""))target.push(raw);
+          else traceDropped++;
         }catch{traceDropped++;}
       }
     }
