@@ -34,6 +34,10 @@ jobs:
         env:
           PYTHONPATH: experiments/store-hunter-amazon-us
         run: python experiments/store-hunter-amazon-us/amazon_us_pdp_matrix.py
+      - name: Independent Amazon US PDP price reobservations (two ASINs)
+        env:
+          PYTHONPATH: experiments/store-hunter-amazon-us
+        run: python experiments/store-hunter-amazon-us/amazon_us_price_stability_probe.py
       - name: Amazon US one-query live test (no bypass; bounded)
         env:
           AMAZON_US_QUERY: wireless headphones
@@ -47,5 +51,6 @@ jobs:
           path: |
             artifacts/amazon-us-live.json
             artifacts/amazon-us-pdp-matrix.json
+            artifacts/amazon-us-pdp-reobservations.json
           if-no-files-found: warn
           retention-days: 3
