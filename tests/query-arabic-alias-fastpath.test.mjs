@@ -11,12 +11,13 @@ const samples=[
   ...Array.from({length:60},(_,i)=>"PS5 "+(i%2?"Console":"Controller")+" Bundle "+i),
 ];
 
-test("all 176 reviewed aliases contain Arabic characters: Latin-only fast path has no possible match",()=>{
+test("all 178 reviewed aliases contain Arabic characters: Latin-only fast path has no possible match",()=>{
   const aliasSection=CURRENT_SOURCE.slice(
     CURRENT_SOURCE.indexOf("const ALIASES ="),
     CURRENT_SOURCE.indexOf("const COMPILED_ALIASES ="));
   const aliases=[...aliasSection.matchAll(/\["([^"]+)",\s*"([^"]+)"\]/g)].map(x=>x[1]);
-  assert.equal(aliases.length,176,"168 previously reviewed aliases + 8 real-source Arabic retail concepts");
+  assert.equal(aliases.length,178,"176 previously reviewed aliases + 2 wireless adjective forms");
+  for(const term of ["لاسلكيه","لاسلكي"])assert.ok(aliases.includes(term));
   for(const term of ["قارئ اقراص","قرص اس اس دي","اس اس دي","سبيكرات","سبيكر","كمبيوتر مكتبي","للالعاب","رجالي"])
     assert.ok(aliases.includes(term),"R04 Arabic source-recall alias requires review: "+term);
   for(const term of ["رياضيه","رياضي","للرياضه"])assert.ok(aliases.includes(term),
