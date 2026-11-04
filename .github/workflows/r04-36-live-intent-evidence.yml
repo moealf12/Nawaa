@@ -24,6 +24,9 @@ jobs:
     # runner slot. A GitHub release gate must not overload production itself.
     concurrency:
       group: nawaa-production-live-probes
+      # Preserve all pending live gates; never silently replace a pending
+      # acceptance job when another PR or workflow queues a newer run.
+      queue: max
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 18
