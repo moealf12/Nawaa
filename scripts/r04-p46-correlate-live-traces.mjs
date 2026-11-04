@@ -1,6 +1,7 @@
 // R04-P46: read-only join of exact, server-generated ephemeral trace IDs.
 import {safeSearchTraceProviderId} from "../server/search-critical-path.mjs";
 import {safeStorefrontStage,summarizeMerchantForensics} from "../server/storefront-merchant-evidence.mjs";
+import {safePdpPhaseSummary} from "../server/pdp-phase-diagnostics.mjs";
 // No log text, raw query, URL, credential, price, or product title in output.
 // Distinguish HTTP requests (possibly cache coalesced) from source generations.
 const HEX=/^[a-f0-9]{16}$/;
@@ -92,6 +93,7 @@ export function correlateLiveSearchTraces({
               m.status:"unknown",
             totalMs:ms(m?.totalMs),candidates:cap(m?.candidates),
             verifiedOffers:cap(m?.verifiedOffers),failures:cap(m?.failures),
+            pdpPhases:safePdpPhaseSummary(m?.pdpPhases),
             failureClass:["HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED","HTTP_TIMEOUT",
               "HTTP_5XX_SOURCE_FAILURE","HTTP_200_BLOCK_PAGE","HTTP_200_JS_SHELL",
               "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN",
