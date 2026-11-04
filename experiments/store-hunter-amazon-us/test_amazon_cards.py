@@ -145,3 +145,74 @@ class AmazonPdpTests(unittest.TestCase):
         self.assertIsNone(product.price)
         self.assertIsNone(product.currency)
         self.assertIn("AMAZON_PDP_PRIMARY_PRICE_NOT_EVIDENCED", product.issues)
+
+
+
+class AmazonPdpRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_primary_price_single_retry_recovers_but_not_parity(self):
+        from unittest.mock import AsyncMock, patch
+        import nawaa_store_hunter as m
+        asin = "B0C3HCD34R"
+        title = "Soundcore Q20i Wireless Bluetooth Black Headphones"
+        plp = f'''<div data-component-type="s-search-result" data-asin="{asin}">
+          <h2><a href="/dp/{asin}">{title}</a></h2>
+          <img class="s-image" src="https://m.media-amazon.com/images/I/plp.jpg" /></div>'''
+        common = f'''<link rel="canonical" href="https://www.amazon.com/dp/{asin}" />
+          <input id="ASIN" value="{asin}"/>
+          <span id="productTitle">{title}</span>
+          <img id="landingImage" src="https://m.media-amazon.com/images/I/pdp.jpg" />'''
+        priced = common + '<div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">$44.99</span></span></div>'
+        calls = []
+        async def fake_fetch(method, url, params=None):
+            calls.append(method)
+            if method == "homepage":
+                return "<html></html>"
+            if method == "search-html":
+                return plp
+            if method == "product-detail":
+                return common
+            if method == "product-detail-price-retry":
+                return priced
+            raise AssertionError(method)
+        s = m.Scraper("https://www.amazon.com", "wireless headphones", 1, 1, "never", "all")
+        s.prepare = AsyncMock()
+        s.fetch = fake_fetch
+        s.search_targets = lambda _: [("https://www.amazon.com/s", {"k": "wireless headphones"})]
+        with patch.object(m.asyncio, "sleep", new_callable=AsyncMock):
+            result = await s.search()
+        await s.close()
+        self.assertEqual(result["count"], 1)
+        product = result["products"][0]
+        self.assertEqual(product["sku"], asin)
+        self.assertEqual(product["price"], "44.99")
+        self.assertEqual(product["currency"], "USD")
+        self.assertEqual(product["price_status"], "single_source_unverified")
+        self.assertIn("AMAZON_PDP_RETRY_PRICE_RECOVERED", product["issues"])
+        self.assertEqual(calls.count("product-detail-price-retry"), 1)
+
+    async def test_ambiguous_amazon_main_price_does_not_retry(self):
+        from unittest.mock import AsyncMock
+        import nawaa_store_hunter as m
+        asin = "B0C3HCD34R"
+        title = "Soundcore Q20i Wireless Bluetooth Black Headphones"
+        plp = f'''<div data-component-type="s-search-result" data-asin="{asin}">
+          <h2><a href="/dp/{asin}">{title}</a></h2></div>'''
+        ambiguous = f'''<link rel="canonical" href="https://www.amazon.com/dp/{asin}" />
+          <input id="ASIN" value="{asin}"/><span id="productTitle">{title}</span>
+          <div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">$44.99</span></span>
+          <span class="a-price"><span class="a-offscreen">$54.99</span></span></div>'''
+        calls = []
+        async def fake_fetch(method, url, params=None):
+            calls.append(method)
+            if method == "homepage": return "<html></html>"
+            if method == "search-html": return plp
+            if method == "product-detail": return ambiguous
+            raise AssertionError(method)
+        s = m.Scraper("https://www.amazon.com", "wireless headphones", 1, 1, "never", "all")
+        s.prepare = AsyncMock()
+        s.fetch = fake_fetch
+        s.search_targets = lambda _: [("https://www.amazon.com/s", {"k": "wireless headphones"})]
+        result = await s.search()
+        await s.close()
+        self.assertEqual(result["products"][0]["price"], None)
+        self.assertNotIn("product-detail-price-retry", calls)
