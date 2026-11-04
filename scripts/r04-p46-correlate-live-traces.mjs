@@ -1,5 +1,6 @@
 // R04-P46: read-only join of exact, server-generated ephemeral trace IDs.
 import {safeSearchTraceProviderId} from "../server/search-critical-path.mjs";
+import {safeStorefrontStage,summarizeMerchantForensics} from "../server/storefront-merchant-evidence.mjs";
 // No log text, raw query, URL, credential, price, or product title in output.
 // Distinguish HTTP requests (possibly cache coalesced) from source generations.
 const HEX=/^[a-f0-9]{16}$/;
@@ -82,8 +83,29 @@ export function correlateLiveSearchTraces({
             offers:cap(p?.offers),errors:cap(p?.errors),
           })),
         providerEventsDropped:cap(generation.providerEventsDropped),
-        stages:Object.fromEntries(["providerRaw","amazonRaw","amazonValidated","indexRaw",
-          "catalogRaw","beforeCanonical","afterCanonical","rescoredAccepted","afterAdmission",
+        storefrontSpans:(Array.isArray(generation.storefrontSpans)?
+          generation.storefrontSpans:[]).slice(0,64).map(m=>({
+            storeId:typeof m?.storeId==="string"&&/^[a-z0-9][a-z0-9-]{1,79}$/.test(m.storeId)?
+              m.storeId:"unknown",
+            pass:m?.pass==="fallback"?"fallback":"primary",
+            status:["with_offers","zero_offers","rejected"].includes(m?.status)?
+              m.status:"unknown",
+            totalMs:ms(m?.totalMs),candidates:cap(m?.candidates),
+            verifiedOffers:cap(m?.verifiedOffers),failures:cap(m?.failures),
+            failureClass:["HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED","HTTP_TIMEOUT",
+              "HTTP_5XX_SOURCE_FAILURE","HTTP_200_BLOCK_PAGE","HTTP_200_JS_SHELL",
+              "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN",
+              "SOURCE_TRANSPORT_FAILURE","NO_VERIFIED_STRUCTURED_PRICE_PDP",
+              "HTTP_404_RESOURCE_NOT_FOUND","HTTP_ABORTED"].includes(m?.failureClass)?
+              m.failureClass:"UNKNOWN",
+            stages:(Array.isArray(m?.stages)?m.stages:[]).slice(0,6)
+              .map(x=>safeStorefrontStage(x?.stage,x?.atMs,x?.counts)).filter(Boolean),
+          })),
+        storefrontEventsDropped:cap(generation.storefrontEventsDropped),
+        stages:Object.fromEntries(["providerRaw","primaryAssessed","primaryRelevant",
+          "primaryMerchants","amazonRaw","amazonValidated","indexRaw",
+          "catalogRaw","beforeCanonical","afterCanonical","rescoredAssessed",
+          "rescoredAccepted","afterAdmission",
           "selected","errorEvents"].map(k=>[k,cap(generation.stages?.[k])])),
         deadlineExceeded:generation.deadlineExceeded===true,
         rootCause:"UNDETERMINED",
@@ -124,8 +146,13 @@ export function correlateLiveSearchTraces({
     wallP50Ms:p(data.wall,.5),wallP95Ms:p(data.wall,.95),errorEventsObserved:data.errors,
   })).sort((a,b)=>(b.wallP95Ms??-1)-(a.wallP95Ms??-1)||
     a.sourceId.localeCompare(b.sourceId)).slice(0,12);
+  const allStoreSpans=linked.flatMap(o=>o.generation.storefrontSpans||[]);
+  const merchantForensics=summarizeMerchantForensics(allStoreSpans);
   const measured={
     linkedGenerationCount:linked.length,
+    merchantStageEventCount:allStoreSpans.length,merchantForensics,
+    merchantTraceOverflow:linked.reduce((sum,o)=>
+      sum+(o.generation.storefrontEventsDropped??0),0),
     phaseSample,dominantStageCounts:dominantCounts,
     lastObservedBarrierCounts:lastBarrierCounts,
     slowProviderSamples,
@@ -141,6 +168,8 @@ export function correlateLiveSearchTraces({
       "Cache coalesced request is never misidentified as the generation owner.",
       "An owner context may be superseded after cache invalidation; lineage is observational.",
       "No stage is certified as root cause merely because it finished last.",
+      "Merchant-level traces are bounded; overflow is explicit and not a zero error.",
+      "A missing stage indicates unknown or early exit, never zero time or out of stock.",
       "Disposable candidate has no production DB/index credentials and is not Render performance.",
     ],
   };
