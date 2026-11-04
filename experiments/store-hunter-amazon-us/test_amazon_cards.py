@@ -97,3 +97,37 @@ class AmazonAdversarialCardTests(unittest.TestCase):
         product = self._parse(html)[0]
         self.assertIsNone(product.image)
         self.assertIn("AMAZON_PRODUCT_IMAGE_MISSING", product.issues)
+
+
+class AmazonPdpTests(unittest.TestCase):
+    def _html(self, price="$79.95", asin="B0C3HCD34R", image=True):
+        im = '<img id="landingImage" src="https://m.media-amazon.com/images/I/pdp.jpg" />' if image else ""
+        return f'''<link rel="canonical" href="https://www.amazon.com/dp/{asin}" />
+        <input id="ASIN" value="{asin}" /><span id="productTitle">Soundcore Q20i Wireless Bluetooth Black Headphones</span>
+        <div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">{price}</span></span></div>
+        <section id="sponsored"><span class="a-price"><span class="a-offscreen">$2.10</span></span></section>{im}'''
+
+    def test_main_buybox_not_related_price(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        result = parse_amazon_us_pdp(self._html(), "https://www.amazon.com/dp/B0C3HCD34R")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].price, "79.95")
+        self.assertEqual(result[0].sku, "B0C3HCD34R")
+        self.assertTrue(result[0].image.endswith("/pdp.jpg"))
+
+    def test_selected_variant_mismatch_blocks_parity(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        self.assertEqual(parse_amazon_us_pdp(self._html(asin="B0CZPLV566"), "https://www.amazon.com/dp/B0C3HCD34R"), [])
+
+    def test_buybox_conflict_does_not_publish_price(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        html = self._html().replace('<span class="a-price"><span class="a-offscreen">$79.95</span></span>',
+            '<span class="a-price"><span class="a-offscreen">$79.95</span></span><span class="a-price"><span class="a-offscreen">$81.99</span></span>')
+        p = parse_amazon_us_pdp(html, "https://www.amazon.com/dp/B0C3HCD34R")[0]
+        self.assertIsNone(p.price)
+        self.assertIn("AMAZON_PDP_MULTIPLE_BUYBOX_PRICES", p.issues)
+
+    def test_no_page_identity_proof_no_price(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        html = '<span id="productTitle">Soundcore Q20i Wireless Bluetooth Black Headphones</span><div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">$5.99</span></span></div>'
+        self.assertEqual(parse_amazon_us_pdp(html, "https://www.amazon.com/dp/B0C3HCD34R"), [])
