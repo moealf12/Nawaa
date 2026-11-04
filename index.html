@@ -148,6 +148,43 @@ section[id]{scroll-margin-top:90px}
 .drawer[inert]{pointer-events:none}
 @media(max-width:900px){html{scroll-padding-top:76px}section[id]{scroll-margin-top:76px}}
 
+
+/* P2.2 — enhance existing editorial cards without changing their original media or layout. */
+.cards .card{--card-light-x:50%;--card-light-y:42%;--card-pan-x:0px;--card-pan-y:0px;isolation:isolate;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 15px 32px rgba(0,0,0,.07);
+ transition:border-color .35s ease,box-shadow .45s cubic-bezier(.2,.8,.2,1)}
+.cards .card-light{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:0;
+ background:radial-gradient(ellipse 75% 65% at var(--card-light-x) var(--card-light-y),
+ rgba(166,200,255,.18),transparent 66%),linear-gradient(112deg,transparent 24%,rgba(227,216,255,.09) 45%,transparent 65%);
+ mix-blend-mode:screen;transition:opacity .42s ease}
+.cards .card-copy{z-index:2}
+.cards .card .card-arrow{background:rgba(18,36,55,.22);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.cards .card:focus-visible{outline:3px solid #a5cfff;outline-offset:4px}
+.cards .card:focus-visible .card-light{opacity:.8}
+.cards .card:focus-visible .card-arrow{background:#fff;color:#07111d;transform:rotate(-45deg)}
+@media(hover:hover) and (pointer:fine){
+ .cards .card:hover{border-color:rgba(170,201,255,.42);box-shadow:0 23px 55px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.14)}
+ .cards .card:hover .card-light{opacity:.92}
+ .cards .card:hover > img:not(.mini-sculpture){transform:translate3d(var(--card-pan-x),var(--card-pan-y),0) scale(1.065);filter:saturate(.99) contrast(1.04) brightness(.79)}
+ .cards .card.abstract .mini-sculpture{transform:translate(-50%,-50%) rotate(7deg) scale(1);transition:transform .85s cubic-bezier(.2,.8,.2,1),filter .45s ease}
+ .cards .card.abstract:hover .mini-sculpture{transform:translate(calc(-50% + var(--card-pan-x)),calc(-50% + var(--card-pan-y))) rotate(5deg) scale(1.055)}
+ .cards .card:hover .card-arrow{background:#fff;color:#07111d;transform:rotate(-45deg)}
+}
+@media(hover:none){
+ .cards .card:hover > img:not(.mini-sculpture){transform:none}
+ .cards .card.abstract:hover .mini-sculpture{transform:translate(-50%,-50%) rotate(7deg)}
+ .cards .card:hover .card-light{opacity:0}
+ .cards .card:hover .card-arrow{transform:none;background:rgba(18,36,55,.22);color:inherit}
+}
+@media(prefers-reduced-motion:reduce){
+ .cards .card,.cards .card-light,.cards .card-arrow,.cards .card img{transition:none!important}
+ .cards .card:hover > img:not(.mini-sculpture){transform:none!important}
+ .cards .card.abstract:hover .mini-sculpture{transform:translate(-50%,-50%) rotate(7deg)!important}
+ .cards .card-light{opacity:0!important}
+ .cards .card:focus-visible{outline:3px solid #a5cfff}
+ .cards .card:hover .card-arrow,.cards .card:focus-visible .card-arrow{transform:none!important}
+}
+
 /* NAWAA Search Engine */
 .search-engine{padding:100px 5vw;background:#07111d;color:#f5f0e8;border-top:1px solid rgba(255,255,255,.12)}
 .search-engine .search-wrap{max-width:1180px;margin:auto}.search-engine h2{font-size:clamp(38px,6vw,82px);margin:10px 0 18px;line-height:1.05}.search-engine .lead{max-width:760px;color:#aab8c8;line-height:1.9}
@@ -208,9 +245,9 @@ section[id]{scroll-margin-top:90px}
  <section class="section dark section-pad" id="selection">
   <div class="shell"><div class="showcase-head"><div><span class="eyebrow reveal">CURRENT SHORTLIST</span><h2 class="reveal delay-1">ما نراجعه الآن.</h2></div><p class="reveal delay-2">هذه فئات تحت الاختبار وليست منتجات معروضة للبيع بعد. لن يظهر السعر النهائي إلا بعد تثبيت المورد والتكلفة الفعلية.</p></div>
    <div class="cards">
-    <article class="card one reveal" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل فئة العمل والدراسة" data-title="العمل والدراسة" data-body="نبحث عن منتجات صغيرة، مفهومة وسهلة الشحن تعالج احتياجًا واضحًا في المكتب أو الدراسة، مع مقارنة دقيقة للموديل والسعر المحلي."><img src="assets/nawaa-work-study.jpg" alt="مساحة عمل مرتبة تعبيرية عن فئة العمل والدراسة"><div class="card-copy"><div><small>01 / WORK & STUDY</small><h3>أدوات تستحق مساحة على مكتبك.</h3></div><span class="card-arrow">↗</span></div></article>
-    <article class="card abstract reveal delay-1" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل المنتج قيد المراجعة" data-title="منتج بطل" data-body="بدل متجر مليء بمنتجات عشوائية، نبحث عن Hero Product واحد يمكن شرح قيمته في ثوانٍ ويحتمل المقارنة السعرية بوضوح."><img class="mini-sculpture" src="assets/nawaa-hero-sculpture.png" alt=""><div class="card-copy"><div><small>02 / HERO PRODUCT</small><h3>منتج واحد. حجة شراء واضحة.</h3></div><span class="card-arrow">↗</span></div></article>
-    <article class="card reveal delay-2" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل فئة المنزل" data-title="المنزل" data-body="الأولوية لما يوفر وقتًا أو مساحة أو فوضى. نستبعد القطع الهشة أو الثقيلة إذا كان فرق السعر لا يتحمل الشحن وخدمة ما بعد البيع."><img src="assets/nawaa-home.jpg" alt="تفاصيل منزلية ومكتبية تعبيرية عن فئة المنزل"><div class="card-copy"><div><small>03 / LIVING</small><h3>تفاصيل أصغر. أثر يومي أكبر.</h3></div><span class="card-arrow">↗</span></div></article>
+    <article class="card one reveal" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل فئة العمل والدراسة" data-title="العمل والدراسة" data-body="نبحث عن منتجات صغيرة، مفهومة وسهلة الشحن تعالج احتياجًا واضحًا في المكتب أو الدراسة، مع مقارنة دقيقة للموديل والسعر المحلي."><img src="assets/nawaa-work-study.jpg" alt="مساحة عمل مرتبة تعبيرية عن فئة العمل والدراسة"><span class="card-light" aria-hidden="true"></span><div class="card-copy"><div><small>01 / WORK & STUDY</small><h3>أدوات تستحق مساحة على مكتبك.</h3></div><span class="card-arrow">↗</span></div></article>
+    <article class="card abstract reveal delay-1" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل المنتج قيد المراجعة" data-title="منتج بطل" data-body="بدل متجر مليء بمنتجات عشوائية، نبحث عن Hero Product واحد يمكن شرح قيمته في ثوانٍ ويحتمل المقارنة السعرية بوضوح."><img class="mini-sculpture" src="assets/nawaa-hero-sculpture.png" alt=""><span class="card-light" aria-hidden="true"></span><div class="card-copy"><div><small>02 / HERO PRODUCT</small><h3>منتج واحد. حجة شراء واضحة.</h3></div><span class="card-arrow">↗</span></div></article>
+    <article class="card reveal delay-2" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل فئة المنزل" data-title="المنزل" data-body="الأولوية لما يوفر وقتًا أو مساحة أو فوضى. نستبعد القطع الهشة أو الثقيلة إذا كان فرق السعر لا يتحمل الشحن وخدمة ما بعد البيع."><img src="assets/nawaa-home.jpg" alt="تفاصيل منزلية ومكتبية تعبيرية عن فئة المنزل"><span class="card-light" aria-hidden="true"></span><div class="card-copy"><div><small>03 / LIVING</small><h3>تفاصيل أصغر. أثر يومي أكبر.</h3></div><span class="card-arrow">↗</span></div></article>
    </div>
   </div>
  </section>
@@ -371,6 +408,41 @@ drawerNav.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{
   requestAnimationFrame(()=>destination.focus({preventScroll:true}));
  }
 }));
+
+
+/* Editorial card light tracking is progressive enhancement; keyboard/touch always work. */
+const editorialFinePointer=matchMedia('(hover:hover) and (pointer:fine)');
+const editorialReducedMotion=matchMedia('(prefers-reduced-motion:reduce)');
+document.querySelectorAll('.cards > .card').forEach(card=>{
+ let frame=0,point=null;
+ const reset=()=>{
+  if(frame){cancelAnimationFrame(frame);frame=0}
+  point=null;
+  card.style.setProperty('--card-light-x','50%');
+  card.style.setProperty('--card-light-y','42%');
+  card.style.setProperty('--card-pan-x','0px');
+  card.style.setProperty('--card-pan-y','0px');
+ };
+ card.addEventListener('pointermove',event=>{
+  if(!editorialFinePointer.matches||editorialReducedMotion.matches)return;
+  point={x:event.clientX,y:event.clientY};
+  if(frame)return;
+  frame=requestAnimationFrame(()=>{
+   frame=0;
+   const active=point;point=null;if(!active)return;
+   const rect=card.getBoundingClientRect();if(!rect.width||!rect.height)return;
+   const ux=Math.max(0,Math.min(1,(active.x-rect.left)/rect.width));
+   const uy=Math.max(0,Math.min(1,(active.y-rect.top)/rect.height));
+   card.style.setProperty('--card-light-x',(ux*100).toFixed(1)+'%');
+   card.style.setProperty('--card-light-y',(uy*100).toFixed(1)+'%');
+   card.style.setProperty('--card-pan-x',((ux-.5)*-9).toFixed(2)+'px');
+   card.style.setProperty('--card-pan-y',((uy-.5)*-9).toFixed(2)+'px');
+  });
+ },{passive:true});
+ card.addEventListener('pointerleave',reset);
+ card.addEventListener('pointercancel',reset);
+ editorialReducedMotion.addEventListener?.('change',event=>{if(event.matches)reset()});
+});
 
 const searchForm=document.getElementById('nawaaSearchForm');
 searchForm.addEventListener('submit',e=>{
