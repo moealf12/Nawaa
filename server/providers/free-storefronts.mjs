@@ -1779,7 +1779,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             normalizeSearchQuery(query);
       } catch { return false; }
     })();
-    markStoreStage("html_complete",{htmlBytes:Buffer.byteLength(html,"utf8")});
+    if(stageStarted)markStoreStage("html_complete",{htmlBytes:Buffer.byteLength(html,"utf8")});
     const noonLiveHtmlCards = store.id === "noon-sa" && noonHtmlSearchContextValid
       ? extractNoonSaudiSearchCardEvidence(html,query,{limit:100})
       : null;
