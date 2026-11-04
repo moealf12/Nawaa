@@ -13,12 +13,13 @@ const HOME=ORIGIN+"/saudi-en/";
 const QUERY="iPhone 17 256GB";
 const SEARCH=ORIGIN+"/saudi-en/search/?q="+encodeURIComponent(QUERY);
 const MAX_BYTES=8_000_000;
-const TIMEOUT_MS=15_000;
+const TIMEOUT_MS=10_000;
 const FILE="noon-sa-transport-matrix.json";
 const USER_AGENT="NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)";
 const report={
   schema:"nawaa.noon-sa.transport-matrix.v1",
-  testedSha:process.env.GITHUB_SHA||null,
+  testedHeadSha:process.env.PULL_REQUEST_HEAD_SHA||null,
+  checkedOutMergeSha:process.env.GITHUB_SHA||null,
   observedAt:new Date().toISOString(),
   query:QUERY,
   source:"noon-sa",
@@ -148,19 +149,35 @@ async function sessionProbe(){
     return output;
   }finally{output.elapsedMs=Math.round(performance.now()-start)}
 }
+function browserErrorKind(e){
+  const m=String(e?.message||"");
+  const c=String(e?.code||"");
+  if(c==="ERR_MODULE_NOT_FOUND"||/Cannot find (?:package|module)/i.test(m))return "PACKAGE_NOT_INSTALLED";
+  if(/Executable doesn't exist|browserType\.launch:.*not found/i.test(m))return "BROWSER_BINARY_MISSING";
+  if(/Host system is missing dependencies|error while loading shared libraries/i.test(m))return "HOST_DEPENDENCIES_MISSING";
+  if(/Failed to launch|Browser closed|Target page, context or browser has been closed/i.test(m))return "BROWSER_LAUNCH_OR_CLOSED";
+  if(/ERR_NAME_NOT_RESOLVED|ERR_DNS_PROBE_FINISHED_NXDOMAIN/i.test(m))return "DNS_RESOLUTION";
+  if(/ERR_CONNECTION|ERR_TUNNEL_CONNECTION/i.test(m))return "NETWORK_CONNECTION";
+  if(/Timeout|timed out/i.test(m))return "TIMEOUT";
+  return "OTHER_BROWSER_ERROR";
+}
 async function browserProbe(){
   const output={mode:"chromium_browser",startedAt:new Date().toISOString(),requests:0};
   const start=performance.now();
   let browser;
+  let phase="module_import";
   try{
     // Genuine browser navigation, not patched navigator, synthetic TLS, or stealth.
     const {chromium}=await import("playwright");
+    phase="browser_launch";
     browser=await chromium.launch({headless:true});
+    phase="new_context";
     const context=await browser.newContext({
       locale:"en-SA",timezoneId:"Asia/Riyadh",
       viewport:{width:1280,height:900},
     });
     const page=await context.newPage();
+    phase="navigate_home";
     const home=await page.goto(HOME,{waitUntil:"domcontentloaded",timeout:TIMEOUT_MS});
     output.requests++;
     output.homeStatus=home?.status()??null;
@@ -169,6 +186,7 @@ async function browserProbe(){
       output.state="BROWSER_HOME_UNAVAILABLE";
       return output;
     }
+    phase="navigate_search";
     const search=await page.goto(SEARCH,{
       waitUntil:"domcontentloaded",timeout:TIMEOUT_MS,
     });
@@ -179,6 +197,7 @@ async function browserProbe(){
       output.state=output.searchClass;
       return output;
     }
+    phase="parse_page";
     // Allow a bounded period for client-side search cards to render.
     await page.locator("h1, a[href*='/p/']").first().waitFor({
       state:"attached",timeout:4000,
@@ -189,6 +208,8 @@ async function browserProbe(){
     return output;
   }catch(e){
     output.state=safeError(e);
+    output.errorStage=phase;
+    output.errorKind=browserErrorKind(e);
     return output;
   }finally{
     await browser?.close().catch(()=>{});
