@@ -142,3 +142,71 @@ export function verifyCosrxVariantJson(json,candidate,{observedAt=new Date().toI
     canShipToSaudi:null,shippingToSaudiVerified:false,customerPublishable:false,
     observedAt:new Date(observedAt).toISOString()};
 }
+
+
+// First-party Shopify public predictive search. A fallback only for a
+// query-authenticated HTML search which contains no usable product cards.
+export function cosrxSuggestUrl(query){
+  const q=new URL(cosrxSearchUrl(query)).searchParams.get("q");
+  const u=new URL("/search/suggest.json",ORIGIN);
+  u.searchParams.set("q",q);
+  u.searchParams.set("resources[type]","product");
+  u.searchParams.set("resources[limit]","10");
+  return u.href;
+}
+export function parseCosrxSuggestCards(json,query,{requestedUrl,finalUrl}={}){
+  const d={sourceId:"cosrx-global",status:"UNVERIFIED",accepted:0,rejected:0,
+    conflicts:0,customerPublishable:false,shippingToSaudiVerified:false};
+  const no=status=>({candidates:[],diagnostics:{...d,status}});
+  const expected=cosrxSuggestUrl(query);
+  if(requestedUrl!==expected || finalUrl!==expected)
+    return no("SUGGEST_URL_CONTEXT_MISMATCH");
+  if(typeof json!=="string"||!json||json.length>512_000)
+    return no("SUGGEST_JSON_MISSING_OR_OVERSIZED");
+  let root;
+  try{root=JSON.parse(json)}catch{return no("SUGGEST_JSON_INVALID")}
+  const products=root?.resources?.results?.products;
+  if(!Array.isArray(products)||products.length>10)
+    return no("SUGGEST_PRODUCTS_INVALID");
+  const seen=new Map(),conflicts=new Set();
+  for(const p of products){
+    const identity=(()=>{
+      try{return cosrxIdentity(new URL(p?.url,ORIGIN).href)}
+      catch{return null}
+    })();
+    const id=String(p?.id||"");
+    const name=clean(p?.title);
+    // Shopify predictive amounts are decimal major units, not cents.
+    // Require one unambiguous product price before exact variant confirmation.
+    const amount=typeof p?.price==="string"?cosrxUSD("$"+p.price):null;
+    const min=typeof p?.price_min==="string"?cosrxUSD("$"+p.price_min):null;
+    const max=typeof p?.price_max==="string"?cosrxUSD("$"+p.price_max):null;
+    if(!productId.test(id)||!identity||identity.handle!==p.handle||
+      !name||name.length>320 || !/cosrx/i.test(clean(p.vendor)) ||
+      amount===null || amount!==min || amount!==max ||
+      typeof p.available!=="boolean"){
+      d.rejected++;continue;
+    }
+    let image=null;
+    try{
+      const u=new URL(p.image);
+      if(u.origin==="https://cdn.shopify.com"&&
+         u.pathname.startsWith("/s/files/1/0513/3775/6828/files/") &&
+         !u.username&&!u.password&&!u.port)image=u.href;
+    }catch{}
+    const entry={productId:id,handle:identity.handle,
+      sourceUrl:identity.sourceUrl,title:name,price:amount,
+      image,currency:"USD",availability:"unknown",variantId:null,
+      priceEvidence:"FIRST_PARTY_SHOPIFY_QUERY_JSON",
+      customerPublishable:false,shippingToSaudiVerified:false,
+      canShipToSaudi:null};
+    const prev=seen.get(identity.handle);
+    if(prev&&(prev.productId!==id||prev.price!==amount||prev.title!==name)){
+      conflicts.add(identity.handle);d.conflicts++;
+    }else if(!prev)seen.set(identity.handle,entry);
+  }
+  for(const key of conflicts)seen.delete(key);
+  d.accepted=seen.size;
+  d.status=seen.size?"QUERY_BOUND_SHOPIFY_SUGGEST_CARDS":"NO_VERIFIED_SUGGEST_CARDS";
+  return {candidates:[...seen.values()],diagnostics:d};
+}
