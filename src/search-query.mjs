@@ -58,6 +58,7 @@ const ALIASES = [
   ["طابعه", "printer"], ["طابعات", "printer"], ["جوال", "phone"], ["جوالات", "phone"],
   ["تلفزيون", "tv"], ["تلفزيونات", "tv"], ["شاشه", "monitor"], ["شاشات", "monitor"],
   ["سماعات", "headphones"], ["سماعه", "headphones"],
+  ["لاسلكيه", "wireless"], ["لاسلكي", "wireless"],
   ["سبيكرات", "speakers"], ["سبيكر", "speaker"],
   ["بلوتوث", "bluetooth"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
@@ -165,7 +166,7 @@ export const PRODUCT_CATEGORIES = [
   ['shoes','أحذية', /\b(?:shoes?|sneakers?|boots?|sandals?|heels?|slippers?|loafers?)\b/],
   ['bag','حقائب', /\b(?:bags?|handbags?|backpacks?|luggage|wallets?|purses?|totes?)\b/],
   ['beauty','تجميل وعناية', /\b(?:makeup|cosmetics?|skincare|skin care|lipstick|mascara|foundation|serum|moisturizer|hair care)\b/],
-  ['perfume','عطور', /\b(?:perfumes?|fragrances?|eau de parfum|eau de toilette|cologne)\b/],
+  ['perfume','عطور', /\b(?:perfumes?|fragrances?|eau de parfum|eau de toilette|eau de cologne|parfums?|edp|edt|cologne)\b/],
   ['furniture','أثاث', /\b(?:furniture|sofas?|couches?|chairs?|tables?|desks?|beds?|wardrobes?|cabinets?)\b/],
   ['kitchen','مطبخ', /\b(?:kitchen|cookware|pans?|pots?|cutlery|tableware|air fryer|toaster|cooktop)\b/],
   ['home','منزل ومعيشة', /\b(?:home decor|bedding|duvet|pillows?|curtains?|rugs?|storage organizer|lighting|lamp)\b/],
@@ -288,10 +289,22 @@ function isEvidencedCompleteLaptop(offer = {}) {
 
 // The matching path already computed describeProduct(offer); reuse that immutable
 // value rather than normalizing its title and metadata a second time.
+function isVerifiedWholeAppleWatch(offer = {}) {
+  // The seller must be offering a physical watch chassis, not compatible
+  // bands/cases that mention the same Apple Watch generation and dimensions.
+  const subject=normalizeSearchQuery(offer.title||"")
+    .split(/\b(?:with|including|includes)\b/,1)[0];
+  return /^(?:apple )?watch series [1-9]\d?\b/.test(subject) &&
+    /\b(?:gps|cellular|lte)\b/.test(subject) &&
+    /\b(?:aluminum|aluminium|titanium|stainless steel) case\b/.test(subject) &&
+    /\b(?:38|40|41|42|44|45|46|49)mm\b/.test(subject) &&
+    !/\b(?:replacement|compatible|case cover|fit case|screen protector|bumper|wrist strap|watch band)\b/.test(subject);
+}
 function productCategoryWithDescription(offer, gaming) {
   const soldPeripheral=detectedRetailPeripheral(offer);
   if (soldPeripheral) return soldPeripheral;
   if (gaming.kind !== 'product') return gaming.kind;
+  if (isVerifiedWholeAppleWatch(offer)) return 'watch';
   // Merchant retail SUBJECT leads: Spanish "Adaptador/Cargador/Convertidor
   // ... para iPhone 17" sells a peripheral, not an iPhone. Match only the
   // title-leading noun, so a genuine "iPhone 17 con cargador incluido" remains
@@ -814,6 +827,22 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     if(athleticTitle) titleTokens.add("sports");
     else titleTokens.delete("sports");
   }
+  const maleFragranceIntent=effectiveCategory==="perfume" &&
+    /\b(?:men|mens|male|masculine)\b/.test(normalizedQuery);
+  const fragranceTitle=maleFragranceIntent?normalizeSearchQuery(offer?.title||""):"";
+  const maleFragranceTitle=maleFragranceIntent &&
+    /\b(?:men|mens|male|masculine|homme|pour homme|for him)\b/.test(fragranceTitle) &&
+    !/\b(?:women|womens|femme|for her|ladies)\b/.test(fragranceTitle);
+  const maleFragranceUnverified=maleFragranceIntent&&!maleFragranceTitle;
+  if(maleFragranceIntent){
+    // "Homme" proves the named men's perfume line; SEO URL and metadata
+    // never establish a gender claim absent from the sold-title.
+    if(maleFragranceTitle) titleTokens.add("men");
+    else titleTokens.delete("men");
+  }
+  const watchSeriesIntent=effectiveCategory==="watch" &&
+    /\b(?:apple watch series|watch apple series) [1-9]\d?\b/.test(normalizedQuery);
+  const wholeWatchUnverified=watchSeriesIntent&&!isVerifiedWholeAppleWatch(offer);
   // Match RAM quantities semantically for RAM-constrained laptop queries:
   // "16 RAM" and "16GB DDR4 RAM" are equivalent. Never rewrite global
   // model names (e.g. "iPhone 17 RAM 8GB") into fictitious capacities.
@@ -891,7 +920,8 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
-  const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
+  const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) &&
+    !(watchSeriesIntent&&!wholeWatchUnverified) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
@@ -970,7 +1000,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const ramUnverified=Boolean(requestedRamGb!==null && offerCategory==="laptop" && evidenceRamGb===null);
   if (ramMismatch) confidence*=0.2;
   if (ramUnverified) confidence=Math.min(confidence,0.69);
-  if(athleticStyleUnverified) confidence=Math.min(confidence,0.69);
+  if(athleticStyleUnverified || maleFragranceUnverified || wholeWatchUnverified) confidence=Math.min(confidence,0.69);
   // R04 P0: source URL, merchant brand and broad vacuum category must not
   // substitute for a physical manufacturer's model in the actual sold title.
   // A category regex can otherwise consume the entire 'dyson v15' query,
@@ -988,13 +1018,14 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       !hasUnrequestedVariant && !conflictingGalaxyModel &&
       !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch &&
       !ramMismatch && !ramUnverified && !principalRetailConflict &&
-      !retailDysonModelMissing && !athleticStyleUnverified && !speakerSubjectUnverified;
+      !retailDysonModelMissing && !athleticStyleUnverified && !speakerSubjectUnverified &&
+      !maleFragranceUnverified && !wholeWatchUnverified;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : athleticStyleUnverified ? "استخدام الحذاء الرياضي غير مثبت في عنوان العرض" : speakerSubjectUnverified ? "هوية مكبر الصوت غير مثبتة في عنوان العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : athleticStyleUnverified ? "استخدام الحذاء الرياضي غير مثبت في عنوان العرض" : speakerSubjectUnverified ? "هوية مكبر الصوت غير مثبتة في عنوان العرض" : maleFragranceUnverified ? "كون العطر رجاليًا غير مثبت في عنوان العرض" : wholeWatchUnverified ? "هوية الساعة الكاملة غير مثبتة في عنوان العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       principalRetailConflict ? "العرض يخص ملحقًا أو قطعة أو لعبة، وليس المنتج الأساسي المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
