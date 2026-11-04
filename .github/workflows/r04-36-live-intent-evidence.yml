@@ -20,6 +20,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   source-backed-r04-36:
+    # All workflows using the published 0.15-vCPU Render API share one
+    # runner slot. A GitHub release gate must not overload production itself.
+    concurrency:
+      group: nawaa-production-live-probes
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 18
     env:
