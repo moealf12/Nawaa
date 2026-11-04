@@ -38,7 +38,7 @@ import { createSearchCache, classifySearchCacheAdmission } from "./search-cache.
 import { amazonPartialEvidenceError } from "./amazon-page-evidence.mjs";
 import {amazonBatchBudgetWithinRequest} from "./amazon-request-budget.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
-import {retryDeniedStorefrontIds,providersPendingAfterFallback} from "./source-fallback-policy.mjs";
+import {retryDeniedStorefrontIds,providersPendingAfterFallback,genericStorefrontPassExclusions} from "./source-fallback-policy.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
@@ -197,7 +197,14 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
     add("free-storefronts", (signal) => searchFreeStorefronts(providerQuery, {
       signal,
       matchingQuery,
-      excludeStoreIds:["amazon-sa",...skipFailedStorefrontIds],
+      // Both Amazon Saudi and Virgin UAE already run independent first-wave
+      // provider tasks. Virgin's dedicated task invokes THE SAME storefront
+      // search implementation with a more generous PDP budget. Exclude both
+      // from this generic fan-out to avoid simultaneous double acquisition.
+      // The generic wave still backfills from the next ranked merchant.
+      excludeStoreIds:genericStorefrontPassExclusions(skipFailedStorefrontIds,{
+        registeredIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
+      }),
       storeOffset:plan.storefrontOffset,
       storeLimit:plan.storefrontLimit,
       stableRouting:true,
