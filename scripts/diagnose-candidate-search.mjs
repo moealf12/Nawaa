@@ -5,7 +5,7 @@ import {spawn} from 'node:child_process';
 import net from 'node:net';
 import {once} from 'node:events';
 import {searchViaConstructor,searchJarir} from '../server/providers/jarir.mjs';
-import {assessOfferMatch,describeProduct,normalizeSearchQuery,productCategory} from '../src/search-query.mjs';
+import {assessOfferMatch,describeProduct,normalizeSearchQuery,productCategory,parseSearchIntent} from '../src/search-query.mjs';
 
 const port=await new Promise((resolve,reject)=>{
   const s=net.createServer();
@@ -53,7 +53,7 @@ async function query(text){
       shopperTerms.includes("shoes");
     const hasAthleticTitle=offer=>{
       const title=normalizeSearchQuery(offer?.title||"");
-      return /(?:^| )(?:athletic|running|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(title) ||
+      return /(?:^| )(?:athletic|running|runners?|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(title) ||
         /(?:^| )sports? (?:shoes?|sneakers?|trainers?)(?= |$)/.test(title);
     };
     const unsupportedAthleticExact=athleticShoeIntent?exact.filter(o=>
@@ -78,6 +78,7 @@ async function query(text){
       // remains visible without copying raw provider errors to the summary.
       sourceErrorCount:Array.isArray(data.errors)?data.errors.length:null,
       athleticFootwearIntent:athleticShoeIntent,
+      providerQuery:athleticShoeIntent?parseSearchIntent(text).providerQuery:null,
       supportedAthleticExact,unsupportedAthleticExact,
       partial:typeof data.coverage?.partial==='boolean'?data.coverage.partial:null,
       deadlineExceeded:typeof data.coverage?.deadlineExceeded==='boolean'?data.coverage.deadlineExceeded:null,
