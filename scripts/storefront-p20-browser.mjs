@@ -84,6 +84,8 @@ try{
   ]);
   const workCard=page.locator(".cards > .card").first();
   await workCard.scrollIntoViewIfNeeded();
+  await workCard.evaluate(el=>el.blur()); // screenshots capture visual design, not earlier keyboard-test focus ring
+  await page.screenshot({path:join(evidence,config.name+"-editorial-default.png")});
   if(!config.mobile){
    const bounds=await workCard.boundingBox();
    await page.mouse.move(bounds.x+bounds.width*.72,bounds.y+bounds.height*.38);
