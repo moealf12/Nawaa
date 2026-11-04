@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime, timezone
+from dataclasses import asdict
 from nawaa_store_hunter import Scraper, parse_jsonld, parse_html_cards
 
 async def main():
@@ -50,6 +51,10 @@ async def main():
                              "detail": str(exc)[:180]}]
         }
     finally:
+        # Rehydrate diagnostics AFTER the separate browser probe; search() returns
+        # a pre-browser snapshot and would otherwise hide the second outcome.
+        if scraper.diagnostics:
+            result["diagnostics"] = [asdict(d) for d in scraper.diagnostics]
         await scraper.close()
     products = result.get("products", [])
     complete = [
