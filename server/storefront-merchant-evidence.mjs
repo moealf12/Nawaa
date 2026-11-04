@@ -65,14 +65,15 @@ export function summarizeMerchantForensics(spans=[]){
   }
   const p=(a,q)=>{const s=a.sort((x,y)=>x-y);return s.length?
     s[Math.max(0,Math.ceil(q*s.length)-1)]:null;};
-  return [...buckets.values()].map(b=>({
-    storeId:b.storeId,observations:b.observations,
-    zeroOffers:b.zeroOffers,rejected:b.rejected,
-    verifiedOffers:b.offers,reportedFailures:b.reportedFailures,
-    p50Ms:p(b.durations,.5),p95Ms:p(b.durations,.95),
-    stageCoverage:b.stageCoverage,
-    // A score is investigative order, never source quality or root cause.
-    triageScore:(b.p95Ms??0)+1000*b.rejected+500*b.zeroOffers,
-  })).sort((a,b)=>b.triageScore-a.triageScore||
+  return [...buckets.values()].map(b=>{
+    const p50Ms=p(b.durations,.5),p95Ms=p(b.durations,.95);
+    return {storeId:b.storeId,observations:b.observations,
+      zeroOffers:b.zeroOffers,rejected:b.rejected,
+      verifiedOffers:b.offers,reportedFailures:b.reportedFailures,
+      p50Ms,p95Ms,stageCoverage:b.stageCoverage,
+      // Triage order only; no causal or inventory inference.
+      triageScore:(p95Ms??0)+1000*b.rejected+500*b.zeroOffers,
+    };
+  }).sort((a,b)=>b.triageScore-a.triageScore||
     a.storeId.localeCompare(b.storeId)).slice(0,25);
 }
