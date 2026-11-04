@@ -13,6 +13,8 @@ import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../sr
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
+import {oliveYoungSearchUrl} from "../../src/oliveyoung-evidence.mjs";
+import {evaluateOliveYoungSearch,oliveYoungLiveConfigured} from "./oliveyoung-live.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -46,6 +48,14 @@ const STORES = [
     id:"asos-global", name:"ASOS", countryCode:"GB", countryNameAr:"بريطانيا", brands:["asos"], categories:["clothing","shoes","bag","beauty"],
     search:(q)=>"https://www.asos.com/search/?q="+encodeURIComponent(q),
     productPath:/\/prd\/\d+(?:[/?#]|$)/i,
+  },
+  {
+    id:"oliveyoung-global",name:"OLIVE YOUNG Global",countryCode:"KR",
+    countryNameAr:"كوريا الجنوبية",saudiDelivery:"offer_dependent",
+    brands:["olive young","oliveyoung"],
+    categories:["beauty","perfume","grocery","accessory","other"],
+    search:oliveYoungSearchUrl,
+    productPath:/\/product\/detail\?(?:[^#]*&)?prdtNo=GA\d{6,12}(?:&|$)/i,
   },
   // GCC discovery tier: trusted regional storefronts are searched after Saudi sources
   // and before the wider global catalog. Shipping to Saudi is metadata, never a gate.
@@ -1254,7 +1264,8 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeou
         "upgrade-insecure-requests":"1",
         "user-agent":USER_AGENT,
       }),
-      redirect:"follow",
+      // Olive Young requests cannot redirect to untrusted hosts.
+      redirect:storeId==="oliveyoung-global"?"manual":"follow",
       signal:requestSignal,
     },{sourceId:storeId});
     if(amazon)headersMs=Math.round(performance.now()-start);
@@ -1529,6 +1540,7 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const intent = parseSearchIntent(normalizedQuery);
   const stable = options.stable === true;
   const routed = STORES
+    .filter(store=>store.id!=="oliveyoung-global"||oliveYoungLiveConfigured())
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
@@ -1599,6 +1611,10 @@ export function selectedStores(query) {
 }
 
 export async function searchFreeStorefrontById(storeId, query, options = {}) {
+  if(storeId==="oliveyoung-global"&&!oliveYoungLiveConfigured())return {
+    storeId,candidates:0,offers:[],failures:0,searchUrl:null,
+    diagnostics:{status:"SOURCE_DISABLED",reason:"OLIVEYOUNG_NOT_LIVE_AUTHORIZED",customerPublishable:false},
+  };
   // Stable catalog-level 404 classification, never a fake retailer HTTP response.
   // Explicit legacy calls short-circuit without DNS, fetch, or retry.
   const retired=retiredSourceRecord(storeId);
@@ -1667,6 +1683,10 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
   options.signal?.throwIfAborted();
   const started = Date.now();
   const searchUrl = store.search(query);
+  if(store.id==="oliveyoung-global"&&!oliveYoungLiveConfigured())return {
+    store,searchUrl:null,candidates:0,offers:[],failures:0,
+    diagnostics:{status:"SOURCE_DISABLED",reason:"OLIVEYOUNG_NOT_LIVE_AUTHORIZED",customerPublishable:false},
+  };
   try {
     let html = "";
     let searchPageFinalUrl = searchUrl;
@@ -1746,6 +1766,19 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       const denied=new Error(primarySearchError || sourceAccessFailure);
       denied.failureClass=sourceAccessFailure;
       throw denied;
+    }
+    if(store.id==="oliveyoung-global"){
+      // A count of search hits does not mean priced product cards are present.
+      // Never pass this source through generic price or PDP fallback.
+      const observed=evaluateOliveYoungSearch({query,html,searchUrl,finalUrl:searchPageFinalUrl});
+      return {store,searchUrl,candidates:0,offers:[],failures:primarySearchError?1:0,
+        diagnostics:{status:observed.diagnostics.status,primarySearchError,
+          sourceAccessFailure,searchPage:searchDiagnostics,
+          oliveyoung:observed.diagnostics,
+          customerPublicationGate:{customerPublishable:false,shippingToSaudiVerified:false,
+            status:"SEARCH_DISCOVERY_AND_SAUDI_SKU_SHIPPING_NOT_VERIFIED"},
+          candidateSamples:[],failureSamples:[],unpricedSamples:[]},
+      };
     }
     // Real, first-party HTML search cards are Noon's primary source path.
     // Bind them to the exact requested search URL; a redirect to the homepage
