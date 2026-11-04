@@ -780,11 +780,18 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // sold-item title. No metadata, brand inference, URL or price can establish
   // the requested footwear style. A generic Nike shoe without that evidence
   // remains related, never exact, preserving the original shopper constraint.
-  if (effectiveCategory==="shoes" && q.includes("sports")) {
-    const retailFootwear=normalizeSearchQuery(offer?.title||"");
-    const athleticTitle=/(?:^| )(?:athletic|running|runners?|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(retailFootwear) ||
-      /(?:^| )sports? (?:shoes?|sneakers?|trainers?)(?= |$)/.test(retailFootwear);
-    if (athleticTitle) titleTokens.add("sports");
+  const athleticFootwearIntent=effectiveCategory==="shoes"&&q.includes("sports");
+  const retailFootwear=athleticFootwearIntent?normalizeSearchQuery(offer?.title||""):"";
+  const athleticTitle=athleticFootwearIntent && (
+    /(?:^| )(?:athletic|running|runners?|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(retailFootwear) ||
+    /(?:^| )sports? (?:shoes?|sneakers?|trainers?)(?= |$)/.test(retailFootwear));
+  const athleticStyleUnverified=athleticFootwearIntent&&!athleticTitle;
+  if(athleticFootwearIntent){
+    // The generic title token set also contains metadata and URL paths. A
+    // sports/sport keyword in a retailer SEO URL (or vendor/category field)
+    // cannot prove that the SOLD shoe is athletic. Require sold-title proof.
+    if(athleticTitle) titleTokens.add("sports");
+    else titleTokens.delete("sports");
   }
   // Match RAM quantities semantically for RAM-constrained laptop queries:
   // "16 RAM" and "16GB DDR4 RAM" are equivalent. Never rewrite global
@@ -933,6 +940,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const ramUnverified=Boolean(requestedRamGb!==null && offerCategory==="laptop" && evidenceRamGb===null);
   if (ramMismatch) confidence*=0.2;
   if (ramUnverified) confidence=Math.min(confidence,0.69);
+  if(athleticStyleUnverified) confidence=Math.min(confidence,0.69);
   // R04 P0: source URL, merchant brand and broad vacuum category must not
   // substitute for a physical manufacturer's model in the actual sold title.
   // A category regex can otherwise consume the entire 'dyson v15' query,
@@ -950,13 +958,13 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       !hasUnrequestedVariant && !conflictingGalaxyModel &&
       !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch &&
       !ramMismatch && !ramUnverified && !principalRetailConflict &&
-      !retailDysonModelMissing;
+      !retailDysonModelMissing && !athleticStyleUnverified;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : athleticStyleUnverified ? "استخدام الحذاء الرياضي غير مثبت في عنوان العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       principalRetailConflict ? "العرض يخص ملحقًا أو قطعة أو لعبة، وليس المنتج الأساسي المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
