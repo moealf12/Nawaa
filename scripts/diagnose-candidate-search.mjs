@@ -67,8 +67,10 @@ async function query(text){
         .split(/\b(?:with|including|includes)\b/i,1)[0];
       return /^(?:apple )?watch series [1-9]\d?\b/.test(subject) &&
         /\b(?:gps|cellular|lte)\b/.test(subject) &&
-        /\b(?:aluminum|aluminium|titanium|stainless steel) case\b/.test(subject) &&
-        /\b(?:38|40|41|42|44|45|46|49)mm\b/.test(subject);
+        (/\b(?:aluminum|aluminium|titanium|stainless steel) case\b/.test(subject) ||
+         /\b(?:gps smartwatch|smartwatch gps|cellular smartwatch)\b/.test(subject)) &&
+        /\b(?:38|40|41|42|44|45|46|49)mm\b/.test(subject) &&
+        !/\b(?:replacement|compatible|case cover|fit case|screen protector|screen protection|protector|bumper|wrist strap|watch band|beginner|user guide|handbook)\b/.test(subject);
     };
     const unsupportedWholeWatchExact=watchSeriesIntent?exact.filter(o=>!verifiedWholeWatch(o)).length:0;
     const supportedWholeWatchExact=watchSeriesIntent?exact.filter(verifiedWholeWatch).length:0;
