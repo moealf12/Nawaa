@@ -22,3 +22,15 @@ export function retryDeniedStorefrontIds(errors,{registeredIds}={}){
   }
   return [...excluded].sort();
 }
+
+/**
+ * A real shopper-level deadline or an intentionally shortened fallback
+ * discovery pass cannot certify that all eligible providers settled.
+ * Strict cache admission requires a provably known zero, never a guessed one.
+ */
+export function providersPendingAfterFallback(errors,{deadlineExceeded=false}={}){
+  if(deadlineExceeded)return null;
+  if((Array.isArray(errors)?errors:[]).some(x=>
+    x?.pass==="fallback"&&x?.error==="fallback_budget_limited"))return null;
+  return 0;
+}

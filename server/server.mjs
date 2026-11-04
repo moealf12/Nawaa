@@ -38,7 +38,7 @@ import { createSearchCache, classifySearchCacheAdmission } from "./search-cache.
 import { amazonPartialEvidenceError } from "./amazon-page-evidence.mjs";
 import {amazonBatchBudgetWithinRequest} from "./amazon-request-budget.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
-import {retryDeniedStorefrontIds} from "./source-fallback-policy.mjs";
+import {retryDeniedStorefrontIds,providersPendingAfterFallback} from "./source-fallback-policy.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
@@ -1006,10 +1006,9 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       partial:deadlineExceeded || errors.length>0,
       complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
-      // All planned barriers settled only when the deadline was not exceeded.
-      // A timed-out wave cannot certify an exact pending count; never coerce
-      // unobserved completion evidence to zero for cache admission.
-      providersPending:deadlineExceeded ? null : 0,
+      // A fallback stopped at a dedicated source budget is NOT an exhaustive
+      // set of completed providers. Unknown pending must not be cache-certified.
+      providersPending:providersPendingAfterFallback(errors,{deadlineExceeded}),
       requestDeadlineMs,
       sourceFailures:summarizeSourceFailures(errors),
     },

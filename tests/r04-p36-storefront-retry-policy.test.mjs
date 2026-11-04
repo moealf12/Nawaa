@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {retryDeniedStorefrontIds} from "../server/source-fallback-policy.mjs";
+import {retryDeniedStorefrontIds,providersPendingAfterFallback} from "../server/source-fallback-policy.mjs";
 
 const available=new Set(["noon-sa","amazon-ae","virgin-ae","lulu-sa","nike-sa","extra-unbxd"]);
 
@@ -49,4 +49,14 @@ test("R04-P3.6: fallback alone is source-scoped; first-wave collection, Amazon a
   assert.match(server,/skipFailedStorefrontIds:\s*retryDeniedIds/);
   assert.match(server,/runProviderPass\(providerQuery,\s*"primary"/);
   assert.match(server,/amazonPageCount:plan\.amazonPageCount/);
+});
+
+test("R04 P42 stopped fallback never claims all providers completed",()=>{
+  const abort=[{provider:"search",sourceId:"search",pass:"fallback",error:"fallback_budget_limited"}];
+  assert.equal(providersPendingAfterFallback(abort),null);
+  assert.equal(providersPendingAfterFallback(abort,{deadlineExceeded:true}),null);
+  assert.equal(providersPendingAfterFallback([],{deadlineExceeded:true}),null);
+  assert.equal(providersPendingAfterFallback([]),0);
+  assert.equal(providersPendingAfterFallback([{pass:"primary",error:"HTTP 403"}]),0);
+  assert.equal(providersPendingAfterFallback([{pass:"primary",error:"fallback_budget_limited"}]),0);
 });
