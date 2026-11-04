@@ -16,6 +16,9 @@ on:
       - 'tests/r04-p47-merchant-forensics.test.mjs'
       - 'scripts/r04-p47-classification-evidence.mjs'
       - 'tests/r04-p47-classification-evidence.test.mjs'
+      - 'server/pdp-phase-diagnostics.mjs'
+      - 'server/url-resolver.mjs'
+      - 'tests/r04-p48-pdp-phase-diagnostics.test.mjs'
       - '.github/workflows/r04-p36-disposable-candidate-36.yml'
   workflow_dispatch:
 permissions:
@@ -44,7 +47,9 @@ jobs:
           node --check scripts/r04-p46-correlate-live-traces.mjs
           node --check server/storefront-merchant-evidence.mjs
           node --check scripts/r04-p47-classification-evidence.mjs
-          node --test tests/r04-p46-critical-path.test.mjs tests/r04-p46-correlated-live-traces.test.mjs tests/r04-p47-merchant-forensics.test.mjs tests/r04-p47-classification-evidence.test.mjs
+          node --check server/pdp-phase-diagnostics.mjs
+          node --check server/url-resolver.mjs
+          node --test tests/r04-p46-critical-path.test.mjs tests/r04-p46-correlated-live-traces.test.mjs tests/r04-p47-merchant-forensics.test.mjs tests/r04-p47-classification-evidence.test.mjs tests/r04-p48-pdp-phase-diagnostics.test.mjs
       - name: Collect all 36 frozen intents against local candidate (read-only public sources)
         env:
           NODE_ENV: test
