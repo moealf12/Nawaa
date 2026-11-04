@@ -13,6 +13,8 @@ import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../sr
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
+import {cosrxSearchUrl} from "../../src/cosrx-evidence.mjs";
+import {evaluateCosrxSearch,cosrxLiveConfigured} from "./cosrx-live.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -46,6 +48,13 @@ const STORES = [
     id:"asos-global", name:"ASOS", countryCode:"GB", countryNameAr:"بريطانيا", brands:["asos"], categories:["clothing","shoes","bag","beauty"],
     search:(q)=>"https://www.asos.com/search/?q="+encodeURIComponent(q),
     productPath:/\/prd\/\d+(?:[/?#]|$)/i,
+  },
+  {
+    id:"cosrx-global",name:"COSRX Official",countryCode:"KR",
+    countryNameAr:"كوريا الجنوبية",saudiDelivery:"offer_dependent",
+    brands:["cosrx"],categories:["beauty","grocery","accessory","other"],
+    search:cosrxSearchUrl,
+    productPath:/^\/products\/[a-z0-9-]{2,150}(?:[/?#]|$)/i,
   },
   // GCC discovery tier: trusted regional storefronts are searched after Saudi sources
   // and before the wider global catalog. Shipping to Saudi is metadata, never a gate.
@@ -1254,7 +1263,7 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeou
         "upgrade-insecure-requests":"1",
         "user-agent":USER_AGENT,
       }),
-      redirect:"follow",
+      redirect:storeId==="cosrx-global"?"manual":"follow",
       signal:requestSignal,
     },{sourceId:storeId});
     if(amazon)headersMs=Math.round(performance.now()-start);
@@ -1529,6 +1538,7 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const intent = parseSearchIntent(normalizedQuery);
   const stable = options.stable === true;
   const routed = STORES
+    .filter(store=>store.id!=="cosrx-global"||cosrxLiveConfigured())
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
@@ -1599,6 +1609,11 @@ export function selectedStores(query) {
 }
 
 export async function searchFreeStorefrontById(storeId, query, options = {}) {
+  if(storeId==="cosrx-global"&&!cosrxLiveConfigured())return {
+    storeId,candidates:0,offers:[],failures:0,searchUrl:null,
+    diagnostics:{status:"SOURCE_DISABLED",reason:"COSRX_FEATURE_NOT_ENABLED",
+      customerPublishable:false},
+  };
   // Stable catalog-level 404 classification, never a fake retailer HTTP response.
   // Explicit legacy calls short-circuit without DNS, fetch, or retry.
   const retired=retiredSourceRecord(storeId);
@@ -1667,6 +1682,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
   options.signal?.throwIfAborted();
   const started = Date.now();
   const searchUrl = store.search(query);
+  if(store.id==="cosrx-global"&&!cosrxLiveConfigured())return {
+    store,searchUrl:null,candidates:0,offers:[],failures:0,
+    diagnostics:{status:"SOURCE_DISABLED",reason:"COSRX_FEATURE_NOT_ENABLED",
+      customerPublishable:false},
+  };
   try {
     let html = "";
     let searchPageFinalUrl = searchUrl;
@@ -1746,6 +1766,25 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       const denied=new Error(primarySearchError || sourceAccessFailure);
       denied.failureClass=sourceAccessFailure;
       throw denied;
+    }
+    if(store.id==="cosrx-global"){
+      // Only same-query search SSR + exact Shopify product JSON is trusted.
+      // No generic embedded/JSON-LD fallback or customer publication.
+      const inspected=await evaluateCosrxSearch({
+        html,query,searchUrl,finalUrl:searchPageFinalUrl,
+        signal:options.signal,maxPdp:2,
+      });
+      return {store,searchUrl,candidates:inspected.candidates,offers:[],
+        failures:inspected.records.filter(x=>[
+          "HTTP_403_DENIED","HTTP_429_LIMITED","PRODUCT_JSON_FETCH_FAILED",
+        ].includes(x.reason)).length,
+        diagnostics:{status:"COSRX_LIVE_EVIDENCE_ONLY",primarySearchError,
+          sourceAccessFailure,searchPage:searchDiagnostics,
+          cosrx:{...inspected.diagnostics,verifiedSamples:inspected.verified.length},
+          customerPublicationGate:{customerPublishable:false,
+            shippingToSaudiVerified:false,status:"SAUDI_SKU_CHECKOUT_NOT_ATTESTED"},
+          candidateSamples:[],failureSamples:[],unpricedSamples:[]},
+      };
     }
     // Real, first-party HTML search cards are Noon's primary source path.
     // Bind them to the exact requested search URL; a redirect to the homepage

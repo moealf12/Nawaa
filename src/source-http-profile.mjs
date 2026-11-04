@@ -4,6 +4,13 @@
 export const NAWAA_INDEXER_USER_AGENT =
   "NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)";
 
+const COSRX_NODE_HEADERS=Object.freeze({
+  accept:"text/html,application/xhtml+xml;q=0.9",
+  "accept-language":"en-US,en;q=0.9",
+  "cache-control":"no-cache",
+  "user-agent":NAWAA_INDEXER_USER_AGENT,
+});
+
 const THOMANN_HEADERS = Object.freeze({
   accept: "text/html,application/xhtml+xml;q=0.9",
   "accept-language": "de-DE,de;q=0.9,en;q=0.5",
@@ -13,6 +20,7 @@ const THOMANN_HEADERS = Object.freeze({
 // Search and PDP fetchers share one honest header profile. Existing merchants
 // keep their old behavior; never accept arbitrary user-controlled header keys.
 export function merchantRequestHeaders(sourceId, existing = {}) {
+  if(sourceId==="cosrx-global")return {...COSRX_NODE_HEADERS};
   return sourceId === "thomann-de" ? {...THOMANN_HEADERS} : {...existing};
 }
 
