@@ -15,6 +15,7 @@ const ALIASES = [
   ["ابل", "apple"], ["دايسون", "dyson"], ["سوني", "sony"],
   ["سواروفسكي", "swarovski"], ["سوارفسكي", "swarovski"],
   ["شي ان", "shein"], ["شيين", "shein"], ["نايك", "nike"], ["اديداس", "adidas"],
+  ["ديور", "dior"],
   ["زارا", "zara"], ["اتش اند ام", "hm"], ["ايكيا", "ikea"], ["سيفورا", "sephora"],
   ["نمشي", "namshi"], ["سنتر بوينت", "centrepoint"], ["سنتر بوينتس", "centrepoint"],
   ["ماكس فاشن", "maxfashion"], ["ديكاتلون", "decathlon"], ["نايس ون", "niceone"],
@@ -189,6 +190,11 @@ function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
   const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  // A standalone watch band/strap/case compatible with Apple Watch is an
+  // accessory, not the complete watch. Inspect SOLD subject, never included
+  // bundled accessories after "with". Observed Jarir accessory titles.
+  if (/\b(?:wrist straps?|watch straps?|watch bands?|bands? for apple watch|smartwatch fit cases?|smartwatch accessory bundles?)\b/.test(subject) &&
+      /\b(?:watch|smartwatch)\b/.test(retail)) return "accessory";
   // R04 Q04 actual LIVE top two: Spanish standalone replacement speaker and
   // French assembled LCD+frame are sold spare parts, not Galaxy handsets.
   // A complete smartphone advertised with included spares retains its identity.
@@ -938,7 +944,10 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     }
   }
 
-  const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
+  // Nike "Air Max" is a named athletic footwear line, not the unrequested
+  // "Max" capacity/edition of an electronics device. Do not demote valid
+  // athletic-shoe matches through the electronic-variant vocabulary.
+  const hasUnrequestedVariant = intent.discoveryMode === "specific" && effectiveCategory!=="shoes" && (
     intent.model && intent.category === 'accessory'
       ? explicitModels([offer?.title,offer?.specs?.deviceType,offer?.specs?.series].filter(Boolean).join(' ')).some(model=>model!==intent.model)
       : UNREQUESTED_VARIANT_TERMS.some((term) => titleTokens.has(term) && !queryTokens.has(term))
