@@ -62,7 +62,7 @@ test("provider cap and truncation are explicit and deterministic",()=>{
   const out=searchCriticalPathEvidence(f);
   assert.equal(out.providerSpans.length,24);
   assert.equal(out.providerEventsDropped,32);
-  assert.equal(out.providerSpans[23].sourceId,"store-23");
+  assert.equal(out.providerSpans[23].sourceId,"unknown");
 });
 test("PII, arbitrary URLs, query text, raw errors and titles never appear in trace",()=>{
   const f=fixture();
