@@ -555,8 +555,9 @@ class Scraper:
                 context = await browser.new_context(user_agent=USER_AGENT)
                 page = await context.new_page()
                 response = await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                if response and response.status in (403, 429):
-                    self.log("browser", url, "BLOCKED_OR_RATE_LIMITED", detail=str(response.status))
+                if response and response.status >= 400:
+                    classification = "BLOCKED_OR_RATE_LIMITED" if response.status in (403, 429) else "HTTP_ERROR"
+                    self.log("browser", url, classification, detail=str(response.status))
                     await browser.close()
                     return None
                 await page.wait_for_timeout(1200)
