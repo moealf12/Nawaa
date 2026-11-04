@@ -13,6 +13,7 @@ function liveReport(){
       id:"Q"+String(i+1).padStart(2,"0"),
       status:"OBSERVED",offers:10,primaryGroups:5,relatedGroups:5,
       elapsedMs:1000,partial:false,deadlineExceeded:false,sourceErrors:0,
+      catalogRecallStatus:"observed",
       sourceErrorBreakdown:{reported:0,otherEvents:0,buckets:[]},
     })),
     summary:{sourceErrorEvents:0},
@@ -90,6 +91,15 @@ test("observed header/body/parse hotspots remain observational, not causal",()=>
   assert.ok(signal(x.rows[2],"CLIENT_PARSE_COST_DOMINANT"));
   assert.equal(x.sample.responseBytesP95,2500000);
   assert.equal(x.classification,"OBSERVATIONAL_TRIAGE_NOT_CAUSAL_PROOF");
+});
+test("missing contract evidence remains unknown, never silently false",()=>{
+  const r=liveReport();
+  Object.assign(r.rows[0],{deadlineExceeded:null,sourceErrors:null,
+    catalogRecallStatus:null});
+  const x=diagnoseR04Evidence(r);
+  assert.ok(signal(x.rows[0],"DEADLINE_EVIDENCE_MISSING"));
+  assert.ok(signal(x.rows[0],"SOURCE_ERROR_EVIDENCE_MISSING"));
+  assert.ok(signal(x.rows[0],"CATALOG_EVIDENCE_MISSING"));
 });
 test("absent and contradictory source coverage never passes silently",()=>{
   const r=liveReport();
