@@ -70,8 +70,10 @@ def network_error(error):
         return "CLIENT_IMPLEMENTATION_ERROR"
     if isinstance(error, json.JSONDecodeError):
         return "INVALID_JSON"
+    if "timeout" in type(error).__name__.lower():
+        return "TIMEOUT"
     source = str(error).lower()
-    if "timeout" in source:
+    if "timeout" in source or "timed out" in source:
         return "TIMEOUT"
     if "http/2" in source or "http2" in source:
         return "HTTP2_PROTOCOL_ERROR"
