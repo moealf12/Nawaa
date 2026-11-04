@@ -866,10 +866,6 @@ async function searchAll(query, { depth = 0, signal } = {}) {
     (broadDiscovery && primaryMerchants < 2 && relevantPrimary.length < 40);
   let hardDeniedFallbackStores=0;
   if (needsRecallExpansion) {
-    // These stores already proved HTTP 403/429 in this very request. Avoid
-    // immediate repeat traffic to inaccessible endpoints, while retaining
-    // their primary failure evidence and replacing their fallback slots with
-    // other eligible merchants. No cross-request or future-depth blacklist.
     const retryDeniedIds=retryDeniedStorefrontIds(primary.errors,{
       registeredIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
     });
@@ -1016,10 +1012,19 @@ function enforceRateLimit(req, res, scope, policy, origin = "*") {
   });
   return false;
 }
+// MARKETPLACE_ACCOUNT_DELETION is an eBay account/privacy notification, NOT
+// evidence that a product was removed or that any price changed. Our eBay
+// adapter intentionally drops seller account identifiers (userId, username,
+// eiasToken) before an offer can enter the catalog, cache or customer stream.
+// A correctly authenticated notification therefore requires acknowledgement,
+// but NO global product-cache invalidation, replay, or source reacquisition.
+// The handler still verifies the signature, topic, and notificationId and
+// deduplicates signed retries. If account-linked data is ever persisted in a
+// future adapter, implement its targeted erasure BEFORE changing this policy.
 const ebayDeletion = createEbayDeletionHandler({
   token: process.env.EBAY_DELETION_VERIFICATION_TOKEN,
   endpoint: process.env.EBAY_DELETION_ENDPOINT,
-  onDelete: () => { cachedSearch.clear("ebay_deletion"); searchWavePages.clear(); },
+  onDelete: () => {},
 });
 const internalAudit = createInternalAuditHandler();
 
