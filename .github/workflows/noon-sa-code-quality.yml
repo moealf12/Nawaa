@@ -7,6 +7,7 @@ on:
       - "scripts/noon-sa-*.mjs"
       - "src/noon-sa-*.mjs"
       - "tests/noon-sa-staging-integrity.test.mjs"
+      - "tests/noon-sa-search-card-evidence.test.mjs"
       - ".github/workflows/noon-sa-code-quality.yml"
   workflow_dispatch:
 
@@ -45,4 +46,4 @@ jobs:
           node --check scripts/noon-sa-approved-feed-live.mjs
           node --check src/noon-sa-existing-export.mjs
           node --check src/noon-sa-approved-feed.mjs
-          node --test tests/noon-sa-staging-integrity.test.mjs
+          node --test tests/noon-sa-staging-integrity.test.mjs tests/noon-sa-search-card-evidence.test.mjs
