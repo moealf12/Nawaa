@@ -58,6 +58,34 @@ test("triage aggregates observed store spans, not inferred merchant outages",()=
   assert.equal(x[0].rejected,1);
   assert.equal(x.find(v=>v.storeId==="noon-sa").verifiedOffers,8);
 });
+test("PDP stage isolates slow resolution and typed failures without raw errors",()=>{
+  const stages=[
+    {stage:"html_complete",atMs:1100,counts:{htmlBytes:220000}},
+    {stage:"cards_parsed",atMs:1110,counts:{cards:0}},
+    {stage:"fallback_complete",atMs:1120,counts:{fallbackCandidates:0}},
+    {stage:"direct_admitted",atMs:1130,counts:{directCandidates:0,directOffers:0}},
+    {stage:"pdp_resolved",atMs:6490,counts:{
+      pdpAttempts:4,pdpRejected:3,pdpUnpriced:1,pdpTimedOut:2,resolvedOffers:0}},
+    {stage:"intent_filtered",atMs:6495,counts:{finalOffers:0}},
+  ];
+  const row=make("noon-sa","rejected",6500,0,stages);
+  const summary=summarizeMerchantForensics([row]);
+  assert.equal(summary[0].stageDurationMs.html_complete.p95Ms,1100);
+  assert.equal(summary[0].stageDurationMs.pdp_resolved.p95Ms,5360);
+  assert.equal(summary[0].stageCoverage.pdp_resolved,1);
+  assert.equal(row.stages[4].counts.pdpTimedOut,2);
+  const interrupted=make("noon-sa","rejected",1000,0,[stages[0],stages[4]]);
+  const missing=summarizeMerchantForensics([interrupted])[0];
+  assert.equal(missing.stageDurationMs.pdp_resolved,undefined);
+});
+test("triage normalizes failures by observation count, not just source popularity",()=>{
+  const many=Array.from({length:20},()=>make("walmart-us","rejected",100));
+  const slow=[make("noon-sa","rejected",6500)];
+  const x=summarizeMerchantForensics([...many,...slow]);
+  assert.equal(x[0].storeId,"noon-sa");
+  assert.equal(x[0].triageScore,7500);
+  assert.equal(x[1].triageScore,1100);
+});
 test("stage trace is guarded and optional in production code",()=>{
   const server=readFileSync(new URL("../server/server.mjs",import.meta.url),"utf8");
   const provider=readFileSync(new URL("../server/providers/free-storefronts.mjs",import.meta.url),"utf8");
