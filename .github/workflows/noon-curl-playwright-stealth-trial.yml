@@ -1,0 +1,29 @@
+name: Noon curl_cffi Playwright Stealth Isolated Trial
+on:
+  pull_request:
+    paths:
+      - "workers/python-intelligence/noon_toolchain_trial.py"
+      - "workers/python-intelligence/test_noon_toolchain_trial.py"
+      - ".github/workflows/noon-curl-playwright-stealth-trial.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  trial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact test branch
+        uses: actions/checkout@v4
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install exactly the requested Python packages
+        run: python -m pip install --disable-pip-version-check curl_cffi playwright playwright-stealth beautifulsoup4 lxml
+      - name: Install Chromium only (no full browser suite)
+        run: python -m playwright install chromium
+      - name: Validate offline safety and extraction fixtures
+        run: python -m unittest discover -s workers/python-intelligence -p test_noon_toolchain_trial.py -v
+      - name: Check latest stealth API on static fixture and probe Noon once per transport
+        run: python workers/python-intelligence/noon_toolchain_trial.py --live
