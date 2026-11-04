@@ -2,7 +2,7 @@
 // End-to-end *live* first-party-network-alternative probe. Never serves users.
 // One credit/query when API.SH runs; account/key must have 1000/month free cap.
 import {writeFile} from "node:fs/promises";
-import {fetchNoonSaudiApish} from "../server/providers/noon-apish-staged.mjs";
+import {fetchNoonSaudiApish,fetchNoonSaudiApishOfferParity} from "../server/providers/noon-apish-staged.mjs";
 
 const REPORT="noon-apish-live-acceptance.json";
 const key=process.env.APISH_KEY||"";
@@ -42,8 +42,13 @@ try{
       try{
         const response=await fetchNoonSaudiApish(query,{apiKey:key,limit:40,
           deadlineMs:45000});
+        const parity=response.candidates[0]
+          ? await fetchNoonSaudiApishOfferParity(response.candidates[0],{
+              apiKey:key,deadlineMs:45000})
+          : null;
         report.cases.push({
           query,status:response.status,latencyMs:Date.now()-start,
+          exactOfferParity:parity?.status||"NO_CANDIDATES",
           accepted:response.candidates.length,rejected:response.rejected,
           conflicts:response.conflicts,creditsUsed:response.creditsUsed,
           sourceCached:response.sourceCached??null,
@@ -54,8 +59,9 @@ try{
           })),
         });
         if(response.status!=="THIRD_PARTY_SEARCH_OBSERVED" ||
-           response.candidates.length===0){
-          report.status="INTEGRITY_OR_COVERAGE_REJECTED";
+           response.candidates.length===0 ||
+           parity?.status!=="THIRD_PARTY_SEARCH_PRODUCT_OFFER_PARITY"){
+          report.status="INTEGRITY_PARITY_OR_COVERAGE_REJECTED";
           break;
         }
       }catch(error){
