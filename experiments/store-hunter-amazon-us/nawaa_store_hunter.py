@@ -473,6 +473,9 @@ def parse_amazon_us_pdp(html: str, page: str) -> list[Product]:
         elif len(prices) > 1:
             price_problem = "AMAZON_PDP_MULTIPLE_BUYBOX_PRICES"
         break
+    if price is None and price_problem == "AMAZON_PDP_BUYBOX_PRICE_NOT_FOUND":
+        if soup.select("span.a-price:not(.a-text-price) span.a-offscreen"):
+            price_problem = "AMAZON_PDP_PRIMARY_PRICE_NOT_EVIDENCED"
 
     image = None
     for element in soup.select("img#landingImage, #imgTagWrapperId img, meta[property='og:image']"):
