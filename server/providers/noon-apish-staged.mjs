@@ -11,6 +11,23 @@ const MAX_BYTES=2_000_000;
 const MAX_AGE_MS=10*60_000;
 const DEFAULT_DEADLINE_MS=40_000;
 
+// Third-party locale URLs sometimes use an alternate Saudi prefix. Normalize
+// only for SKU validation, retain the actual source-owned path in diagnostics.
+function sourceSaudiIdentity(raw){
+  try{
+    const url=new URL(raw);
+    if(url.protocol!=="https:" ||
+       !["www.noon.com","noon.com"].includes(url.hostname.toLowerCase()) ||
+       url.username||url.password||(url.port&&url.port!=="443"))return null;
+    const normalized=url.pathname.replace(
+      /^\/(?:saudi-ar|en-sa|ar-sa)\//i,"/saudi-en/");
+    const checked=new URL(url.href);
+    checked.pathname=normalized;
+    const match=noonSaudiProductIdentity(checked.href);
+    return match?{...match,canonicalUrl:"https://www.noon.com"+url.pathname}:null;
+  }catch{return null;}
+}
+
 function price(raw){
   if(typeof raw!=="number"||!Number.isFinite(raw)||raw<=0||raw>10_000_000)return null;
   if(Math.abs(raw*100-Math.round(raw*100))>1e-6)return null;
@@ -27,8 +44,10 @@ function validImage(raw){
 }
 function candidate(hit,intent){
   if(!hit || typeof hit!=="object" || Array.isArray(hit))return null;
-  const identity=noonSaudiProductIdentity(hit.url);
-  if(!identity || String(hit.sku||"").toUpperCase()!==identity.sku)return null;
+  const identity=sourceSaudiIdentity(hit.url);
+  if(!identity || String(hit.sku||"").toUpperCase()!==identity.sku ||
+     (hit.currency!=null&&hit.currency!=="SAR") ||
+     (hit.country!=null&&hit.country!=="sa"))return null;
   const code=String(hit.offer_code||"");
   if(!OFFER_CODE.test(code))return null;
   let u;
@@ -42,7 +61,7 @@ function candidate(hit,intent){
   if(intent.storage && titleIntent.storage!==intent.storage)return null;
   if(intent.color && titleIntent.color!==intent.color)return null;
   const slug=new URL(identity.canonicalUrl).pathname
-    .replace(/^\/saudi-en\//,"").split("/")[0].replace(/-/g," ");
+    .replace(/^\/(?:saudi-(?:en|ar)|(?:en|ar)-sa)\//,"").split("/")[0].replace(/-/g," ");
   const slugIntent=parseSearchIntent(slug);
   if((titleIntent.model&&slugIntent.model&&titleIntent.model!==slugIntent.model)||
      (titleIntent.storage&&slugIntent.storage&&titleIntent.storage!==slugIntent.storage)||
