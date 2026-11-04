@@ -124,14 +124,14 @@ export async function evaluateCosrxSearch({
   const records=[],verified=[];
   const budget=Math.max(0,Math.min(2,
     Number.isFinite(maxPdp)?Math.floor(maxPdp):2));
-  if(listing.diagnostics.status!=="PARSED_QUERY_BOUND_USD_CARDS")
+  if(!["PARSED_QUERY_BOUND_USD_CARDS","SEARCH_NO_VISIBLE_CARDS"].includes(listing.diagnostics.status))
     return {candidates:listing.candidates.length,verified,records,
       diagnostics:{...listing.diagnostics,checked:0,validated:0,
         customerPublishable:false,shippingToSaudiVerified:false}};
   let candidates=listing.candidates;
   let fallbackDiagnostics=null;
   let fallbackError=null;
-  if(!candidates.length){
+  // Fallback only when SSR had *zero* cards, never when cards existed\n  // but were rejected due to conflicting product or price evidence.\n  if(!candidates.length&&listing.diagnostics.status==="SEARCH_NO_VISIBLE_CARDS"){
     try{
       const url=cosrxSuggestUrl(query);
       const response=await fetchSuggestJson(query,{signal});
