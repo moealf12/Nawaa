@@ -43,6 +43,7 @@ export function createPdpMilestoneProbe({now=()=>performance.now()}={}){
     snapshot(){
       return {milestones:{...milestones},redirects,clockInvalid};
     },
+    elapsedMs(){return number(now()-started);},
   };
 }
 export function summarizePdpAttemptPhases(attempts=[],{maxAttempts=20}={}){
