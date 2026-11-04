@@ -4,6 +4,10 @@ const ALIASES = [
   // Preserve the two-word mirrorless descriptor as one scoped concept.
   ["بدون مراه", "mirrorless"], ["كاميرا", "camera"],
   ["مكنسه", "vacuum"], ["سيريس", "series"],
+  // Real R04 LIVE Q08/Q10: map complete Arabic storage/accessory concepts
+  // before shorter lexical aliases. Never turn standalone disc *media* into
+  // a full PlayStation drive; retail title identity is still evaluated.
+  ["قارئ اقراص", "disc drive"], ["قرص اس اس دي", "ssd"], ["اس اس دي", "ssd"],
   ["قهوه", "coffee"], ["بن", "coffee"], ["قميص", "shirt"], ["ملابس", "clothing"],
   ["اي فون", "iphone"], ["ايفون", "iphone"], ["اير بودز", "airpods"], ["ايربودز", "airpods"],
   ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"], ["للبلايستيشن", "playstation"],
@@ -23,10 +27,13 @@ const ALIASES = [
   ["قلاده", "necklace"], ["سلسال", "necklace"], ["عقد", "necklace"], ["تعليقه", "pendant"],
   ["اسوره", "bracelet"], ["سوار", "bracelet"], ["خاتم", "ring"], ["اقراط", "earrings"], ["قرط", "earrings"], ["مجوهرات", "jewelry"],
   ["ساعه", "watch"], ["ساعات", "watch"],
+  // R04 live zero-recall inputs: direct merchant-native retail terms.
+  ["كمبيوتر مكتبي", "desktop"], ["للالعاب", "gaming"],
   ["فساتين", "dress"], ["فستان", "dress"], ["عبايات", "abaya"], ["عبايه", "abaya"],
   ["قمصان", "shirt"], ["بنطلون", "pants"], ["بناطيل", "pants"], ["جاكيت", "jacket"], ["جاكيتات", "jacket"],
   ["احذيه", "shoes"], ["حذاء", "shoes"], ["شنط", "bags"], ["شنطه", "bag"], ["حقائب", "bags"], ["حقيبه", "bag"],
-  ["مكياج", "makeup"], ["عطر", "perfume"], ["عطور", "perfume"], ["عنايه بالبشره", "skincare"],
+  ["مكياج", "makeup"], ["عطر", "perfume"], ["عطور", "perfume"],
+  ["رجالي", "men"], ["عنايه بالبشره", "skincare"],
   ["اثاث", "furniture"], ["كنب", "sofa"], ["كرسي", "chair"], ["كراسي", "chair"], ["طاوله", "table"], ["طاولات", "table"],
   ["مطبخ", "kitchen"], ["العاب اطفال", "toys"], ["لعب اطفال", "toys"],
   ["كتب", "books"], ["كتاب", "book"], ["رياضه", "sports"],
@@ -50,7 +57,9 @@ const ALIASES = [
   ["لابتوب", "laptop"], ["لابتوبات", "laptop"], ["لاب توب", "laptop"], ["حاسوب محمول", "laptop"],
   ["طابعه", "printer"], ["طابعات", "printer"], ["جوال", "phone"], ["جوالات", "phone"],
   ["تلفزيون", "tv"], ["تلفزيونات", "tv"], ["شاشه", "monitor"], ["شاشات", "monitor"],
-  ["سماعات", "headphones"], ["سماعه", "headphones"], ["بلوتوث", "bluetooth"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
+  ["سماعات", "headphones"], ["سماعه", "headphones"],
+  ["سبيكرات", "speakers"], ["سبيكر", "speaker"],
+  ["بلوتوث", "bluetooth"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
 
 // Compile immutable alias patterns once: offer matching calls normalization
