@@ -34,3 +34,23 @@ class AmazonCardsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Amazon503RetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retries_once_on_transient_503(self):
+        import httpx
+        from unittest.mock import patch
+        import nawaa_store_hunter as m
+        calls = []
+        def handler(req):
+            calls.append(str(req.url))
+            return httpx.Response(503 if len(calls) == 1 else 200, text="<html>ok</html>")
+        s = m.Scraper("https://www.amazon.com", "phone", 3, 1, "never")
+        await s._client.aclose()
+        s._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False)
+        with patch.object(m, "ensure_public_url", side_effect=lambda url, origin=None: url), patch.object(s, "permitted", return_value=True), patch.object(m.asyncio, "sleep") as sleeper:
+            body = await s.fetch("search-html", "https://www.amazon.com/s", {"k": "phone"})
+        await s.close()
+        self.assertEqual(body, "<html>ok</html>")
+        self.assertEqual(len(calls), 2)
+        sleeper.assert_called_once()
