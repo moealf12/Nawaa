@@ -5,7 +5,7 @@ import {spawn} from 'node:child_process';
 import net from 'node:net';
 import {once} from 'node:events';
 import {searchViaConstructor,searchJarir} from '../server/providers/jarir.mjs';
-import {assessOfferMatch,describeProduct} from '../src/search-query.mjs';
+import {assessOfferMatch,describeProduct,normalizeSearchQuery,productCategory} from '../src/search-query.mjs';
 
 const port=await new Promise((resolve,reject)=>{
   const s=net.createServer();
@@ -45,6 +45,21 @@ async function query(text){
     const data=await r.json();
     const offers=Array.isArray(data.offers)?data.offers:[];
     const exact=offers.filter(x=>x.exactMatch===true);
+    // Independent evidence check for real athlete-style footwear requests:
+    // any exact shoe must have an explicit running/training/sneaker/sports
+    // claim in the merchant's SOLD title, not inferred from URL or Nike brand.
+    const shopperTerms=normalizeSearchQuery(text).split(" ");
+    const athleticShoeIntent=shopperTerms.includes("sports") &&
+      shopperTerms.includes("shoes");
+    const hasAthleticTitle=offer=>{
+      const title=normalizeSearchQuery(offer?.title||"");
+      return /(?:^| )(?:athletic|running|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(title) ||
+        /(?:^| )sports? (?:shoes?|sneakers?|trainers?)(?= |$)/.test(title);
+    };
+    const unsupportedAthleticExact=athleticShoeIntent?exact.filter(o=>
+      productCategory(o)!=="shoes"||!hasAthleticTitle(o)).length:0;
+    const supportedAthleticExact=athleticShoeIntent?exact.filter(o=>
+      productCategory(o)==="shoes"&&hasAthleticTitle(o)).length:0;
     const structurallyValid=offers.filter(o=>{
       try{
         return typeof o.title==='string' && o.title.trim().length>0 &&
@@ -62,6 +77,8 @@ async function query(text){
       // Numbers/booleans only: the pre-existing primary coverage failure
       // remains visible without copying raw provider errors to the summary.
       sourceErrorCount:Array.isArray(data.errors)?data.errors.length:null,
+      athleticFootwearIntent:athleticShoeIntent,
+      supportedAthleticExact,unsupportedAthleticExact,
       partial:typeof data.coverage?.partial==='boolean'?data.coverage.partial:null,
       deadlineExceeded:typeof data.coverage?.deadlineExceeded==='boolean'?data.coverage.deadlineExceeded:null,
       providersPending:data.coverage?.providersPending??null,
@@ -161,12 +178,15 @@ try{
       deadlineExceeded:result.deadlineExceeded??null,
       providersPending:result.providersPending??null,
       sourceErrors:result.sourceErrorCount??null,
+      athleticFootwearIntent:result.athleticFootwearIntent??false,
+      supportedAthleticExact:result.supportedAthleticExact??null,
+      unsupportedAthleticExact:result.unsupportedAthleticExact??null,
       failure:result.error?'CANDIDATE_REQUEST_FAILED':null,
     });
   }
   const p36Passed=p36Results.every(x=>x.status===200&&
     x.hasOffersArray===true&&Number.isInteger(x.offers)&&x.offers>=0&&
-    x.valid===x.offers&&
+    x.valid===x.offers&&x.unsupportedAthleticExact===0&&
     (x.partial===true||x.partial===false));
   console.log('R04_P36_CANDIDATE_CRITICAL '+JSON.stringify({
     candidateOnly:true,baselineComparison:false,
