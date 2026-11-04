@@ -4,7 +4,9 @@
 import {buildDiscoverySections} from "../src/search-core.mjs";
 import {buildSearchPresentationSections} from "../src/search-result-presentation.mjs";
 
-const KNOWN_CONDITIONS=new Set(["new","used","refurbished","open_box"]);
+// Renewable/renewed is explicit merchant wording for a refurbished product.
+// Preserve the raw value in product output and variant identity; audit only.
+const KNOWN_CONDITIONS=new Set(["new","used","refurbished","open_box","renewed"]);
 const validCount=n=>Number.isSafeInteger(n)&&n>=0&&n<=1000;
 
 export function auditPresentationStages(query,groups,sections=null){
@@ -22,7 +24,7 @@ export function auditPresentationStages(query,groups,sections=null){
   const desired=actual.intent?.condition||"new";
   const targetKnown=KNOWN_CONDITIONS.has(desired);
   const rawAllowed=[],unknown=[],mismatched=[];
-  let unrecognizedConditionCodes=0;
+  let unrecognizedConditionCodes=0,renewedAliasCount=0;
   for(const group of direct){
     const condition=group.bestOffer?.condition;
     if(condition===desired)rawAllowed.push(group);
@@ -30,7 +32,10 @@ export function auditPresentationStages(query,groups,sections=null){
       unknown.push(group);
       if(condition!==null&&condition!==undefined&&condition!=="")
         unrecognizedConditionCodes++;
-    }else mismatched.push(group);
+    }else{
+      mismatched.push(group);
+      if(condition==="renewed")renewedAliasCount++;
+    }
   }
   // Replay ONLY the pure discovery allocation used by production, with the
   // exact same pre-filtered direct group references.
@@ -50,6 +55,7 @@ export function auditPresentationStages(query,groups,sections=null){
     conditionMatched:rawAllowed.length,
     conditionUnknown:unknown.length,
     conditionUnrecognizedCodes:unrecognizedConditionCodes,
+    conditionKnownRenewedAlias:renewedAliasCount,
     conditionExplicitMismatch:mismatched.length,
     initialDiscoveryPlaced:initialSet.size,
     rescuedByExactTitleEvidence:rescued.length,
@@ -74,6 +80,7 @@ export function auditPresentationStages(query,groups,sections=null){
     counts.classifierDirect===
       counts.conditionMatched+counts.conditionUnknown+counts.conditionExplicitMismatch&&
     counts.conditionUnrecognizedCodes<=counts.conditionUnknown&&
+    counts.conditionKnownRenewedAlias<=counts.conditionExplicitMismatch&&
     counts.conditionMatched===
       counts.initialDiscoveryPlaced+counts.rescuedByExactTitleEvidence+
       counts.conditionMatchedButUnplaced&&
@@ -91,6 +98,8 @@ export function auditPresentationStages(query,groups,sections=null){
     safety:"OBSERVATION_ONLY_NO_PRODUCT_PROMOTION",
     nextProbe:counts.unplacedUnknownCondition>0?
       "VERIFY_SOURCE_CONDITION_PROVENANCE":
+      counts.conditionKnownRenewedAlias>0?
+      "AUDIT_RENEWED_REFURBISHED_ALIAS":
       counts.unplacedExplicitMismatch>0?
       "VERIFY_REQUESTED_VS_OFFER_CONDITION":
       counts.classifierDirect===0?"TRACE_LIVE_SOURCE_EXACT_MATCH_EVIDENCE":
