@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from decimal import Decimal, InvalidOperation
 import os
 import re
 import time
@@ -135,10 +136,19 @@ def price_info(anchor):
         return False, False
     raw = node.get_text(" ", strip=True)
     # Numeric text existence is evidence of a displayed amount, not currency.
-    amount_exists = bool(re.fullmatch(
+    normalized = raw.replace("\u00a0", "").replace(",", "").strip()
+    original_valid = bool(re.fullmatch(
         r"(?:0|[1-9]\d{0,7})(?:\.\d{1,2})?|[1-9]\d{0,2}(?:,\d{3})+(?:\.\d{1,2})?",
         raw.replace("\u00a0", "").strip(),
     ))
+    amount_value = None
+    if original_valid:
+        try:
+            value = Decimal(normalized)
+            if value > 0 and value <= Decimal("99999999.99"):
+                amount_value = str(value.quantize(Decimal("0.01")))
+        except (InvalidOperation, ValueError):
+            pass
     label = " ".join(
         str(x) for x in (
             node.get_text(" ", strip=True),
@@ -147,7 +157,7 @@ def price_info(anchor):
             anchor.get("data-currency"),
         ) if x is not None
     )
-    return amount_exists, bool(CURRENCY.search(label))
+    return amount_value, bool(CURRENCY.search(label))
 
 
 def describe_page(body, expected_query, page_number):
@@ -177,6 +187,7 @@ def describe_page(body, expected_query, page_number):
         per_card_currency += int(explicit)
         skus.add(item["sku"])
         if item["offer"] and len(linked_offers) < 2:
+            item["plpPriceObserved"] = amount
             linked_offers.append(item)
     meta_currencies = [
         str(tag.get("content") or "")[:20] for tag in
@@ -243,6 +254,115 @@ def describe_page(body, expected_query, page_number):
     }
 
 
+
+def inspect_pdp_structured_data(body, expected_sku, expected_offer, plp_price):
+    """Inspect structured product/offer evidence; never infer buybox from SEO."""
+    soup = BeautifulSoup(body, "html.parser")
+    result = {
+        "pageLang": str(soup.html.get("lang") if soup.html else "")[:20],
+        "jsonLdScriptCount": 0,
+        "jsonLdDecodeErrors": 0,
+        "typeCounts": {},
+        "matchedProductSku": False,
+        "matchedSkuProductCount": 0,
+        "currencyInMatchedSkuOffer": [],
+        "matchedSkuOfferPriceEvidence": [],
+        "matchedOfferCodeInStructuredData": False,
+        "pdpMatchesPlpAmountWithoutOfferProof": False,
+        "pdpPriceVerified": False,
+    }
+    if result["pageLang"].casefold() not in ("en-ae", "ar-ae"):
+        result["state"] = "PDP_MARKET_LOCALE_INVALID"
+        return result
+    for tag in soup.select('script[type="application/ld+json"]')[:40]:
+        raw = tag.string or tag.get_text()
+        if not raw or len(raw) > 250_000:
+            continue
+        result["jsonLdScriptCount"] += 1
+        try:
+            obj = json.loads(raw)
+        except (TypeError, ValueError):
+            result["jsonLdDecodeErrors"] += 1
+            continue
+        queue = [obj]
+        budget = 0
+        while queue and budget < 1000:
+            budget += 1
+            node = queue.pop()
+            if isinstance(node, list):
+                queue.extend(node[:100])
+                continue
+            if not isinstance(node, dict):
+                continue
+            typ = node.get("@type")
+            types = typ if isinstance(typ, list) else [typ]
+            for name in types:
+                if isinstance(name, str):
+                    result["typeCounts"][name[:35]] = min(
+                        1000, result["typeCounts"].get(name[:35], 0) + 1
+                    )
+            for k in ("@graph", "item", "itemListElement", "mainEntity"):
+                if k in node:
+                    queue.append(node[k])
+            if "Product" not in types:
+                continue
+            candidate_sku = str(node.get("sku") or node.get("productID") or "").upper()
+            if candidate_sku != expected_sku:
+                continue
+            result["matchedProductSku"] = True
+            result["matchedSkuProductCount"] += 1
+            offer_nodes = node.get("offers") or []
+            if isinstance(offer_nodes, dict):
+                offer_nodes = [offer_nodes]
+            if not isinstance(offer_nodes, list):
+                continue
+            for offer in offer_nodes[:50]:
+                if not isinstance(offer, dict):
+                    continue
+                currency = str(offer.get("priceCurrency") or "").upper().strip()
+                offer_price = offer.get("price")
+                offer_link = offer.get("url")
+                if currency and currency not in result["currencyInMatchedSkuOffer"]:
+                    result["currencyInMatchedSkuOffer"].append(currency[:12])
+                price_valid = None
+                if isinstance(offer_price, (str, int, float)) and not isinstance(offer_price, bool):
+                    try:
+                        value = Decimal(str(offer_price))
+                        if value.is_finite() and Decimal("0") < value < Decimal("10000000"):
+                            price_valid = str(value.quantize(Decimal("0.01")))
+                    except (InvalidOperation, ValueError):
+                        pass
+                link_matches = False
+                if isinstance(offer_link, str) and same_origin(offer_link):
+                    u = urlsplit(offer_link)
+                    o = parse_qs(u.query).get("o", [])
+                    link_matches = (o == [expected_offer] and
+                                    SKU_PATH.search(u.path) is not None and
+                                    expected_sku in u.path)
+                result["matchedOfferCodeInStructuredData"] |= link_matches
+                if len(result["matchedSkuOfferPriceEvidence"]) < 20:
+                    result["matchedSkuOfferPriceEvidence"].append({
+                        "currency": currency[:12] or None,
+                        "amount": price_valid,
+                        "offerLinkMatches": link_matches,
+                        "type": str(offer.get("@type") or "")[:30],
+                    })
+                if currency == "AED" and price_valid == plp_price:
+                    result["pdpMatchesPlpAmountWithoutOfferProof"] = True
+                    # Explicit offer-code parity is required to certify the
+                    # *same* offer instead of a different product buybox.
+                    if link_matches:
+                        result["pdpPriceVerified"] = True
+    result["state"] = (
+        "PDP_OFFER_PRICE_CURRENCY_IDENTITY_VERIFIED"
+        if result["pdpPriceVerified"]
+        else "PDP_PRODUCT_MATCHED_OFFER_PARITY_UNVERIFIED"
+        if result["matchedProductSku"]
+        else "PDP_NO_STRUCTURED_SKU_IDENTITY"
+    )
+    return result
+
+
 def summarize_page(page):
     return {
         key: value for key, value in page.items()
@@ -290,7 +410,9 @@ try:
                     # Market path, locale, or page-level currency are not per-SKU price
                     # evidence. Do not mark offer currency as independently verified.
                     REPORT["currencyVerifiedPerOffer"] = bool(
-                        p1["cardExplicitAedLabelCount"] >= 1
+                        p1["cardTitleWithNumericPrice"] > 0
+                        and p1["cardExplicitAedLabelCount"] ==
+                            p1["cardTitleWithNumericPrice"]
                     )
                     if p1["linkedOffers"]:
                         item = p1["linkedOffers"][0]
@@ -299,15 +421,13 @@ try:
                         )
                         product["sku"] = item["sku"]
                         if product_body:
-                            parsed = BeautifulSoup(product_body, "html.parser")
-                            product["pageLang"] = str(
-                                parsed.html.get("lang") if parsed.html else ""
-                            )[:15]
-                            product["jsonLdScriptCount"] = len(
-                                parsed.select('script[type="application/ld+json"]')
+                            evidence = inspect_pdp_structured_data(
+                                product_body, item["sku"], item["offer"],
+                                item["plpPriceObserved"],
                             )
-                            # Data parity is not assumed merely because PDP returned 200.
-                            product["state"] = "PDP_HTML_OBSERVED_PRICE_PARITY_UNKNOWN"
+                            product["structuredEvidence"] = evidence
+                            REPORT["pdpPriceVerified"] = evidence["pdpPriceVerified"]
+                            product["state"] = evidence["state"]
                     REPORT["decision"] = (
                         "PLP_ACCESS_CONFIRMED_PAGINATION_VERIFIED"
                         if REPORT["paginationVerified"]
