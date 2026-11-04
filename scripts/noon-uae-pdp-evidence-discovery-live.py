@@ -363,6 +363,7 @@ def script_shape(soup, item):
         "offerContextKeyFrequencies": {},
         "offerContextSemanticClues": [],
         "closestPriceNumericCandidates": [],
+        "inlineScriptEnvelopeDiagnostics": [],
     }
     for node in soup.find_all("script", limit=MAX_HTML_SCRIPTS):
         body = node.string or node.get_text()
@@ -414,6 +415,22 @@ def script_shape(soup, item):
                     result["closestPriceNumericCandidates"].append(
                         [value for value in amounts[:4]]
                     )
+        if len(result["inlineScriptEnvelopeDiagnostics"]) < 10:
+            start = body.lstrip()[:180]
+            # Whitelist only leading JavaScript identifiers, not string values.
+            start = re.sub(r'["][^"]{0,100}["]', '"STRING"', start)
+            start = re.sub(r"['][^']{0,100}[']", "'STRING'", start)
+            identifiers = re.findall(r"[A-Za-z_$][A-Za-z0-9_$.]{2,60}", start)
+            result["inlineScriptEnvelopeDiagnostics"].append({
+                "type": src_type,
+                "chars": len(body),
+                "leadIdentifiers": identifiers[:8],
+                "startsWithBrace": body.lstrip().startswith("{"),
+                "containsOffer": item["offerCode"] in body,
+                "containsSku": item["sku"] in body,
+                "containsJsonParse": "JSON.parse" in body,
+                "containsWindow": "window." in body,
+            })
         if len(body) > 3_000_000:
             continue
         if src_type not in ("application/json", "application/ld+json"):
