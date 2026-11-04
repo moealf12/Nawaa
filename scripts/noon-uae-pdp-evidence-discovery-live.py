@@ -296,8 +296,7 @@ def script_shape(soup, item):
                         "hasSkuText": item["sku"].lower() in chunk.lower(),
                     })
                 amounts = re.findall(
-                    r"(?:price|amount)(?:\\?["']|\\s|:){0,10}"
-                    r"(?:\\?["'])?([1-9][0-9]{0,6}(?:\\.[0-9]{1,2})?)",
+                    r"(?:price|amount)[^0-9]{0,16}([1-9][0-9]{0,6}(?:[.][0-9]{1,2})?)",
                     chunk, re.I,
                 )
                 if amounts and len(result["closestPriceNumericCandidates"]) < 12:
