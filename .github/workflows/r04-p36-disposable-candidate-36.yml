@@ -7,6 +7,10 @@ on:
       - 'server/server.mjs'
       - 'server/providers/free-storefronts.mjs'
       - 'scripts/r04-source-failure-forensics.mjs'
+      - 'server/search-critical-path.mjs'
+      - 'scripts/r04-p46-correlate-live-traces.mjs'
+      - 'tests/r04-p46-critical-path.test.mjs'
+      - 'tests/r04-p46-correlated-live-traces.test.mjs'
       - '.github/workflows/r04-p36-disposable-candidate-36.yml'
   workflow_dispatch:
 permissions:
@@ -28,6 +32,12 @@ jobs:
           node-version: '22'
       - name: Install locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify correlation and critical-path adversarial contracts
+        run: |
+          node --check server/search-critical-path.mjs
+          node --check scripts/r04-p36-candidate-36.mjs
+          node --check scripts/r04-p46-correlate-live-traces.mjs
+          node --test tests/r04-p46-critical-path.test.mjs tests/r04-p46-correlated-live-traces.test.mjs
       - name: Collect all 36 frozen intents against local candidate (read-only public sources)
         env:
           NODE_ENV: test
@@ -37,6 +47,7 @@ jobs:
           NOON_ENABLED: 'false'
           CARREFOUR_ENABLED: 'false'
           EBAY_ENABLED: 'false'
+          NAWAA_P46_TRACE_ENABLED: '1'
         run: node scripts/r04-p36-candidate-36.mjs
       - name: Retain bounded candidate evidence with exact commit provenance
         if: always()
