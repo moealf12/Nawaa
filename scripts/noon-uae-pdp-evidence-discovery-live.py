@@ -240,6 +240,117 @@ def inspect_dom(soup, item):
     return output
 
 
+def flight_payload_diagnostics(soup, item):
+    """Decode Next Flight push JSON arrays; never execute embedded JavaScript."""
+    summary = {
+        "flightScriptCount": 0,
+        "flightPushArrayDecoded": 0,
+        "flightDecodeErrors": 0,
+        "flightTextChunkCount": 0,
+        "chunksWithSelectedOffer": 0,
+        "chunksWithSelectedSku": 0,
+        "chunksWithOfferAndSku": 0,
+        "chunksWithOfferPriceAndAed": 0,
+        "offerAdjacentFieldNames": {},
+        "parsedRecordCount": 0,
+        "selectedOfferCandidateObjects": [],
+    }
+    for script in soup.find_all("script", limit=MAX_HTML_SCRIPTS):
+        source = script.string or script.get_text()
+        if not source or len(source) > 3_000_000:
+            continue
+        marker = "self.__next_f.push("
+        if marker not in source:
+            continue
+        summary["flightScriptCount"] += 1
+        pointer = 0
+        while True:
+            index = source.find(marker, pointer)
+            if index < 0:
+                break
+            pointer = index + len(marker)
+            try:
+                value, _ = json.JSONDecoder().raw_decode(source[pointer:])
+            except (ValueError, TypeError):
+                summary["flightDecodeErrors"] += 1
+                continue
+            if not isinstance(value, list):
+                continue
+            summary["flightPushArrayDecoded"] += 1
+            for chunk in value:
+                if not isinstance(chunk, str):
+                    continue
+                summary["flightTextChunkCount"] += 1
+                code_present = item["offerCode"] in chunk
+                sku_present = item["sku"] in chunk
+                summary["chunksWithSelectedOffer"] += int(code_present)
+                summary["chunksWithSelectedSku"] += int(sku_present)
+                summary["chunksWithOfferAndSku"] += int(code_present and sku_present)
+                summary["chunksWithOfferPriceAndAed"] += int(
+                    code_present and "2099.05" in chunk and "AED" in chunk
+                )
+                if not code_present:
+                    continue
+                idx = chunk.find(item["offerCode"])
+                around = chunk[max(0, idx-900):idx+900]
+                for name in re.findall(r'"([a-zA-Z][a-zA-Z0-9_]{2,40})"\s*:', around):
+                    if any(x in name.lower() for x in (
+                        "price", "offer", "sku", "currency", "variant", "ship",
+                    )):
+                        summary["offerAdjacentFieldNames"][name] = (
+                            summary["offerAdjacentFieldNames"].get(name, 0) + 1
+                        )
+                for record in chunk.splitlines()[:150]:
+                    if ":" not in record or len(record) > 1_000_000:
+                        continue
+                    text = record.split(":", 1)[1].strip()
+                    if not text.startswith(("{", "[")):
+                        continue
+                    try:
+                        parsed = json.loads(text)
+                    except (TypeError, ValueError):
+                        continue
+                    summary["parsedRecordCount"] += 1
+                    stack = [(parsed, 0)]
+                    seen = 0
+                    while stack and seen < 4000:
+                        node, depth = stack.pop()
+                        seen += 1
+                        if depth > 14:
+                            continue
+                        if isinstance(node, list):
+                            stack.extend((v, depth + 1) for v in node[:100])
+                        elif isinstance(node, dict):
+                            codes = [str(v) for k, v in node.items() if
+                                     k.lower() in ("offer_code", "offercode", "offerid",
+                                                   "offer_id") and isinstance(v, str)]
+                            if (item["offerCode"] in codes and
+                                    len(summary["selectedOfferCandidateObjects"]) < 10):
+                                fields = {}
+                                for k, v in node.items():
+                                    if isinstance(v, (str, int, float)):
+                                        lk = k.lower()
+                                        if lk in ("price", "sale_price", "saleprice",
+                                                  "current_price", "offer_price",
+                                                  "currency", "currencycode", "sku",
+                                                  "sku_config", "offercode", "offer_code"):
+                                            fields[k] = (
+                                                "EXACT_OFFER" if lk in
+                                                ("offercode", "offer_code") and
+                                                v == item["offerCode"] else
+                                                str(v)[:35]
+                                            )
+                                summary["selectedOfferCandidateObjects"].append({
+                                    "fieldNames": sorted(str(k)[:36] for k in node)[:35],
+                                    "relevantFields": fields,
+                                    "depth": depth,
+                                })
+                            for v in node.values():
+                                if isinstance(v, (dict, list)):
+                                    stack.append((v, depth + 1))
+    return summary
+
+
 def script_shape(soup, item):
     """Find embedded state objects, summarize only exact SKU/offer-adjacent nodes."""
     result = {
@@ -387,6 +498,7 @@ try:
                         REPORT["jsonLd"] = inspect_jsonld(soup, item)
                         REPORT["domEvidence"] = inspect_dom(soup, item)
                         REPORT["embeddedState"] = script_shape(soup, item)
+                        REPORT["reactFlight"] = flight_payload_diagnostics(soup, item)
                         REPORT["conclusion"] = "PDP_STRUCTURES_OBSERVED_UNVERIFIED_OFFER"
 except Exception as exc:
     REPORT["conclusion"] = error_class(exc)
