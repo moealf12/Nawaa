@@ -14,7 +14,9 @@ export function cosrxSearchUrl(query){
 }
 export function cosrxIdentity(value){
   try{
-    const u=new URL(value);
+    // Shopify SSR cards use first-party root-relative hrefs. Resolve them
+    // against the pinned merchant origin, then enforce the exact origin.
+    const u=new URL(value,ORIGIN);
     const m=u.pathname.match(/^\/products\/([a-z0-9][a-z0-9-]{1,150})\/?$/);
     if(u.origin!==ORIGIN||u.username||u.password||u.port||!m)return null;
     return {handle:m[1],sourceUrl:ORIGIN+"/products/"+m[1]};
