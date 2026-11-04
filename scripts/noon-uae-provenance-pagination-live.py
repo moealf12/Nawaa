@@ -442,10 +442,22 @@ except Exception as exc:
     REPORT["decision"] = problem(exc)
     REPORT["fatalErrorType"] = type(exc).__name__[:50]
 finally:
+    REPORT["evidenceGates"] = {
+        "distinct_second_page": REPORT["paginationVerified"],
+        "all_search_card_prices_have_explicit_aed": REPORT["currencyVerifiedPerOffer"],
+        "same_sku_same_offer_exact_cent_price": REPORT["pdpPriceVerified"],
+        # UAE inventory must not be assumed deliverable to Saudi Arabia.
+        "saudi_shipping_eligibility": False,
+    }
+    REPORT["missingGates"] = [
+        name for name, passed in REPORT["evidenceGates"].items() if not passed
+    ]
+    REPORT["customerPublishable"] = False
     with open(OUT, "w", encoding="utf8") as file:
         json.dump(REPORT, file, ensure_ascii=False, indent=2)
         file.write("\n")
     print(json.dumps(REPORT, ensure_ascii=False, indent=2))
-    # Fail closed if no independent page-two product evidence is obtained.
-    if not REPORT["paginationVerified"]:
+    # This workflow is an acceptance gate, not a merely successful diagnostic.
+    # A source transport 200 or a successful page 2 must not green-light price.
+    if REPORT["missingGates"]:
         raise SystemExit(1)
