@@ -30,6 +30,10 @@ jobs:
         run: |
           python -m py_compile experiments/store-hunter-amazon-us/*.py
           python -m unittest discover -s experiments/store-hunter-amazon-us -p 'test_*.py' -v
+      - name: Four real-observed ASIN Amazon US PDP evidence matrix
+        env:
+          PYTHONPATH: experiments/store-hunter-amazon-us
+        run: python experiments/store-hunter-amazon-us/amazon_us_pdp_matrix.py
       - name: Amazon US one-query live test (no bypass; bounded)
         env:
           AMAZON_US_QUERY: wireless headphones
@@ -40,6 +44,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: experiment-amazon-us-store-hunter-live
-          path: artifacts/amazon-us-live.json
+          path: |
+            artifacts/amazon-us-live.json
+            artifacts/amazon-us-pdp-matrix.json
           if-no-files-found: warn
           retention-days: 3
