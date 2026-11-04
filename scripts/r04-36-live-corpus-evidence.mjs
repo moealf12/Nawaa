@@ -32,26 +32,33 @@ const report={
   healthBefore:null,healthAfter:null,rows:Array(36).fill(null),fatal:null,
 };
 async function fetchJson(path,timeoutMs=HTTP_TIMEOUT){
-  const begin=Date.now();
-  let phase="headers";
+  const begin=performance.now();
+  let phase="headers",headersMs=null,bodyMs=null;
   try {
     const response=await fetch(new URL(path,BASE),{headers:{accept:"application/json",
       "cache-control":"no-cache"},signal:AbortSignal.timeout(timeoutMs),redirect:"error"});
+    headersMs=performance.now()-begin;
     phase="body";
     if(Number(response.headers.get("content-length")||0)>LIMIT_BYTES)
       throw Error("BODY_DECLARED_TOO_LARGE");
+    const bodyStarted=performance.now();
     const bytes=await response.arrayBuffer();
+    bodyMs=performance.now()-bodyStarted;
     if(bytes.byteLength>LIMIT_BYTES)throw Error("BODY_TOO_LARGE");
     phase="parse";
-    return {status:response.status,body:JSON.parse(new TextDecoder().decode(bytes)),
-      elapsedMs:Date.now()-begin};
+    const parseStarted=performance.now();
+    const body=JSON.parse(new TextDecoder().decode(bytes));
+    return {status:response.status,body,
+      elapsedMs:Math.round(performance.now()-begin),responseBytes:bytes.byteLength,
+      responsePhasesMs:{headers:Math.round(headersMs),body:Math.round(bodyMs),
+        parse:Math.round(performance.now()-parseStarted)}};
   }catch(error){
     // Emit the safe lifecycle phase and elapsed wall clock, not the raw error
     // message/URL. In particular, a 30s timeout might be headers or body wait.
     const observed=new Error("r04_probe_failed");
     observed.name=error?.name||"Error";
     observed.phase=phase;
-    observed.elapsedMs=Date.now()-begin;
+    observed.elapsedMs=Math.round(performance.now()-begin);
     throw observed;
   }
 }
@@ -75,23 +82,28 @@ async function probe(q){
   const row={id:q.id,language:q.language,group:q.group,query:q.query,
     status:"NOT_RUN",offers:0,groupCount:0,firstTen:[],judgments:null,partial:null,
     sourceErrors:null,sourceFailureTypes:null,sourceErrorBreakdown:null,pending:null,cacheMode:null,
-    failurePhase:null,
+    failurePhase:null,responsePhasesMs:null,responseBytes:null,catalogRecallStatus:null,
     elapsedMs:null,serverDurationMs:null,deadlineExceeded:null,
     primaryGroups:null,relatedGroups:null,presentedGroups:null,
     relatedLanes:null,firstRelated:[],reason:null};
   try{
     const response=await fetchJson("/api/search?q="+encodeURIComponent(q.query));
     row.elapsedMs=response.elapsedMs;
+    row.responsePhasesMs=response.responsePhasesMs;
+    row.responseBytes=response.responseBytes;
     if(response.status!==200||!Array.isArray(response.body?.offers))
       throw Error("INVALID_SEARCH_RESPONSE");
     const body=response.body;
     row.status="OBSERVED";row.offers=body.offers.length;
-    row.partial=body.coverage?.partial===true;
+    row.partial=typeof body.coverage?.partial==="boolean"?body.coverage.partial:null;
     row.sourceErrors=Array.isArray(body.errors)?body.errors.length:null;
     row.pending=body.coverage?.providersPending??null;
     row.cacheMode=body.cache?.mode??null;
     row.serverDurationMs=Number.isFinite(body.durationMs)?body.durationMs:null;
-    row.deadlineExceeded=body.coverage?.deadlineExceeded===true;
+    row.deadlineExceeded=typeof body.coverage?.deadlineExceeded==="boolean"?
+      body.coverage.deadlineExceeded:null;
+    row.catalogRecallStatus=["failed","observed","unconfigured"].includes(
+      body.coverage?.catalogRecall?.status)?body.coverage.catalogRecall.status:null;
     row.sourceFailureTypes=body.coverage?.sourceFailures?.types??null;
     row.sourceErrorBreakdown=aggregateSourceErrorEvidence(body.errors);
     const allGroups=groupComparableOffers(body.offers,"lowest");
@@ -145,6 +157,8 @@ async function probe(q){
     sourceFailureTypes:row.sourceFailureTypes,
     sourceFailureLeaders:row.sourceErrorBreakdown?.buckets?.slice(0,3)??null,
     failurePhase:row.failurePhase,serverDurationMs:row.serverDurationMs,
+    responsePhasesMs:row.responsePhasesMs,responseBytes:row.responseBytes,
+    catalogRecallStatus:row.catalogRecallStatus,
     deadlineExceeded:row.deadlineExceeded,elapsedMs:row.elapsedMs,
     reason:row.reason}));
   return row;
