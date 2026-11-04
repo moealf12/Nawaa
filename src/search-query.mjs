@@ -4,6 +4,10 @@ const ALIASES = [
   // Preserve the two-word mirrorless descriptor as one scoped concept.
   ["بدون مراه", "mirrorless"], ["كاميرا", "camera"],
   ["مكنسه", "vacuum"], ["سيريس", "series"],
+  // Real R04 LIVE Q08/Q10: map complete Arabic storage/accessory concepts
+  // before shorter lexical aliases. Never turn standalone disc *media* into
+  // a full PlayStation drive; retail title identity is still evaluated.
+  ["قارئ اقراص", "disc drive"], ["قرص اس اس دي", "ssd"], ["اس اس دي", "ssd"],
   ["قهوه", "coffee"], ["بن", "coffee"], ["قميص", "shirt"], ["ملابس", "clothing"],
   ["اي فون", "iphone"], ["ايفون", "iphone"], ["اير بودز", "airpods"], ["ايربودز", "airpods"],
   ["بلاي ستيشن", "playstation"], ["بلايستيشن", "playstation"], ["للبلايستيشن", "playstation"],
@@ -11,6 +15,7 @@ const ALIASES = [
   ["ابل", "apple"], ["دايسون", "dyson"], ["سوني", "sony"],
   ["سواروفسكي", "swarovski"], ["سوارفسكي", "swarovski"],
   ["شي ان", "shein"], ["شيين", "shein"], ["نايك", "nike"], ["اديداس", "adidas"],
+  ["ديور", "dior"],
   ["زارا", "zara"], ["اتش اند ام", "hm"], ["ايكيا", "ikea"], ["سيفورا", "sephora"],
   ["نمشي", "namshi"], ["سنتر بوينت", "centrepoint"], ["سنتر بوينتس", "centrepoint"],
   ["ماكس فاشن", "maxfashion"], ["ديكاتلون", "decathlon"], ["نايس ون", "niceone"],
@@ -23,13 +28,21 @@ const ALIASES = [
   ["قلاده", "necklace"], ["سلسال", "necklace"], ["عقد", "necklace"], ["تعليقه", "pendant"],
   ["اسوره", "bracelet"], ["سوار", "bracelet"], ["خاتم", "ring"], ["اقراط", "earrings"], ["قرط", "earrings"], ["مجوهرات", "jewelry"],
   ["ساعه", "watch"], ["ساعات", "watch"],
+  // R04 live zero-recall inputs: direct merchant-native retail terms.
+  ["كمبيوتر مكتبي", "desktop"], ["للالعاب", "gaming"],
   ["فساتين", "dress"], ["فستان", "dress"], ["عبايات", "abaya"], ["عبايه", "abaya"],
   ["قمصان", "shirt"], ["بنطلون", "pants"], ["بناطيل", "pants"], ["جاكيت", "jacket"], ["جاكيتات", "jacket"],
   ["احذيه", "shoes"], ["حذاء", "shoes"], ["شنط", "bags"], ["شنطه", "bag"], ["حقائب", "bags"], ["حقيبه", "bag"],
-  ["مكياج", "makeup"], ["عطر", "perfume"], ["عطور", "perfume"], ["عنايه بالبشره", "skincare"],
+  ["مكياج", "makeup"], ["عطر", "perfume"], ["عطور", "perfume"],
+  ["رجالي", "men"], ["عنايه بالبشره", "skincare"],
   ["اثاث", "furniture"], ["كنب", "sofa"], ["كرسي", "chair"], ["كراسي", "chair"], ["طاوله", "table"], ["طاولات", "table"],
   ["مطبخ", "kitchen"], ["العاب اطفال", "toys"], ["لعب اطفال", "toys"],
-  ["كتب", "books"], ["كتاب", "book"], ["رياضه", "sports"], ["مستلزمات رياضيه", "sports"],
+  ["كتب", "books"], ["كتاب", "book"], ["رياضه", "sports"],
+  // Arabic athletic adjectives are semantic retail descriptors, not mystery
+  // free-text tokens. An English merchant still must prove the athletic style
+  // in the actual title before the offer can be an exact match.
+  ["رياضيه", "sports"], ["رياضي", "sports"], ["للرياضه", "sports"],
+  ["مستلزمات رياضيه", "sports"],
   ["حيوانات اليفه", "pet"], ["مستلزمات حيوانات", "pet"], ["سياره", "automotive"], ["سيارات", "automotive"],
   ["مكتب", "office"], ["مكتبيه", "office"], ["بقاله", "grocery"], ["مواد غذائيه", "grocery"],
   ["برو", "pro"], ["ماكس", "max"], ["بلس", "plus"], ["الترا", "ultra"], ["اير", "air"],
@@ -45,7 +58,10 @@ const ALIASES = [
   ["لابتوب", "laptop"], ["لابتوبات", "laptop"], ["لاب توب", "laptop"], ["حاسوب محمول", "laptop"],
   ["طابعه", "printer"], ["طابعات", "printer"], ["جوال", "phone"], ["جوالات", "phone"],
   ["تلفزيون", "tv"], ["تلفزيونات", "tv"], ["شاشه", "monitor"], ["شاشات", "monitor"],
-  ["سماعات", "headphones"], ["سماعه", "headphones"], ["بلوتوث", "bluetooth"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
+  ["سماعات", "headphones"], ["سماعه", "headphones"],
+  ["لاسلكيه", "wireless"], ["لاسلكي", "wireless"],
+  ["سبيكرات", "speakers"], ["سبيكر", "speaker"],
+  ["بلوتوث", "bluetooth"], ["ماوس", "mouse"], ["كيبورد", "keyboard"],
 ];
 
 // Compile immutable alias patterns once: offer matching calls normalization
@@ -151,7 +167,7 @@ export const PRODUCT_CATEGORIES = [
   ['shoes','أحذية', /\b(?:shoes?|sneakers?|boots?|sandals?|heels?|slippers?|loafers?)\b/],
   ['bag','حقائب', /\b(?:bags?|handbags?|backpacks?|luggage|wallets?|purses?|totes?)\b/],
   ['beauty','تجميل وعناية', /\b(?:makeup|cosmetics?|skincare|skin care|lipstick|mascara|foundation|serum|moisturizer|hair care)\b/],
-  ['perfume','عطور', /\b(?:perfumes?|fragrances?|eau de parfum|eau de toilette|cologne)\b/],
+  ['perfume','عطور', /\b(?:perfumes?|fragrances?|eau de parfum|eau de toilette|eau de cologne|parfums?|edp|edt|cologne)\b/],
   ['furniture','أثاث', /\b(?:furniture|sofas?|couches?|chairs?|tables?|desks?|beds?|wardrobes?|cabinets?)\b/],
   ['kitchen','مطبخ', /\b(?:kitchen|cookware|pans?|pots?|cutlery|tableware|air fryer|toaster|cooktop)\b/],
   ['home','منزل ومعيشة', /\b(?:home decor|bedding|duvet|pillows?|curtains?|rugs?|storage organizer|lighting|lamp)\b/],
@@ -174,6 +190,11 @@ function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
   const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  // A standalone watch band/strap/case compatible with Apple Watch is an
+  // accessory, not the complete watch. Inspect SOLD subject, never included
+  // bundled accessories after "with". Observed Jarir accessory titles.
+  if (/\b(?:wrist straps?|watch straps?|watch bands?|bands? for apple watch|smartwatch fit cases?|smartwatch accessory bundles?)\b/.test(subject) &&
+      /\b(?:watch|smartwatch)\b/.test(retail)) return "accessory";
   // R04 Q04 actual LIVE top two: Spanish standalone replacement speaker and
   // French assembled LCD+frame are sold spare parts, not Galaxy handsets.
   // A complete smartphone advertised with included spares retains its identity.
@@ -274,10 +295,25 @@ function isEvidencedCompleteLaptop(offer = {}) {
 
 // The matching path already computed describeProduct(offer); reuse that immutable
 // value rather than normalizing its title and metadata a second time.
+function isVerifiedWholeAppleWatch(offer = {}) {
+  // The seller must be offering a physical watch chassis, not compatible
+  // bands/cases that mention the same Apple Watch generation and dimensions.
+  const subject=normalizeSearchQuery(offer.title||"")
+    .split(/\b(?:with|including|includes)\b/,1)[0];
+  return /^(?:apple )?watch series [1-9]\d?\b/.test(subject) &&
+    /\b(?:gps|cellular|lte)\b/.test(subject) &&
+    // Retailers sometimes say "GPS Smartwatch 46mm" without listing chassis
+    // material; that is still explicit whole-device title evidence.
+    (/\b(?:aluminum|aluminium|titanium|stainless steel) case\b/.test(subject) ||
+     /\b(?:gps smartwatch|smartwatch gps|cellular smartwatch)\b/.test(subject)) &&
+    /\b(?:38|40|41|42|44|45|46|49)mm\b/.test(subject) &&
+    !/\b(?:replacement|compatible|case cover|fit case|screen protector|screen protection|protector|bumper|wrist strap|watch band|beginner|user guide|handbook)\b/.test(subject);
+}
 function productCategoryWithDescription(offer, gaming) {
   const soldPeripheral=detectedRetailPeripheral(offer);
   if (soldPeripheral) return soldPeripheral;
   if (gaming.kind !== 'product') return gaming.kind;
+  if (isVerifiedWholeAppleWatch(offer)) return 'watch';
   // Merchant retail SUBJECT leads: Spanish "Adaptador/Cargador/Convertidor
   // ... para iPhone 17" sells a peripheral, not an iPhone. Match only the
   // title-leading noun, so a genuine "iPhone 17 con cargador incluido" remains
@@ -371,9 +407,23 @@ export function parseSearchIntent(value = "") {
   const storageOnlyQuery=normalizedRamCapacityGb(normalizedQuery)!==null
     ? normalizedQuery.replace(/\b\d{1,3}(?:gb)?(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram\b|\bram \d{1,3}(?:gb)?\b/g," ")
     : normalizedQuery;
+  const baseProviderQuery=normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim();
+  // Merchant retrieval and shopper matching are DIFFERENT contracts. A
+  // generic "sports" adjective after a brand+footwear request is too narrow
+  // for merchant search APIs; "nike shoes" finds all relevant footwear
+  // families. The ORIGINAL normalized query still requires explicit athletic
+  // retail-title proof before an item can be exact-matched to "sports shoes".
+  // Only this structurally bounded brand+shoes+sports pattern is broadened:
+  // model, colour, size, condition and other product constraints stay intact.
+  const broadAthleticFootwearDiscovery=category==="shoes"&&brand &&
+    baseProviderQuery.split(" ").length===3 &&
+    ["shoes","sports",brand].every(term=>
+      baseProviderQuery.split(" ").includes(term));
+  const providerQuery=broadAthleticFootwearDiscovery
+    ? brand+" shoes" : baseProviderQuery;
   return {
     normalizedQuery,
-    providerQuery: normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim(),
+    providerQuery,
     model,
     storage: storageOnlyQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
     color: normalizedQuery.match(/\b(?:mist blue|desert titanium|natural titanium|black titanium|white titanium|cosmic orange|deep blue|black|white|lavender|sage|silver|gold|blue|green)\b/)?.[0] || null,
@@ -589,7 +639,19 @@ const UNREQUESTED_VARIANT_TERMS = [
 const ACCESSORY_LED_BRANDS = new Set(["logitech"]);
 const hasNormalizedPhrase = (text, term) => (" " + text + " ").includes(" " + term + " ");
 function prepareMatchContext(intent) {
-  const normalizedQuery = intent.providerQuery;
+  // Retrieval may deliberately broaden an athletic-footwear query for
+  // merchant search ("nike shoes"), but the shopper's original adjective
+  // ("sports") MUST survive in offer matching. Never reuse a broadened
+  // providerQuery as proof the customer relaxed a requested attribute.
+  // Restrict the fix to this one reviewed retrieval transform: generic
+  // condition/model/storage matching retains its established semantics.
+  const terms=intent.normalizedQuery.split(" ");
+  const narrowedAthleticShopperIntent=intent.category==="shoes" &&
+    typeof intent.brand==="string" && terms.length===3 &&
+    [intent.brand,"shoes","sports"].every(term=>terms.includes(term)) &&
+    intent.providerQuery===intent.brand+" shoes";
+  const normalizedQuery=narrowedAthleticShopperIntent
+    ? intent.normalizedQuery : intent.providerQuery;
   const matchedCategory = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const effectiveCategory = intent.category || matchedCategory?.[0] || null;
   const categoryPattern = matchedCategory?.[2] || /$^/;
@@ -756,6 +818,40 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
+  // A query's "sports/رياضي" modifier may be evidenced by running, training,
+  // trainer, sneaker or another athletic FOOTWEAR term in the merchant's own
+  // sold-item title. No metadata, brand inference, URL or price can establish
+  // the requested footwear style. A generic Nike shoe without that evidence
+  // remains related, never exact, preserving the original shopper constraint.
+  const athleticFootwearIntent=effectiveCategory==="shoes"&&q.includes("sports");
+  const retailFootwear=athleticFootwearIntent?normalizeSearchQuery(offer?.title||""):"";
+  const athleticTitle=athleticFootwearIntent && (
+    /(?:^| )(?:athletic|running|runners?|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(retailFootwear) ||
+    /(?:^| )sports? (?:shoes?|sneakers?|trainers?)(?= |$)/.test(retailFootwear));
+  const athleticStyleUnverified=athleticFootwearIntent&&!athleticTitle;
+  if(athleticFootwearIntent){
+    // The generic title token set also contains metadata and URL paths. A
+    // sports/sport keyword in a retailer SEO URL (or vendor/category field)
+    // cannot prove that the SOLD shoe is athletic. Require sold-title proof.
+    if(athleticTitle) titleTokens.add("sports");
+    else titleTokens.delete("sports");
+  }
+  const maleFragranceIntent=effectiveCategory==="perfume" &&
+    /\b(?:men|mens|male|masculine)\b/.test(normalizedQuery);
+  const fragranceTitle=maleFragranceIntent?normalizeSearchQuery(offer?.title||""):"";
+  const maleFragranceTitle=maleFragranceIntent &&
+    /\b(?:men|mens|male|masculine|homme|pour homme|for him)\b/.test(fragranceTitle) &&
+    !/\b(?:women|womens|femme|for her|ladies)\b/.test(fragranceTitle);
+  const maleFragranceUnverified=maleFragranceIntent&&!maleFragranceTitle;
+  if(maleFragranceIntent){
+    // "Homme" proves the named men's perfume line; SEO URL and metadata
+    // never establish a gender claim absent from the sold-title.
+    if(maleFragranceTitle) titleTokens.add("men");
+    else titleTokens.delete("men");
+  }
+  const watchSeriesIntent=effectiveCategory==="watch" &&
+    /\b(?:apple watch series|watch apple series) [1-9]\d?\b/.test(normalizedQuery);
+  const wholeWatchUnverified=watchSeriesIntent&&!isVerifiedWholeAppleWatch(offer);
   // Match RAM quantities semantically for RAM-constrained laptop queries:
   // "16 RAM" and "16GB DDR4 RAM" are equivalent. Never rewrite global
   // model names (e.g. "iPhone 17 RAM 8GB") into fictitious capacities.
@@ -809,11 +905,20 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     !speakerRequested &&
     /\b(?:speakers?|soundbars?)\b/.test(retailAudioSubject) &&
     !/\b(?:headphones?|headsets?|earphones?|earbuds?|airpods)\b/.test(retailAudioSubject);
+  // Q14 LIVE: an audio-category Bluetooth *headphone* is not the speaker the
+  // shopper requested, even if an SEO URL or provider metadata says speaker.
+  // Inspect only the primary retail subject before included accessories.
+  const retailAudioPrimary=normalizeSearchQuery(
+    String(offer?.title||"").split(/\b(?:with|including|includes)\b/i,1)[0]);
+  const speakerSubjectVerified=/(?:^| )(?:speakers?|soundbars?|boombox(?:es)?)(?= |$)/.test(retailAudioPrimary);
+  const speakerSubjectUnverified=effectiveCategory==="audio" && speakerRequested &&
+    !headphonesRequested && !speakerSubjectVerified;
   const kindMismatch = Boolean(storageMediaMismatch || controllerBundleMismatch ||
     audioSubjectMismatch ||
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
+  if(speakerSubjectUnverified) confidence=Math.min(confidence,0.69);
   // A high lexical match cannot upgrade a standalone retail part to the
   // complete camera/vacuum/chair/watch/food/PS5 drive requested by the shopper.
   const principalRetailConflict=contradictedPrincipalRetailItem(normalizedQuery,offer?.title||"");
@@ -824,7 +929,8 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
-  const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
+  const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) &&
+    !(watchSeriesIntent&&!wholeWatchUnverified) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
@@ -841,7 +947,10 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     }
   }
 
-  const hasUnrequestedVariant = intent.discoveryMode === "specific" && (
+  // Nike "Air Max" is a named athletic footwear line, not the unrequested
+  // "Max" capacity/edition of an electronics device. Do not demote valid
+  // athletic-shoe matches through the electronic-variant vocabulary.
+  const hasUnrequestedVariant = intent.discoveryMode === "specific" && effectiveCategory!=="shoes" && (
     intent.model && intent.category === 'accessory'
       ? explicitModels([offer?.title,offer?.specs?.deviceType,offer?.specs?.series].filter(Boolean).join(' ')).some(model=>model!==intent.model)
       : UNREQUESTED_VARIANT_TERMS.some((term) => titleTokens.has(term) && !queryTokens.has(term))
@@ -903,6 +1012,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   const ramUnverified=Boolean(requestedRamGb!==null && offerCategory==="laptop" && evidenceRamGb===null);
   if (ramMismatch) confidence*=0.2;
   if (ramUnverified) confidence=Math.min(confidence,0.69);
+  if(athleticStyleUnverified || maleFragranceUnverified || wholeWatchUnverified) confidence=Math.min(confidence,0.69);
   // R04 P0: source URL, merchant brand and broad vacuum category must not
   // substitute for a physical manufacturer's model in the actual sold title.
   // A category regex can otherwise consume the entire 'dyson v15' query,
@@ -920,13 +1030,14 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       !hasUnrequestedVariant && !conflictingGalaxyModel &&
       !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch &&
       !ramMismatch && !ramUnverified && !principalRetailConflict &&
-      !retailDysonModelMissing;
+      !retailDysonModelMissing && !athleticStyleUnverified && !speakerSubjectUnverified &&
+      !maleFragranceUnverified && !wholeWatchUnverified;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : athleticStyleUnverified ? "استخدام الحذاء الرياضي غير مثبت في عنوان العرض" : speakerSubjectUnverified ? "هوية مكبر الصوت غير مثبتة في عنوان العرض" : maleFragranceUnverified ? "كون العطر رجاليًا غير مثبت في عنوان العرض" : wholeWatchUnverified ? "هوية الساعة الكاملة غير مثبتة في عنوان العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       principalRetailConflict ? "العرض يخص ملحقًا أو قطعة أو لعبة، وليس المنتج الأساسي المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :

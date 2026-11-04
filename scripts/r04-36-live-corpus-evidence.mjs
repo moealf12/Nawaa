@@ -7,6 +7,7 @@ import {groupComparableOffers} from "../src/search-core.mjs";
 import {buildSearchPresentationSections} from "../src/search-result-presentation.mjs";
 import {provisionalLabel} from "./verify-r04-live-ranking.mjs";
 import {validateR04Corpus,summarizeR04Judgments,summarizeR04LiveEvidence} from "./r04-full-corpus-contract.mjs";
+import {aggregateSourceErrorEvidence,mergeSourceErrorEvidence} from "./r04-source-failure-forensics.mjs";
 
 const BASE="https://nawaa-search-api.onrender.com";
 const EXPECTED=process.env.NAWAA_EXPECT_LIVE_SHA||"";
@@ -32,14 +33,27 @@ const report={
 };
 async function fetchJson(path,timeoutMs=HTTP_TIMEOUT){
   const begin=Date.now();
-  const response=await fetch(new URL(path,BASE),{headers:{accept:"application/json",
-    "cache-control":"no-cache"},signal:AbortSignal.timeout(timeoutMs),redirect:"error"});
-  if(Number(response.headers.get("content-length")||0)>LIMIT_BYTES)
-    throw Error("BODY_DECLARED_TOO_LARGE");
-  const bytes=await response.arrayBuffer();
-  if(bytes.byteLength>LIMIT_BYTES)throw Error("BODY_TOO_LARGE");
-  return {status:response.status,body:JSON.parse(new TextDecoder().decode(bytes)),
-    elapsedMs:Date.now()-begin};
+  let phase="headers";
+  try {
+    const response=await fetch(new URL(path,BASE),{headers:{accept:"application/json",
+      "cache-control":"no-cache"},signal:AbortSignal.timeout(timeoutMs),redirect:"error"});
+    phase="body";
+    if(Number(response.headers.get("content-length")||0)>LIMIT_BYTES)
+      throw Error("BODY_DECLARED_TOO_LARGE");
+    const bytes=await response.arrayBuffer();
+    if(bytes.byteLength>LIMIT_BYTES)throw Error("BODY_TOO_LARGE");
+    phase="parse";
+    return {status:response.status,body:JSON.parse(new TextDecoder().decode(bytes)),
+      elapsedMs:Date.now()-begin};
+  }catch(error){
+    // Emit the safe lifecycle phase and elapsed wall clock, not the raw error
+    // message/URL. In particular, a 30s timeout might be headers or body wait.
+    const observed=new Error("r04_probe_failed");
+    observed.name=error?.name||"Error";
+    observed.phase=phase;
+    observed.elapsedMs=Date.now()-begin;
+    throw observed;
+  }
 }
 async function health(){
   const response=await fetchJson("/health",20000);
@@ -57,9 +71,11 @@ function publicSourceRef(value){
   }catch{return {host:null,pathHash:null};}
 }
 async function probe(q){
+  const probeStarted=Date.now();
   const row={id:q.id,language:q.language,group:q.group,query:q.query,
     status:"NOT_RUN",offers:0,groupCount:0,firstTen:[],judgments:null,partial:null,
-    sourceErrors:null,sourceFailureTypes:null,pending:null,cacheMode:null,
+    sourceErrors:null,sourceFailureTypes:null,sourceErrorBreakdown:null,pending:null,cacheMode:null,
+    failurePhase:null,
     elapsedMs:null,serverDurationMs:null,deadlineExceeded:null,
     primaryGroups:null,relatedGroups:null,presentedGroups:null,
     relatedLanes:null,firstRelated:[],reason:null};
@@ -77,6 +93,7 @@ async function probe(q){
     row.serverDurationMs=Number.isFinite(body.durationMs)?body.durationMs:null;
     row.deadlineExceeded=body.coverage?.deadlineExceeded===true;
     row.sourceFailureTypes=body.coverage?.sourceFailures?.types??null;
+    row.sourceErrorBreakdown=aggregateSourceErrorEvidence(body.errors);
     const allGroups=groupComparableOffers(body.offers,"lowest");
     row.groupCount=allGroups.length;
     // Precisely the same partition used by src/search-page.mjs, not an
@@ -116,6 +133,8 @@ async function probe(q){
         :"NO_PRESENTED_RESULT_GROUPS";
   }catch(e){
     row.status="REQUEST_FAILED";row.reason=safe(e?.name||"UNKNOWN_ERROR");
+    row.failurePhase=safe(e?.phase||"response_validation");
+    row.elapsedMs=Number.isFinite(e?.elapsedMs)?e.elapsedMs:Date.now()-probeStarted;
   }
   console.log("R04_36_QUERY "+JSON.stringify({id:row.id,status:row.status,offers:row.offers,
     groups:row.groupCount,primaryGroups:row.primaryGroups,
@@ -123,7 +142,9 @@ async function probe(q){
     visible:row.firstTen.length,judged:row.judgments?.judged??0,
     unjudged:row.judgments?.unjudged??0,metric:row.judgments?.status,
     partial:row.partial,sourceErrors:row.sourceErrors,
-    sourceFailureTypes:row.sourceFailureTypes,serverDurationMs:row.serverDurationMs,
+    sourceFailureTypes:row.sourceFailureTypes,
+    sourceFailureLeaders:row.sourceErrorBreakdown?.buckets?.slice(0,3)??null,
+    failurePhase:row.failurePhase,serverDurationMs:row.serverDurationMs,
     deadlineExceeded:row.deadlineExceeded,elapsedMs:row.elapsedMs,
     reason:row.reason}));
   return row;
@@ -146,6 +167,7 @@ report.completedAt=new Date().toISOString();
 report.summary=summarizeR04LiveEvidence(report.rows.filter(Boolean),{
   expectedSha:EXPECTED,observedSha:report.healthAfter?.revision??null,
 });
+report.summary.sourceFailureAttribution=mergeSourceErrorEvidence(report.rows.map(x=>x?.sourceErrorBreakdown));
 report.summary.resultsWithoutStrictUiGroups=report.rows.filter(x=>x?.status==="OBSERVED"&&
   x.primaryGroups===0).map(x=>x.id);
 report.summary.resultsWithOnlyRelatedGroups=report.rows.filter(x=>

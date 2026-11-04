@@ -11,12 +11,18 @@ const samples=[
   ...Array.from({length:60},(_,i)=>"PS5 "+(i%2?"Console":"Controller")+" Bundle "+i),
 ];
 
-test("all 165 reviewed aliases contain Arabic characters: Latin-only fast path has no possible match",()=>{
+test("all 179 reviewed aliases contain Arabic characters: Latin-only fast path has no possible match",()=>{
   const aliasSection=CURRENT_SOURCE.slice(
     CURRENT_SOURCE.indexOf("const ALIASES ="),
     CURRENT_SOURCE.indexOf("const COMPILED_ALIASES ="));
   const aliases=[...aliasSection.matchAll(/\["([^"]+)",\s*"([^"]+)"\]/g)].map(x=>x[1]);
-  assert.equal(aliases.length,165,"161 prior reviewed aliases + 4 scoped R04 Arabic retail concepts; new aliases require explicit fast-path safety review");
+  assert.equal(aliases.length,179,"178 previously reviewed aliases + Arabic Dior brand");
+  assert.ok(aliases.includes("ديور"));
+  for(const term of ["لاسلكيه","لاسلكي"])assert.ok(aliases.includes(term));
+  for(const term of ["قارئ اقراص","قرص اس اس دي","اس اس دي","سبيكرات","سبيكر","كمبيوتر مكتبي","للالعاب","رجالي"])
+    assert.ok(aliases.includes(term),"R04 Arabic source-recall alias requires review: "+term);
+  for(const term of ["رياضيه","رياضي","للرياضه"])assert.ok(aliases.includes(term),
+    "New Arabic athlete-style descriptor requires reviewed bounded alias");
   assert.ok(aliases.every(alias=>/[\u0600-\u06ff]/u.test(alias)),
     "Latin alias added: ungated evaluation required before release");
 });

@@ -4,6 +4,13 @@ import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryO
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
+const SOURCE_DENIAL_STATES=new Set([
+  "HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED",
+  "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN",
+]);
+const SOURCE_COOLDOWN_STATES=new Set([
+  "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN",
+]);
 import {storefrontSourceFailure} from "../../src/storefront-error-evidence.mjs";
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
@@ -1228,7 +1235,10 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeou
       if(!access.allowed){
         const denied=access.failureClass==="HTTP_403_ACCESS_DENIED";
         const error=new Error(denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN");
-        error.failureClass=denied?"HTTP_403_ACCESS_DENIED":"HTTP_429_RATE_LIMITED";
+        // This is a local policy short-circuit, NOT a fresh upstream HTTP
+        // response. Distinguish it from a merchant-observed 403/429 in all
+        // downstream source forensics while preserving partial coverage.
+        error.failureClass=denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN";
         throw error;
       }
     }
@@ -1685,6 +1695,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
         const fulfilled = await fetchAmazonSearchPages(searchUrl,{
           pageStart,pageCount,signal:options.signal,
+          deadlineMs:options.amazonPageDeadlineMs??10000,
           onDiagnostic:metrics=>{
             // No query, URL, ASIN, product, price or customer identity in logs.
             if(metrics.elapsedMs>=6000||metrics.pagesRetried>0)
@@ -1719,8 +1730,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       // public category catalog remains rendered and price-bearing. Fall back to a
       // deterministic family catalog before declaring the provider unavailable.
       if(store.id === "virgin-ae" &&
-          sourceAccessFailure !== "HTTP_403_ACCESS_DENIED" &&
-          sourceAccessFailure !== "HTTP_429_RATE_LIMITED") {
+          !SOURCE_DENIAL_STATES.has(sourceAccessFailure)) {
         const catalogUrl = virginAeCatalogUrl(query);
         if (catalogUrl) {
           try {
@@ -1738,8 +1748,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     }
     // Never probe another endpoint to work around an explicit access refusal,
     // including IKEA and other sources with secondary API fallback strategies.
-    if(!html && (sourceAccessFailure === "HTTP_403_ACCESS_DENIED" ||
-                 sourceAccessFailure === "HTTP_429_RATE_LIMITED")) {
+    if(!html && SOURCE_DENIAL_STATES.has(sourceAccessFailure)) {
       // Preserve structured access-denial evidence across the searchStore
       // exception boundary. A cooldown is not a transport failure, empty
       // catalog or a stockout, even if its message contains no "HTTP 403".
@@ -2134,12 +2143,15 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     };
   } catch (error) {
     if(options.signal?.aborted) throw options.signal.reason || error;
-    sourceReliability.record(store.id, {
-      transportOk:false,
-      offers:0,
-      latencyMs:Date.now() - started,
-      relevant:true,
-    });
+    // A policy cooldown did not contact the merchant. Treating it as a new
+    // transport failure would artificially compound the reliability penalty.
+    if(!SOURCE_COOLDOWN_STATES.has(classifySourceError(error).failureClass))
+      sourceReliability.record(store.id, {
+        transportOk:false,
+        offers:0,
+        latencyMs:Date.now() - started,
+        relevant:true,
+      });
     throw error;
   }
 }

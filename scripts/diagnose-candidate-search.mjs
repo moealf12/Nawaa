@@ -5,7 +5,7 @@ import {spawn} from 'node:child_process';
 import net from 'node:net';
 import {once} from 'node:events';
 import {searchViaConstructor,searchJarir} from '../server/providers/jarir.mjs';
-import {assessOfferMatch,describeProduct} from '../src/search-query.mjs';
+import {assessOfferMatch,describeProduct,normalizeSearchQuery,productCategory,parseSearchIntent} from '../src/search-query.mjs';
 
 const port=await new Promise((resolve,reject)=>{
   const s=net.createServer();
@@ -45,6 +45,56 @@ async function query(text){
     const data=await r.json();
     const offers=Array.isArray(data.offers)?data.offers:[];
     const exact=offers.filter(x=>x.exactMatch===true);
+    // Independent evidence check for real athlete-style footwear requests:
+    // any exact shoe must have an explicit running/training/sneaker/sports
+    // claim in the merchant's SOLD title, not inferred from URL or Nike brand.
+    const shopperTerms=normalizeSearchQuery(text).split(" ");
+    const athleticShoeIntent=shopperTerms.includes("sports") &&
+      shopperTerms.includes("shoes");
+    const hasAthleticTitle=offer=>{
+      const title=normalizeSearchQuery(offer?.title||"");
+      return /(?:^| )(?:athletic|running|runners?|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(title) ||
+        /(?:^| )sports? (?:shoes?|sneakers?|trainers?)(?= |$)/.test(title);
+    };
+    const unsupportedAthleticExact=athleticShoeIntent?exact.filter(o=>
+      productCategory(o)!=="shoes"||!hasAthleticTitle(o)).length:0;
+    const supportedAthleticExact=athleticShoeIntent?exact.filter(o=>
+      productCategory(o)==="shoes"&&hasAthleticTitle(o)).length:0;
+    const normalizedShopper=normalizeSearchQuery(text);
+    const watchSeriesIntent=/\b(?:apple watch series|watch apple series) \d+\b/.test(normalizedShopper);
+    const verifiedWholeWatch=o=>{
+      const subject=normalizeSearchQuery(String(o?.title||""))
+        .split(/\b(?:with|including|includes)\b/i,1)[0];
+      return /^(?:apple )?watch series [1-9]\d?\b/.test(subject) &&
+        /\b(?:gps|cellular|lte)\b/.test(subject) &&
+        (/\b(?:aluminum|aluminium|titanium|stainless steel) case\b/.test(subject) ||
+         /\b(?:gps smartwatch|smartwatch gps|cellular smartwatch)\b/.test(subject)) &&
+        /\b(?:38|40|41|42|44|45|46|49)mm\b/.test(subject) &&
+        !/\b(?:replacement|compatible|case cover|fit case|screen protector|screen protection|protector|bumper|wrist strap|watch band|beginner|user guide|handbook)\b/.test(subject);
+    };
+    const unsupportedWholeWatchExact=watchSeriesIntent?exact.filter(o=>!verifiedWholeWatch(o)).length:0;
+    const supportedWholeWatchExact=watchSeriesIntent?exact.filter(verifiedWholeWatch).length:0;
+    const menFragranceIntent=normalizedShopper.includes("perfume") &&
+      /\bmen\b/.test(normalizedShopper);
+    const titleProvesMen=o=>{
+      const title=normalizeSearchQuery(o?.title||"");
+      return /\b(?:men|mens|male|masculine|homme|pour homme|for him)\b/.test(title) &&
+        !/\b(?:women|womens|femme|for her|ladies)\b/.test(title);
+    };
+    const unsupportedMalePerfumeExact=menFragranceIntent?exact.filter(o=>
+      productCategory(o)!=="perfume"||!titleProvesMen(o)).length:0;
+    const supportedMalePerfumeExact=menFragranceIntent?exact.filter(o=>
+      productCategory(o)==="perfume"&&titleProvesMen(o)).length:0;
+    const speakerIntent=shopperTerms.includes("speaker")||
+      shopperTerms.includes("speakers");
+    const primaryAudioTitle=o=>normalizeSearchQuery(String(o?.title||"")
+      .split(/\b(?:with|including|includes)\b/i,1)[0]);
+    const speakerTitleSupported=o=>
+      /(?:^| )(?:speakers?|soundbars?|boombox(?:es)?)(?= |$)/.test(primaryAudioTitle(o));
+    const unsupportedSpeakerExact=speakerIntent?exact.filter(o=>
+      !speakerTitleSupported(o)).length:0;
+    const supportedSpeakerExact=speakerIntent?exact.filter(o=>
+      speakerTitleSupported(o)).length:0;
     const structurallyValid=offers.filter(o=>{
       try{
         return typeof o.title==='string' && o.title.trim().length>0 &&
@@ -57,7 +107,20 @@ async function query(text){
       !/\bconsole\b.*\b(?:with|includes?|including)\b/i.test(o.title||''));
     const result={
       q:text,status:r.status,elapsedMs:Date.now()-start,
-      count:offers.length,exact:exact.length,structurallyValid:structurallyValid.length,
+      count:offers.length,hasOffersArray:Array.isArray(data.offers),exact:exact.length,
+      structurallyValid:structurallyValid.length,
+      // Numbers/booleans only: the pre-existing primary coverage failure
+      // remains visible without copying raw provider errors to the summary.
+      sourceErrorCount:Array.isArray(data.errors)?data.errors.length:null,
+      athleticFootwearIntent:athleticShoeIntent,
+      providerQuery:athleticShoeIntent?parseSearchIntent(text).providerQuery:null,
+      supportedAthleticExact,unsupportedAthleticExact,
+      speakerIntent,supportedSpeakerExact,unsupportedSpeakerExact,
+      watchSeriesIntent,supportedWholeWatchExact,unsupportedWholeWatchExact,
+      menFragranceIntent,supportedMalePerfumeExact,unsupportedMalePerfumeExact,
+      partial:typeof data.coverage?.partial==='boolean'?data.coverage.partial:null,
+      deadlineExceeded:typeof data.coverage?.deadlineExceeded==='boolean'?data.coverage.deadlineExceeded:null,
+      providersPending:data.coverage?.providersPending??null,
       merchants:[...new Set(offers.map(o=>o.merchant).filter(Boolean))].slice(0,15),
       providerSummary:(data.providers||[]).filter(p=>(p.returnedOffers||0)>0).map(p=>({sourceId:p.sourceId,offers:p.returnedOffers})),
       failures:(data.errors||[]).slice(0,7).map(e=>({id:e.sourceId,code:String(e.error||e.message||'').slice(0,110)})),
@@ -134,6 +197,56 @@ try{
   const stream=await measureStreamFirstOffer('iPhone 17');
   const iphone=await query('iPhone 17');
   const ps5=await query('PS5');
+  // R04-P3.6 candidate-only probes of three intents that failed with 30s
+  // timeouts in old production audit 41726259270. This is NOT evidence
+  // that old production's subsequent successful audit was due to this PR.
+  // Sequential, no retries, no paid services, no production writes.
+  const p36Cases=[
+    ['Q14','سبيكر بلوتوث'],
+    ['Q15','HP laptop 16GB RAM'],
+    ['Q16','لابتوب اتش بي 16 رام'],
+    ['Q26','حذاء نايك رياضي'],
+    ['Q28','عطر ديور رجالي'],
+    ['Q33','Apple Watch Series 11'],
+    ['Q34','ساعة ابل سيريس 11'],
+    ['Q36','سماعة لاسلكية'],
+  ];
+  const p36Results=[];
+  for(const [id,queryText] of p36Cases){
+    const result=await query(queryText);
+    p36Results.push({
+      id,status:result.status,elapsedMs:result.elapsedMs,
+      offers:result.count??null,hasOffersArray:result.hasOffersArray??false,
+      valid:result.structurallyValid??null,
+      exact:result.exact??null,partial:result.partial??null,
+      deadlineExceeded:result.deadlineExceeded??null,
+      providersPending:result.providersPending??null,
+      sourceErrors:result.sourceErrorCount??null,
+      athleticFootwearIntent:result.athleticFootwearIntent??false,
+      supportedAthleticExact:result.supportedAthleticExact??null,
+      unsupportedAthleticExact:result.unsupportedAthleticExact??null,
+      speakerIntent:result.speakerIntent??false,
+      supportedSpeakerExact:result.supportedSpeakerExact??null,
+      unsupportedSpeakerExact:result.unsupportedSpeakerExact??null,
+      supportedWholeWatchExact:result.supportedWholeWatchExact??null,
+      unsupportedWholeWatchExact:result.unsupportedWholeWatchExact??null,
+      supportedMalePerfumeExact:result.supportedMalePerfumeExact??null,
+      unsupportedMalePerfumeExact:result.unsupportedMalePerfumeExact??null,
+      failure:result.error?'CANDIDATE_REQUEST_FAILED':null,
+    });
+  }
+  const p36Passed=p36Results.every(x=>x.status===200&&
+    x.hasOffersArray===true&&Number.isInteger(x.offers)&&x.offers>=0&&
+    x.valid===x.offers&&x.unsupportedAthleticExact===0&&
+    x.unsupportedSpeakerExact===0&&
+    x.unsupportedWholeWatchExact===0&&x.unsupportedMalePerfumeExact===0&&
+    (x.partial===true||x.partial===false));
+  console.log('R04_P36_CANDIDATE_CRITICAL '+JSON.stringify({
+    candidateOnly:true,baselineComparison:false,
+    measuredInDisposableRunner:true,productionWrite:false,
+    reported:p36Results.length,passed:p36Passed,results:p36Results,
+  }));
+  if(!p36Passed)process.exitCode=8;
   // v15.14: bounded read-only real Constructor search and raw vs adapter
   // evidence. This is diagnostic-only (no provider, product or DB writes).
   // Intercept existing PUBLIC adapter fetch rather than guessing new endpoints

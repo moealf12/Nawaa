@@ -47,11 +47,24 @@ const intentional = offers.filter(offer=>offer.title===knownArabicCover);
 // R04 live-evidence remediation changes ONLY a documented accessory title
 // in this legacy parity corpus. This is an expected safety correction, not
 // permission for broad cross-version semantic drift.
-const r04NewPeripheral = new Set(['iPhone 17 Screen Protector']);
+const r04NewPeripheral = new Set([
+  'iPhone 17 Screen Protector',
+  // Verified Watch strap/case title is an accessory, not an entire wearable.
+  // Deliberate R04-P40 retail-subject fix; all other titles retain strict parity.
+  'Nike Apple Watch Band Case',
+]);
 const unaffected = offers.filter(offer=>offer.title!==knownArabicCover &&
   !r04NewPeripheral.has(offer.title));
 const corrected = offers.filter(offer=>r04NewPeripheral.has(offer.title));
 assert.ok(corrected.length>0,'must exercise new R04 accessory-negative fixture');
+assert.ok(corrected.some(o=>o.title==='Nike Apple Watch Band Case'),
+  'watch band must be represented in reviewed accessory-correction corpus');
+for(const offer of corrected.filter(o=>o.title==='Nike Apple Watch Band Case')){
+  assert.equal(candidate.productCategory(offer),'accessory',
+    'a standalone watch band case is never a complete Apple Watch');
+  assert.equal(candidate.assessOfferMatch('Apple Watch Series 11',offer).exactMatch,false,
+    'watch-band correction must fail closed for complete watches');
+}
 for (const offer of corrected) {
   assert.equal(candidate.productCategory(offer),'accessory',
     'R04 documented retail screen protector must not remain a phone');

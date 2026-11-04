@@ -23,13 +23,57 @@ const terms=[
  'Logitech MX Master 3S Mouse',
  'MacBook Air M4 16GB 512GB Midnight',
  'Samsung TV OLED 65-inch 4K',
- 'جهاز ps5 برو مع يد تحكم وسماعه'
+ 'جهاز ps5 برو مع يد تحكم وسماعه',
+ 'سماعة لاسلكية',
+ 'عطر ديور رجالي'
 ];
 const inputs=[...terms];
 for(let i=0;i<200;i++)inputs.push(terms[i%terms.length]+ ' '+terms[(i*7+3)%terms.length]);
+// Review approved Arabic retail-phrase deltas against the historical
+// checkout. Keep *all other tokens* byte-equivalent. This is a deterministic
+// code-regression guard, NEVER evidence of live merchant availability.
+// Longer phrases precede contained tokens (e.g. "قرص اس اس دي").
+const approvedArabicDeltas=[
+  ["قارئ disc","disc drive"],
+  ["قرص اس اس دي","ssd"],["اس اس دي","ssd"],
+  ["سبيكرات","speakers"],["سبيكر","speaker"],
+  ["كمبيوتر مكتبي","desktop"],["للالعاب","gaming"],
+  ["رجالي","men"],["رياضيه","sports"],["للرياضه","sports"],["رياضي","sports"],
+  ["لاسلكيه","wireless"],["لاسلكي","wireless"],
+  ["ديور","dior"],
+];
+const escapeRegex=value=>{
+  // All approved legacy-normalized terms are literal Arabic/ASCII letters
+  // and spaces. Reject regex meta characters instead of interpolating them.
+  if(!/^[\p{L} ]+$/u.test(value))throw Error("UNSAFE_REVIEWED_DELTA");
+  return value;
+};
+const reviewedProjection=before=>{
+  let result=before;
+  for(const [original,replacement] of approvedArabicDeltas)
+    result=result.replace(new RegExp("(^| )"+escapeRegex(original)+"(?= |$)","g"),
+      "$1"+replacement);
+  return result;
+};
+let reviewedDeltaInputs=0;
 for(const input of inputs){
-  const a=versions[0].fn(input),b=versions[1].fn(input);
-  assert.equal(b,a,'query normalization changed: '+JSON.stringify(input));
+  const baseline=versions[0].fn(input),actual=versions[1].fn(input);
+  if(baseline!==actual)reviewedDeltaInputs++;
+  assert.equal(actual,reviewedProjection(baseline),
+    'UNREVIEWED normalization drift: '+JSON.stringify(input));
+}
+// The full phrase must change as reviewed; partial/unsafe rewrites are a
+// semantic regression even if ASCII-only benchmarking gets faster.
+for(const [before,after] of [
+  ["قارئ اقراص","disc drive"],
+  ["قرص اس اس دي","ssd"],["اس اس دي","ssd"],
+  ["سبيكرات","speakers"],["سبيكر","speaker"],
+  ["كمبيوتر مكتبي","desktop"],["للالعاب","gaming"],
+  ["رجالي","men"],["رياضيه","sports"],["للرياضه","sports"],["رياضي","sports"],
+  ["لاسلكيه","wireless"],["لاسلكي","wireless"],
+  ["ديور","dior"],
+]){
+  assert.equal(versions[1].fn(before),after,"reviewed Arabic alias not exact");
 }
 // A repeated global RegExp must not retain lastIndex across calls.
 for(let i=0;i<200;i++)assert.equal(versions[1].fn(terms[6]),versions[0].fn(terms[6]));
@@ -50,5 +94,7 @@ const baselineMedian=median(timings.baseline),candidateMedian=median(timings.can
 const record={inputCount:inputs.length,conversionsPerRound:inputs.length*loops,rounds:6,
   baselineMedianMs:Math.round(baselineMedian),candidateMedianMs:Math.round(candidateMedian),
   relativeCpuSpeedup:Number((baselineMedian/candidateMedian).toFixed(3)),
-  semanticallyEquivalent:true,sink};
+  semanticallyEquivalent:reviewedDeltaInputs===0,
+  unchangedQueryEquivalence:true,reviewedArabicDeltaInputs:reviewedDeltaInputs,
+  reviewedArabicDeltas:approvedArabicDeltas.length,sink};
 console.log('NORMALIZATION_BENCHMARK '+JSON.stringify(record));

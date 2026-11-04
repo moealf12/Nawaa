@@ -36,7 +36,9 @@ import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
 import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
 import { createSearchCache, classifySearchCacheAdmission } from "./search-cache.mjs";
 import { amazonPartialEvidenceError } from "./amazon-page-evidence.mjs";
+import {amazonBatchBudgetWithinRequest} from "./amazon-request-budget.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
+import {retryDeniedStorefrontIds,providersPendingAfterFallback} from "./source-fallback-policy.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
@@ -167,7 +169,7 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
-function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, plan = acquisitionPlan(0, configuredFreeStorefronts().length), onOffers } = {}) {
+function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, skipFailedStorefrontIds = [], plan = acquisitionPlan(0, configuredFreeStorefronts().length), onOffers } = {}) {
   const tasks = [];
   const add = (id, run, { explicit = false, deadlineMs = null } = {}) => {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run, deadlineMs });
@@ -195,7 +197,7 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
     add("free-storefronts", (signal) => searchFreeStorefronts(providerQuery, {
       signal,
       matchingQuery,
-      excludeStoreIds:["amazon-sa"],
+      excludeStoreIds:["amazon-sa",...skipFailedStorefrontIds],
       storeOffset:plan.storefrontOffset,
       storeLimit:plan.storefrontLimit,
       stableRouting:true,
@@ -710,6 +712,9 @@ async function searchAll(query, { depth = 0, signal } = {}) {
     ? Math.max(100, Math.min(25000, Math.floor(configuredRequestDeadline)))
     : 12000;
   const requestDeadlineAt = Date.now() + requestDeadlineMs;
+  // Same five requested Amazon search pages. Reserve time for canonical
+  // dedupe, matching and publication inside the customer deadline.
+  const amazonPageDeadlineMs=amazonBatchBudgetWithinRequest(requestDeadlineMs);
   // The JSON cache coalesces identical searches. Abort one shared refresh only
   // at its own deadline, never when a single subscribing client disconnects.
   const requestController=new AbortController();
@@ -720,14 +725,23 @@ async function searchAll(query, { depth = 0, signal } = {}) {
     if(!requestController.signal.aborted)requestController.abort(signal.reason);
   },{once:true});
   let deadlineExceeded = false;
-  const beforeRequestDeadline = async (operation, fallback) => {
-    const remaining = requestDeadlineAt - Date.now();
-    if (remaining <= 0) {
+  const beforeRequestDeadline = async (operation, fallback, {reserveMs=0,onBudget}={}) => {
+    // A secondary discovery pass must not consume the time needed to match,
+    // de-duplicate and publish primary source evidence. Source-budget expiry
+    // stays visibly partial; only the REAL full-request expiry sets the
+    // request-level deadlineExceeded flag.
+    const remaining = requestDeadlineAt - Date.now() - reserveMs;
+    const exhausted = () => {
+      if(reserveMs>0) {
+        onBudget?.();
+        return fallback();
+      }
       deadlineExceeded = true;
       if(!requestController.signal.aborted)
         requestController.abort(new Error("search_deadline_exceeded"));
       return fallback();
-    }
+    };
+    if (remaining <= 0) return exhausted();
     const timeout = Symbol("search-request-deadline");
     let timeoutId;
     try {
@@ -736,10 +750,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         new Promise((resolve) => { timeoutId = setTimeout(() => resolve(timeout), remaining); }),
       ]);
       if (result !== timeout) return result;
-      deadlineExceeded = true;
-      if(!requestController.signal.aborted)
-        requestController.abort(new Error("search_deadline_exceeded"));
-      return fallback();
+      return exhausted();
     } finally {
       clearTimeout(timeoutId);
     }
@@ -753,6 +764,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       catalogLimit: Infinity,
       amazonPageStart: plan.amazonPageStart,
       amazonPageCount: plan.amazonPageCount,
+      amazonPageDeadlineMs,
       matchingQuery: query,
       signal:requestController.signal,
     }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) })),
@@ -863,7 +875,12 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   const needsRecallExpansion =
     relevantPrimary.length < minimumUsefulOffers ||
     (broadDiscovery && primaryMerchants < 2 && relevantPrimary.length < 40);
+  let hardDeniedFallbackStores=0;
   if (needsRecallExpansion) {
+    const retryDeniedIds=retryDeniedStorefrontIds(primary.errors,{
+      registeredIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
+    });
+    hardDeniedFallbackStores=retryDeniedIds.length;
     const fallbackQueries = buildProviderFallbackQueries(query);
     fallbackQuery = fallbackQueries[0] || null;
     // Brand-only searches need breadth across product families. Run up to four
@@ -873,11 +890,32 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       ? fallbackQueries.slice(0, 4)
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
-      const expansions = await Promise.all(expansionQueries.map((candidate) => beforeRequestDeadline(
-        () => runProviderPass(candidate, "fallback", query, { plan,signal:requestController.signal,
-          onTrace:(event)=>traceProvider(event,"fallback") }),
-        () => ({ providers:[], errors:[], offers:[] }),
-      )));
+      const expansions = await Promise.all(expansionQueries.map((candidate) => {
+        const completedFallbackChunks=[];
+        const controller=new AbortController();
+        const fallbackSignal=AbortSignal.any([requestController.signal,controller.signal]);
+        return beforeRequestDeadline(
+          () => runProviderPass(candidate, "fallback", query, {
+            plan,signal:fallbackSignal,
+            skipFailedStorefrontIds:retryDeniedIds,
+            onChunk:chunk=>{completedFallbackChunks.push(chunk);},
+            onTrace:(event)=>traceProvider(event,"fallback"),
+          }),
+          () => {
+            // Never erase verified offers from a fast provider when another
+            // fallback merchant reaches the independent discovery budget.
+            // Preserve all completed source errors, and expose the missing
+            // coverage as a partial source pass, not a fake empty catalog.
+            const completed=mergeProviderChunks(completedFallbackChunks);
+            return {...completed,errors:[...completed.errors,{
+              provider:"search",sourceId:"search",pass:"fallback",
+              error:"fallback_budget_limited",
+            }]};
+          },
+          {reserveMs:1800,
+            onBudget:()=>controller.abort(new Error("fallback_budget_limited"))}
+        );
+      }));
       for (const fallback of expansions) {
         providers = providers.concat(fallback.providers);
         errors = errors.concat(fallback.errors);
@@ -928,6 +966,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       selectedOffers:selectedOffers.length,
       deadlineExceeded,
       fallbackUsed:Boolean(fallbackQuery),
+      hardDeniedFallbackStores,
       providerTimings,
       primaryComponents,
     }));
@@ -967,10 +1006,9 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       partial:deadlineExceeded || errors.length>0,
       complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
-      // All planned barriers settled only when the deadline was not exceeded.
-      // A timed-out wave cannot certify an exact pending count; never coerce
-      // unobserved completion evidence to zero for cache admission.
-      providersPending:deadlineExceeded ? null : 0,
+      // A fallback stopped at a dedicated source budget is NOT an exhaustive
+      // set of completed providers. Unknown pending must not be cache-certified.
+      providersPending:providersPendingAfterFallback(errors,{deadlineExceeded}),
       requestDeadlineMs,
       sourceFailures:summarizeSourceFailures(errors),
     },
