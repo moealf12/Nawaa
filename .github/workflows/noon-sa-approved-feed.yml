@@ -1,0 +1,46 @@
+name: Noon Approved Feed Contract Checks
+
+on:
+  pull_request:
+    paths:
+      - "src/noon-sa-approved-feed.mjs"
+      - "scripts/noon-sa-approved-feed-live.mjs"
+      - "docs/noon-approved-feed-contract.md"
+      - ".github/workflows/noon-sa-approved-feed.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  approved-feed-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Resolve locked parser dependencies
+        run: npm ci --ignore-scripts
+      - name: Validate strict read-only importer syntax
+        run: |
+          node --check src/noon-sa-approved-feed.mjs
+          node --check scripts/noon-sa-approved-feed-live.mjs
+          node --input-type=module -e "import('./src/noon-sa-approved-feed.mjs').then(m => { if(typeof m.inspectNoonApprovedFeedPage !== 'function') process.exitCode=1; })"
+      - name: Confirm no merchant feed is falsely claimed live
+        env:
+          NOON_APPROVED_FEED_URL: ""
+          NOON_APPROVED_FEED_HOST: ""
+          NOON_APPROVED_FEED_TOKEN: ""
+        run: |
+          node scripts/noon-sa-approved-feed-live.mjs || true
+          node --input-type=module -e "import('node:fs').then(fs => {let j=JSON.parse(fs.readFileSync('noon-sa-approved-feed-live.json','utf8'));if(j.finalState!=='APPROVED_FEED_ENDPOINT_NOT_CONFIGURED'||j.customerPublished!==false)process.exitCode=1;})"
+      - name: Archive no-feed configured outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-approved-feed-contract-status
+          path: noon-sa-approved-feed-live.json
+          if-no-files-found: warn
+          retention-days: 14
