@@ -55,7 +55,8 @@ export function summarizeMerchantForensics(spans=[]){
     if(!buckets.has(k))buckets.set(k,{storeId:k,observations:0,zeroOffers:0,
       rejected:0,offers:0,reportedFailures:0,durations:[],
       stageCoverage:{},stageDurations:{},pdpRuns:[],pdpAttempts:0,
-      pdpRejected:0,pdpTimeout:0,pdpPreHeaderFailures:0});
+      pdpRejected:0,pdpTimeout:0,pdpPreHeaderFailures:0,
+      pdpBudgetCancelled:0,pdpIndependentTimeout:0});
     const b=buckets.get(k);b.observations++;
     if(s.status==="zero_offers")b.zeroOffers++;
     if(s.status==="rejected")b.rejected++;
@@ -67,6 +68,8 @@ export function summarizeMerchantForensics(spans=[]){
       b.pdpAttempts+=s.pdpPhases.attempted;
       b.pdpRejected+=s.pdpPhases.rejected??0;
       b.pdpTimeout+=s.pdpPhases.timeout??0;
+      b.pdpBudgetCancelled+=s.pdpPhases.storeBudgetCancelled??0;
+      b.pdpIndependentTimeout+=s.pdpPhases.independentTimeout??0;
       b.pdpPreHeaderFailures+=s.pdpPhases.beforeHeadersFailure??0;
     }
     // The offsets are cumulative from this store's own start. Only subtract
@@ -101,6 +104,8 @@ export function summarizeMerchantForensics(spans=[]){
         tracedRuns:b.pdpRuns.length,
         attempts:b.pdpAttempts,rejected:b.pdpRejected,
         timeout:b.pdpTimeout,beforeHeadersFailure:b.pdpPreHeaderFailures,
+        storeBudgetCancelled:b.pdpBudgetCancelled,
+        independentTimeout:b.pdpIndependentTimeout,
         // Quantiles of per-run quantiles, NOT across all PDP attempts.
         phaseRunP95Ms:Object.fromEntries(["dns","tcpHandshake","tlsHandshake",
           "headerWait","bodyRead","productExtraction","priceSelection"].map(name=>[
