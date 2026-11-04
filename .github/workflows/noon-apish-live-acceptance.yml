@@ -1,0 +1,43 @@
+name: Noon Alternative Live Access (API.SH)
+
+on:
+  pull_request:
+    paths:
+      - "server/providers/noon-apish-staged.mjs"
+      - "scripts/noon-apish-live-acceptance.mjs"
+      - ".github/workflows/noon-apish-live-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noon-apish-live-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-noon-upstream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Validate source code (does not qualify as live acceptance)
+        run: |
+          node --check server/providers/noon-apish-staged.mjs
+          node --check scripts/noon-apish-live-acceptance.mjs
+      - name: Run real external connectivity and authenticated Saudi searches
+        env:
+          APISH_KEY: ${{ secrets.APISH_KEY }}
+        run: node scripts/noon-apish-live-acceptance.mjs
+      - name: Retain exact-run evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-apish-live-acceptance
+          path: noon-apish-live-acceptance.json
+          if-no-files-found: warn
+          retention-days: 14
