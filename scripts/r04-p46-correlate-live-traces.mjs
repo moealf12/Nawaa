@@ -1,4 +1,5 @@
 // R04-P46: read-only join of exact, server-generated ephemeral trace IDs.
+import {safeSearchTraceProviderId} from "../server/search-critical-path.mjs";
 // No log text, raw query, URL, credential, price, or product title in output.
 // Distinguish HTTP requests (possibly cache coalesced) from source generations.
 const HEX=/^[a-f0-9]{16}$/;
@@ -74,7 +75,7 @@ export function correlateLiveSearchTraces({
           ["amazon-sa","provider-pass","meilisearch","persisted"].includes(x)).slice(0,4),
         providerSpans:(Array.isArray(generation.providerSpans)?generation.providerSpans:[])
           .slice(0,24).map(p=>({
-            sourceId:/^[a-z0-9][a-z0-9:_-]{1,55}$/.test(p?.sourceId||"")?p.sourceId:"unknown",
+            sourceId:safeSearchTraceProviderId(p?.sourceId),
             pass:p?.pass==="fallback"?"fallback":"primary",
             wallMs:ms(p?.wallMs),completedFromSearchStartMs:ms(p?.completedFromSearchStartMs),
             callbackQueueMs:ms(p?.callbackQueueMs),
