@@ -32,6 +32,7 @@ const sourceBlock=new Set([
 const sourceTimeout=new Set(["HTTP_TIMEOUT","SOURCE_TRANSPORT_FAILURE"]);
 const finiteNonnegative=n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=120000;
 const count=n=>Number.isSafeInteger(n)&&n>=0&&n<=1_000_000?n:null;
+const boundedBytes=n=>Number.isSafeInteger(n)&&n>=0&&n<=3_000_000?n:null;
 function quantile(samples,p){
   if(!samples.length)return null;
   const x=[...samples].sort((a,b)=>a-b);
@@ -100,7 +101,7 @@ export function diagnoseR04Evidence(report){
       }
       if(finiteNonnegative(row.serverDurationMs))
         serverSamples.push(Math.round(row.serverDurationMs));
-      if(count(row.responseBytes)!==null)bytesSamples.push(row.responseBytes);
+      if(boundedBytes(row.responseBytes)!==null)bytesSamples.push(row.responseBytes);
       const breaks=row.sourceErrorBreakdown;
       if(breaks&&typeof breaks==="object"){
         const reported=count(breaks.reported);
@@ -156,7 +157,8 @@ export function diagnoseR04Evidence(report){
       ["NO_VERIFIED_OFFERS","REQUEST_TRANSPORT_FAILURE",
        "PRINCIPAL_PRESENTATION_GAP","PRINCIPAL_UNCLASSIFIED_GAP"].includes(code)?10:
       ["INTERNAL_DEADLINE","CATALOG_RECALL_FAILURE",
-       "SOURCE_ERROR_ACCOUNTING_GAP"].includes(code)?7:3),
+       "SOURCE_ERROR_ACCOUNTING_GAP","COVERAGE_CONTRADICTION",
+       "COVERAGE_EVIDENCE_MISSING"].includes(code)?7:3),
   })).sort((a,b)=>b.priorityPoints-a.priorityPoints||
     order.indexOf(a.code)-order.indexOf(b.code));
   const sampleP50Ms=quantile(latency,.5),sampleP95Ms=quantile(latency,.95);
