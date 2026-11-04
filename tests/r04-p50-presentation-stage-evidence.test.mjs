@@ -34,6 +34,10 @@ test("literal unknown, unrecognized labels and missing condition are NOT known u
   assert.equal(o.classifierDirect,4);
   assert.equal(o.conditionUnknown,3);
   assert.equal(o.conditionUnrecognizedCodes,2);
+  assert.equal(o.conditionLiteralUnknown,1);
+  assert.equal(o.conditionMissing,1);
+  assert.equal(o.conditionOtherUnrecognized,1);
+  assert.equal(o.unknownByProvider.other,3);
   assert.equal(o.conditionExplicitMismatch,0);
   assert.equal(o.finalPrincipal,1);
   assert.equal(o.unplacedUnknownCondition,3);
@@ -53,6 +57,19 @@ test("retail Renewed condition is explicitly non-new and never silently promoted
   assert.equal(refurbished.conditionExplicitMismatch,1);
   assert.equal(refurbished.finalPrincipal,0);
   assert.equal(refurbished.conditionKnownRenewedAlias,1);
+});
+test("source lineage is fixed allowlist, never arbitrary merchant/provider text",()=>{
+  const untrusted=group("secret","unknown");
+  untrusted.bestOffer.provider="PRIVATE_PROVIDER_TOKEN_9933";
+  const accepted=group("trusted","unknown");
+  accepted.bestOffer.provider="jarir-direct";
+  const o=auditPresentationStages("laptop",[untrusted,accepted]);
+  assert.equal(o.conditionLiteralUnknown,2);
+  assert.equal(o.unknownByProvider.other,1);
+  assert.equal(o.unknownByProvider["jarir-direct"],1);
+  const raw=JSON.stringify(o);
+  assert.ok(!raw.includes("PRIVATE_PROVIDER_TOKEN_9933"));
+  assert.ok(!raw.includes("secret"));
 });
 test("explicit used condition admits only matching used item, never guesses unknown",()=>{
   const g=[group("new","new"),group("used","used"),group("missing")];
