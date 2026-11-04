@@ -57,12 +57,18 @@ export function summarizeMerchantForensics(spans=[]){
       rejected:0,offers:0,reportedFailures:0,durations:[],
       stageCoverage:{},stageDurations:{},pdpRuns:[],pdpAttempts:0,
       pdpRejected:0,pdpTimeout:0,pdpPreHeaderFailures:0,
-      pdpBudgetCancelled:0,pdpIndependentTimeout:0});
+      pdpBudgetCancelled:0,pdpIndependentTimeout:0,
+      outcomeClasses:{},tlsNoHeaders:0,pdpCensoredSamples:[]});
     const b=buckets.get(k);b.observations++;
     if(s.status==="zero_offers")b.zeroOffers++;
     if(s.status==="rejected")b.rejected++;
     b.offers+=count(s.verifiedOffers)??0;
     b.reportedFailures+=count(s.failures)??0;
+    if(FAILURES.has(s.failureClass)){
+      b.outcomeClasses[s.failureClass]=(b.outcomeClasses[s.failureClass]||0)+1;
+    }else{
+      b.outcomeClasses.UNKNOWN=(b.outcomeClasses.UNKNOWN||0)+1;
+    }
     if(n(s.totalMs)!==null)b.durations.push(n(s.totalMs));
     if(s.pdpPhases&&count(s.pdpPhases.attempted)!==null){
       b.pdpRuns.push(s.pdpPhases);
@@ -72,6 +78,10 @@ export function summarizeMerchantForensics(spans=[]){
       b.pdpBudgetCancelled+=s.pdpPhases.storeBudgetCancelled??0;
       b.pdpIndependentTimeout+=s.pdpPhases.independentTimeout??0;
       b.pdpPreHeaderFailures+=s.pdpPhases.beforeHeadersFailure??0;
+      b.tlsNoHeaders+=s.pdpPhases.tlsReadyWithoutHeadersAtTermination??0;
+      const censored=s.pdpPhases.phaseMs?.tlsReadyToCancellationLowerBound;
+      if(finite(censored?.p95)&&censored.observations>0)
+        b.pdpCensoredSamples.push(censored.p95);
     }
     // The offsets are cumulative from this store's own start. Only subtract
     // adjacent *observed* stages; gaps remain UNKNOWN and never become zero.
@@ -101,12 +111,16 @@ export function summarizeMerchantForensics(spans=[]){
       zeroOffers:b.zeroOffers,rejected:b.rejected,
       verifiedOffers:b.offers,reportedFailures:b.reportedFailures,
       p50Ms,p95Ms,stageCoverage:b.stageCoverage,
+      outcomeClasses:b.outcomeClasses,
       pdpSummary:{
         tracedRuns:b.pdpRuns.length,
         attempts:b.pdpAttempts,rejected:b.pdpRejected,
         timeout:b.pdpTimeout,beforeHeadersFailure:b.pdpPreHeaderFailures,
         storeBudgetCancelled:b.pdpBudgetCancelled,
         independentTimeout:b.pdpIndependentTimeout,
+        tlsReadyWithoutHeadersAtTermination:b.tlsNoHeaders,
+        // P95 of run-level lower-bound P95s, NOT population PDP latency.
+        tlsReadyNoHeadersCensoredRunP95Ms:p(b.pdpCensoredSamples,.95),
         // Quantiles of per-run quantiles, NOT across all PDP attempts.
         phaseRunP95Ms:Object.fromEntries(["dns","tcpHandshake","tlsHandshake",
           "headerWait","bodyRead","productExtraction","priceSelection"].map(name=>[
