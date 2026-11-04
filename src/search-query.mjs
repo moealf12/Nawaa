@@ -302,9 +302,12 @@ function isVerifiedWholeAppleWatch(offer = {}) {
     .split(/\b(?:with|including|includes)\b/,1)[0];
   return /^(?:apple )?watch series [1-9]\d?\b/.test(subject) &&
     /\b(?:gps|cellular|lte)\b/.test(subject) &&
-    /\b(?:aluminum|aluminium|titanium|stainless steel) case\b/.test(subject) &&
+    // Retailers sometimes say "GPS Smartwatch 46mm" without listing chassis
+    // material; that is still explicit whole-device title evidence.
+    (/\b(?:aluminum|aluminium|titanium|stainless steel) case\b/.test(subject) ||
+     /\b(?:gps smartwatch|smartwatch gps|cellular smartwatch)\b/.test(subject)) &&
     /\b(?:38|40|41|42|44|45|46|49)mm\b/.test(subject) &&
-    !/\b(?:replacement|compatible|case cover|fit case|screen protector|bumper|wrist strap|watch band)\b/.test(subject);
+    !/\b(?:replacement|compatible|case cover|fit case|screen protector|screen protection|protector|bumper|wrist strap|watch band|beginner|user guide|handbook)\b/.test(subject);
 }
 function productCategoryWithDescription(offer, gaming) {
   const soldPeripheral=detectedRetailPeripheral(offer);
