@@ -22,11 +22,15 @@ export function auditPresentationStages(query,groups,sections=null){
   const desired=actual.intent?.condition||"new";
   const targetKnown=KNOWN_CONDITIONS.has(desired);
   const rawAllowed=[],unknown=[],mismatched=[];
+  let unrecognizedConditionCodes=0;
   for(const group of direct){
     const condition=group.bestOffer?.condition;
     if(condition===desired)rawAllowed.push(group);
-    else if(condition===null||condition===undefined||condition==="")unknown.push(group);
-    else mismatched.push(group);
+    else if(!KNOWN_CONDITIONS.has(condition)){
+      unknown.push(group);
+      if(condition!==null&&condition!==undefined&&condition!=="")
+        unrecognizedConditionCodes++;
+    }else mismatched.push(group);
   }
   // Replay ONLY the pure discovery allocation used by production, with the
   // exact same pre-filtered direct group references.
@@ -45,6 +49,7 @@ export function auditPresentationStages(query,groups,sections=null){
     classifierRelated:groups.length-direct.length,
     conditionMatched:rawAllowed.length,
     conditionUnknown:unknown.length,
+    conditionUnrecognizedCodes:unrecognizedConditionCodes,
     conditionExplicitMismatch:mismatched.length,
     initialDiscoveryPlaced:initialSet.size,
     rescuedByExactTitleEvidence:rescued.length,
@@ -68,6 +73,7 @@ export function auditPresentationStages(query,groups,sections=null){
     direct.every(g=>actualSet.has(g)!==unplacedSet.has(g))&&
     counts.classifierDirect===
       counts.conditionMatched+counts.conditionUnknown+counts.conditionExplicitMismatch&&
+    counts.conditionUnrecognizedCodes<=counts.conditionUnknown&&
     counts.conditionMatched===
       counts.initialDiscoveryPlaced+counts.rescuedByExactTitleEvidence+
       counts.conditionMatchedButUnplaced&&
