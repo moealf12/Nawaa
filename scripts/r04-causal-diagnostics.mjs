@@ -14,6 +14,7 @@ const CODE_TO_PROBE=Object.freeze({
   INTERNAL_DEADLINE:"TRACE_PROVIDER_BUDGET_QUEUE_AND_EVENT_LOOP",
   SOURCE_ACCESS_BLOCK:"AUDIT_OBSERVED_MERCHANT_ACCESS_EVIDENCE",
   SOURCE_TIMEOUT:"TRACE_UPSTREAM_REQUEST_PHASE_AND_DEADLINE",
+  SOURCE_CLASSIFICATION_GAP:"TRACE_TYPED_SOURCE_ERROR_CLASSIFICATION",
   CATALOG_RECALL_FAILURE:"TRACE_CATALOG_RECALL_PHASE_AND_ERROR_CLASS",
   SOURCE_ERROR_ACCOUNTING_GAP:"RECHECK_LOSSLESS_ERROR_CLASSIFICATION",
   INCONSISTENT_TIMING_EVIDENCE:"RECHECK_CLOCK_AND_MEASUREMENT_BOUNDARIES",
@@ -61,7 +62,7 @@ export function diagnoseR04Evidence(report){
   const seen=new Set(), rows=[],latency=[],codes=new Map();
   const headerSamples=[],bodySamples=[],parseSamples=[],bytesSamples=[],serverSamples=[];
   let observed=0,partial=0,missingPrincipal=0,deadlineCount=0,failed=0;
-  let errorEvents=0,unattributedEvents=0;
+  let errorEvents=0,unattributedEvents=0,unclassifiedEventsAtLeast=0;
   for(let i=0;i<36;i++){
     const row=report.rows[i];
     const id=row?.id;
@@ -121,6 +122,10 @@ export function diagnoseR04Evidence(report){
           measured+=amount;
           if(sourceBlock.has(b?.failureClass))mark(flags,"SOURCE_ACCESS_BLOCK");
           if(sourceTimeout.has(b?.failureClass))mark(flags,"SOURCE_TIMEOUT");
+          if(b?.failureClass==="UNCLASSIFIED"||b?.failureClass==="UNKNOWN"){
+            mark(flags,"SOURCE_CLASSIFICATION_GAP");
+            unclassifiedEventsAtLeast+=amount;
+          }
         }
         if(reported===null||other===null||measured+other!==reported||
            (count(row.sourceErrors)!==null&&row.sourceErrors!==reported))
@@ -162,11 +167,11 @@ export function diagnoseR04Evidence(report){
     // Triage order, not a probability or causal estimate.
     priorityPoints:affectedIntents*(
       ["NO_VERIFIED_OFFERS","REQUEST_TRANSPORT_FAILURE",
-       "PRINCIPAL_PRESENTATION_GAP","PRINCIPAL_UNCLASSIFIED_GAP"].includes(code)?10:
+       "PRINCIPAL_PRESENTATION_GAP","PRINCIPAL_UNCLASSIFIED_GAP"].includes(code)?12:
       ["INTERNAL_DEADLINE","CATALOG_RECALL_FAILURE",
        "SOURCE_ERROR_ACCOUNTING_GAP","COVERAGE_CONTRADICTION",
        "COVERAGE_EVIDENCE_MISSING","DEADLINE_EVIDENCE_MISSING",
-       "SOURCE_ERROR_EVIDENCE_MISSING","CATALOG_EVIDENCE_MISSING"].includes(code)?7:3),
+       "SOURCE_ERROR_EVIDENCE_MISSING","CATALOG_EVIDENCE_MISSING"].includes(code)?8:1),
   })).sort((a,b)=>b.priorityPoints-a.priorityPoints||
     order.indexOf(a.code)-order.indexOf(b.code));
   const sampleP50Ms=quantile(latency,.5),sampleP95Ms=quantile(latency,.95);
@@ -188,6 +193,7 @@ export function diagnoseR04Evidence(report){
       serverReportedDurationP95Ms:quantile(serverSamples,.95),
       internalDeadlines:deadlineCount,missingPrincipal,partial,
       sourceErrorEvents:errorEvents,sourceErrorEventsOutsideTop32:unattributedEvents,
+      sourceUnclassifiedEventsAtLeast:unclassifiedEventsAtLeast,
       sourceErrorReconciliation:reconciliation},
     investigations,rows,
     limitations:[
