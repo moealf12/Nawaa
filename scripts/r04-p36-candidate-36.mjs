@@ -68,7 +68,7 @@ const frameParser=createBoundedLogFrameParser(line=>{
     }
     const marker="NAWAA_SEARCH_JSON_PIPELINE ";
     const idx=line.indexOf(marker);
-    if(idx<0||slowPipelineEvents>=36)continue;
+    if(idx<0||slowPipelineEvents>=36)return;
     try{
       const raw=JSON.parse(line.slice(idx+marker.length));
       const onlyKnownSources=(Array.isArray(raw.providerTimings)?raw.providerTimings:[])
