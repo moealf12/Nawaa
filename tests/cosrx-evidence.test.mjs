@@ -53,6 +53,9 @@ test("official first-party search URL handles arbitrary queries and strict dupli
 });
 test("canonical product and JSON URLs require first-party exact handle",()=>{
   assert.deepEqual(cosrxIdentity(itemUrl),{handle,sourceUrl:itemUrl});
+  assert.deepEqual(cosrxIdentity("/products/"+handle+"?_pos=1&_ss=r"),
+    {handle,sourceUrl:itemUrl});
+  assert.equal(cosrxIdentity("//attacker.example/products/"+handle),null);
   assert.equal(cosrxProductJsonUrl(itemUrl),itemUrl+".js");
   for(const x of ["https://evil.test/products/"+handle,
     "https://www.cosrx.com.evil.test/products/"+handle,
