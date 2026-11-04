@@ -28,7 +28,7 @@ test("explicit condition, missing condition and actual mismatch remain separate"
   assert.equal(out.nextProbe,"VERIFY_SOURCE_CONDITION_PROVENANCE");
 });
 test("literal unknown, unrecognized labels and missing condition are NOT known used/new",()=>{
-  const g=[group("literal","unknown"),group("unrecognized","renewed"),
+  const g=[group("literal","unknown"),group("unrecognized","unverified-label"),
     group("unset",undefined),group("clear","new")];
   const o=auditPresentationStages("laptop",g);
   assert.equal(o.classifierDirect,4);
@@ -38,6 +38,21 @@ test("literal unknown, unrecognized labels and missing condition are NOT known u
   assert.equal(o.finalPrincipal,1);
   assert.equal(o.unplacedUnknownCondition,3);
   assert.equal(o.nextProbe,"VERIFY_SOURCE_CONDITION_PROVENANCE");
+});
+test("retail Renewed condition is explicitly non-new and never silently promoted",()=>{
+  const g=[group("jarir-renewed","renewed"),group("new","new")];
+  const standard=auditPresentationStages("laptop",g);
+  assert.equal(standard.conditionMatched,1);
+  assert.equal(standard.conditionExplicitMismatch,1);
+  assert.equal(standard.conditionKnownRenewedAlias,1);
+  assert.equal(standard.conditionUnknown,0);
+  assert.equal(standard.finalPrincipal,1);
+  assert.equal(standard.nextProbe,"AUDIT_RENEWED_REFURBISHED_ALIAS");
+  const refurbished=auditPresentationStages("laptop refurbished",
+    [group("source-renewed","renewed")]);
+  assert.equal(refurbished.conditionExplicitMismatch,1);
+  assert.equal(refurbished.finalPrincipal,0);
+  assert.equal(refurbished.conditionKnownRenewedAlias,1);
 });
 test("explicit used condition admits only matching used item, never guesses unknown",()=>{
   const g=[group("new","new"),group("used","used"),group("missing")];
