@@ -1,3 +1,5 @@
+import {safeStorefrontStage,safeStorefrontOutcome} from "../storefront-merchant-evidence.mjs";
+import {createPdpMilestoneProbe,summarizePdpAttemptPhases} from "../pdp-phase-diagnostics.mjs";
 import { resolveProductUrl } from "../url-resolver.mjs";
 import {readAmazonHtmlStream} from "../amazon-body-stream.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
@@ -1676,6 +1678,12 @@ export function selectStorefrontRecoveryLinks({
 async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore, options = {}) {
   options.signal?.throwIfAborted();
   const started = Date.now();
+  // Opt-in stage clock only; no effect on extraction, matching, retries or output.
+  const stageStarted=typeof options.onStoreStage==="function"?performance.now():0;
+  const markStoreStage=(stage,counts={})=>{
+    if(!stageStarted)return;
+    try{options.onStoreStage(stage,performance.now()-stageStarted,counts);}catch{}
+  };
   const searchUrl = store.search(query);
   try {
     let html = "";
@@ -1772,6 +1780,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             normalizeSearchQuery(query);
       } catch { return false; }
     })();
+    if(stageStarted)markStoreStage("html_complete",{htmlBytes:Buffer.byteLength(html,"utf8")});
     const noonLiveHtmlCards = store.id === "noon-sa" && noonHtmlSearchContextValid
       ? extractNoonSaudiSearchCardEvidence(html,query,{limit:100})
       : null;
@@ -1814,6 +1823,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         }
         return merged;
       })();
+    markStoreStage("cards_parsed",{cards:htmlFirstOffers.length});
     // Source-specific, bounded diagnostic only. No additional merchant fetch.
     // A legitimate empty catalog and an unparsed HTML response are different.
     // Optional, source-scoped HTML diagnostics. These counts never become offers.
@@ -1905,6 +1915,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       }
     }
     options.signal?.throwIfAborted();
+    markStoreStage("fallback_complete",{fallbackCandidates:primarySearchOffers.length});
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
     // JSON-LD is only a fallback when the already-priced search adapters
     // produced nothing. Parsing it when those results win is discarded work.
@@ -1986,6 +1997,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           priceEvidence:item.pdpPriceEvidence || "SEARCH_CARD_ONLY" },
       };
     }))).filter(Boolean);
+    markStoreStage("direct_admitted",{
+      directCandidates:directSearchOffers.length,directOffers:directOffers.length,
+    });
     // A matching direct offer causes selectStorefrontRecoveryLinks() to return
     // DIRECT_MATCHES_RETAINED without consulting links. Avoid scanning a large
     // hydrated HTML page for links that cannot enter either PDP resolution or
@@ -2008,7 +2022,60 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id==="noon-sa" ||
       (thomannFamilyRequested && directSearchOffers.length)
       ? [] : recoveryPlan.links;
-    const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
+    // Shadow trace existing PDPs only. Collection cannot add a request, alter
+    // pricing, retry a failure or interfere with cancellation.
+    const pdpTraces=stageStarted?
+      resolutionLinks.map(()=>createPdpMilestoneProbe()):null;
+    const pdpAttempts=pdpTraces?new Array(resolutionLinks.length):null;
+    const parentCancelled=()=>options.signal?.aborted===true;
+    const storeBudgetCancelled=()=>parentCancelled()&&
+      /^store_deadline_exceeded:/.test(String(options.signal?.reason?.message||""));
+    let pdpSummaryPublished=false;
+    const publishPdpSummary=()=>{
+      if(!pdpTraces||pdpSummaryPublished)return;
+      pdpSummaryPublished=true;
+      // When the store-wide deadline fires, Promise.race in withDeadline()
+      // settles before the in-flight PDP promises. Snapshot their known stages
+      // synchronously rather than reporting a fictitious empty PDP histogram.
+      const observed=pdpTraces.map((probe,index)=>pdpAttempts[index]||{
+        ...probe.snapshot(),totalMs:probe.elapsedMs(),outcome:"rejected",
+        parentCancelled:parentCancelled(),
+        storeBudgetCancelled:storeBudgetCancelled(),
+        failureClass:storeBudgetCancelled()?"HTTP_TIMEOUT":"HTTP_ABORTED",
+      });
+      try{options.onPdpSummary?.(summarizePdpAttemptPhases(observed));}catch{}
+    };
+    const onPdpAbort=()=>publishPdpSummary();
+    if(pdpTraces&&options.signal){
+      options.signal.addEventListener("abort",onPdpAbort,{once:true});
+      if(options.signal.aborted)onPdpAbort();
+    }
+    let settled;
+    try{
+      settled=await Promise.allSettled(resolutionLinks.map(async (candidate,index) => {
+        const probe=pdpTraces?.[index]||null;
+        try{
+          const product=await resolveProductUrl(candidate.url,{
+            signal:options.signal,
+            ...(probe?{onPdpStage:stage=>probe.mark(stage)}:{}),
+          });
+          if(probe)pdpAttempts[index]={...probe.snapshot(),
+            totalMs:probe.elapsedMs(),
+            outcome:Number.isFinite(product?.productPrice)?"succeeded":"unpriced"};
+          return product;
+        }catch(error){
+          if(probe)pdpAttempts[index]={...probe.snapshot(),
+            totalMs:probe.elapsedMs(),outcome:"rejected",
+            parentCancelled:parentCancelled(),
+            storeBudgetCancelled:storeBudgetCancelled(),
+            failureClass:classifySourceError(error).failureClass};
+          throw error;
+        }
+      }));
+    }finally{
+      options.signal?.removeEventListener("abort",onPdpAbort);
+    }
+    publishPdpSummary();
     const resolvedOffers = settled
       .filter((result) => amazonDePriceHold.customerPublishable &&
         result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
@@ -2034,6 +2101,18 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           ...(store.id==="thomann-de"?{priceEvidence:"PDP_OBSERVED_ONLY"}:{}),
         },
       }));
+    if(stageStarted){
+      const rejected=settled.filter(item=>item.status==="rejected");
+      const unpriced=settled.filter(item=>item.status==="fulfilled"&&
+        !Number.isFinite(item.value?.productPrice));
+      const timedOut=rejected.filter(item=>
+        classifySourceError(item.reason).failureClass==="HTTP_TIMEOUT");
+      markStoreStage("pdp_resolved",{
+        pdpAttempts:resolutionLinks.length,resolvedOffers:resolvedOffers.length,
+        pdpRejected:rejected.length,pdpUnpriced:unpriced.length,
+        pdpTimedOut:timedOut.length,
+      });
+    }
     const allOffers = [...directOffers, ...resolvedOffers];
     const variantEligible = store.id==="thomann-de"
       ? allOffers.filter(offer=>thomannVariantMatchesQuery(matchingQuery,offer.title,offer.sourceUrl))
@@ -2061,6 +2140,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const offers = directSearchOffers.length
       ? filteredOffers
       : filteredOffers.slice(0, perStore);
+    markStoreStage("intent_filtered",{
+      filteredOut:Math.max(0,allOffers.length-offers.length),finalOffers:offers.length,
+    });
     const failures = settled.filter((result) => result.status === "rejected").length;
     const verificationBlocked = resolutionLinks.length > 0 && offers.length === 0 && failures === resolutionLinks.length;
     const sourceObservation=classifySourceObservation({
@@ -2156,6 +2238,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
   }
 }
 
+// Forensic records are allowlisted before entering any log or subscriber.
 export function configuredFreeStorefronts() {
   return STORES.map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
 }
@@ -2208,15 +2291,47 @@ export async function searchFreeStorefronts(query, options = {}) {
       options.signal?.removeEventListener("abort",forwardAbort);
     });
   };
-  const settled = await Promise.allSettled(stores.map((store) =>
-    withDeadline((signal)=>searchStore(store, query, productPageLimit, options.matchingQuery || query, catalogLimit, {...options,signal}), store.id)
-  ));
+  const tracking=typeof options.onStoreTrace==="function";
+  const traceState=tracking?new Map():null;
+  const knownStoreIds=tracking?new Set(stores.map(s=>s.id)):null;
+  const settled = await Promise.allSettled(stores.map((store) => {
+    const state=tracking?{started:performance.now(),finished:null,stages:[]}:null;
+    if(state)traceState.set(store.id,state);
+    const onStoreStage=state?(stage,elapsedMs,counts)=>{
+      const safe=safeStorefrontStage(stage,elapsedMs,counts);
+      if(safe&&state.stages.length<6&&!state.stages.some(x=>x.stage===safe.stage))
+        state.stages.push(safe);
+    }:undefined;
+    const onPdpSummary=state?summary=>{state.pdpPhases=summary;}:undefined;
+    const task=withDeadline((signal)=>searchStore(store,query,productPageLimit,
+      options.matchingQuery || query,catalogLimit,
+      {...options,signal,onStoreStage,onPdpSummary}),store.id);
+    return state?task.finally(()=>{state.finished=performance.now();}):task;
+  }));
   const offers = [];
   const errors = [];
   const diagnostics = [];
 
   settled.forEach((result, index) => {
     const store = stores[index];
+    if(tracking){
+      const trace=traceState.get(store.id);
+      const value=result.status==="fulfilled"?result.value:null;
+      const status=result.status==="rejected"?"rejected":
+        value?.offers?.length?"with_offers":"zero_offers";
+      const failureClass=result.status==="rejected"
+        ?classifySourceError(result.reason).failureClass
+        :value?.diagnostics?.sourceAccessFailure||"UNKNOWN";
+      const record=safeStorefrontOutcome({
+        storeId:store.id,pass:options.tracePass,status,
+        totalMs:trace?.finished-trace?.started,
+        candidates:value?.candidates??null,
+        verifiedOffers:value?.offers?.length??0,
+        failures:result.status==="rejected"?1:(value?.failures??0),
+        failureClass,stages:trace?.stages||[],pdpPhases:trace?.pdpPhases,
+      },{knownStoreIds});
+      try{options.onStoreTrace(record);}catch{}
+    }
     if (result.status === "fulfilled") {
       offers.push(...result.value.offers);
       diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
