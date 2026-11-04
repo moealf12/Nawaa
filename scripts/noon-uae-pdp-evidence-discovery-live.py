@@ -249,6 +249,9 @@ def script_shape(soup, item):
         "matchedSkuOccurrences": 0,
         "parsedStateObjects": 0,
         "rawHtmlScriptOfferOccurrence": False,
+        "offerContextKeyFrequencies": {},
+        "offerContextSemanticClues": [],
+        "closestPriceNumericCandidates": [],
     }
     for node in soup.find_all("script", limit=MAX_HTML_SCRIPTS):
         body = node.string or node.get_text()
@@ -260,6 +263,47 @@ def script_shape(soup, item):
         result["matchedSkuOccurrences"] += body.count(item["sku"])
         if item["offerCode"] in body:
             result["rawHtmlScriptOfferOccurrence"] = True
+            # Only expose allowlisted structural key names and sanitized nearby
+            # numeric fields. Never log raw inline scripts or product payloads.
+            for match in list(re.finditer(re.escape(item["offerCode"]), body))[:12]:
+                chunk = body[max(0, match.start() - 320):match.end() + 350]
+                keys = re.findall(
+                    r"""(?:\\?["'])([A-Za-z][A-Za-z0-9_]{2,44})(?:\\?["'])\\s*:""",
+                    chunk,
+                )
+                for key in keys:
+                    if any(fragment in key.lower() for fragment in (
+                        "price", "offer", "sku", "currency", "amount", "variant",
+                        "seller", "buybox", "product", "fulfil", "ship",
+                    )):
+                        result["offerContextKeyFrequencies"][key] = (
+                            result["offerContextKeyFrequencies"].get(key, 0) + 1
+                        )
+                before = chunk[: min(320, match.start())].lower()
+                after = chunk[min(320, match.start()):].lower()
+                label = sorted(set(re.findall(
+                    r"(?:saleprice|offerprice|pricecurrency|offer_code|offercode|"
+                    r"buybox|sku_config|sellingprice|currency|variant|"
+                    r"merchant|shipping|amount|price)",
+                    before + after,
+                )))
+                if len(result["offerContextSemanticClues"]) < 12:
+                    result["offerContextSemanticClues"].append({
+                        "scriptType": src_type,
+                        "windowChars": len(chunk),
+                        "structuralTerms": label,
+                        "hasAedText": "aed" in chunk.lower(),
+                        "hasSkuText": item["sku"].lower() in chunk.lower(),
+                    })
+                amounts = re.findall(
+                    r"(?:price|amount)(?:\\?["']|\\s|:){0,10}"
+                    r"(?:\\?["'])?([1-9][0-9]{0,6}(?:\\.[0-9]{1,2})?)",
+                    chunk, re.I,
+                )
+                if amounts and len(result["closestPriceNumericCandidates"]) < 12:
+                    result["closestPriceNumericCandidates"].append(
+                        [value for value in amounts[:4]]
+                    )
         if len(body) > 3_000_000:
             continue
         if src_type not in ("application/json", "application/ld+json"):
