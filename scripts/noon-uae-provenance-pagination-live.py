@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests
+from noon_uae_price_policy import assess_offer
 
 BASE = "https://www.noon.com"
 SEARCH = BASE + "/uae-en/search/"
@@ -332,27 +333,31 @@ def inspect_pdp_structured_data(body, expected_sku, expected_offer, plp_price):
                             price_valid = str(value.quantize(Decimal("0.01")))
                     except (InvalidOperation, ValueError):
                         pass
-                link_matches = False
-                if isinstance(offer_link, str) and same_origin(offer_link):
-                    u = urlsplit(offer_link)
-                    o = parse_qs(u.query).get("o", [])
-                    link_matches = (o == [expected_offer] and
-                                    SKU_PATH.search(u.path) is not None and
-                                    expected_sku in u.path)
-                result["matchedOfferCodeInStructuredData"] |= link_matches
+                verdict = assess_offer(
+                    requested_sku=expected_sku,
+                    product_sku=candidate_sku,
+                    plp_price=plp_price,
+                    pdp_price=price_valid,
+                    currency=currency,
+                    requested_offer_code=expected_offer,
+                    offer_url=offer_link,
+                )
+                result["matchedOfferCodeInStructuredData"] |= verdict[
+                    "sameOfferIdentity"
+                ]
                 if len(result["matchedSkuOfferPriceEvidence"]) < 20:
                     result["matchedSkuOfferPriceEvidence"].append({
                         "currency": currency[:12] or None,
                         "amount": price_valid,
-                        "offerLinkMatches": link_matches,
+                        "offerLinkMatches": verdict["sameOfferIdentity"],
+                        "deltaCentsVsPlp": verdict["deltaCents"],
+                        "verificationStatus": verdict["decision"],
                         "type": str(offer.get("@type") or "")[:30],
                     })
-                if currency == "AED" and price_valid == plp_price:
+                if verdict["aedFromProductOffer"] and verdict["deltaCents"] == 0:
                     result["pdpMatchesPlpAmountWithoutOfferProof"] = True
-                    # Explicit offer-code parity is required to certify the
-                    # *same* offer instead of a different product buybox.
-                    if link_matches:
-                        result["pdpPriceVerified"] = True
+                if verdict["verified"]:
+                    result["pdpPriceVerified"] = True
     result["state"] = (
         "PDP_OFFER_PRICE_CURRENCY_IDENTITY_VERIFIED"
         if result["pdpPriceVerified"]
