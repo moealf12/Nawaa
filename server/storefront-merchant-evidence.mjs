@@ -1,3 +1,4 @@
+import {safePdpPhaseSummary} from "./pdp-phase-diagnostics.mjs";
 // R04-P47: opt-in storefront-scoped evidence; no merchant network traffic or
 // customer result changes. Strict allowlist of fields, bounded and redacted.
 const STAGES=Object.freeze([
@@ -43,7 +44,7 @@ export function safeStorefrontOutcome(raw,{knownStoreIds}={}){
     verifiedOffers:count(raw?.verifiedOffers),
     failures:count(raw?.failures),
     failureClass:FAILURES.has(raw?.failureClass)?raw.failureClass:"UNKNOWN",
-    stages,
+    stages,pdpPhases:safePdpPhaseSummary(raw?.pdpPhases),
   };
 }
 export function summarizeMerchantForensics(spans=[]){
@@ -53,13 +54,21 @@ export function summarizeMerchantForensics(spans=[]){
     const k=s.storeId;
     if(!buckets.has(k))buckets.set(k,{storeId:k,observations:0,zeroOffers:0,
       rejected:0,offers:0,reportedFailures:0,durations:[],
-      stageCoverage:{},stageDurations:{}});
+      stageCoverage:{},stageDurations:{},pdpRuns:[],pdpAttempts:0,
+      pdpRejected:0,pdpTimeout:0,pdpPreHeaderFailures:0});
     const b=buckets.get(k);b.observations++;
     if(s.status==="zero_offers")b.zeroOffers++;
     if(s.status==="rejected")b.rejected++;
     b.offers+=count(s.verifiedOffers)??0;
     b.reportedFailures+=count(s.failures)??0;
     if(n(s.totalMs)!==null)b.durations.push(n(s.totalMs));
+    if(s.pdpPhases&&count(s.pdpPhases.attempted)!==null){
+      b.pdpRuns.push(s.pdpPhases);
+      b.pdpAttempts+=s.pdpPhases.attempted;
+      b.pdpRejected+=s.pdpPhases.rejected??0;
+      b.pdpTimeout+=s.pdpPhases.timeout??0;
+      b.pdpPreHeaderFailures+=s.pdpPhases.beforeHeadersFailure??0;
+    }
     // The offsets are cumulative from this store's own start. Only subtract
     // adjacent *observed* stages; gaps remain UNKNOWN and never become zero.
     const observed=new Map();
@@ -88,6 +97,16 @@ export function summarizeMerchantForensics(spans=[]){
       zeroOffers:b.zeroOffers,rejected:b.rejected,
       verifiedOffers:b.offers,reportedFailures:b.reportedFailures,
       p50Ms,p95Ms,stageCoverage:b.stageCoverage,
+      pdpSummary:{
+        tracedRuns:b.pdpRuns.length,
+        attempts:b.pdpAttempts,rejected:b.pdpRejected,
+        timeout:b.pdpTimeout,beforeHeadersFailure:b.pdpPreHeaderFailures,
+        // Quantiles of per-run quantiles, NOT across all PDP attempts.
+        phaseRunP95Ms:Object.fromEntries(["dns","tcpHandshake","tlsHandshake",
+          "headerWait","bodyRead","productExtraction","priceSelection"].map(name=>[
+          name,p(b.pdpRuns.map(r=>r.phaseMs?.[name]?.p95).filter(finite),.95),
+        ])),
+      },
       stageDurationMs:Object.fromEntries(STAGES.filter(k=>b.stageDurations[k]?.length)
         .map(k=>[k,{samples:b.stageDurations[k].length,
           p50Ms:p(b.stageDurations[k],.5),p95Ms:p(b.stageDurations[k],.95)}])),
