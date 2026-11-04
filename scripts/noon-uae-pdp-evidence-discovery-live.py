@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests
-from noon_uae_price_policy import assess_offer, cents, matching_offer_link
+from noon_uae_price_policy import assess_offer, cents
 
 BASE = "https://www.noon.com"
 SEARCH = BASE + "/uae-en/search/?" + urlencode({"q": "PlayStation 5"})
