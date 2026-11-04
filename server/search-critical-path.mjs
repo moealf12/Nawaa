@@ -3,6 +3,7 @@
 // The producing cache generation and each waiting HTTP request are distinct.
 import {AsyncLocalStorage} from "node:async_hooks";
 import {randomBytes} from "node:crypto";
+import {safeStorefrontOutcome} from "./storefront-merchant-evidence.mjs";
 
 const context=new AsyncLocalStorage();
 export const SEARCH_TRACE_ENABLED=process.env.NAWAA_SEARCH_DIAGNOSTIC_TRACE==="1";
@@ -33,6 +34,7 @@ export function searchCriticalPathEvidence({
   generationId,ownerRequestId=null,
   primaryAcquiredMs,preSelectionMs,finalizationMs,totalMs,
   providerTimings=[],primaryComponents=[],offerStages={},
+  storefrontTimings=[],storefrontEventsDropped=0,knownStoreIds=new Set(),
   deadlineExceeded=false,fallbackUsed=false,providerEventsDropped=0,
 }={}){
   if(!ID.test(generationId||""))throw Error("INVALID_SEARCH_TRACE_GENERATION");
@@ -75,11 +77,14 @@ export function searchCriticalPathEvidence({
   // A count at a stage boundary is NOT an exact sum of merchant offers:
   // deduplication, interleaved index recall and fanout make the stages non-additive.
   const stageLabels=[
-    "providerRaw","amazonRaw","amazonValidated","indexRaw","catalogRaw",
-    "beforeCanonical","afterCanonical","rescoredAccepted","afterAdmission",
+    "providerRaw","primaryAssessed","primaryRelevant","primaryMerchants",
+    "amazonRaw","amazonValidated","indexRaw","catalogRaw",
+    "beforeCanonical","afterCanonical","rescoredAssessed","rescoredAccepted","afterAdmission",
     "selected","errorEvents",
   ];
   const stages=Object.fromEntries(stageLabels.map(k=>[k,nonnegative(offerStages?.[k])]));
+  const storefrontSpans=(Array.isArray(storefrontTimings)?storefrontTimings:[])
+    .slice(0,64).map(raw=>safeStorefrontOutcome(raw,{knownStoreIds}));
   return {
     schemaVersion:"nawaa.r04.p46.critical-path.v1",
     classification:"CORRELATED_GENERATION_OBSERVATION_NOT_CAUSAL_PROOF",
@@ -88,6 +93,7 @@ export function searchCriticalPathEvidence({
     barriers,lastBarrierCandidates,
     providerSpans,
     providerEventsDropped:nonnegative(providerEventsDropped),
+    storefrontSpans,storefrontEventsDropped:nonnegative(storefrontEventsDropped),
     stages,deadlineExceeded:deadlineExceeded===true,
     fallbackUsed:fallbackUsed===true,
     rootCause:"UNDETERMINED",
@@ -95,6 +101,7 @@ export function searchCriticalPathEvidence({
       "barrier_last_settled_is_not_a_causal_root",
       "provider_wall_time_includes_async_waits_not_per_provider_cpu",
       "merchant_offer_stages_are_non_additive",
+      "storefront_stage_offsets_include_upstream_waits_and_are_not_cpu_times",
       "cache_coalesced_http_waiters_are_not_generation_owners",
     ],
   };
