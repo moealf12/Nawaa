@@ -76,6 +76,32 @@ test("source error event conservation failures are explicit",()=>{
   const x=diagnoseR04Evidence(r);
   assert.ok(signal(x.rows[0],"SOURCE_ERROR_ACCOUNTING_GAP"));
 });
+test("observed header/body/parse hotspots remain observational, not causal",()=>{
+  const r=liveReport();
+  Object.assign(r.rows[0],{elapsedMs:10000,responseBytes:2500000,
+    responsePhasesMs:{headers:9000,body:800,parse:200}});
+  Object.assign(r.rows[1],{elapsedMs:10000,
+    responsePhasesMs:{headers:3000,body:6500,parse:500}});
+  Object.assign(r.rows[2],{elapsedMs:5000,
+    responsePhasesMs:{headers:3000,body:500,parse:1500}});
+  const x=diagnoseR04Evidence(r);
+  assert.ok(signal(x.rows[0],"CLIENT_HEADER_WAIT_DOMINANT"));
+  assert.ok(signal(x.rows[1],"CLIENT_BODY_READ_DOMINANT"));
+  assert.ok(signal(x.rows[2],"CLIENT_PARSE_COST_DOMINANT"));
+  assert.equal(x.sample.responseBytesP95,2500000);
+  assert.equal(x.classification,"OBSERVATIONAL_TRIAGE_NOT_CAUSAL_PROOF");
+});
+test("absent and contradictory source coverage never passes silently",()=>{
+  const r=liveReport();
+  r.rows[0].partial=null;
+  r.rows[1].partial=false;
+  r.rows[1].sourceErrors=3;
+  r.rows[1].sourceErrorBreakdown={reported:3,otherEvents:3,buckets:[]};
+  r.summary.sourceErrorEvents=3;
+  const x=diagnoseR04Evidence(r);
+  assert.ok(signal(x.rows[0],"COVERAGE_EVIDENCE_MISSING"));
+  assert.ok(signal(x.rows[1],"COVERAGE_CONTRADICTION"));
+});
 test("end-to-end phase sums never permit impossible timing claims",()=>{
   const r=liveReport();
   r.rows[0].responsePhasesMs={headers:900,body:900,parse:900};
