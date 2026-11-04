@@ -16,7 +16,8 @@ async def main():
     query = os.environ.get("AMAZON_US_QUERY", "wireless headphones")
     scraper = Scraper(
         "https://www.amazon.com", query, maximum=5, pages=1,
-        browser="auto", pdp="all", search_url="https://www.amazon.com/s?k={query}"
+        browser=os.environ.get("AMAZON_US_BROWSER", "never"), pdp="all",
+        search_url="https://www.amazon.com/s?k={query}"
     )
     # Do not spray generic non-Amazon search routes.
     scraper.search_targets = lambda _: [("https://www.amazon.com/s", {"k": query})]
@@ -31,7 +32,7 @@ async def main():
         result = await scraper.search()
         # Single diagnostic retry with an ordinary Chromium browser, NOT stealth,
         # proxies, CAPTCHA solving, or identity spoofing.
-        if result.get("count", 0) == 0 and any(
+        if scraper.browser != "never" and result.get("count", 0) == 0 and any(
             d.get("method") == "search-html" and d.get("status") == "HTTP_ERROR"
             for d in result.get("diagnostics", [])
         ):
