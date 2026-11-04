@@ -1,0 +1,29 @@
+name: COSRX First-Party Live Acceptance
+on:
+  push:
+    branches:
+      - feat/cosrx-saudi-live-evidence
+    paths:
+      - 'scripts/cosrx-live-acceptance.mjs'
+      - '.github/workflows/cosrx-live-acceptance.yml'
+      - 'src/cosrx-evidence.mjs'
+      - 'server/providers/cosrx-live.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-cosrx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install declared runtime dependencies
+        run: npm ci --ignore-scripts
+      - name: Actual COSRX public search and exact Shopify variant truth
+        env:
+          NAWAA_COSRX_LIVE_SMOKE: '1'
+        run: node scripts/cosrx-live-acceptance.mjs
