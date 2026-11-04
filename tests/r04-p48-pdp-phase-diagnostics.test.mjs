@@ -128,5 +128,5 @@ test("resolver instrumentation stays optional and does not create new PDP calls"
   assert.match(resolver,/emitPdp\(options\.onPdpStage,"price_selected"\)/);
   assert.match(provider,/const pdpTraces=stageStarted\?/);
   assert.match(provider,/Promise\.allSettled\(resolutionLinks\.map\(async/);
-  assert.match(provider,/options\.onPdpSummary\?\.\(summary\)/);
+  assert.match(provider,/options\.onPdpSummary\?\.\(summarizePdpAttemptPhases\(observed\)\)/);
 });
