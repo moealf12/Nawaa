@@ -4,6 +4,17 @@
 export const NAWAA_INDEXER_USER_AGENT =
   "NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)";
 
+// ASOS uses the Node.js HTTP transport in NAWAA, not a Chromium browser.
+// Use honest, stable document headers. Sec-CH-UA is intentionally NOT emitted:
+// that client hint represents an actual browser runtime, not an arbitrary
+// server-side value, and cannot supply TLS/JS/browser fingerprints.
+export const ASOS_NODE_DOCUMENT_HEADERS = Object.freeze({
+  accept: "text/html,application/xhtml+xml;q=0.9",
+  "accept-language": "en-GB,en;q=0.9",
+  "cache-control": "no-cache",
+  "user-agent": NAWAA_INDEXER_USER_AGENT,
+});
+
 const THOMANN_HEADERS = Object.freeze({
   accept: "text/html,application/xhtml+xml;q=0.9",
   "accept-language": "de-DE,de;q=0.9,en;q=0.5",
@@ -13,7 +24,9 @@ const THOMANN_HEADERS = Object.freeze({
 // Search and PDP fetchers share one honest header profile. Existing merchants
 // keep their old behavior; never accept arbitrary user-controlled header keys.
 export function merchantRequestHeaders(sourceId, existing = {}) {
-  return sourceId === "thomann-de" ? {...THOMANN_HEADERS} : {...existing};
+  if(sourceId === "thomann-de") return {...THOMANN_HEADERS};
+  if(sourceId === "asos-global") return {...ASOS_NODE_DOCUMENT_HEADERS};
+  return {...existing};
 }
 
 export function productPageRequestHeaders(rawUrl, existing = {}) {

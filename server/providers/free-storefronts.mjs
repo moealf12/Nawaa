@@ -20,6 +20,7 @@ import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../sr
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
+import {asosLiveConfigured,validateAsosLiveSearch} from "./asos-live.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1264,7 +1265,9 @@ async function fetchText(url,{signal,storeId,onTransportDiagnostic,requestTimeou
         "upgrade-insecure-requests":"1",
         "user-agent":USER_AGENT,
       }),
-      redirect:"follow",
+      // ASOS source requests must never follow potentially off-origin redirects.
+      // Other merchants retain the legacy fetch behavior.
+      redirect:storeId==="asos-global"?"manual":"follow",
       signal:requestSignal,
     },{sourceId:storeId});
     if(amazon)headersMs=Math.round(performance.now()-start);
@@ -1539,6 +1542,7 @@ export function routeFreeStorefronts(query, limit = Infinity, options = {}) {
   const intent = parseSearchIntent(normalizedQuery);
   const stable = options.stable === true;
   const routed = STORES
+    .filter((store)=>store.id!=="asos-global"||asosLiveConfigured())
     .map((store) => {
       const base = routeScore(store, intent, normalizedQuery);
       const health = sourceReliability.view(store.id);
@@ -1609,6 +1613,10 @@ export function selectedStores(query) {
 }
 
 export async function searchFreeStorefrontById(storeId, query, options = {}) {
+  if(storeId==="asos-global"&&!asosLiveConfigured())return {
+    storeId,candidates:0,offers:[],failures:0,searchUrl:null,
+    diagnostics:{status:"SOURCE_DISABLED",reason:"ASOS_SOURCE_AUTHORIZATION_NOT_ATTESTED",customerPublishable:false},
+  };
   // Stable catalog-level 404 classification, never a fake retailer HTTP response.
   // Explicit legacy calls short-circuit without DNS, fetch, or retry.
   const retired=retiredSourceRecord(storeId);
@@ -1677,6 +1685,10 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
   options.signal?.throwIfAborted();
   const started = Date.now();
   const searchUrl = store.search(query);
+  if(store.id==="asos-global"&&!asosLiveConfigured())return {
+    store,searchUrl:null,candidates:0,offers:[],failures:0,
+    diagnostics:{status:"SOURCE_DISABLED",reason:"ASOS_SOURCE_AUTHORIZATION_NOT_ATTESTED",customerPublishable:false},
+  };
   try {
     let html = "";
     let searchPageFinalUrl = searchUrl;
@@ -1755,6 +1767,31 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       const denied=new Error(primarySearchError || sourceAccessFailure);
       denied.failureClass=sourceAccessFailure;
       throw denied;
+    }
+    if(store.id==="asos-global"){
+      // Strict on-demand validation; never re-enter generic publication paths.
+      const inspected=await validateAsosLiveSearch({
+        query,html,searchUrl,finalUrl:searchPageFinalUrl,signal:options.signal,
+        maxPdp:2,fetchPdp:(url,{signal}={})=>{
+          const clean=new URL(url);clean.hash="";
+          if(clean.origin!=="https://www.asos.com"||!/^\/[^?#]+\/prd\/\d{6,12}\/?$/.test(clean.pathname))
+            throw new Error("ASOS_PDP_URL_REJECTED");
+          return fetchText(clean.href,{signal,storeId:"asos-global"});
+        },
+      });
+      return {store,searchUrl,candidates:inspected.candidates,offers:[],
+        failures:inspected.results.filter(x=>x.reason==="PDP_REQUEST_FAILED"||
+          x.reason==="HTTP_403_ACCESS_DENIED"||x.reason==="HTTP_429_RATE_LIMITED").length,
+        diagnostics:{status:"ASOS_LIVE_EVIDENCE_ONLY",primarySearchError,
+          sourceAccessFailure,searchPage:searchDiagnostics,
+          asosLive:{...inspected.diagnostics,
+            acceptedEvidence:inspected.accepted.length,
+            rejectedOrUnknown:inspected.results.filter(x=>!x.verified).length},
+          customerPublicationGate:{status:"SHIPPING_AND_OFFER_TRUTH_NOT_ATTESTED",
+            customerPublishable:false,sourcePriceVerified:inspected.accepted.length>0,
+            shippingToSaudiVerified:false},
+          candidateSamples:[],failureSamples:[],unpricedSamples:[]},
+      };
     }
     // Real, first-party HTML search cards are Noon's primary source path.
     // Bind them to the exact requested search URL; a redirect to the homepage
@@ -2157,6 +2194,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
 }
 
 export function configuredFreeStorefronts() {
+  // Catalog registration does not imply active acquisition. The route and
+  // direct-search gates separately enforce source authorization.
   return STORES.map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
 }
 
