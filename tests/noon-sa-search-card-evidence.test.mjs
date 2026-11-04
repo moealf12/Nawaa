@@ -80,3 +80,44 @@ test("Reject false discounted prices and missing verified price element",()=>{
   const output=extractNoonSaudiSearchCardEvidence(html(card({price:"0"})),"laptop");
   assert.equal(output.candidates.length,0);
 });
+
+
+test("Money parsing preserves thousand separators, decimal commas and Arabic digits without inventing currency",()=>{
+  const values=[
+    ["2,489",2489],
+    ["2,489.50",2489.50],
+    ["39,99",39.99],
+    ["1.299,00",1299],
+    ["١٬٢٩٩٫٥٠",1299.50],
+    ["۱٬۲۹۹٫۵۰",1299.50],
+    ["1 299,50",1299.50],
+    ["2 489.50",2489.50],
+    ["39.99",39.99],
+  ];
+  for(const [value,expected] of values){
+    const result=extractNoonSaudiSearchCardEvidence(html(card({price:value})),"laptop");
+    assert.equal(result.candidates.length,1,value);
+    assert.equal(result.candidates[0].price,expected,value);
+    assert.equal(result.candidates[0].customerPublishable,false);
+  }
+});
+
+test("Money parsing fails closed on malformed separators and impossible price values",()=>{
+  const rejected=[
+    "39,9,9","2.489.00","39 99","12.345","-39.99","0.00",
+    "NaN","Infinity","1e4","12,345.678","1.299,999",
+  ];
+  for(const price of rejected){
+    const result=extractNoonSaudiSearchCardEvidence(html(card({price})),"laptop");
+    assert.equal(result.candidates.length,0,price);
+    assert.equal(result.parsedCards,0,price);
+  }
+});
+
+test("Semantically equal prices do not create false duplicate conflicts",()=>{
+  const result=extractNoonSaudiSearchCardEvidence(
+    html(card({price:"1,299"}),card({price:"1299.00"})),"laptop");
+  assert.equal(result.candidates.length,1);
+  assert.equal(result.conflicts.length,0);
+  assert.equal(result.candidates[0].price,1299);
+});

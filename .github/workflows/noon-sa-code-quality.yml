@@ -1,0 +1,49 @@
+name: Noon Saudi Engineering Quality Gate
+
+on:
+  pull_request:
+    paths:
+      - "scripts/noon-sa-*.py"
+      - "scripts/noon-sa-*.mjs"
+      - "src/noon-sa-*.mjs"
+      - "tests/noon-sa-staging-integrity.test.mjs"
+      - "tests/noon-sa-search-card-evidence.test.mjs"
+      - ".github/workflows/noon-sa-code-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python syntax and import correctness (no source access)
+        run: |
+          python -m compileall -q scripts/noon-sa-curl-transport.py scripts/noon-sa-v3-search-differential.py
+          python -m pip install --disable-pip-version-check ruff
+          ruff check --select E4,E7,E9,F scripts/noon-sa-curl-transport.py scripts/noon-sa-v3-search-differential.py
+  javascript-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: ESM parse checks and strict catalog invariant tests
+        run: |
+          node --check scripts/noon-sa-transport-matrix.mjs
+          node --check scripts/noon-sa-curl-evidence.mjs
+          node --check scripts/noon-sa-first-party-paths.mjs
+          node --check scripts/noon-sa-existing-export-live.mjs
+          node --check scripts/noon-sa-approved-feed-live.mjs
+          node --check src/noon-sa-existing-export.mjs
+          node --check src/noon-sa-approved-feed.mjs
+          node --test tests/noon-sa-staging-integrity.test.mjs tests/noon-sa-search-card-evidence.test.mjs

@@ -1,0 +1,43 @@
+name: Noon Saudi Public Catalog Path Differential
+
+on:
+  pull_request:
+    paths:
+      - "scripts/noon-sa-first-party-paths.mjs"
+      - "server/providers/noon.mjs"
+      - "src/noon-sa-catalog.mjs"
+      - ".github/workflows/noon-sa-first-party-paths.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noon-sa-first-party-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  first-party-catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install locked dependencies without production hooks
+        run: npm ci --ignore-scripts
+      - name: One real request per known first-party public catalog path
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node --check scripts/noon-sa-first-party-paths.mjs
+          node scripts/noon-sa-first-party-paths.mjs
+      - name: Preserve bounded live results even if upstream denies access
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-sa-first-party-catalog-paths
+          path: noon-sa-first-party-paths.json
+          if-no-files-found: warn
+          retention-days: 14
