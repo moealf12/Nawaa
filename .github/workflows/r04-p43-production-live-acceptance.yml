@@ -66,6 +66,9 @@ jobs:
           '
       - name: Two independent 36-intent LIVE production rounds, concurrency two
         run: |
+          # GitHub starts bash with -e; disable it for both evidence rounds.
+          # Collect BOTH reports even if round 1 fails, then fail the final gate.
+          set +e
           set -uo pipefail
           failed=0
           for round in 1 2; do
