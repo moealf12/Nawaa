@@ -152,6 +152,9 @@ async function sessionProbe(){
 function browserErrorKind(e){
   const m=String(e?.message||"");
   const c=String(e?.code||"");
+  // Chromium exposes safe navigation error codes; never log the full URL/message.
+  const navigationCode=m.match(/net::(ERR_[A-Z0-9_]+)/i)?.[1];
+  if(navigationCode)return navigationCode.slice(0,60).toUpperCase();
   if(c==="ERR_MODULE_NOT_FOUND"||/Cannot find (?:package|module)/i.test(m))return "PACKAGE_NOT_INSTALLED";
   if(/Executable doesn't exist|browserType\.launch:.*not found/i.test(m))return "BROWSER_BINARY_MISSING";
   if(/Host system is missing dependencies|error while loading shared libraries/i.test(m))return "HOST_DEPENDENCIES_MISSING";
