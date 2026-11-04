@@ -1,4 +1,7 @@
 import { searchFreeStorefrontById } from "../server/providers/free-storefronts.mjs";
+import {searchJarir} from "../server/providers/jarir.mjs";
+import {searchExtraUnbxd} from "../server/providers/extra-unbxd.mjs";
+import {searchSharafDG} from "../server/providers/sharafdg.mjs";
 
 const CASES = [
   // Saudi/GCC certification batch: prioritize sources that can materially
@@ -26,6 +29,20 @@ const CASES = [
   ["virgin-ae","airpods"],["xcite-kw","airpods"],["lulu-ae","airpods"],
 ];
 
+// Native provider adapters already participate in customer search. They are
+// independent merchants, not replays of the NAWAA API or alias names for free
+// storefronts. Keep native and free-storefront counts separately inspectable.
+const NATIVE_CASES=[
+  ["jarir-sa","iphone 17",q=>searchJarir(q,12,q,{signal:AbortSignal.timeout(11000)})],
+  ["extra-sa","iphone 17",q=>searchExtraUnbxd(q,12,q,{signal:AbortSignal.timeout(11000)})],
+  ["sharafdg-sa","iphone 17",q=>searchSharafDG(q,12,{signal:AbortSignal.timeout(11000)})],
+];
+const validOffers=offers=>offers.filter(o=>
+  typeof o.title==="string" && o.title.trim().length>=3 &&
+  typeof o.sourceUrl==="string" && /^https:\/\//i.test(o.sourceUrl) &&
+  typeof o.image==="string" && /^https?:\/\//i.test(o.image) &&
+  Number.isFinite(o.productPrice) && o.productPrice>0
+);
 let validatedCases = 0;
 const rows = [];
 for (const [store, query] of CASES) {
@@ -35,12 +52,7 @@ for (const [store, query] of CASES) {
     const offers = result.offers || [];
     // SKU is useful identity metadata, but it is not a requirement for a usable price result.
     // A live source must return the shopper-facing essentials: product, URL, image and price.
-    const valid = offers.filter(o =>
-      typeof o.title === "string" && o.title.trim().length >= 3 &&
-      typeof o.sourceUrl === "string" && /^https:\/\//i.test(o.sourceUrl) &&
-      typeof o.image === "string" && /^https?:\/\//i.test(o.image) &&
-      Number.isFinite(o.productPrice) && o.productPrice > 0
-    );
+    const valid = validOffers(offers);
     const status = valid.length ? "LIVE_VALIDATED" : "PROBED";
     if (valid.length) validatedCases++;
     rows.push({store,query,status,candidates:result.candidates,offers:offers.length,valid:valid.length,ms:Date.now()-started,error:result.diagnostics?.primarySearchError || null,
@@ -56,6 +68,23 @@ for (const [store, query] of CASES) {
     rows.push({store,query,status:"PROBED_FAILED",candidates:0,offers:0,valid:0,ms:Date.now()-started,error:error?.message || String(error)});
   }
 }
+for(const [store,query,search] of NATIVE_CASES){
+  const started=Date.now();
+  try{
+    const result=await search(query);
+    const offers=Array.isArray(result?.offers)?result.offers:[];
+    const valid=validOffers(offers);
+    const status=valid.length?"LIVE_VALIDATED":"PROBED";
+    if(valid.length)validatedCases++;
+    rows.push({store,query,adapter:"NATIVE_SAUDI_LIVE",status,candidates:offers.length,
+      offers:offers.length,valid:valid.length,ms:Date.now()-started,
+      error:(result?.errors||[]).map(e=>String(e?.error||"").slice(0,120)).filter(Boolean).slice(0,3)});
+  }catch(error){
+    rows.push({store,query,adapter:"NATIVE_SAUDI_LIVE",status:"PROBED_FAILED",
+      candidates:0,offers:0,valid:0,ms:Date.now()-started,
+      error:String(error?.message||error).slice(0,160)});
+  }
+}
 console.table(rows);
 const failed = rows.filter((row) => row.status === "PROBED_FAILED").length;
 const probedOnly = rows.filter((row) => row.status === "PROBED").length;
@@ -64,14 +93,19 @@ const probedOnly = rows.filter((row) => row.status === "PROBED").length;
 const liveSources = [...new Set(rows
   .filter(row=>row.status==="LIVE_VALIDATED").map(row=>row.store))].sort();
 const uniqueLiveStores = liveSources.length;
+const freeStorefrontLiveStores=liveSources.filter(id=>!NATIVE_CASES.some(([native])=>native===id));
+const nativeLiveStores=liveSources.filter(id=>NATIVE_CASES.some(([native])=>native===id));
 const report = {
-  checked:CASES.length,
+  checked:CASES.length+NATIVE_CASES.length,
+  freeStorefrontChecked:CASES.length,nativeChecked:NATIVE_CASES.length,
+  freeStorefrontLiveStores,nativeLiveStores,
   liveValidated:uniqueLiveStores,
   liveValidatedCases:validatedCases,
   uniqueLiveStores,
   liveSources,probedOnly,failed,rows,
   evidenceMode:"REAL_PUBLIC_MERCHANT_HTTP_ONLY",
-  sourceCoverageCertified:false,
+  coverageScope:"DISTINCT_NATIVE_AND_FREE_STOREFRONT_MERCHANTS",
+  sourceCoverageCertified:uniqueLiveStores>=Number(process.env.MIN_LIVE_SOURCES||8),
 };
 console.log(JSON.stringify(report,null,2));
 await import("node:fs").then(({writeFileSync}) => writeFileSync("live-source-validation.json", JSON.stringify(report,null,2)));
