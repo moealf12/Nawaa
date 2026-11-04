@@ -175,6 +175,55 @@ try:
             search["exceptionType"] = type(exc).__name__[:60]
         report["observations"].append(search)
         report["conclusion"] = search["state"]
+        if search["state"] == "HTTP2_PROTOCOL_ERROR":
+            # Causal differential only. Do not retry HTTP 403/429, do not try
+            # different identities or IPs, and never publish these observations.
+            http1 = {
+                "step": "search_explicit_http11",
+                "path": "/_vs/nc/mp-customer-catalog-api/api/v3/search",
+                "purpose": "transport_protocol_comparison_only",
+            }
+            try:
+                report["requestCount"] += 1
+                with session.stream(
+                    "GET", SEARCH, headers=headers, timeout=12,
+                    allow_redirects=False, http_version="v1",
+                ) as response:
+                    http1["status"] = response.status_code
+                    http1["httpVersion"] = str(response.http_version)[:35]
+                    http1.update(safe_headers(response))
+                    if response.status_code != 200:
+                        http1["state"] = "HTTP_" + str(response.status_code)
+                    elif "json" not in str(
+                        response.headers.get("content-type") or ""
+                    ).lower():
+                        http1["state"] = "NON_JSON_RESPONSE"
+                    else:
+                        payload, body_sha = read_json_bounded(response)
+                        if not isinstance(payload, dict):
+                            http1["state"] = "INVALID_JSON_SHAPE"
+                        else:
+                            hits = payload.get("hits")
+                            http1["hitCount"] = (
+                                len(hits) if isinstance(hits, list) else None
+                            )
+                            http1["bodySha256"] = body_sha
+                            http1["marketEvidence"] = classify_market(payload)
+                            http1["state"] = (
+                                "JSON_PRODUCTS_OBSERVED_MARKET_UNVERIFIED"
+                                if isinstance(hits, list) and hits
+                                else "NO_SEARCH_HITS_OR_UNEXPECTED_SCHEMA"
+                            )
+            except ValueError as exc:
+                http1["state"] = str(exc)[:60]
+                http1["exceptionType"] = type(exc).__name__[:60]
+            except Exception as exc:
+                http1["state"] = network_error(exc)
+                http1["exceptionType"] = type(exc).__name__[:60]
+            report["observations"].append(http1)
+            if http1["state"] == "JSON_PRODUCTS_OBSERVED_MARKET_UNVERIFIED":
+                report["conclusion"] = http1["state"]
+        report["sessionCookieCount"] = min(100, len(session.cookies))
 except Exception:
     report["conclusion"] = "SESSION_INITIALIZATION_ERROR"
 finally:
