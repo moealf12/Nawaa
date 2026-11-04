@@ -1,0 +1,357 @@
+#!/usr/bin/env python3
+"""One live Noon UAE PDP forensic probe; exact SKU+offer from live PLP.
+
+Three bounded public requests: warmup, search, one PDP. Never publishes offers.
+Records structural counts and whitelisted product fields, not raw HTML/JSON.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import time
+from decimal import Decimal, InvalidOperation
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+
+from bs4 import BeautifulSoup
+from curl_cffi import requests
+from noon_uae_price_policy import assess_offer, cents, matching_offer_link
+
+BASE = "https://www.noon.com"
+SEARCH = BASE + "/uae-en/search/?" + urlencode({"q": "PlayStation 5"})
+REPORT_PATH = "noon-uae-pdp-structure-live.json"
+MAX_BYTES = 5_000_000
+MAX_HTML_SCRIPTS = 120
+MAX_NODES = 10_000
+SKU_RE = re.compile(r"/(N\d{8}[AV]|Z[A-Z0-9]{20}Z)/p/?$", re.I)
+MONEY_RE = re.compile(r"(?:0|[1-9]\d{0,8})(?:\.\d{1,2})?")
+REPORT = {
+    "schema": "nawaa.noon-ae.pdp-evidence-discovery.v1",
+    "sha": os.getenv("PULL_REQUEST_HEAD_SHA", ""),
+    "sourceMarket": "AE",
+    "query": "PlayStation 5",
+    "requestsAttempted": 0,
+    "retries": 0,
+    "usesProxies": False,
+    "customerPublishable": False,
+    "pdpVerified": False,
+    "sourceCurrencyClaimVerified": False,
+    "saudiDeliveryEligibilityVerified": False,
+    "observations": [],
+    "conclusion": "NOT_RUN",
+}
+
+
+def origin(url):
+    try:
+        u = urlsplit(url)
+        return (
+            u.scheme == "https" and u.hostname == "www.noon.com"
+            and u.username is None and u.password is None
+            and u.port in (None, 443)
+        )
+    except ValueError:
+        return False
+
+
+def error_class(exc):
+    name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+    if any(x in name for x in ("typeerror", "attributeerror", "nameerror")):
+        return "IMPLEMENTATION_ERROR"
+    if "timeout" in name or "timeout" in msg or "timed out" in msg:
+        return "TIMEOUT"
+    if any(x in msg for x in ("http2", "http/2", "errcode: 92")):
+        return "HTTP2_PROTOCOL_ERROR"
+    return "NETWORK_ERROR"
+
+
+def fetch(session, url, step):
+    observation = {"step": step}
+    REPORT["requestsAttempted"] += 1
+    started = time.monotonic()
+    body = None
+    try:
+        if not origin(url):
+            observation["state"] = "INVALID_ORIGIN"
+            return observation, None
+        response = session.get(
+            url, timeout=15, allow_redirects=False,
+            headers={"accept": "text/html,application/xhtml+xml"},
+        )
+        observation["httpStatus"] = response.status_code
+        observation["htmlBytes"] = len(response.content)
+        observation["mime"] = str(response.headers.get("content-type") or "")[:80]
+        if (response.status_code == 200 and
+                observation["mime"].lower().startswith("text/html") and
+                len(response.content) <= MAX_BYTES and origin(str(response.url))):
+            body = response.content
+            observation["sha256"] = hashlib.sha256(body).hexdigest()
+            observation["state"] = "HTML_SOURCE_RECEIVED"
+        elif response.status_code in (403, 429):
+            observation["state"] = f"HTTP_{response.status_code}"
+        else:
+            observation["state"] = "HTTP_OR_MIME_NOT_ACCEPTED"
+    except Exception as exc:
+        observation["state"] = error_class(exc)
+        observation["errorType"] = type(exc).__name__[:50]
+    finally:
+        observation["elapsedMs"] = round(1000 * (time.monotonic() - started))
+        REPORT["observations"].append(observation)
+    return observation, body
+
+
+def candidate_from_link(link):
+    if not isinstance(link, str):
+        return None
+    url = urljoin(BASE + "/uae-en/", link)
+    if not origin(url):
+        return None
+    split = urlsplit(url)
+    if not split.path.startswith("/uae-en/"):
+        return None
+    match = SKU_RE.search(split.path)
+    if not match:
+        return None
+    offer = parse_qs(split.query).get("o", [])
+    if len(offer) != 1 or not re.fullmatch("[A-Za-z0-9-]{1,100}", offer[0]):
+        return None
+    return {"sku": match.group(1).upper(), "offerCode": offer[0], "url": url}
+
+
+def pick_product(html):
+    soup = BeautifulSoup(html, "html.parser")
+    lang = str(soup.html.get("lang") or "").lower() if soup.html else ""
+    heading = soup.select_one("h1")
+    title = heading.get_text(" ", strip=True) if heading else ""
+    if lang != "en-ae" or " ".join(title.casefold().split()) != "playstation 5":
+        return None, {"state": "PAGE_QUERY_OR_MARKET_INVALID"}
+    all_links = 0
+    for link in soup.select('a[href*="/p/"]')[:200]:
+        all_links += 1
+        item = candidate_from_link(link.get("href"))
+        if not item:
+            continue
+        amt = link.select_one('[data-qa="plp-product-box-price"] strong')
+        title_node = link.select_one('[data-qa="plp-product-box-name"]')
+        if amt is None or title_node is None:
+            continue
+        amount = amt.get_text(" ", strip=True).replace(",", "")
+        if not MONEY_RE.fullmatch(amount) or cents(amount) is None:
+            continue
+        item["plpPrice"] = amount
+        item["titleMatchesSkuLink"] = bool(title_node.get_text(" ", strip=True))
+        return item, {"state": "SINGLE_LIVE_OFFER_SELECTED", "linksScanned": all_links}
+    return None, {"state": "NO_VALID_LIVE_OFFER", "linksScanned": all_links}
+
+
+def safe_decimal(value):
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+        return None
+    v = str(value).strip()
+    try:
+        d = Decimal(v)
+        if d.is_finite() and Decimal(0) < d <= Decimal("10000000"):
+            return str(d)
+    except (ValueError, InvalidOperation):
+        pass
+    return None
+
+
+def inspect_jsonld(soup, item):
+    matches = []
+    count = 0
+    for script in soup.select('script[type="application/ld+json"]')[:50]:
+        body = script.string or script.get_text()
+        if not body or len(body) > 300_000:
+            continue
+        try:
+            root = json.loads(body)
+        except (ValueError, TypeError):
+            continue
+        queue = [root]
+        while queue and count < MAX_NODES:
+            count += 1
+            entry = queue.pop()
+            if isinstance(entry, list):
+                queue.extend(entry[:100])
+                continue
+            if not isinstance(entry, dict):
+                continue
+            for k in ("@graph", "itemListElement", "mainEntity"):
+                if k in entry:
+                    queue.append(entry[k])
+            kind = entry.get("@type")
+            kinds = kind if isinstance(kind, list) else [kind]
+            if "Product" not in kinds:
+                continue
+            if str(entry.get("sku") or "").upper() != item["sku"]:
+                continue
+            offers = entry.get("offers") or []
+            if isinstance(offers, dict):
+                offers = [offers]
+            for o in offers[:30] if isinstance(offers, list) else []:
+                if not isinstance(o, dict):
+                    continue
+                verdict = assess_offer(
+                    requested_sku=item["sku"],
+                    product_sku=str(entry.get("sku") or ""),
+                    plp_price=item["plpPrice"],
+                    pdp_price=o.get("price"),
+                    currency=o.get("priceCurrency"),
+                    requested_offer_code=item["offerCode"],
+                    offer_url=o.get("url"),
+                )
+                matches.append({
+                    "currency": str(o.get("priceCurrency") or "")[:10],
+                    "price": safe_decimal(o.get("price")),
+                    "offerLinkMatches": verdict["sameOfferIdentity"],
+                    "deltaCents": verdict["deltaCents"],
+                    "decision": verdict["decision"],
+                })
+    return {"nodesInspected": count, "matchedSkuOffers": matches[:10]}
+
+
+def inspect_dom(soup, item):
+    selectors = [
+        '[data-qa*="price"]', '[data-testid*="price"]',
+        '[itemprop="price"]', '[data-currency]', '[itemprop="priceCurrency"]',
+        'meta[property="product:price:amount"]',
+        'meta[property="product:price:currency"]',
+    ]
+    output = {}
+    for selector in selectors:
+        found = soup.select(selector)[:25]
+        # Describe candidate values without pretending they are attributable to
+        # the selected offer. Never copy all HTML or arbitrary script text.
+        values = []
+        for node in found[:3]:
+            value = node.get("content") or node.get("aria-label") or node.get_text(" ", strip=True)
+            stripped = " ".join(str(value).split())
+            values.append({
+                "tag": node.name,
+                "text": stripped[:90],
+                "len": len(stripped),
+                "hasAed": bool(re.search(r"\bAED\b|د\.?\s*إ", stripped, re.I)),
+                "hasOfferCode": item["offerCode"] in stripped,
+            })
+        output[selector] = {"count": len(found), "samples": values}
+    return output
+
+
+def script_shape(soup, item):
+    """Find embedded state objects, summarize only exact SKU/offer-adjacent nodes."""
+    result = {
+        "jsonScriptCounts": {},
+        "candidateContexts": [],
+        "matchedOfferCodeOccurrences": 0,
+        "matchedSkuOccurrences": 0,
+        "parsedStateObjects": 0,
+        "rawHtmlScriptOfferOccurrence": False,
+    }
+    for node in soup.find_all("script", limit=MAX_HTML_SCRIPTS):
+        body = node.string or node.get_text()
+        if not body:
+            continue
+        src_type = str(node.get("type") or "unspecified")[:50]
+        result["jsonScriptCounts"][src_type] = result["jsonScriptCounts"].get(src_type, 0) + 1
+        result["matchedOfferCodeOccurrences"] += body.count(item["offerCode"])
+        result["matchedSkuOccurrences"] += body.count(item["sku"])
+        if item["offerCode"] in body:
+            result["rawHtmlScriptOfferOccurrence"] = True
+        if len(body) > 3_000_000:
+            continue
+        if src_type not in ("application/json", "application/ld+json"):
+            continue
+        try:
+            obj = json.loads(body)
+        except (ValueError, TypeError):
+            continue
+        result["parsedStateObjects"] += 1
+        queue = [(obj, "$", 0)]
+        visited = 0
+        while queue and visited < MAX_NODES:
+            visited += 1
+            value, path, depth = queue.pop()
+            if depth > 12:
+                continue
+            if isinstance(value, list):
+                for index, entry in enumerate(value[:100]):
+                    queue.append((entry, path + "[]", depth + 1))
+                continue
+            if not isinstance(value, dict):
+                continue
+            sku_keys = [k for k, v in value.items() if
+                        isinstance(v, (str, int)) and str(v).upper() == item["sku"]]
+            offer_keys = [k for k, v in value.items() if
+                          isinstance(v, str) and v == item["offerCode"]]
+            if (sku_keys or offer_keys) and len(result["candidateContexts"]) < 12:
+                fields = {}
+                for k, v in value.items():
+                    lk = str(k).lower()
+                    if (lk in ("price", "sale_price", "selling_price", "offer_price",
+                               "currency", "currency_code", "pricecurrency",
+                               "offer_code", "offercode", "sku", "product_sku") and
+                            isinstance(v, (int, float, str, bool))):
+                        if "price" in lk:
+                            fields[k] = safe_decimal(v)
+                        elif "currency" in lk:
+                            fields[k] = str(v)[:12]
+                        elif "sku" in lk:
+                            fields[k] = str(v)[:30]
+                        elif "offer" in lk:
+                            fields[k] = "MATCHED" if v == item["offerCode"] else "DIFFERENT"
+                result["candidateContexts"].append({
+                    "path": path[:150],
+                    "skuKeyCount": len(sku_keys),
+                    "offerKeyCount": len(offer_keys),
+                    "relevantFieldNames": sorted(fields)[:15],
+                    "fields": fields,
+                })
+            for k, v in value.items():
+                if isinstance(v, (list, dict)):
+                    queue.append((v, path + "." + str(k)[:45], depth + 1))
+    return result
+
+
+try:
+    with requests.Session(impersonate="chrome") as session:
+        _, warm = fetch(session, BASE + "/uae-en/", "warmup")
+        if warm is None:
+            REPORT["conclusion"] = "WARMUP_NOT_AVAILABLE"
+        else:
+            _, search = fetch(session, SEARCH, "plp_live")
+            if search is None:
+                REPORT["conclusion"] = "PLP_NOT_AVAILABLE"
+            else:
+                item, selection = pick_product(search)
+                REPORT["selection"] = selection
+                if item:
+                    REPORT["selectedSku"] = item["sku"]
+                    REPORT["selectedOfferIdHash"] = hashlib.sha256(
+                        item["offerCode"].encode("utf8")
+                    ).hexdigest()
+                    REPORT["plpDisplayedPrice"] = item["plpPrice"]
+                    _, pdp = fetch(session, item["url"], "one_offer_linked_pdp")
+                    if pdp is None:
+                        REPORT["conclusion"] = "PDP_NOT_AVAILABLE"
+                    else:
+                        soup = BeautifulSoup(pdp, "html.parser")
+                        REPORT["pdpLang"] = str(
+                            soup.html.get("lang") or "" if soup.html else ""
+                        )[:25]
+                        REPORT["jsonLd"] = inspect_jsonld(soup, item)
+                        REPORT["domEvidence"] = inspect_dom(soup, item)
+                        REPORT["embeddedState"] = script_shape(soup, item)
+                        REPORT["conclusion"] = "PDP_STRUCTURES_OBSERVED_UNVERIFIED_OFFER"
+except Exception as exc:
+    REPORT["conclusion"] = error_class(exc)
+    REPORT["fatalType"] = type(exc).__name__[:50]
+finally:
+    with open(REPORT_PATH, "w", encoding="utf8") as f:
+        json.dump(REPORT, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(json.dumps(REPORT, indent=2, ensure_ascii=False))
+    if REPORT["conclusion"] != "PDP_STRUCTURES_OBSERVED_UNVERIFIED_OFFER":
+        raise SystemExit(1)
