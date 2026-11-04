@@ -137,6 +137,17 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
 @media(max-width:560px){.hero-center{max-width:100%}.hero-tilt{width:min(92%,420px)}.hero-center .hero-visual .hero-sculpture{width:100%;max-width:100%;height:100%;object-fit:contain}.hero-controls{margin-top:0;max-width:calc(100% - 8px)}.hero-controls button{padding:9px 10px;min-width:70px}.hero-controls .hero-motion-toggle{min-width:44px}}
 @media(prefers-reduced-motion:reduce){.hero-tilt,.hero-controls button{transition:none!important}.hero-tilt .hero-sculpture,.hero-sheen,.holo-aura{animation:none!important}.hero-visual .hero-tilt{transform:none!important}.hero-visual .hero-sheen{opacity:0!important}}
 
+
+/* P2.0 — storefront navigation and accessibility contract. */
+html{scroll-padding-top:90px}
+section[id]{scroll-margin-top:90px}
+.nav-links a:focus-visible,.nav-meta a:focus-visible,.footer-links a:focus-visible,
+.drawer-nav a:focus-visible,.menu-btn:focus-visible,.drawer-close:focus-visible,
+.card:focus-visible{outline:3px solid #8ac5ff;outline-offset:4px}
+.card[role="button"]{touch-action:pan-y}
+.drawer[inert]{pointer-events:none}
+@media(max-width:900px){html{scroll-padding-top:76px}section[id]{scroll-margin-top:76px}}
+
 /* NAWAA Search Engine */
 .search-engine{padding:100px 5vw;background:#07111d;color:#f5f0e8;border-top:1px solid rgba(255,255,255,.12)}
 .search-engine .search-wrap{max-width:1180px;margin:auto}.search-engine h2{font-size:clamp(38px,6vw,82px);margin:10px 0 18px;line-height:1.05}.search-engine .lead{max-width:760px;color:#aab8c8;line-height:1.9}
@@ -149,10 +160,10 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
 <div class="noise" aria-hidden="true"></div><div class="progress" id="progress"></div>
 <header class="nav" id="nav">
  <div class="shell nav-inner">
-  <nav class="nav-links" aria-label="التنقل الرئيسي"><a href="#about">الفكرة</a><a href="#selection">قيد المراجعة</a><a href="#process">كيف نختار</a></nav>
+  <nav class="nav-links" aria-label="التنقل الرئيسي"><a href="#about">الفكرة</a><a href="#selection">المتجر</a><a href="#price">ابحث وقارن</a></nav>
   <a class="logo" href="#top" aria-label="نواة">نواة<i>.</i></a>
   <div class="nav-meta"><a href="#faq">الأسئلة</a><span class="status-dot" aria-hidden="true"></span><span>معاينة قبل الإطلاق</span></div>
-  <button class="menu-btn" id="menuBtn" type="button" aria-label="فتح القائمة">القائمة</button>
+  <button class="menu-btn" id="menuBtn" type="button" aria-label="فتح القائمة" aria-controls="drawer" aria-expanded="false">القائمة</button>
  </div>
 </header>
 <main id="top">
@@ -197,14 +208,14 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
  <section class="section dark section-pad" id="selection">
   <div class="shell"><div class="showcase-head"><div><span class="eyebrow reveal">CURRENT SHORTLIST</span><h2 class="reveal delay-1">ما نراجعه الآن.</h2></div><p class="reveal delay-2">هذه فئات تحت الاختبار وليست منتجات معروضة للبيع بعد. لن يظهر السعر النهائي إلا بعد تثبيت المورد والتكلفة الفعلية.</p></div>
    <div class="cards">
-    <article class="card one reveal" data-title="العمل والدراسة" data-body="نبحث عن منتجات صغيرة، مفهومة وسهلة الشحن تعالج احتياجًا واضحًا في المكتب أو الدراسة، مع مقارنة دقيقة للموديل والسعر المحلي."><img src="assets/nawaa-work-study.jpg" alt="مساحة عمل مرتبة تعبيرية عن فئة العمل والدراسة"><div class="card-copy"><div><small>01 / WORK & STUDY</small><h3>أدوات تستحق مساحة على مكتبك.</h3></div><span class="card-arrow">↗</span></div></article>
-    <article class="card abstract reveal delay-1" data-title="منتج بطل" data-body="بدل متجر مليء بمنتجات عشوائية، نبحث عن Hero Product واحد يمكن شرح قيمته في ثوانٍ ويحتمل المقارنة السعرية بوضوح."><img class="mini-sculpture" src="assets/nawaa-hero-sculpture.png" alt=""><div class="card-copy"><div><small>02 / HERO PRODUCT</small><h3>منتج واحد. حجة شراء واضحة.</h3></div><span class="card-arrow">↗</span></div></article>
-    <article class="card reveal delay-2" data-title="المنزل" data-body="الأولوية لما يوفر وقتًا أو مساحة أو فوضى. نستبعد القطع الهشة أو الثقيلة إذا كان فرق السعر لا يتحمل الشحن وخدمة ما بعد البيع."><img src="assets/nawaa-home.jpg" alt="تفاصيل منزلية ومكتبية تعبيرية عن فئة المنزل"><div class="card-copy"><div><small>03 / LIVING</small><h3>تفاصيل أصغر. أثر يومي أكبر.</h3></div><span class="card-arrow">↗</span></div></article>
+    <article class="card one reveal" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل فئة العمل والدراسة" data-title="العمل والدراسة" data-body="نبحث عن منتجات صغيرة، مفهومة وسهلة الشحن تعالج احتياجًا واضحًا في المكتب أو الدراسة، مع مقارنة دقيقة للموديل والسعر المحلي."><img src="assets/nawaa-work-study.jpg" alt="مساحة عمل مرتبة تعبيرية عن فئة العمل والدراسة"><div class="card-copy"><div><small>01 / WORK & STUDY</small><h3>أدوات تستحق مساحة على مكتبك.</h3></div><span class="card-arrow">↗</span></div></article>
+    <article class="card abstract reveal delay-1" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل المنتج قيد المراجعة" data-title="منتج بطل" data-body="بدل متجر مليء بمنتجات عشوائية، نبحث عن Hero Product واحد يمكن شرح قيمته في ثوانٍ ويحتمل المقارنة السعرية بوضوح."><img class="mini-sculpture" src="assets/nawaa-hero-sculpture.png" alt=""><div class="card-copy"><div><small>02 / HERO PRODUCT</small><h3>منتج واحد. حجة شراء واضحة.</h3></div><span class="card-arrow">↗</span></div></article>
+    <article class="card reveal delay-2" role="button" tabindex="0" aria-haspopup="dialog" aria-label="تفاصيل فئة المنزل" data-title="المنزل" data-body="الأولوية لما يوفر وقتًا أو مساحة أو فوضى. نستبعد القطع الهشة أو الثقيلة إذا كان فرق السعر لا يتحمل الشحن وخدمة ما بعد البيع."><img src="assets/nawaa-home.jpg" alt="تفاصيل منزلية ومكتبية تعبيرية عن فئة المنزل"><div class="card-copy"><div><small>03 / LIVING</small><h3>تفاصيل أصغر. أثر يومي أكبر.</h3></div><span class="card-arrow">↗</span></div></article>
    </div>
   </div>
  </section>
 
- <section class="section rose section-pad" id="price">
+ <section class="section rose section-pad" id="pricing-policy">
   <div class="shell pricing-grid">
    <div class="pricing-copy"><span class="eyebrow reveal" style="color:#352a34">PRICE DISCIPLINE</span><h2 class="reveal delay-1">الأرخص ليس صفقة إذا اختفى الفرق عند الوصول.</h2><p class="reveal delay-2">نقارن السعر الذي يدفعه العميل في النهاية، لا رقمًا جذابًا على صفحة المورد. لذلك المنتج لا يمر إذا التهم الشحن أو الأعطال أو الخدمة هامش السعر.</p><div class="chip-row reveal"><span class="chip">سعر المورد</span><span class="chip">الشحن</span><span class="chip">خدمة ما بعد البيع</span><span class="chip">مخصص العيوب</span><span class="chip">هامش منطقي</span></div></div>
    <div class="formula reveal delay-1"><div class="formula-label">THE REAL PRICE / 02</div><div class="formula-line"><span>التكلفة الكاملة</span><i>+</i><span>هامش منطقي</span><i>&lt;</i><span>سعر السوق المقارن</span></div><p class="formula-note">إذا لم تبقَ المعادلة صحيحة بعد جميع التكاليف، نستبعد المنتج بدل أن نخفي التكلفة داخل شروط أو وعود تسويقية.</p></div>
@@ -251,9 +262,9 @@ footer{border-top:1px solid var(--line);padding:46px 0 62px;background:#06101a}.
 
  <section class="finale dark" id="status"><div class="finale-inner shell"><span class="eyebrow reveal">LAUNCH STATUS / SEARCHING</span><h2 class="reveal delay-1">أول Drop يبدأ عندما نجد شيئًا يستحق.</h2><p class="reveal delay-2">المرحلة الحالية: اختيار المنتج والمورد. بعدها نحول هذه المعاينة إلى متجر بيع فعلي بمعلومات قابلة للتحقق.</p><a class="launch-link reveal delay-2" href="#selection">راجع القائمة الحالية <i>←</i></a></div></section>
  </main>
- <footer><div class="shell footer-grid"><div><div class="footer-brand">نواة<i>.</i></div><div class="footer-note">متجر سعودي قيد التأسيس. هذه المعاينة لا تستقبل طلبات أو مدفوعات. سيُستكمل قسم السياسات والبيانات النظامية قبل الإطلاق التجاري.</div><div class="copyright">© 2026 NAWAA — PRE-LAUNCH EDITION</div></div><nav class="footer-links"><a href="#about">الفكرة</a><a href="#selection">الاختيارات</a><a href="#price">السعر</a><a href="#process">العملية</a><a href="#faq">الأسئلة</a></nav></div></footer>
+ <footer><div class="shell footer-grid"><div><div class="footer-brand">نواة<i>.</i></div><div class="footer-note">متجر سعودي قيد التأسيس. هذه المعاينة لا تستقبل طلبات أو مدفوعات. سيُستكمل قسم السياسات والبيانات النظامية قبل الإطلاق التجاري.</div><div class="copyright">© 2026 NAWAA — PRE-LAUNCH EDITION</div></div><nav class="footer-links"><a href="#about">الفكرة</a><a href="#selection">الاختيارات</a><a href="#pricing-policy">منطق السعر</a><a href="#price">البحث والمقارنة</a><a href="#process">العملية</a><a href="#faq">الأسئلة</a></nav></div></footer>
 
- <div class="drawer" id="drawer" aria-hidden="true"><div class="drawer-panel"><div class="drawer-top"><b>نواة.</b><button class="drawer-close" id="drawerClose" type="button" aria-label="إغلاق">×</button></div><h3 id="drawerTitle">التفاصيل</h3><p id="drawerBody"></p><nav class="drawer-nav" id="drawerNav"><a href="#about">الفكرة</a><a href="#selection">قيد المراجعة</a><a href="#price">منطق السعر</a><a href="#process">كيف نختار</a><a href="#faq">الأسئلة</a></nav><ul id="drawerFacts"><li><span>الحالة</span><b>قيد التقييم</b></li><li><span>البيع</span><b>غير مفعّل</b></li><li><span>المعيار</span><b>فائدة + مواصفة + تكلفة</b></li></ul></div></div>
+ <div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true" inert><div class="drawer-panel"><div class="drawer-top"><b>نواة.</b><button class="drawer-close" id="drawerClose" type="button" aria-label="إغلاق">×</button></div><h3 id="drawerTitle">التفاصيل</h3><p id="drawerBody"></p><nav class="drawer-nav" id="drawerNav"><a href="#about">الفكرة</a><a href="#selection">المتجر</a><a href="#price">البحث والمقارنة</a><a href="#pricing-policy">منطق السعر</a><a href="#process">كيف نختار</a><a href="#faq">الأسئلة</a></nav><ul id="drawerFacts"><li><span>الحالة</span><b>قيد التقييم</b></li><li><span>البيع</span><b>غير مفعّل</b></li><li><span>المعيار</span><b>فائدة + مواصفة + تكلفة</b></li></ul></div></div>
 <script src="./config.js"></script>
 <script>
 const nav=document.getElementById('nav'), progress=document.getElementById('progress'), sculpture=document.getElementById('sculpture'), heroVisual=document.getElementById('heroVisual'), heroTilt=document.getElementById('heroTilt');
@@ -310,11 +321,56 @@ syncHeroMode();
 
 const io=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in')}),{threshold:.12,rootMargin:'0px 0px -7% 0px'});document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
 const drawer=document.getElementById('drawer'),dt=document.getElementById('drawerTitle'),db=document.getElementById('drawerBody'),drawerNav=document.getElementById('drawerNav'),drawerFacts=document.getElementById('drawerFacts');
-function openDrawer(title,body,mode='detail'){dt.textContent=title;db.textContent=body;drawerNav.style.display=mode==='menu'?'block':'none';drawerFacts.style.display=mode==='menu'?'none':'block';drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');document.body.style.overflow='hidden'}
-function closeDrawer(){drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');document.body.style.overflow=''}
-document.querySelectorAll('.card').forEach(c=>c.addEventListener('click',()=>openDrawer(c.dataset.title,c.dataset.body)));
-document.getElementById('drawerClose').addEventListener('click',closeDrawer);drawer.addEventListener('click',e=>{if(e.target===drawer)closeDrawer()});addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
-const menuBtn=document.getElementById('menuBtn');menuBtn.addEventListener('click',()=>openDrawer('التنقل','انتقل مباشرة إلى الجزء الذي تريد مراجعته.','menu'));drawerNav.querySelectorAll('a').forEach(a=>a.addEventListener('click',closeDrawer));
+const menuBtn=document.getElementById('menuBtn');
+let drawerReturnFocus=null;
+function openDrawer(title,body,mode='detail'){
+ drawerReturnFocus=document.activeElement;
+ dt.textContent=title;db.textContent=body;
+ drawerNav.style.display=mode==='menu'?'block':'none';
+ drawerFacts.style.display=mode==='menu'?'none':'block';
+ drawer.removeAttribute('inert');drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');
+ menuBtn.setAttribute('aria-expanded',String(mode==='menu'));
+ document.body.style.overflow='hidden';
+ document.getElementById('drawerClose').focus();
+}
+function closeDrawer(restoreFocus=true){
+ if(!drawer.classList.contains('open'))return;
+ drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');
+ drawer.setAttribute('inert','');document.body.style.overflow='';
+ menuBtn.setAttribute('aria-expanded','false');
+ if(restoreFocus && drawerReturnFocus?.isConnected)drawerReturnFocus.focus({preventScroll:true});
+ drawerReturnFocus=null;
+}
+document.querySelectorAll('.card').forEach(c=>{
+ const activate=()=>openDrawer(c.dataset.title,c.dataset.body);
+ c.addEventListener('click',activate);
+ c.addEventListener('keydown',e=>{
+  if(e.key==='Enter'||e.key===' '){e.preventDefault();activate()}
+ });
+});
+document.getElementById('drawerClose').addEventListener('click',()=>closeDrawer());
+drawer.addEventListener('click',e=>{if(e.target===drawer)closeDrawer()});
+addEventListener('keydown',e=>{
+ if(!drawer.classList.contains('open'))return;
+ if(e.key==='Escape'){e.preventDefault();closeDrawer();return}
+ if(e.key!=='Tab')return;
+ const focusable=[...drawer.querySelectorAll('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')]
+  .filter(el=>el.getClientRects().length>0);
+ if(!focusable.length){e.preventDefault();return}
+ const first=focusable[0],last=focusable[focusable.length-1];
+ if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus()}
+ else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus()}
+ else if(!focusable.includes(document.activeElement)){e.preventDefault();first.focus()}
+});
+menuBtn.addEventListener('click',()=>openDrawer('التنقل','اختر قسمًا من أقسام متجر نواة أو افتح محرك المقارنة.','menu'));
+drawerNav.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>{
+ const destination=document.getElementById(a.hash.slice(1));
+ closeDrawer(false);
+ if(destination){
+  destination.setAttribute('tabindex','-1');
+  requestAnimationFrame(()=>destination.focus({preventScroll:true}));
+ }
+}));
 
 const searchForm=document.getElementById('nawaaSearchForm');
 searchForm.addEventListener('submit',e=>{
