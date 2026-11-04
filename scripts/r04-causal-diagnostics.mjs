@@ -17,6 +17,11 @@ const CODE_TO_PROBE=Object.freeze({
   CATALOG_RECALL_FAILURE:"TRACE_CATALOG_RECALL_PHASE_AND_ERROR_CLASS",
   SOURCE_ERROR_ACCOUNTING_GAP:"RECHECK_LOSSLESS_ERROR_CLASSIFICATION",
   INCONSISTENT_TIMING_EVIDENCE:"RECHECK_CLOCK_AND_MEASUREMENT_BOUNDARIES",
+  CLIENT_HEADER_WAIT_DOMINANT:"TRACE_RENDER_ADMISSION_AND_PRE_HEADER_CRITICAL_PATH",
+  CLIENT_BODY_READ_DOMINANT:"TRACE_RESPONSE_STREAM_AND_TRANSFER_PATH",
+  CLIENT_PARSE_COST_DOMINANT:"PROFILE_LARGE_JSON_PARSE_AND_RESPONSE_SIZE",
+  COVERAGE_EVIDENCE_MISSING:"TRACE_SOURCE_WAVE_COMPLETENESS_CONTRACT",
+  COVERAGE_CONTRADICTION:"TRACE_PARTIAL_COVERAGE_ADMISSION_CONTRACT",
   REQUEST_EVIDENCE_MISSING:"RECOLLECT_MISSING_INTENT_WITH_SHA_GUARD",
 });
 const sourceBlock=new Set([
@@ -27,7 +32,6 @@ const sourceBlock=new Set([
 const sourceTimeout=new Set(["HTTP_TIMEOUT","SOURCE_TRANSPORT_FAILURE"]);
 const finiteNonnegative=n=>typeof n==="number"&&Number.isFinite(n)&&n>=0&&n<=120000;
 const count=n=>Number.isSafeInteger(n)&&n>=0&&n<=1_000_000?n:null;
-const safeId=s=>typeof s==="string"&&/^[a-z0-9][a-z0-9:_-]{1,79}$/.test(s)?s:null;
 function quantile(samples,p){
   if(!samples.length)return null;
   const x=[...samples].sort((a,b)=>a-b);
@@ -51,6 +55,7 @@ function validateProvenance(report){
 export function diagnoseR04Evidence(report){
   validateProvenance(report);
   const seen=new Set(), rows=[],latency=[],codes=new Map();
+  const headerSamples=[],bodySamples=[],parseSamples=[],bytesSamples=[],serverSamples=[];
   let observed=0,partial=0,missingPrincipal=0,deadlineCount=0,failed=0;
   let errorEvents=0,unattributedEvents=0;
   for(let i=0;i<36;i++){
@@ -74,6 +79,9 @@ export function diagnoseR04Evidence(report){
     }else{
       observed++;
       if(row.partial===true)partial++;
+      else if(row.partial!==false)mark(flags,"COVERAGE_EVIDENCE_MISSING");
+      if(row.partial===false&&count(row.sourceErrors)>0)
+        mark(flags,"COVERAGE_CONTRADICTION");
       const offers=count(row.offers),principal=count(row.primaryGroups);
       if(principal===0){
         missingPrincipal++;
@@ -86,7 +94,13 @@ export function diagnoseR04Evidence(report){
         mark(flags,"INTERNAL_DEADLINE");
       }
       const catalog=row.catalogRecallStatus;
-      if(catalog==="failed")mark(flags,"CATALOG_RECALL_FAILURE");
+      if(catalog==="failed"){
+        mark(flags,"CATALOG_RECALL_FAILURE");
+        if(row.partial===false)mark(flags,"COVERAGE_CONTRADICTION");
+      }
+      if(finiteNonnegative(row.serverDurationMs))
+        serverSamples.push(Math.round(row.serverDurationMs));
+      if(count(row.responseBytes)!==null)bytesSamples.push(row.responseBytes);
       const breaks=row.sourceErrorBreakdown;
       if(breaks&&typeof breaks==="object"){
         const reported=count(breaks.reported);
@@ -111,6 +125,16 @@ export function diagnoseR04Evidence(report){
         const h=phases.headers,b=phases.body,p=phases.parse;
         if(![h,b,p].every(finiteNonnegative)||h+b+p>timing+50)
           mark(flags,"INCONSISTENT_TIMING_EVIDENCE");
+        else{
+          headerSamples.push(h);bodySamples.push(b);parseSamples.push(p);
+          // Observed CLIENT phases, never alleged merchant or server root causes.
+          if(timing>=5000&&h>=4000&&h/timing>=.7)
+            mark(flags,"CLIENT_HEADER_WAIT_DOMINANT");
+          if(timing>=3000&&b>=1500&&b/timing>=.4)
+            mark(flags,"CLIENT_BODY_READ_DOMINANT");
+          if(timing>=1000&&p>=500&&p/timing>=.15)
+            mark(flags,"CLIENT_PARSE_COST_DOMINANT");
+        }
       }
     }
     // A failure can coexist with other observed symptoms; never infer a single
@@ -146,6 +170,12 @@ export function diagnoseR04Evidence(report){
       postHealthSha:report.healthAfter.revision,corpusIntents:36,observed,
       requestFailed:failed,evidenceMissing:36-observed-failed},
     sample:{validLatencyObservations:latency.length,sampleP50Ms,sampleP95Ms,
+      phaseSamples:headerSamples.length,
+      clientHeadersP50Ms:quantile(headerSamples,.5),clientHeadersP95Ms:quantile(headerSamples,.95),
+      clientBodyP50Ms:quantile(bodySamples,.5),clientBodyP95Ms:quantile(bodySamples,.95),
+      clientParseP50Ms:quantile(parseSamples,.5),clientParseP95Ms:quantile(parseSamples,.95),
+      responseBytesP95:quantile(bytesSamples,.95),
+      serverReportedDurationP95Ms:quantile(serverSamples,.95),
       internalDeadlines:deadlineCount,missingPrincipal,partial,
       sourceErrorEvents:errorEvents,sourceErrorEventsOutsideTop32:unattributedEvents,
       sourceErrorReconciliation:reconciliation},
