@@ -40,6 +40,13 @@ if(output.provenance){
     "**Sample P50 / P95 (not population latency):** "+
       formatNumber(output.sample.sampleP50Ms)+" / "+
       formatNumber(output.sample.sampleP95Ms)+" ms",
+    "**Client phase P95 header / body / parse:** "+
+      formatNumber(output.sample.clientHeadersP95Ms)+" / "+
+      formatNumber(output.sample.clientBodyP95Ms)+" / "+
+      formatNumber(output.sample.clientParseP95Ms)+" ms",
+    "**Reported server duration P95 (not server CPU):** "+
+      formatNumber(output.sample.serverReportedDurationP95Ms)+" ms",
+    "**Response size P95:** "+formatNumber(output.sample.responseBytesP95)+" bytes",
     "**Principal misses:** "+output.sample.missingPrincipal,
     "**Internal deadlines:** "+output.sample.internalDeadlines,
     "**Source-error events / truncated tail:** "+
