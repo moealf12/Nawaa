@@ -10,6 +10,13 @@ const REASONS=new Set([
 ]);
 const LANES=new Set(["direct","alternative","accessory","game","guide","other"]);
 const ROLES=new Set(["product","accessory","guide","unknown"]);
+const arabic=/\p{Script=Arabic}/u;
+const latin=/\p{Script=Latin}/u;
+const scriptKind=value=>{
+  const text=typeof value==="string"?value:"";
+  const hasArabic=arabic.test(text),hasLatin=latin.test(text);
+  return hasArabic&&hasLatin?"mixed":hasArabic?"arabic":hasLatin?"latin":"unknown";
+};
 export function summarizeGroupClassificationEvidence(query,groups,{maxGroups=1000}={}){
   if(!Array.isArray(groups)||typeof query!=="string")throw Error("INVALID_CLASSIFIER_EVIDENCE_INPUT");
   if(!Number.isInteger(maxGroups)||maxGroups<1||maxGroups>1000)
@@ -25,6 +32,11 @@ export function summarizeGroupClassificationEvidence(query,groups,{maxGroups=100
   };
   const alternativeGateCombinations={};
   let alternativeGroupsAudited=0;
+  const queryScript=scriptKind(query);
+  const alternativeScriptEvidence={
+    queryScript,arabicTitles:0,latinTitles:0,mixedTitles:0,unknownTitles:0,
+    disjointScript:0,disjointScriptLowCoverage:0,
+  };
   for(const group of seen){
     let decision;
     try{decision=classifyResultGroup(query,group);}
@@ -43,6 +55,15 @@ export function summarizeGroupClassificationEvidence(query,groups,{maxGroups=100
       highMatchConfidence++;
     if(decision?.lane==="alternative"){
       alternativeGroupsAudited++;
+      const script=scriptKind(offer?.title);
+      alternativeScriptEvidence[script+"Titles"]++;
+      const disjoint=(queryScript==="arabic"&&script==="latin")||
+        (queryScript==="latin"&&script==="arabic");
+      if(disjoint){
+        alternativeScriptEvidence.disjointScript++;
+        if(Number(decision?.coverage)<.67)
+          alternativeScriptEvidence.disjointScriptLowCoverage++;
+      }
       const misses=[];
       if(decision.sourceExact!==true){
         alternateGateMisses.sourceExactFalse++;misses.push("not_exact");
@@ -74,9 +95,10 @@ export function summarizeGroupClassificationEvidence(query,groups,{maxGroups=100
     invalidDecisions,reasonCounts:reasons,laneCounts:lanes,roleCounts:roles,
     sourceExact,modelVerified,highMatchConfidence,coverageBins,
     alternativeGroupsAudited,alternateGateMisses,
-    alternativeGateCombinations,
+    alternativeGateCombinations,alternativeScriptEvidence,
     auditedWith:"ACTUAL_CUSTOMER_RESULT_CLASSIFIER",
     gateEvidenceLevel:"OBSERVED_OVERLAPPING_CONDITIONS_NOT_CAUSAL_PROOF",
+    scriptEvidenceLevel:"CHARACTER_SCRIPT_MISMATCH_HYPOTHESIS_NOT_SEMANTIC_EQUIVALENCE",
     notProofOf:["human_relevance","stockout","merchant_exhaustiveness","ranking_quality"],
   };
 }
