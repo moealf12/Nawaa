@@ -235,6 +235,7 @@ if(criticalPathDiagnostics){
     sha:SHA,association:summary.traceAssociation,
     httpEvents:httpTraceEvents.length,generationEvents:criticalPathEvents.length,
     truncatedOrInvalidEvents:traceDropped,
+    observedCriticalPath:criticalPathDiagnostics.measured,
   }));
 }
 const report={schemaVersion:"nawaa.r04.p36.disposable-candidate.v1",
