@@ -99,28 +99,53 @@ def price_value(raw):
 
 
 def source_image(raw):
-    if not isinstance(raw, str):
+    """Accept product CDN images, NOT Noon UI placeholder/logo assets."""
+    if not isinstance(raw, str) or len(raw) > 3000:
         return None
     try:
         u = urlsplit(raw)
-        if u.scheme == "https" and (u.hostname == "f.nooncdn.com" or
-             (u.hostname or "").endswith(".nooncdn.com")):
+        if (u.scheme == "https" and u.hostname in
+                ("f.nooncdn.com", "f.nooncdn.com") and
+                u.path.startswith("/p/") and not u.username and not u.password):
             return raw[:2000]
     except ValueError:
         pass
     return None
 
 
+def media_candidates(value):
+    if not isinstance(value, str):
+        return
+    # srcset stores alternatives as "url 800w, url 1200w".
+    for entry in value.split(",")[:20]:
+        token = entry.strip().split(" ")[0]
+        if token:
+            yield token
+
+
 def find_image(anchor):
-    for node in anchor.select("img"):
-        for attr in ("src", "data-src", "data-original", "data-srcset"):
-            candidate = node.get(attr)
-            if candidate and attr == "data-srcset":
-                candidate = str(candidate).split(",")[0].split(" ")[0]
-            url = source_image(candidate)
-            if url:
-                return url
+    for node in anchor.select("picture source, img"):
+        for attr in ("srcset", "data-srcset", "data-src", "data-original",
+                     "data-lazy-src", "src"):
+            for candidate in media_candidates(node.get(attr)):
+                valid = source_image(candidate)
+                if valid:
+                    return valid
     return None
+
+
+def media_inspection(anchor):
+    """Bounded attr diagnostics: never dump raw HTML or arbitrary DOM text."""
+    output = []
+    for node in anchor.select("picture source, img")[:3]:
+        entry = {"tag": node.name}
+        for attr in ("srcset", "data-srcset", "data-src", "data-original",
+                     "data-lazy-src", "src"):
+            val = node.get(attr)
+            if isinstance(val, str):
+                entry[attr] = val[:240]
+        output.append(entry)
+    return output
 
 
 def extract(html):
@@ -143,6 +168,7 @@ def extract(html):
         "observedCurrencyLabelCount": 0,
         "candidateSample": [],
         "structureSample": [],
+        "imageAttributeSample": [],
     }
     candidates = []
     for a in anchors:
@@ -164,6 +190,8 @@ def extract(html):
         raw_price = price_node.get_text(" ", strip=True) if price_node else ""
         amount = price_value(raw_price)
         img = find_image(a)
+        if len(output["imageAttributeSample"]) < 2:
+            output["imageAttributeSample"].append(media_inspection(a))
         if img:
             output["imageUrlsFound"] += 1
         if amount:
