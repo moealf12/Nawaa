@@ -17,7 +17,9 @@ const variant="51101999038680";
 const title="Vitamin E Vitalizing Sunscreen SPF 50+";
 function tile({productId=id,slug=handle,amount="$23.00",name=title}={}){
   return '<div data-product-id="'+productId+'" class="product-block cc-animate-init">'+
-    '<div class="image-cont"><a class="product-link" href="/products/'+slug+'">picture</a></div>'+
+    '<div class="image-cont"><div class="product-block__image--primary">'+
+    '<img data-src="//www.cosrx.com/cdn/shop/files/sunscreen_{width}x.jpg?v=1">'+
+    '</div><a class="product-link" href="/products/'+slug+'">picture</a></div>'+
     '<div class="product-info"><a class="product-link" href="'+
       'https://www.cosrx.com/products/'+slug+'?_pos=1&amp;_sid=test&amp;_ss=r">'+
       '<div class="product-block__title">'+name+'</div>'+
@@ -72,6 +74,8 @@ test("real Shopify card classes extract query-bound product and USD price",()=>{
   assert.equal(r.candidates[0].productId,id);
   assert.equal(r.candidates[0].sourceUrl,itemUrl);
   assert.equal(r.candidates[0].price,23);
+  assert.equal(r.candidates[0].image,
+    "https://www.cosrx.com/cdn/shop/files/sunscreen_460x.jpg?v=1");
   assert.equal(r.candidates[0].customerPublishable,false);
   assert.equal(r.candidates[0].availability,"unknown");
 });
