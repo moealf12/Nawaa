@@ -17,6 +17,14 @@ export function summarizeGroupClassificationEvidence(query,groups,{maxGroups=100
   const seen=groups.slice(0,maxGroups),reasons={},lanes={},roles={};
   const coverageBins={zero:0,low:0,medium:0,high:0,unknown:0};
   let sourceExact=0,modelVerified=0,highMatchConfidence=0,invalidDecisions=0;
+  // Overlapping observed gate failures, not a single invented classifier
+  // root cause. Classifier behavior itself is NEVER changed.
+  const alternateGateMisses={
+    sourceExactFalse:0,confidenceBelow090:0,modelNotVerified:0,
+    titleCoverageBelow067:0,remainingRoleOrPrecedenceGate:0,
+  };
+  const alternativeGateCombinations={};
+  let alternativeGroupsAudited=0;
   for(const group of seen){
     let decision;
     try{decision=classifyResultGroup(query,group);}
@@ -30,8 +38,31 @@ export function summarizeGroupClassificationEvidence(query,groups,{maxGroups=100
     if(decision?.sourceExact===true)sourceExact++;
     if(decision?.modelVerified===true)modelVerified++;
     const offer=group?.bestOffer??group?.offers?.[0];
-    if(offer?.exactMatch===true&&Number(offer.matchConfidence)>=.9)
+    const confidence=Number(offer?.matchConfidence);
+    if(offer?.exactMatch===true&&confidence>=.9)
       highMatchConfidence++;
+    if(decision?.lane==="alternative"){
+      alternativeGroupsAudited++;
+      const misses=[];
+      if(decision.sourceExact!==true){
+        alternateGateMisses.sourceExactFalse++;misses.push("not_exact");
+      }
+      if(!Number.isFinite(confidence)||confidence<.9){
+        alternateGateMisses.confidenceBelow090++;misses.push("low_confidence");
+      }
+      if(decision.modelVerified!==true){
+        alternateGateMisses.modelNotVerified++;misses.push("model_unverified");
+      }
+      if(!Number.isFinite(decision.coverage)||decision.coverage<.67){
+        alternateGateMisses.titleCoverageBelow067++;misses.push("low_title_coverage");
+      }
+      if(!misses.length){
+        alternateGateMisses.remainingRoleOrPrecedenceGate++;
+        misses.push("other_classifier_gate");
+      }
+      const combo=misses.join("+");
+      alternativeGateCombinations[combo]=(alternativeGateCombinations[combo]||0)+1;
+    }
     const coverage=decision?.coverage;
     const bin=typeof coverage!=="number"||!Number.isFinite(coverage)||coverage<0||coverage>1?
       "unknown":coverage===0?"zero":coverage<.33?"low":coverage<.67?"medium":"high";
@@ -42,7 +73,10 @@ export function summarizeGroupClassificationEvidence(query,groups,{maxGroups=100
     examinedGroups:seen.length,omittedGroups:groups.length-seen.length,
     invalidDecisions,reasonCounts:reasons,laneCounts:lanes,roleCounts:roles,
     sourceExact,modelVerified,highMatchConfidence,coverageBins,
+    alternativeGroupsAudited,alternateGateMisses,
+    alternativeGateCombinations,
     auditedWith:"ACTUAL_CUSTOMER_RESULT_CLASSIFIER",
+    gateEvidenceLevel:"OBSERVED_OVERLAPPING_CONDITIONS_NOT_CAUSAL_PROOF",
     notProofOf:["human_relevance","stockout","merchant_exhaustiveness","ranking_quality"],
   };
 }
