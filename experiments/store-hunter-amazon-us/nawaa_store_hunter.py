@@ -571,6 +571,12 @@ class Scraper:
         started = time.monotonic()
         try:
             response = await self._raw_get(url, params)
+            if method == "search-html" and response.status_code == 503:
+                # One conservative retry for transient upstream unavailability.
+                # Do not retry 403/429, challenges, or robots denial.
+                self.log(method, requested, "TRANSIENT_503_RETRY_ONCE", detail="backoff_2s")
+                await asyncio.sleep(2.0)
+                response = await self._raw_get(url, params)
             elapsed = (time.monotonic() - started) * 1000
             if response.status_code in (403, 429):
                 self.log(method, requested, "BLOCKED_OR_RATE_LIMITED", detail=str(response.status_code), ms=elapsed)
