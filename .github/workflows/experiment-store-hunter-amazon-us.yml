@@ -1,8 +1,8 @@
 name: EXPERIMENT Amazon US Store Hunter Live (no-deploy)
 on:
-  push:
-    branches:
-      - experiment/store-hunter-amazon-us-isolated-20261105
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
     paths:
       - experiments/store-hunter-amazon-us/**
       - .github/workflows/experiment-store-hunter-amazon-us.yml
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   amazon-us-live:
-    if: github.ref == 'refs/heads/experiment/store-hunter-amazon-us-isolated-20261105'
+    if: github.event_name == 'pull_request' && github.head_ref == 'experiment/store-hunter-amazon-us-isolated-20261105'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
