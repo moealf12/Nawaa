@@ -422,6 +422,77 @@ def parse_amazon_us_cards(html: str, page: str, maximum: int) -> list[Product]:
     return products
 
 
+def parse_amazon_us_pdp(html: str, page: str) -> list[Product]:
+    """Conservative Amazon US PDP extraction tied to the page's selected ASIN.
+
+    Never scan all page prices: recommendations, subscriptions, crossed-out
+    totals, and alternate variations often coexist with the buy-box price.
+    """
+    if host(page) not in {"amazon.com", "www.amazon.com"}:
+        return []
+    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?#]|$)", urlsplit(page).path, re.I)
+    if not match:
+        return []
+    asin = match.group(1).upper()
+    soup = BeautifulSoup(html, "html.parser")
+    selected = soup.select_one("input#ASIN[value], input[name='ASIN'][value]")
+    selected_asin = clean_str(selected.get("value")).upper() if selected else None
+    canonical = soup.select_one("link[rel='canonical'][href]")
+    canonical_match = (re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?#]|$)",
+                                 canonical.get("href", ""), re.I)
+                       if canonical else None)
+    canonical_asin = canonical_match.group(1).upper() if canonical_match else None
+    # The selected ASIN is authoritative; missing identity proof is not parity.
+    if (selected_asin and selected_asin != asin) or (canonical_asin and canonical_asin != asin):
+        return []
+    if not (selected_asin == asin or canonical_asin == asin):
+        return []
+    title_tag = soup.select_one("#productTitle")
+    title = clean_str(title_tag.get_text(" ", strip=True) if title_tag else "")
+    if len(title) < 7:
+        return []
+
+    price = None
+    price_problem = "AMAZON_PDP_BUYBOX_PRICE_NOT_FOUND"
+    selectors = (
+        "#corePrice_feature_div .a-price:not(.a-text-price) .a-offscreen",
+        "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price) .a-offscreen",
+        "#apex_desktop .a-price:not(.a-text-price) .a-offscreen",
+        "#priceblock_dealprice", "#priceblock_ourprice", "#price_inside_buybox"
+    )
+    for selector in selectors:
+        matches = soup.select(selector)
+        if not matches:
+            continue
+        prices = {v for el in matches if (raw := el.get_text(" ", strip=True))
+                  if (raw.startswith("$") or re.search(r"\bUSD\b", raw, re.I))
+                  if (v := number_price(raw)) is not None}
+        if len(prices) == 1:
+            price = next(iter(prices))
+            price_problem = ""
+        elif len(prices) > 1:
+            price_problem = "AMAZON_PDP_MULTIPLE_BUYBOX_PRICES"
+        break
+
+    image = None
+    for element in soup.select("img#landingImage, #imgTagWrapperId img, meta[property='og:image']"):
+        for attr in ("data-old-hires", "data-src", "src", "content"):
+            candidate = abs_url(element.get(attr), page)
+            if (candidate and host(candidate) in {"m.media-amazon.com", "images-na.ssl-images-amazon.com"}
+                    and "/images/I/" in urlsplit(candidate).path):
+                image = candidate
+                break
+        if image:
+            break
+    issues = [price_problem] if price_problem else ["USD_INFERRED_FROM_AMAZON_US_CONTEXT"]
+    if not image:
+        issues.append("AMAZON_PDP_PRODUCT_IMAGE_NOT_FOUND")
+    return [Product(title=title, url=f"https://www.amazon.com/dp/{asin}", sku=asin,
+                    price=price, currency="USD" if price else None, image=image,
+                    method="amazon-us-pdp-main-buybox", source_page=page,
+                    price_status="candidate" if price else "unresolved", issues=issues)]
+
+
 def parse_html_cards(html: str, page: str, origin: str, maximum: int) -> list[Product]:
     if host(origin) == "www.amazon.com" or host(origin) == "amazon.com":
         amazon_cards = parse_amazon_us_cards(html, page, maximum)
@@ -856,7 +927,8 @@ class Scraper:
                 body = await self.fetch("product-detail", product.url)
                 if not body:
                     return
-                candidates = parse_jsonld(body, product.url) + parse_microdata(body, product.url) + parse_meta_product(body, product.url)
+                candidates = (parse_jsonld(body, product.url) + parse_microdata(body, product.url)
+                              + parse_meta_product(body, product.url) + parse_amazon_us_pdp(body, product.url))
                 # Evidence from a PDP is associated only if SKU or URL aligns.
                 matches = [p for p in candidates if pdp_identity_matches(product, p)]
                 if not matches:
