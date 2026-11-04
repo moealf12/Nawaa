@@ -112,8 +112,47 @@
       ],
       "status": "IN_PROGRESS",
       "baseSha": "69896f49c89a1534d62eb4a10a34da71ebfb6739",
-      "blockers": [],
-      "evidence": {}
+      "blockers": [
+        "All 36 bilingual intents were observed, but only 9 had computable rule-only provisional NDCG; 117 top-ten judgments remain UNKNOWN and no independently adjudicated full-corpus NDCG/MRR or relevance certificate exists.",
+        "13 of 36 current LIVE intents had no strictly qualified UI groups; all 36 were PARTIAL (560 source error events summed across requests). This is not out-of-stock evidence.",
+        "Issue #263's proven standalone peripheral principal-item cases were fixed and released by PR #264 (matcher replay and CI), but postdeploy real-source customer card acceptance, unseen title families and broad independent relevance remain open.",
+        "Published first-screen DOM same-SSE parity was confirmed for Q03/Q04/Q15/Q16 only; remaining UI/category and full human adjudication are still open."
+      ],
+      "evidence": {
+        "certification": "NOT_VERIFIED",
+        "implementedSlices": [
+          "Ranking and identity fixes in merged PR #251",
+          "Exact-revision four-query postdeploy ranking auditor merged in PR #252"
+        ],
+        "rankingFixPrUrl": "https://github.com/moealf12/Nawaa/pull/251",
+        "rankingFixMergeSha": "ff102bbcbb435e7dcd75d8b9310ccf070cd77f39",
+        "acceptancePrUrl": "https://github.com/moealf12/Nawaa/pull/252",
+        "acceptanceAuditorHead": "7f3af0e83efc3b2d81ffa5f30fa6f55a6ba29c5f",
+        "acceptanceAuditorMergeSha": "152fc20bfcee7c7b6a58d6cfc46cdad948949a40",
+        "liveRankingAcceptanceRun": "https://github.com/moealf12/Nawaa/actions/runs/41345730730",
+        "liveRankingAcceptanceArtifactId": 13098982850,
+        "observed": "Q03/Q04/Q15/Q16: four out of four accepted; all four source-partial.",
+        "certificationLimitation": "Four cases do not meet full independently graded bilingual ranking/DOM requirements.",
+        "publishedUiEvidencePrUrl": "https://github.com/moealf12/Nawaa/pull/261",
+        "publishedUiEvidenceMergeSha": "b29cd8194474d83525faceac8a05f42f1dc3f43c",
+        "publishedUiLiveAuditUrl": "https://github.com/moealf12/Nawaa/actions/runs/41509844134",
+        "publishedUiArtifactId": 13173032817,
+        "publishedUiAuditedSha": "d442e211da059040f6a3641927428b07508764df",
+        "publishedUiAuditSummary": "10/10 real bilingual queries/99 grouped entries provisionally judged; 4/4 exact-SSE published DOM order matched 10 visible groups, no fallback JSON, rank 1 grade 3; all ten query responses partial.",
+        "fullCorpusEvidencePr": "https://github.com/moealf12/Nawaa/pull/262",
+        "fullCorpusLiveRun": "https://github.com/moealf12/Nawaa/actions/runs/41520143778",
+        "fullCorpusArtifactId": 13176798630,
+        "fullCorpusObservedSha": "b29cd8194474d83525faceac8a05f42f1dc3f43c",
+        "fullCorpusAuditMergeSha": "42a38667116206e9b1b899d85ca47be1a86b3558",
+        "fullCorpusResult": "36/36 observed; 36/36 partial; 560 per-request source errors; 13 with no strictly qualified groups; 117 unknown judgments; 9 rule-only NDCG values; human relevance certificate FALSE.",
+        "confirmedRelevanceFailureIssue": "https://github.com/moealf12/Nawaa/issues/263",
+        "principalRetailIdentityFixPr": "https://github.com/moealf12/Nawaa/pull/264",
+        "principalRetailIdentityFixMergeSha": "26da1edfc7e8314bcf4b1dbf6b8380947dddec2d",
+        "principalRetailIdentityFixRenderDeploy": "dep-dbkfphavcj2c738sj7s0",
+        "principalRetailIdentityFixGreenCI": "https://github.com/moealf12/Nawaa/actions/runs/41524260375",
+        "principalRetailIdentityFixPostMergeCI": "https://github.com/moealf12/Nawaa/actions/runs/41525690709",
+        "principalRetailIdentityFixScope": "Nine recorded false-principal retail titles rejected in matcher replay; explicit accessories, real bundles and CPU contract preserved; exact production /health parity PASS, targeted postdeploy real-search card acceptance not certified."
+      }
     },
     {
       "id": "R05",
@@ -128,8 +167,27 @@
       ],
       "status": "PLANNED",
       "baseSha": null,
-      "blockers": [],
-      "evidence": {}
+      "blockers": [
+        "Six-query source attribution run 41348833590 observed pre-fix production SHA 152fc20...; no reviewed equivalent proves postdeploy 403 cooldown effectiveness and legitimate merchant-yield preservation.",
+        "No separately witnessed RED or injected-mutation negative control has been linked to R05 certification; passing regression tests alone is not that evidence."
+      ],
+      "evidence": {
+        "certification": "NOT_VERIFIED",
+        "implementedSlices": [
+          "Bounded per-source HTTP 403 cooldown, PR #254 merged and deployed"
+        ],
+        "implementationPrUrl": "https://github.com/moealf12/Nawaa/pull/254",
+        "candidateHead": "4319a36f88ccf4588d4740f32367ad61c05357fa",
+        "mergeSha": "d9de32af2f67ffc3c4b251b460b07812d9ff13a0",
+        "historicalRenderDeployment": "dep-dbjqi76q1p3s73b2s3b0",
+        "branchVerificationUrl": "https://github.com/moealf12/Nawaa/actions/runs/41349033474",
+        "predeploymentSourceBaselineUrl": "https://github.com/moealf12/Nawaa/actions/runs/41348833590",
+        "predeploymentSourceBaselineSha": "152fc20bfcee7c7b6a58d6cfc46cdad948949a40",
+        "predeploymentSourceEvents": 92,
+        "classifiedSourceEvents": 81,
+        "unknownSourceEvents": 11,
+        "certificationLimitation": "Predeployment baseline and mock/regression PASS do not demonstrate live cooldown causality or postdeploy source-yield nonregression."
+      }
     },
     {
       "id": "R06",
@@ -142,8 +200,33 @@
       ],
       "status": "PLANNED",
       "baseSha": null,
-      "blockers": [],
-      "evidence": {}
+      "blockers": [
+        "Round dependency requires R05 VERIFIED, which in turn requires R04 VERIFIED; none may be promoted by URL syntax or merged SHA alone.",
+        "Live R06-D matrix proves sampled honest partial delivery, not induced production source failure, exhaustive merchant coverage or bounded request amplification for every provider."
+      ],
+      "evidence": {
+        "certification": "NOT_VERIFIED",
+        "implementationPrs": [
+          "https://github.com/moealf12/Nawaa/pull/256",
+          "https://github.com/moealf12/Nawaa/pull/257",
+          "https://github.com/moealf12/Nawaa/pull/258",
+          "https://github.com/moealf12/Nawaa/pull/259"
+        ],
+        "implementationSlices": [
+          "R06-A hard expiry",
+          "R06-B incomplete Amazon page evidence",
+          "R06-C explicit providersPending",
+          "R06-D read-only live acceptance"
+        ],
+        "latestMergeSha": "d442e211da059040f6a3641927428b07508764df",
+        "latestRenderDeployment": "dep-dbkdqpbbc2fs73clrdeg",
+        "liveAcceptanceRun": "https://github.com/moealf12/Nawaa/actions/runs/41504165842",
+        "liveAcceptanceArtifactId": 13170461924,
+        "liveAcceptanceObserved": "Seven of seven JSON queries and four of four SSE queries passed exact-SHA sampled transport/coverage criteria; PS5 repeated partial never FRESH.",
+        "acceptedLiveShaDuringMatrix": "305921f8f0de11ae838d72a02bfbdd3ddf9e2f68",
+        "lastDeploymentSha": "d442e211da059040f6a3641927428b07508764df",
+        "certificationLimitation": "All sampled requests remained partial with 14-18 source errors; do not infer full merchant coverage, tail latency or precise cross-request offer parity."
+      }
     },
     {
       "id": "R07",
