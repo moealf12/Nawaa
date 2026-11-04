@@ -79,3 +79,34 @@ jobs:
           path: noon-sa-live-acceptance.json
           if-no-files-found: warn
           retention-days: 14
+
+  macos-curl-egress:
+    # Independent hosted runner egress, no proxies or source-side changes.
+    runs-on: macos-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: npm ci --ignore-scripts
+      - name: Install temporary open-source curl_cffi
+        run: python -m pip install --disable-pip-version-check curl_cffi==0.17.0
+      - name: Real same-query Saudi Noon transport from macOS
+        env:
+          PULL_REQUEST_HEAD_SHA: \${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node --check scripts/noon-sa-curl-evidence.mjs
+          python -m py_compile scripts/noon-sa-curl-transport.py
+          python scripts/noon-sa-curl-transport.py
+      - name: Archive network comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-sa-macos-curl-transport
+          path: noon-sa-curl-transport.json
+          if-no-files-found: warn
+          retention-days: 14
