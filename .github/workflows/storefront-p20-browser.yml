@@ -1,0 +1,45 @@
+name: NAWAA Storefront P2.0 Browser Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'index.html'
+      - 'tests/storefront-foundation.test.mjs'
+      - 'scripts/storefront-p20-browser.mjs'
+      - '.github/workflows/storefront-p20-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storefront-p20-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  storefront-navigation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install temporary browser harness
+        run: npm install --no-save --ignore-scripts --package-lock=false playwright@1.56.1
+      - name: Provision WebKit with Linux dependencies
+        run: npx playwright install --with-deps webkit
+      - name: Confirm Chrome runner
+        run: command -v google-chrome || command -v google-chrome-stable
+      - name: Test navigation, keyboard, mobile drawer, search entry anchors
+        run: node scripts/storefront-p20-browser.mjs
+      - name: Upload browser evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nawaa-storefront-p20-${{ github.sha }}
+          path: browser-artifacts/storefront-p20/
+          retention-days: 7
