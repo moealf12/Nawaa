@@ -316,59 +316,116 @@ def extract_card_price(card: Tag, hint: str | None) -> tuple[str | None, str | N
 
 
 def parse_amazon_us_cards(html: str, page: str, maximum: int) -> list[Product]:
-    """Extract Amazon US search cards with ASIN-bound title, image and current price.
+    """ASIN-scoped Amazon US PLP parser; never borrow a sibling card's price.
 
-    This is an opt-in, layout-specific parser: only the visible Amazon US search
-    tile can associate the price with the ASIN. It never assumes prices from
-    recommendations, crossed-out values, or other cards.
+    In addition to standard data-asin cards, supports a tightly scoped fallback
+    around a product-title link when Amazon omits data-component-type. Every
+    fallback container must have exactly one linked ASIN and one product heading.
     """
     soup = BeautifulSoup(html, "html.parser")
-    results: list[Product] = []
-    seen = set()
-    for card in soup.select("[data-component-type='s-search-result'][data-asin]"):
+    asin_in_href = re.compile(r"/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?#]|$)", re.I)
+
+    def asin_for_link(anchor: Tag) -> str | None:
+        match = asin_in_href.search(anchor.get("href", ""))
+        return match.group(1).upper() if match else None
+
+    cards: list[tuple[Tag, str]] = []
+    for card in soup.select("[data-component-type='s-search-result'][data-asin], div.s-result-item[data-asin]"):
         asin = clean_str(card.get("data-asin")).upper()
-        if not re.fullmatch(r"[A-Z0-9]{10}", asin) or asin in seen:
+        if re.fullmatch(r"[A-Z0-9]{10}", asin):
+            cards.append((card, asin))
+
+    if not cards:
+        for anchor in soup.select("a[href*='/dp/'], a[href*='/gp/product/']"):
+            asin = asin_for_link(anchor)
+            if not asin or not (anchor.find("h2") or anchor.find_parent("h2")):
+                continue
+            for ancestor in list(anchor.parents)[:7]:
+                if not isinstance(ancestor, Tag) or ancestor.name in ("body", "html"):
+                    break
+                # A weak ancestor that includes more than one product is unsafe.
+                asin_ids = {v for a in ancestor.select("a[href]")
+                            if (v := asin_for_link(a))}
+                headings = ancestor.select("h2")
+                if asin_ids == {asin} and len(headings) == 1 and (ancestor.select_one("img.s-image") or ancestor.select_one("span.a-price")):
+                    cards.append((ancestor, asin))
+                    break
+
+    products: list[Product] = []
+    seen: set[str] = set()
+    for card, asin in cards:
+        if asin in seen:
             continue
-        # Require a product link to the SAME ASIN; dismiss paid navigation and
-        # recommendation links even when nested inside the result tile.
-        anchor = next((a for a in card.select("a[href*='/dp/']")
-                       if re.search(r"/dp/" + asin + r"(?:[/?]|$)", a.get("href", ""), re.I)), None)
-        if anchor is None:
+        title_anchor = next((a for a in card.select("a[href]")
+                            if asin_for_link(a) == asin and (a.find("h2") or a.find_parent("h2"))), None)
+        if title_anchor is None:
             continue
-        title_el = card.select_one("h2")
-        image_el = card.select_one("img.s-image")
-        title = clean_str(title_el.get_text(" ", strip=True) if title_el else "")
-        if not title and image_el is not None:
-            title = clean_str(image_el.get("alt"))
+        title_tag = title_anchor.find("h2") or title_anchor.find_parent("h2")
+        title = clean_str(title_tag.get_text(" ", strip=True) if title_tag else "")
         if len(title) < 7:
             continue
-        # Amazon's a-text-price is normally a struck-through previous price.
-        current = card.select_one("span.a-price:not(.a-text-price) span.a-offscreen")
-        current_text = current.get_text(" ", strip=True) if current else ""
-        explicit_usd = current_text.startswith("$") or bool(re.search(r"\bUSD\b", current_text, re.I))
-        amount = number_price(current_text) if explicit_usd else None
-        currency = "USD" if explicit_usd and amount else None
-        image = (next((abs_url(image_el.get(attr), page) for attr in
-                       ("data-src", "data-lazy-src", "src") if image_el.get(attr)), None)
-                 if image_el is not None else None)
-        product_url = f"https://www.amazon.com/dp/{asin}"
+        # A crossed-out reference price and a per-unit secondary price are not
+        # the same as the current purchase price.
+        raw_prices = [e.get_text(" ", strip=True) for e in
+                      card.select("span.a-price:not(.a-text-price) span.a-offscreen")]
+        prices = {price for raw in raw_prices
+                  if (raw.startswith("$") or re.search(r"\bUSD\b", raw, re.I))
+                  if (price := number_price(raw)) is not None}
+        price = next(iter(prices)) if len(prices) == 1 else None
+        currency = "USD" if price else None
+        issues: list[str] = []
+        if len(prices) > 1:
+            issues.append("AMAZON_MULTIPLE_CURRENT_PRICES")
+        elif not price:
+            issues.append("AMAZON_CURRENT_PRICE_MISSING")
+        elif not any(re.search(r"\bUSD\b", raw, re.I) for raw in raw_prices):
+            issues.append("USD_INFERRED_FROM_AMAZON_US_CONTEXT")
+
+        image = None
+        for img in card.select("img.s-image"):
+            # A product image must be an actual Amazon media product asset.
+            for attr in ("data-src", "data-lazy-src", "src"):
+                candidate = abs_url(img.get(attr), page)
+                if candidate and host(candidate) in {"m.media-amazon.com", "images-na.ssl-images-amazon.com"} and "/images/I/" in urlsplit(candidate).path:
+                    image = candidate
+                    break
+            if image:
+                break
+        if not image:
+            issues.append("AMAZON_PRODUCT_IMAGE_MISSING")
         seen.add(asin)
-        results.append(Product(
-            title=title, url=product_url, sku=asin, price=amount, currency=currency,
-            image=image, method="amazon-us-html-card", source_page=page,
-            price_status="candidate" if amount and image else "unresolved",
-            issues=[] if amount and image else ["AMAZON_CARD_PRICE_OR_IMAGE_MISSING"],
-        ))
-        if len(results) >= maximum:
+        products.append(Product(title=title, url=f"https://www.amazon.com/dp/{asin}",
+                                sku=asin, price=price, currency=currency, image=image,
+                                method="amazon-us-html-card", source_page=page,
+                                price_status="candidate" if price and image else "unresolved",
+                                issues=issues))
+        if len(products) >= maximum:
             break
-    return results
+    if not products and not soup.select_one("[data-component-type='s-search-result'][data-asin], div.s-result-item[data-asin]"):
+        # Evidence-poor Amazon layout: keep only a title-linked ASIN. Never
+        # attach prices/images from a neighboring element or generic fallback.
+        for anchor in soup.select("a[href*='/dp/'], a[href*='/gp/product/']"):
+            asin = asin_for_link(anchor)
+            if not asin or asin in seen:
+                continue
+            heading = anchor.find("h2") or anchor.find_parent("h2")
+            title = clean_str(heading.get_text(" ", strip=True) if heading else "")
+            if len(title) < 7:
+                continue
+            seen.add(asin)
+            products.append(Product(title=title, url=f"https://www.amazon.com/dp/{asin}",
+                                    sku=asin, method="amazon-us-title-link",
+                                    source_page=page, price_status="unresolved",
+                                    issues=["AMAZON_CARD_EVIDENCE_MISSING"]))
+            if len(products) >= maximum:
+                break
+    return products
 
 
 def parse_html_cards(html: str, page: str, origin: str, maximum: int) -> list[Product]:
     if host(origin) == "www.amazon.com" or host(origin) == "amazon.com":
         amazon_cards = parse_amazon_us_cards(html, page, maximum)
-        if amazon_cards or "s-search-result" in html:
-            return amazon_cards
+        return amazon_cards
     soup = BeautifulSoup(html, "html.parser")
     hint = detect_currency(html)
     results = []
