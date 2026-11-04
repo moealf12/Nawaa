@@ -94,6 +94,7 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "rakuten-jp", name: "Rakuten Ichiba", countryCode: "JP", region: "Asia", status: "candidate", saudiDelivery: "forwarding_or_unknown" },
   { id: "yodobashi-jp", name: "Yodobashi", countryCode: "JP", region: "Asia", status: "candidate", saudiDelivery: "unknown" },
   { id: "biccamera-jp", name: "Bic Camera", countryCode: "JP", region: "Asia", status: "candidate", saudiDelivery: "unknown" },
+  { id: "cosrx-global", name: "COSRX Official", countryCode: "KR", region: "Asia", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "gmarket-kr", name: "Gmarket", countryCode: "KR", region: "Asia", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "coupang-kr", name: "Coupang", countryCode: "KR", region: "Asia", status: "candidate", saudiDelivery: "unknown" },
   { id: "aliexpress-cn", name: "AliExpress", countryCode: "CN", region: "Asia", status: "candidate", saudiDelivery: "offer_dependent" },
