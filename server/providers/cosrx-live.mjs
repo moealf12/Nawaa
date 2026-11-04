@@ -4,6 +4,7 @@ import {createApprovedSourceFetcher} from "../source-transport.mjs";
 import {NAWAA_INDEXER_USER_AGENT} from "../../src/source-http-profile.mjs";
 import {
   cosrxProductJsonUrl,parseCosrxSearchCards,verifyCosrxVariantJson,
+  cosrxSuggestUrl,parseCosrxSuggestCards,
 } from "../../src/cosrx-evidence.mjs";
 
 export const cosrxLiveConfigured=()=>process.env.NAWAA_COSRX_LIVE_ENABLED==="1";
@@ -62,8 +63,57 @@ export async function fetchCosrxPublicProductJson(
   if(body.length>MAX_JSON_BYTES)throw fail("COSRX_PRODUCT_TOO_LARGE");
   return {text:body,finalUrl:canonical};
 }
+// First-party Shopify predictive search is a supported public JSON endpoint.
+// Only use after the original query-specific HTML search returned without
+// scoped cards. Never use after search 403/429, challenge or redirect.
+export async function fetchCosrxPublicSuggestJson(
+  query,{signal,fetchImpl=globalThis.fetch,timeoutMs=5500}={}
+){
+  const url=cosrxSuggestUrl(query);
+  signal?.throwIfAborted();
+  const combined=AbortSignal.any([...(signal?[signal]:[]),
+    AbortSignal.timeout(Math.max(1000,Math.min(7000,timeoutMs)))]);
+  const fetcher=createApprovedSourceFetcher({
+    fetchImpl,approvedSourceHosts:{"cosrx-global":["www.cosrx.com"]},
+    optIn:false,
+  });
+  const response=await fetcher(url,{
+    headers:{"accept":"application/json,text/javascript;q=0.9",
+      "accept-language":"en-US,en;q=0.9",
+      "user-agent":NAWAA_INDEXER_USER_AGENT},
+    redirect:"manual",signal:combined,
+  },{sourceId:"cosrx-global"});
+  if(!response.ok)throw fail("COSRX_SUGGEST_HTTP_"+response.status,response.status);
+  if((response.url||url)!==url)throw fail("COSRX_SUGGEST_REDIRECT_MISMATCH");
+  if(!/(?:json|javascript)/i.test(String(response.headers.get("content-type")||"")))
+    throw fail("COSRX_SUGGEST_BAD_CONTENT_TYPE");
+  const declared=Number(response.headers.get("content-length")||0);
+  if(declared>MAX_JSON_BYTES)throw fail("COSRX_SUGGEST_TOO_LARGE");
+  let body="";
+  if(response.body?.getReader){
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let bytes=0;
+    try{
+      for(;;){
+        combined.throwIfAborted();
+        const {done,value}=await reader.read();
+        if(done)break;
+        bytes+=value.byteLength;
+        if(bytes>MAX_JSON_BYTES)throw fail("COSRX_SUGGEST_TOO_LARGE");
+        body+=decoder.decode(value,{stream:true});
+      }
+      body+=decoder.decode();
+    }finally{reader.releaseLock();}
+  }else{
+    body=await response.text();
+  }
+  if(body.length>MAX_JSON_BYTES)throw fail("COSRX_SUGGEST_TOO_LARGE");
+  return {text:body,finalUrl:url};
+}
 export async function evaluateCosrxSearch({
   query,html,searchUrl,finalUrl,fetchProductJson=fetchCosrxPublicProductJson,
+  fetchSuggestJson=fetchCosrxPublicSuggestJson,
   signal,maxPdp=2,clock=()=>new Date().toISOString()
 }={}){
   if(typeof fetchProductJson!=="function")throw TypeError("COSRX_JSON_FETCHER_REQUIRED");
@@ -78,7 +128,26 @@ export async function evaluateCosrxSearch({
     return {candidates:listing.candidates.length,verified,records,
       diagnostics:{...listing.diagnostics,checked:0,validated:0,
         customerPublishable:false,shippingToSaudiVerified:false}};
-  for(const card of listing.candidates.slice(0,budget)){
+  let candidates=listing.candidates;
+  let fallbackDiagnostics=null;
+  let fallbackError=null;
+  if(!candidates.length){
+    try{
+      const url=cosrxSuggestUrl(query);
+      const response=await fetchSuggestJson(query,{signal});
+      signal?.throwIfAborted();
+      const predicted=parseCosrxSuggestCards(response?.text,query,{
+        requestedUrl:url,finalUrl:response?.finalUrl||url});
+      fallbackDiagnostics=predicted.diagnostics;
+      candidates=predicted.candidates;
+    }catch(error){
+      if(signal?.aborted)throw signal.reason||error;
+      const status=Number(error?.status||0);
+      fallbackError=status===403?"SUGGEST_HTTP_403_DENIED":
+        status===429?"SUGGEST_HTTP_429_LIMITED":"SUGGEST_FETCH_FAILED";
+    }
+  }
+  for(const card of candidates.slice(0,budget)){
     signal?.throwIfAborted();
     try{
       const product=await fetchProductJson(card.sourceUrl,{signal});
@@ -96,8 +165,14 @@ export async function evaluateCosrxSearch({
       if(status===403||status===429)break;
     }
   }
-  return {candidates:listing.candidates.length,verified,records,
+  return {candidates:candidates.length,verified,records,
     diagnostics:{...listing.diagnostics,
+      status:fallbackDiagnostics?.status||listing.diagnostics.status,
+      discoveryMethod:fallbackDiagnostics?"SHOPIFY_PREDICTIVE_JSON":"SEARCH_SSR",
+      searchCardStatus:listing.diagnostics.status,
+      suggestAttempted:listing.candidates.length===0,
+      suggestDiagnostics:fallbackDiagnostics,
+      suggestError:fallbackError,
       checked:records.length,validated:verified.length,
       customerPublishable:false,shippingToSaudiVerified:false}};
 }
