@@ -161,6 +161,11 @@ async function probe(q){
       serverDurationMs:Number.isFinite(body.durationMs)?Math.round(body.durationMs):null,
       offers:body.offers.length,groups:grouped.length,
       primaryGroups:sections.exactGroups.length,relatedGroups:sections.relatedGroups.length,
+      // These are the customer presentation lanes from the same production
+      // partition function. Counts, not titles, prices or query-specific fixes.
+      presentationLanes:Object.fromEntries(sections.secondarySections
+        .filter(section=>["alternative","accessory","bundle","other"].includes(section.key))
+        .map(section=>[section.key,section.groups.length])),
       partial:body.coverage.partial,
       deadlineExceeded:body.coverage.deadlineExceeded===true,
       providersPending:body.coverage.providersPending??null,
@@ -174,7 +179,8 @@ async function probe(q){
     };
     console.log("R04_P36_CANDIDATE_QUERY "+JSON.stringify({
       id:row.id,status:row.status,elapsedMs:row.elapsedMs,
-      offers:row.offers,primaryGroups:row.primaryGroups,partial:row.partial,
+      offers:row.offers,primaryGroups:row.primaryGroups,
+      presentationLanes:row.presentationLanes,partial:row.partial,
       deadlineExceeded:row.deadlineExceeded,sourceErrors:row.sourceErrors,
     }));
     return row;
