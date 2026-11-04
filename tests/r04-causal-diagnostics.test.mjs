@@ -43,6 +43,18 @@ test("source block evidence and missing principal are separately attributed",()=
   assert.equal(x.sample.sourceErrorReconciliation,"MATCH");
   assert.equal(x.classification,"OBSERVATIONAL_TRIAGE_NOT_CAUSAL_PROOF");
 });
+test("unknown classifications remain visible without leaking raw source errors",()=>{
+  const r=liveReport();
+  r.rows[0].sourceErrors=3;
+  r.rows[0].sourceErrorBreakdown={reported:3,otherEvents:1,buckets:[
+    {sourceId:"virgin-ae",failureClass:"UNCLASSIFIED",count:2},
+  ]};
+  r.summary.sourceErrorEvents=3;
+  const x=diagnoseR04Evidence(r);
+  assert.ok(signal(x.rows[0],"SOURCE_CLASSIFICATION_GAP"));
+  assert.equal(x.sample.sourceUnclassifiedEventsAtLeast,2);
+  assert.equal(x.sample.sourceErrorEventsOutsideTop32,1);
+});
 test("no verified offers is not false inventory absence",()=>{
   const r=liveReport();
   Object.assign(r.rows[2],{offers:0,primaryGroups:0,relatedGroups:0});
