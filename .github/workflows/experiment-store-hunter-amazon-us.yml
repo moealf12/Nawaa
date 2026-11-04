@@ -17,7 +17,11 @@ concurrency:
 jobs:
   amazon-us-live:
     if: github.event_name == 'pull_request' && github.head_ref == 'experiment/store-hunter-amazon-us-isolated-20261105'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +51,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: experiment-amazon-us-store-hunter-live
+          name: experiment-amazon-us-store-hunter-live-${{ matrix.os }}
           path: |
             artifacts/amazon-us-live.json
             artifacts/amazon-us-pdp-matrix.json
