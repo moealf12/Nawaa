@@ -60,6 +60,29 @@ async function query(text){
       productCategory(o)!=="shoes"||!hasAthleticTitle(o)).length:0;
     const supportedAthleticExact=athleticShoeIntent?exact.filter(o=>
       productCategory(o)==="shoes"&&hasAthleticTitle(o)).length:0;
+    const normalizedShopper=normalizeSearchQuery(text);
+    const watchSeriesIntent=/\b(?:apple watch series|watch apple series) \d+\b/.test(normalizedShopper);
+    const verifiedWholeWatch=o=>{
+      const subject=normalizeSearchQuery(String(o?.title||""))
+        .split(/\b(?:with|including|includes)\b/i,1)[0];
+      return /^(?:apple )?watch series [1-9]\d?\b/.test(subject) &&
+        /\b(?:gps|cellular|lte)\b/.test(subject) &&
+        /\b(?:aluminum|aluminium|titanium|stainless steel) case\b/.test(subject) &&
+        /\b(?:38|40|41|42|44|45|46|49)mm\b/.test(subject);
+    };
+    const unsupportedWholeWatchExact=watchSeriesIntent?exact.filter(o=>!verifiedWholeWatch(o)).length:0;
+    const supportedWholeWatchExact=watchSeriesIntent?exact.filter(verifiedWholeWatch).length:0;
+    const menFragranceIntent=normalizedShopper.includes("perfume") &&
+      /\bmen\b/.test(normalizedShopper);
+    const titleProvesMen=o=>{
+      const title=normalizeSearchQuery(o?.title||"");
+      return /\b(?:men|mens|male|masculine|homme|pour homme|for him)\b/.test(title) &&
+        !/\b(?:women|womens|femme|for her|ladies)\b/.test(title);
+    };
+    const unsupportedMalePerfumeExact=menFragranceIntent?exact.filter(o=>
+      productCategory(o)!=="perfume"||!titleProvesMen(o)).length:0;
+    const supportedMalePerfumeExact=menFragranceIntent?exact.filter(o=>
+      productCategory(o)==="perfume"&&titleProvesMen(o)).length:0;
     const speakerIntent=shopperTerms.includes("speaker")||
       shopperTerms.includes("speakers");
     const primaryAudioTitle=o=>normalizeSearchQuery(String(o?.title||"")
@@ -91,6 +114,8 @@ async function query(text){
       providerQuery:athleticShoeIntent?parseSearchIntent(text).providerQuery:null,
       supportedAthleticExact,unsupportedAthleticExact,
       speakerIntent,supportedSpeakerExact,unsupportedSpeakerExact,
+      watchSeriesIntent,supportedWholeWatchExact,unsupportedWholeWatchExact,
+      menFragranceIntent,supportedMalePerfumeExact,unsupportedMalePerfumeExact,
       partial:typeof data.coverage?.partial==='boolean'?data.coverage.partial:null,
       deadlineExceeded:typeof data.coverage?.deadlineExceeded==='boolean'?data.coverage.deadlineExceeded:null,
       providersPending:data.coverage?.providersPending??null,
@@ -179,6 +204,10 @@ try{
     ['Q15','HP laptop 16GB RAM'],
     ['Q16','لابتوب اتش بي 16 رام'],
     ['Q26','حذاء نايك رياضي'],
+    ['Q28','عطر ديور رجالي'],
+    ['Q33','Apple Watch Series 11'],
+    ['Q34','ساعة ابل سيريس 11'],
+    ['Q36','سماعة لاسلكية'],
   ];
   const p36Results=[];
   for(const [id,queryText] of p36Cases){
@@ -197,6 +226,10 @@ try{
       speakerIntent:result.speakerIntent??false,
       supportedSpeakerExact:result.supportedSpeakerExact??null,
       unsupportedSpeakerExact:result.unsupportedSpeakerExact??null,
+      supportedWholeWatchExact:result.supportedWholeWatchExact??null,
+      unsupportedWholeWatchExact:result.unsupportedWholeWatchExact??null,
+      supportedMalePerfumeExact:result.supportedMalePerfumeExact??null,
+      unsupportedMalePerfumeExact:result.unsupportedMalePerfumeExact??null,
       failure:result.error?'CANDIDATE_REQUEST_FAILED':null,
     });
   }
@@ -204,6 +237,7 @@ try{
     x.hasOffersArray===true&&Number.isInteger(x.offers)&&x.offers>=0&&
     x.valid===x.offers&&x.unsupportedAthleticExact===0&&
     x.unsupportedSpeakerExact===0&&
+    x.unsupportedWholeWatchExact===0&&x.unsupportedMalePerfumeExact===0&&
     (x.partial===true||x.partial===false));
   console.log('R04_P36_CANDIDATE_CRITICAL '+JSON.stringify({
     candidateOnly:true,baselineComparison:false,

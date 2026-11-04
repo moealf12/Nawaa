@@ -24,7 +24,8 @@ const terms=[
  'MacBook Air M4 16GB 512GB Midnight',
  'Samsung TV OLED 65-inch 4K',
  'جهاز ps5 برو مع يد تحكم وسماعه',
- 'سماعة لاسلكية'
+ 'سماعة لاسلكية',
+ 'عطر ديور رجالي'
 ];
 const inputs=[...terms];
 for(let i=0;i<200;i++)inputs.push(terms[i%terms.length]+ ' '+terms[(i*7+3)%terms.length]);
@@ -39,6 +40,7 @@ const approvedArabicDeltas=[
   ["كمبيوتر مكتبي","desktop"],["للالعاب","gaming"],
   ["رجالي","men"],["رياضيه","sports"],["للرياضه","sports"],["رياضي","sports"],
   ["لاسلكيه","wireless"],["لاسلكي","wireless"],
+  ["ديور","dior"],
 ];
 const escapeRegex=value=>{
   // All approved legacy-normalized terms are literal Arabic/ASCII letters
@@ -69,6 +71,7 @@ for(const [before,after] of [
   ["كمبيوتر مكتبي","desktop"],["للالعاب","gaming"],
   ["رجالي","men"],["رياضيه","sports"],["للرياضه","sports"],["رياضي","sports"],
   ["لاسلكيه","wireless"],["لاسلكي","wireless"],
+  ["ديور","dior"],
 ]){
   assert.equal(versions[1].fn(before),after,"reviewed Arabic alias not exact");
 }
