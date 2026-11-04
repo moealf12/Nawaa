@@ -10,6 +10,9 @@ on:
       - 'tests/r04-p32-search-presentation-parity.test.mjs'
       - 'scripts/r04-full-corpus-contract.mjs'
       - 'scripts/r04-36-live-corpus-evidence.mjs'
+      - 'scripts/r04-causal-diagnostics.mjs'
+      - 'scripts/diagnose-r04-live-evidence.mjs'
+      - 'tests/r04-causal-diagnostics.test.mjs'
       - 'tests/r04-full-corpus-contract.test.mjs'
       - '.github/workflows/r04-36-live-intent-evidence.yml'
   workflow_dispatch:
@@ -48,18 +51,29 @@ jobs:
         run: |
           node --check scripts/r04-full-corpus-contract.mjs
           node --check scripts/r04-36-live-corpus-evidence.mjs
-          node --test tests/r04-full-corpus-contract.test.mjs
+          node --check scripts/r04-causal-diagnostics.mjs
+          node --check scripts/diagnose-r04-live-evidence.mjs
+          node --test tests/r04-full-corpus-contract.test.mjs tests/r04-causal-diagnostics.test.mjs
       - name: Guard production against advancing main
         run: |
           set -euo pipefail
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
       - name: Collect 36 current live intent reports at concurrency two
         run: node scripts/r04-36-live-corpus-evidence.mjs
+      - name: Diagnose exact-revision LIVE evidence without more production requests
+        if: always()
+        run: |
+          if test -f r04-36-live-corpus-evidence.json; then
+            node scripts/diagnose-r04-live-evidence.mjs
+          fi
       - name: Upload exact-revision reviewable evidence, including failures
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nawaa-r04-36-intent-${{ github.event.pull_request.head.sha || github.sha }}
-          path: r04-36-live-corpus-evidence.json
+          path: |
+            r04-36-live-corpus-evidence.json
+            r04-causal-diagnostic.json
+            r04-causal-diagnostic.md
           retention-days: 14
           if-no-files-found: warn
