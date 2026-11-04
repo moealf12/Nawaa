@@ -14,6 +14,7 @@ const FAILURES=new Set([
   "HTTP_404_RESOURCE_NOT_FOUND","HTTP_ABORTED","UNKNOWN",
 ]);
 const n=v=>Number.isFinite(v)&&v>=0&&v<600000?Math.round(v):null;
+const finite=v=>typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<600000;
 const count=v=>Number.isSafeInteger(v)&&v>=0&&v<=1000000?v:null;
 const STAGE_COUNTS=new Set(["htmlBytes","cards","fallbackCandidates","directCandidates",
   "directOffers","pdpAttempts","pdpRejected","pdpUnpriced","pdpTimedOut",
