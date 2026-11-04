@@ -41,7 +41,7 @@ const approvedArabicDeltas=[
 const escapeRegex=value=>{
   // All approved legacy-normalized terms are literal Arabic/ASCII letters
   // and spaces. Reject regex meta characters instead of interpolating them.
-  if(!/^[\\p{L} ]+$/u.test(value))throw Error("UNSAFE_REVIEWED_DELTA");
+  if(!/^[\p{L} ]+$/u.test(value))throw Error("UNSAFE_REVIEWED_DELTA");
   return value;
 };
 const reviewedProjection=before=>{
