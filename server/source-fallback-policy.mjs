@@ -4,6 +4,11 @@
 // merchants, other providers, Amazon's independent route, or future requests.
 const NON_RETRYABLE_IN_REQUEST=new Set([
   "HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED",
+  // A verified merchant-owned 200 challenge/JS shell is not a valid catalog
+  // response. Repeating that merchant's search seconds later with a relaxed
+  // query merely amplifies blocked traffic; preserve its primary failure
+  // and allow independent/new shopper requests to retry normally.
+  "HTTP_200_BLOCK_PAGE","HTTP_200_JS_SHELL",
   "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN",
 ]);
 

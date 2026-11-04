@@ -102,3 +102,36 @@ test("R04-P44: dedicated Virgin acquisition cannot be erased by generic exclusio
   assert.match(server,/storeDeadlineMs:7000/);
   assert.match(server,/excludeStoreIds:genericStorefrontPassExclusions/);
 });
+
+
+test("R04-P44: only observed merchant-owned HTTP 200 challenge/JS shell blocks same-request fallback replay",()=>{
+  const registered=new Set(["temu-global","walmart-us","noon-sa","virgin-ae","lulu-sa"]);
+  const errors=[
+    {sourceId:"free-storefronts",market:"temu-global",failureClass:"HTTP_200_BLOCK_PAGE",
+      error:"merchant returned visible challenge HTML"},
+    {sourceId:"walmart-us",market:"walmart-us",failureClass:"HTTP_200_JS_SHELL",
+      error:"HTML 200 without readable public product data"},
+    {sourceId:"free-storefronts",market:"noon-sa",failureClass:"HTTP_200_BLOCK_PAGE",
+      error:"merchant access challenge"},
+    {sourceId:"virgin-ae",market:"virgin-ae",failureClass:"HTTP_5XX_SOURCE_FAILURE"},
+    {sourceId:"lulu-sa",market:"lulu-sa",failureClass:"HTTP_TIMEOUT"},
+    {sourceId:"free-storefronts",market:"lulu-sa",error:"HTTP 200",failureClass:"UNKNOWN"},
+    {sourceId:"extra-unbxd",market:"virgin-ae",failureClass:"HTTP_200_BLOCK_PAGE"},
+    {sourceId:"free-storefronts",market:"unknown",failureClass:"HTTP_200_BLOCK_PAGE"},
+  ];
+  assert.deepEqual(retryDeniedStorefrontIds(errors,{registeredIds:registered}),
+    ["noon-sa","temu-global","walmart-us"]);
+  assert.deepEqual(retryDeniedStorefrontIds([],{registeredIds:registered}),[],
+    "next shopper request must not inherit any source-specific replay exclusions");
+  assert.equal(errors[0].failureClass,"HTTP_200_BLOCK_PAGE",
+    "do not rewrite, hide or falsely mark source failure as stock unavailable");
+});
+
+test("R04-P44: replay guard never alters dedicated providers, depth cursors, or catalog availability",()=>{
+  const server=readFileSync(new URL("../server/server.mjs",import.meta.url),"utf8");
+  assert.match(server,/retryDeniedStorefrontIds\(primary\.errors/);
+  assert.match(server,/skipFailedStorefrontIds:\s*retryDeniedIds/);
+  assert.match(server,/runProviderPass\(providerQuery,\s*"primary"/);
+  assert.match(server,/amazonPageCount:plan\.amazonPageCount/);
+  assert.match(server,/excludeStoreIds:genericStorefrontPassExclusions/);
+});
