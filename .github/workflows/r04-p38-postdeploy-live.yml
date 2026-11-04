@@ -1,0 +1,57 @@
+name: NAWAA R04 P3.8 Postdeploy LIVE Production Acceptance
+# Intentionally manual after Render's checksPass auto-deploy is LIVE.
+# A push-triggered workflow waiting for Render could deadlock Render's
+# checksPass gate. Trigger only after reading Render's actual deploy status.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-postdeploy-live-verification
+  queue: max
+  cancel-in-progress: false
+jobs:
+  published-ps5-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    concurrency:
+      group: nawaa-production-live-probes
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify checkout is latest main and expected Render revision
+        env:
+          NAWAA_EXPECT_LIVE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$NAWAA_EXPECT_LIVE_SHA"
+          node scripts/r04-p38-postdeploy-sha.mjs
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install ephemeral Chromium automation
+        run: npm install --no-save --ignore-scripts --package-lock=false playwright@1.56.1
+      - name: Check real system Chrome
+        run: command -v google-chrome || command -v google-chrome-stable || command -v chromium
+      - name: Require actual published PS5 customer journey and non-empty verified cards
+        env:
+          NODE_ENV: production
+          NAWAA_BROWSER_QUERY: PS5
+          DATABASE_URL: ''
+          MEILI_HOST: ''
+          MEILI_MASTER_KEY: ''
+        run: node scripts/browser-customer-journey.mjs published
+      - name: Retain live source-backed customer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-p38-live-${{ github.sha }}
+          path: browser-artifacts/
+          retention-days: 14
+          if-no-files-found: warn

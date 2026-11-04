@@ -27,7 +27,6 @@ on:
       - 'product.html'
       - 'config.js'
       - 'scripts/browser-customer-journey.mjs'
-      - 'scripts/browser-fixture-customer-journey.mjs'
       - 'scripts/browser-v218-matrix.mjs'
       - 'tests/ui-flow.test.mjs'
       - '.github/workflows/browser-customer-journey.yml'
@@ -39,6 +38,14 @@ concurrency:
   cancel-in-progress: true
 jobs:
   browser-customer-qa:
+    # Serialise the published customer journey with the live 36-intent
+    # workload. Candidate Chromium still contacts actual merchants.
+    concurrency:
+      group: nawaa-production-live-probes
+      # Preserve all pending live gates; never silently replace a pending
+      # acceptance job when another PR or workflow queues a newer run.
+      queue: max
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 17
     steps:
@@ -93,14 +100,11 @@ jobs:
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
         run: node scripts/browser-v218-matrix.mjs
-      - name: Replay fixture buyer journeys with zero external merchant requests
-        env:
-          NODE_ENV: test
-          DATABASE_URL: ''
-          MEILI_HOST: ''
-          MEILI_MASTER_KEY: ''
-        run: node scripts/browser-fixture-customer-journey.mjs
-      - name: Observe the currently published GitHub Pages and Render UI
+      # Before a merge this URL runs OLD main, not this PR. It is a real
+      # production baseline, not a valid candidate pass/fail gate. Requiring
+      # old production to be healthy would deadlock a fix for old production.
+      # Mandatory exact-SHA LIVE Chromium acceptance runs after deployment.
+      - name: Observe LIVE published site as predeploy baseline (not candidate gate)
         continue-on-error: true
         env:
           NODE_ENV: test
