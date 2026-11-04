@@ -99,7 +99,7 @@ function captureCookies(jar,headers){
       jar.set(name,item.slice(idx+1));
   }
 }
-async function documentFetch(raw,jar){
+async function documentFetch(raw,jar,onAttempt){
   let url=raw;
   for(let redirect=0;redirect<=2;redirect++){
     if(!sameHost(url))return {status:null,classification:"UNSAFE_REDIRECT",html:null};
@@ -109,6 +109,7 @@ async function documentFetch(raw,jar){
       "user-agent":USER_AGENT,
     };
     if(jar.size)headers.cookie=[...jar].map(([k,v])=>k+"="+v).join("; ");
+    onAttempt?.();
     const response=await fetch(url,{
       method:"GET",headers,redirect:"manual",signal:AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -129,16 +130,14 @@ async function sessionProbe(){
   const start=performance.now();
   const cookies=new Map();
   try{
-    const home=await documentFetch(HOME,cookies);
-    output.requests++;
+    const home=await documentFetch(HOME,cookies,()=>{output.requests++});
     output.homeStatus=home.status;
     output.homeClass=home.classification;
     if(home.classification!=="HTTP_OK"){
       output.state="SESSION_HOME_UNAVAILABLE";
       return output;
     }
-    const search=await documentFetch(SEARCH,cookies);
-    output.requests++;
+    const search=await documentFetch(SEARCH,cookies,()=>{output.requests++});
     output.searchStatus=search.status;
     output.searchClass=search.classification;
     output.evidence=search.html?productEvidence(search.html):null;
@@ -181,8 +180,8 @@ async function browserProbe(){
     });
     const page=await context.newPage();
     phase="navigate_home";
-    const home=await page.goto(HOME,{waitUntil:"domcontentloaded",timeout:TIMEOUT_MS});
     output.requests++;
+    const home=await page.goto(HOME,{waitUntil:"domcontentloaded",timeout:TIMEOUT_MS});
     output.homeStatus=home?.status()??null;
     output.homeClass=statusClass(output.homeStatus??0);
     if(output.homeClass!=="HTTP_OK"){
@@ -190,10 +189,10 @@ async function browserProbe(){
       return output;
     }
     phase="navigate_search";
+    output.requests++;
     const search=await page.goto(SEARCH,{
       waitUntil:"domcontentloaded",timeout:TIMEOUT_MS,
     });
-    output.requests++;
     output.searchStatus=search?.status()??null;
     output.searchClass=statusClass(output.searchStatus??0);
     if(output.searchClass!=="HTTP_OK"){
