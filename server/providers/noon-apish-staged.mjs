@@ -177,3 +177,63 @@ export async function fetchNoonSaudiApish(query,{
     signal?.removeEventListener("abort",onAbort);
   }
 }
+
+
+// Second *independent API request* for one exact SKU + offer. Both readings
+// still originate from one THIRD-PARTY provider; do not call this Noon-first-party
+// or Saudi-checkout verification.
+export async function fetchNoonSaudiApishOfferParity(record,{
+  apiKey=process.env.APISH_KEY,signal,deadlineMs=DEFAULT_DEADLINE_MS,
+}={}){
+  if(typeof apiKey!=="string"||!apiKey.trim())
+    throw Object.assign(new Error("NOON_APISH_KEY_REQUIRED"),{code:"CONFIG_REQUIRED"});
+  const id=sourceSaudiIdentity(record?.sourceUrl);
+  if(!id||id.sku!==record?.productId||!OFFER_CODE.test(record?.offerCode||""))
+    throw new Error("INVALID_NOON_PARITY_IDENTITY");
+  const url=new URL("https://api.api.sh/noon/v1/product");
+  url.searchParams.set("sku",id.sku);
+  url.searchParams.set("country","sa");
+  url.searchParams.set("language","en");
+  url.searchParams.set("fresh","1");
+  url.searchParams.set("raw","0");
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),Math.min(60_000,Math.max(1000,deadlineMs)));
+  const onAbort=()=>controller.abort(signal.reason);
+  if(signal?.aborted)onAbort();
+  else signal?.addEventListener("abort",onAbort,{once:true});
+  try{
+    const response=await fetch(url,{
+      redirect:"error",signal:controller.signal,method:"GET",
+      headers:{"accept":"application/json","x-api-key":apiKey.trim()},
+    });
+    if(!response.ok)throw new Error("NOON_APISH_PRODUCT_HTTP_"+response.status);
+    const length=Number(response.headers.get("content-length"));
+    if(Number.isFinite(length)&&length>MAX_BYTES)throw new Error("NOON_APISH_PRODUCT_TOO_LARGE");
+    const body=await response.text();
+    if(Buffer.byteLength(body,"utf8")>MAX_BYTES)throw new Error("NOON_APISH_PRODUCT_TOO_LARGE");
+    let data;
+    try{data=JSON.parse(body);}catch{throw new Error("NOON_APISH_PRODUCT_INVALID_JSON")}
+    const observedAt=Date.parse(data?.fetched_at);
+    if(data?.country!=="sa"||data?.cached!==false||
+       !Number.isFinite(observedAt)||Math.abs(Date.now()-observedAt)>MAX_AGE_MS||
+       String(data?.sku||"").toUpperCase()!==id.sku||
+       !Array.isArray(data?.offers))
+      return {status:"PRODUCT_EVIDENCE_UNATTESTED",customerPublishable:false};
+    const exact=data.offers.filter(o=>
+      o?.offer_code===record.offerCode &&
+      (o?.sku===id.sku||String(o?.sku||"").startsWith(id.sku+"-")));
+    if(exact.length!==1||price(exact[0]?.price)===null ||
+       Math.abs(exact[0].price-record.price)>0.001)
+      return {status:"SEARCH_PRODUCT_OFFER_PRICE_MISMATCH",
+        productId:id.sku,customerPublishable:false};
+    return {
+      status:"THIRD_PARTY_SEARCH_PRODUCT_OFFER_PARITY",
+      productId:id.sku,offerCode:record.offerCode,price:exact[0].price,
+      currency:"SAR",creditUsed:Number.isInteger(data.credits_used)?data.credits_used:null,
+      sourceCached:false,noonFirstPartyPdpVerified:false,customerPublishable:false,
+    };
+  }finally{
+    clearTimeout(timer);
+    signal?.removeEventListener("abort",onAbort);
+  }
+}
