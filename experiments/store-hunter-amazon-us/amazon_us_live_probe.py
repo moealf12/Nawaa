@@ -75,6 +75,23 @@ async def main():
                     "priceblock_dealprice": len(soup.select("#priceblock_dealprice")),
                     "priceblock_ourprice": len(soup.select("#priceblock_ourprice")),
                 }
+
+                # Structural-only DOM evidence; no price values, titles, raw HTML
+                # or URLs are logged. IDs are bounded to identifier characters.
+                import re
+                paths = []
+                for price_node in soup.select("span.a-price:not(.a-text-price) span.a-offscreen")[:14]:
+                    ancestors = []
+                    for parent in list(price_node.parents)[:12]:
+                        if not getattr(parent, "get", None):
+                            continue
+                        ident = parent.get("id", "")
+                        if isinstance(ident, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", ident):
+                            ancestors.append(ident)
+                        if len(ancestors) >= 4:
+                            break
+                    paths.append(tuple(ancestors))
+                pdp_diagnostic["price_ancestor_id_paths"] = [list(x) for x in dict.fromkeys(paths)][:8]
                 pdp_diagnostic["has_main_title"] = bool(soup.select_one("#productTitle"))
                 pdp_diagnostic["has_selected_asin"] = bool(soup.select_one("input#ASIN[value], input[name='ASIN'][value]"))
                 pdp_diagnostic["has_canonical"] = bool(soup.select_one("link[rel='canonical'][href]"))
