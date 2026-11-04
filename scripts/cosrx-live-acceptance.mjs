@@ -1,10 +1,8 @@
 // One-shot first-party COSRX smoke. Runs only in the dedicated CI job.
 // Actual network traffic: one query + at most two official product .js reads.
 // No browser spoof, no login, no proxy, no customer offer publication.
-import {
-  cosrxSearchUrl,parseCosrxSearchCards,verifyCosrxVariantJson
-} from "../src/cosrx-evidence.mjs";
-import {fetchCosrxPublicProductJson} from "../server/providers/cosrx-live.mjs";
+import {cosrxSearchUrl} from "../src/cosrx-evidence.mjs";
+import {evaluateCosrxSearch} from "../server/providers/cosrx-live.mjs";
 import {merchantRequestHeaders} from "../src/source-http-profile.mjs";
 
 if(process.env.NAWAA_COSRX_LIVE_SMOKE!=="1")throw Error("COSRX_LIVE_SMOKE_NOT_ENABLED");
@@ -22,60 +20,32 @@ if(!/text\/html/.test(mime))throw Error("COSRX_SEARCH_CONTENT_TYPE");
 const length=Number(response.headers.get("content-length")||0);
 if(length>3_500_000)throw Error("COSRX_SEARCH_TOO_LARGE");
 const html=await response.text();
-const parsed=parseCosrxSearchCards(html,query,{
-  requestedUrl:url,finalUrl:response.url,maxCards:50,
+const inspected=await evaluateCosrxSearch({
+  query,html,searchUrl:url,finalUrl:response.url,
+  signal,maxPdp:2,
 });
-if(parsed.diagnostics.status!=="PARSED_QUERY_BOUND_USD_CARDS" ||
-   parsed.candidates.length===0){
-  const {load}=await import("cheerio");
-  const $=load(html);
-  const first=$(".collection-listing .product-list .product-block[data-product-id]").first();
-  console.error("NAWAA_COSRX_SEARCH_DIAGNOSTIC "+JSON.stringify({
-    ...parsed.diagnostics,htmlBytes:html.length,
-    rawCardNodes:$(".product-block[data-product-id]").length,
-    scopedCardNodes:$(".collection-listing .product-list .product-block[data-product-id]").length,
-    productListNodes:$(".product-list").length,
-    first:{
-      productId:first.attr("data-product-id")||null,
-      title:first.find(".product-info .product-block__title").first().text().trim().slice(0,120),
-      href:first.find(".product-info a.product-link[href]").first().attr("href")||null,
-      amounts:first.find(".product-info .product-price-data .product-price__amount")
-        .toArray().map(n=>$(n).text().trim().slice(0,60)),
-    }
+const first=inspected.verified[0]||null;
+if(!first){
+  console.error("NAWAA_COSRX_LIVE_EVIDENCE_FAILED "+JSON.stringify({
+    ...inspected.diagnostics,candidates:inspected.candidates,
+    records:inspected.records.map(x=>({productId:x.productId,reason:x.reason})),
+    elapsedMs:Date.now()-started,
   }));
-  throw Error("COSRX_SEARCH_EVIDENCE_UNAVAILABLE_"+parsed.diagnostics.status);
+  process.exitCode=1;
+}else{
+  if(first.customerPublishable||first.shippingToSaudiVerified||
+     first.canShipToSaudi!==null)throw Error("COSRX_SAUDI_DELIVERY_FALSIFIED");
+  console.info("NAWAA_COSRX_LIVE_ACCEPTANCE "+JSON.stringify({
+    searchUrl:url,searchCards:inspected.candidates,
+    discoveryMethod:inspected.diagnostics.discoveryMethod,
+    validatedProductId:first.productId,
+    exactVariantId:first.variantId,
+    exactUSDPrice:first.price,
+    globalAvailability:first.availability,
+    shippingToSaudiVerified:first.shippingToSaudiVerified,
+    customerPublishable:first.customerPublishable,
+    requests:1+(inspected.diagnostics.suggestAttempted?1:0)+
+      inspected.diagnostics.checked,
+    elapsedMs:Date.now()-started,status:"PASS",
+  }));
 }
-const attempts=[];
-for(const card of parsed.candidates.slice(0,2)){
-  signal.throwIfAborted();
-  try{
-    const json=await fetchCosrxPublicProductJson(card.sourceUrl,{signal,timeoutMs:6000});
-    const evidence=verifyCosrxVariantJson(json.text,card);
-    attempts.push({productId:card.productId,reason:evidence.reason,
-      price:evidence.verified?evidence.price:null,
-      variantId:evidence.verified?evidence.variantId:null});
-    if(!evidence.verified)continue;
-    if(evidence.customerPublishable||evidence.shippingToSaudiVerified||
-       evidence.canShipToSaudi!==null)
-      throw Error("COSRX_SAUDI_DELIVERY_FALSIFIED");
-    console.info("NAWAA_COSRX_LIVE_ACCEPTANCE "+JSON.stringify({
-      searchUrl:url,searchCards:parsed.candidates.length,
-      validatedProductId:evidence.productId,
-      exactVariantId:evidence.variantId,
-      exactUSDPrice:evidence.price,
-      globalAvailability:evidence.availability,
-      shippingToSaudiVerified:evidence.shippingToSaudiVerified,
-      customerPublishable:evidence.customerPublishable,
-      requests:1+attempts.length,elapsedMs:Date.now()-started,status:"PASS",
-    }));
-    process.exit(0);
-  }catch(error){
-    if(signal.aborted)throw error;
-    attempts.push({productId:card.productId,reason:error?.message||String(error)});
-    if(/(?:HTTP_403|HTTP_429|DENIED|LIMITED)/i.test(String(error?.message)))break;
-  }
-}
-console.error("NAWAA_COSRX_LIVE_EVIDENCE_FAILED "+JSON.stringify({
-  searchCards:parsed.candidates.length,attempts,elapsedMs:Date.now()-started,
-}));
-process.exitCode=1;
