@@ -15,7 +15,8 @@ const FAILURES=new Set([
 const n=v=>Number.isFinite(v)&&v>=0&&v<600000?Math.round(v):null;
 const count=v=>Number.isSafeInteger(v)&&v>=0&&v<=1000000?v:null;
 const STAGE_COUNTS=new Set(["htmlBytes","cards","fallbackCandidates","directCandidates",
-  "directOffers","pdpAttempts","resolvedOffers","finalOffers","filteredOut"]);
+  "directOffers","pdpAttempts","pdpRejected","pdpUnpriced","pdpTimedOut",
+  "resolvedOffers","finalOffers","filteredOut"]);
 export function safeStorefrontStage(stage,elapsedMs,counts={}){
   if(!STAGES.includes(stage))return null;
   const values={};
@@ -51,16 +52,32 @@ export function summarizeMerchantForensics(spans=[]){
     if(!s||s.storeId==="unknown"||typeof s.storeId!=="string")continue;
     const k=s.storeId;
     if(!buckets.has(k))buckets.set(k,{storeId:k,observations:0,zeroOffers:0,
-      rejected:0,offers:0,reportedFailures:0,durations:[],stageCoverage:{}});
+      rejected:0,offers:0,reportedFailures:0,durations:[],
+      stageCoverage:{},stageDurations:{}});
     const b=buckets.get(k);b.observations++;
     if(s.status==="zero_offers")b.zeroOffers++;
     if(s.status==="rejected")b.rejected++;
     b.offers+=count(s.verifiedOffers)??0;
     b.reportedFailures+=count(s.failures)??0;
     if(n(s.totalMs)!==null)b.durations.push(n(s.totalMs));
-    for(const stage of Array.isArray(s.stages)?s.stages:[]){
-      if(STAGES.includes(stage?.stage))b.stageCoverage[stage.stage]=
-        (b.stageCoverage[stage.stage]??0)+1;
+    // The offsets are cumulative from this store's own start. Only subtract
+    // adjacent *observed* stages; gaps remain UNKNOWN and never become zero.
+    const observed=new Map();
+    for(const stage of Array.isArray(s.stages)?s.stages:[])
+      if(STAGES.includes(stage?.stage)&&n(stage.atMs)!==null)
+        observed.set(stage.stage,n(stage.atMs));
+    let previousAt=0,previousObserved=true;
+    for(const name of STAGES){
+      const at=observed.get(name);
+      if(at===undefined){
+        previousObserved=false;continue;
+      }
+      b.stageCoverage[name]=(b.stageCoverage[name]??0)+1;
+      if(previousObserved && at>=previousAt){
+        if(!b.stageDurations[name])b.stageDurations[name]=[];
+        b.stageDurations[name].push(at-previousAt);
+      }
+      previousAt=at;previousObserved=true;
     }
   }
   const p=(a,q)=>{const s=a.sort((x,y)=>x-y);return s.length?
@@ -71,8 +88,13 @@ export function summarizeMerchantForensics(spans=[]){
       zeroOffers:b.zeroOffers,rejected:b.rejected,
       verifiedOffers:b.offers,reportedFailures:b.reportedFailures,
       p50Ms,p95Ms,stageCoverage:b.stageCoverage,
-      // Triage order only; no causal or inventory inference.
-      triageScore:(p95Ms??0)+1000*b.rejected+500*b.zeroOffers,
+      stageDurationMs:Object.fromEntries(STAGES.filter(k=>b.stageDurations[k]?.length)
+        .map(k=>[k,{samples:b.stageDurations[k].length,
+          p50Ms:p(b.stageDurations[k],.5),p95Ms:p(b.stageDurations[k],.95)}])),
+      // Normalized per observation. Triage order only, NOT causal probability.
+      triageScore:Math.round((p95Ms??0)+
+        1000*b.rejected/Math.max(1,b.observations)+
+        500*b.zeroOffers/Math.max(1,b.observations)),
     };
   }).sort((a,b)=>b.triageScore-a.triageScore||
     a.storeId.localeCompare(b.storeId)).slice(0,25);
