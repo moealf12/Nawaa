@@ -27,6 +27,11 @@ test("joins a live refresh to its owner but never to a coalesced waiter",()=>{
   assert.equal(o.observations[2].generation,null);
   assert.equal(o.observations[0].generation.phases.primaryAcquisitionMs,9200);
   assert.equal(o.observations[0].generation.rootCause,"UNDETERMINED");
+  assert.equal(o.measured.linkedGenerationCount,1);
+  assert.equal(o.measured.phaseSample.primaryAcquisition.p95Ms,9200);
+  assert.equal(o.measured.dominantStageCounts.primary_acquisition,1);
+  assert.equal(o.measured.lastObservedBarrierCounts["provider-pass"],1);
+  assert.equal(o.measured.slowProviderSamples[0].sourceId,"jarir-direct");
 });
 test("does not associate trace IDs without both a matching request and HTTP evidence",()=>{
   const x=http();x.shift();
