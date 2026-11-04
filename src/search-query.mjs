@@ -376,9 +376,23 @@ export function parseSearchIntent(value = "") {
   const storageOnlyQuery=normalizedRamCapacityGb(normalizedQuery)!==null
     ? normalizedQuery.replace(/\b\d{1,3}(?:gb)?(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram\b|\bram \d{1,3}(?:gb)?\b/g," ")
     : normalizedQuery;
+  const baseProviderQuery=normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim();
+  // Merchant retrieval and shopper matching are DIFFERENT contracts. A
+  // generic "sports" adjective after a brand+footwear request is too narrow
+  // for merchant search APIs; "nike shoes" finds all relevant footwear
+  // families. The ORIGINAL normalized query still requires explicit athletic
+  // retail-title proof before an item can be exact-matched to "sports shoes".
+  // Only this structurally bounded brand+shoes+sports pattern is broadened:
+  // model, colour, size, condition and other product constraints stay intact.
+  const broadAthleticFootwearDiscovery=category==="shoes"&&brand &&
+    baseProviderQuery.split(" ").length===3 &&
+    ["shoes","sports",brand].every(term=>
+      baseProviderQuery.split(" ").includes(term));
+  const providerQuery=broadAthleticFootwearDiscovery
+    ? brand+" shoes" : baseProviderQuery;
   return {
     normalizedQuery,
-    providerQuery: normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim(),
+    providerQuery,
     model,
     storage: storageOnlyQuery.match(/\b\d+(?:gb|tb)\b/)?.[0] || null,
     color: normalizedQuery.match(/\b(?:mist blue|desert titanium|natural titanium|black titanium|white titanium|cosmic orange|deep blue|black|white|lavender|sage|silver|gold|blue|green)\b/)?.[0] || null,
@@ -768,7 +782,7 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // remains related, never exact, preserving the original shopper constraint.
   if (effectiveCategory==="shoes" && q.includes("sports")) {
     const retailFootwear=normalizeSearchQuery(offer?.title||"");
-    const athleticTitle=/(?:^| )(?:athletic|running|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(retailFootwear) ||
+    const athleticTitle=/(?:^| )(?:athletic|running|runners?|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(retailFootwear) ||
       /(?:^| )sports? (?:shoes?|sneakers?|trainers?)(?= |$)/.test(retailFootwear);
     if (athleticTitle) titleTokens.add("sports");
   }
