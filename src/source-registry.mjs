@@ -47,6 +47,7 @@ export const WORLD_SOURCE_REGISTRY = [
   { id: "bestbuy-us", name: "Best Buy", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "unknown" },
   { id: "etsy-global", name: "Etsy", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "seller_dependent" },
   { id: "iherb-sa", name: "iHerb", countryCode: "US", region: "North America", status: "candidate", saudiDelivery: "verified_market" },
+  { id: "yesstyle-global", name: "YesStyle", countryCode: "HK", region: "Asia", status: "candidate", saudiDelivery: "offer_dependent" },
   { id: "amazon-ca", name: "Amazon.ca", countryCode: "CA", region: "North America", status: "candidate", saudiDelivery: "offer_dependent" },
 
   // United Kingdom / Europe
