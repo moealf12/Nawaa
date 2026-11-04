@@ -1,0 +1,39 @@
+name: Noon Saudi Live Acceptance
+
+on:
+  pull_request:
+    paths:
+      - "scripts/noon-sa-live-acceptance.mjs"
+      - ".github/workflows/noon-sa-live-acceptance.yml"
+      - "server/providers/free-storefronts.mjs"
+      - "src/noon-sa-catalog.mjs"
+      - "src/noon-sa-search-card-evidence.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noon-sa-live-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-noon-sa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Real Noon Saudi search acquisition (no fixtures, no retry)
+        run: node scripts/noon-sa-live-acceptance.mjs
+      - name: Persist machine-readable source result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-sa-live-acceptance
+          path: noon-sa-live-acceptance.json
+          if-no-files-found: warn
+          retention-days: 14
