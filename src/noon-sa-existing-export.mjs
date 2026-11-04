@@ -186,7 +186,8 @@ function observation(row,map){
 }
 export function inspectNoonExistingExport(raw,{format="csv",columnMap=null}={}){
   if(typeof raw!=="string"||Buffer.byteLength(raw,"utf8")>MAX_BYTES)
-    return {state:"INVALID_OR_OVERSIZED_BODY",accepted:0,rejected:0,records:[]};
+    return {state:"INVALID_OR_OVERSIZED_BODY",accepted:0,rejected:0,records:[],
+      sourcePriceObservations:0,identityOnly:0,customerPublishable:false};
   try{
     if(!["csv","tsv","json"].includes(format))throw new Error("INVALID_FORMAT");
     const parsed=format==="json"?jsonRecords(raw):csvRecords(raw,format);
