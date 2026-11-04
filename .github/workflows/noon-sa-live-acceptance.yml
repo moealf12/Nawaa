@@ -5,6 +5,8 @@ on:
     paths:
       - "scripts/noon-sa-live-acceptance.mjs"
       - "scripts/noon-sa-transport-matrix.mjs"
+      - "scripts/noon-sa-curl-transport.py"
+      - "scripts/noon-sa-curl-evidence.mjs"
       - ".github/workflows/noon-sa-live-acceptance.yml"
       - "server/providers/free-storefronts.mjs"
       - "src/noon-sa-catalog.mjs"
@@ -46,6 +48,25 @@ jobs:
         with:
           name: noon-sa-transport-matrix
           path: noon-sa-transport-matrix.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Install curl_cffi for ephemeral first-party TLS differential
+        continue-on-error: true
+        run: python -m pip install --disable-pip-version-check curl_cffi==0.17.0
+      - name: Live curl_cffi transport and strict source-price evidence
+        continue-on-error: true
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node --check scripts/noon-sa-curl-evidence.mjs
+          python -m py_compile scripts/noon-sa-curl-transport.py
+          python scripts/noon-sa-curl-transport.py
+      - name: Archive curl_cffi first-party live evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-sa-curl-transport
+          path: noon-sa-curl-transport.json
           if-no-files-found: warn
           retention-days: 14
       - name: Real Noon Saudi search acquisition (no fixtures, no retry)
