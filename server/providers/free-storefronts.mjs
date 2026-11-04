@@ -1695,6 +1695,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
         const fulfilled = await fetchAmazonSearchPages(searchUrl,{
           pageStart,pageCount,signal:options.signal,
+          deadlineMs:options.amazonPageDeadlineMs??10000,
           onDiagnostic:metrics=>{
             // No query, URL, ASIN, product, price or customer identity in logs.
             if(metrics.elapsedMs>=6000||metrics.pagesRetried>0)

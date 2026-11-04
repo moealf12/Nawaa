@@ -36,6 +36,7 @@ import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
 import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
 import { createSearchCache, classifySearchCacheAdmission } from "./search-cache.mjs";
 import { amazonPartialEvidenceError } from "./amazon-page-evidence.mjs";
+import {amazonBatchBudgetWithinRequest} from "./amazon-request-budget.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import {retryDeniedStorefrontIds} from "./source-fallback-policy.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
@@ -711,6 +712,9 @@ async function searchAll(query, { depth = 0, signal } = {}) {
     ? Math.max(100, Math.min(25000, Math.floor(configuredRequestDeadline)))
     : 12000;
   const requestDeadlineAt = Date.now() + requestDeadlineMs;
+  // Same five requested Amazon search pages. Reserve time for canonical
+  // dedupe, matching and publication inside the customer deadline.
+  const amazonPageDeadlineMs=amazonBatchBudgetWithinRequest(requestDeadlineMs);
   // The JSON cache coalesces identical searches. Abort one shared refresh only
   // at its own deadline, never when a single subscribing client disconnects.
   const requestController=new AbortController();
@@ -754,6 +758,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       catalogLimit: Infinity,
       amazonPageStart: plan.amazonPageStart,
       amazonPageCount: plan.amazonPageCount,
+      amazonPageDeadlineMs,
       matchingQuery: query,
       signal:requestController.signal,
     }).catch((error) => ({ offers:[], error:error instanceof Error ? error.message : String(error) })),
