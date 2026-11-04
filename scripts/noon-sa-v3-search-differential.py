@@ -116,9 +116,9 @@ try:
         warm = {"step": "warmup", "path": "/uae-en/"}
         try:
             # Redirects are disabled; do not borrow cookies from a different host.
+            report["requestCount"] += 1
             with session.get(WARMUP, timeout=12, allow_redirects=False,
                              stream=True) as response:
-                report["requestCount"] += 1
                 warm["status"] = response.status_code
                 warm.update(safe_headers(response))
                 warm["state"] = "HTTP_OK" if response.status_code == 200 else "HTTP_" + str(response.status_code)
@@ -137,9 +137,9 @@ try:
                 "x-mp-country": "sa",
                 "referer": ORIGIN + "/saudi-en/",
             }
+            report["requestCount"] += 1
             with session.get(SEARCH, headers=headers, timeout=12,
                              allow_redirects=False, stream=True) as response:
-                report["requestCount"] += 1
                 search["status"] = response.status_code
                 search.update(safe_headers(response))
                 if response.status_code != 200:
