@@ -58,6 +58,7 @@ export function summarizePdpAttemptPhases(attempts=[],{maxAttempts=20}={}){
   const result={
     attempted:limited.length,omittedAttempts:Math.max(0,attempts.length-limited.length),
     succeeded:0,unpriced:0,rejected:0,timeout:0,
+    parentCancelled:0,storeBudgetCancelled:0,independentTimeout:0,
     beforeDnsFailure:0,beforeHeadersFailure:0,afterHeadersFailure:0,
     multiHop:0,clockInconsistent:0,
     errorClasses:{},milestoneCounts:Object.fromEntries(PDP_MILESTONES.map(s=>[s,0])),
@@ -72,10 +73,15 @@ export function summarizePdpAttemptPhases(attempts=[],{maxAttempts=20}={}){
     const kind=["succeeded","unpriced","rejected"].includes(item?.outcome)?
       item.outcome:"rejected";
     result[kind]++;
+    if(item?.parentCancelled===true)result.parentCancelled++;
+    if(item?.storeBudgetCancelled===true)result.storeBudgetCancelled++;
     const failureClass=ERROR_CODES.has(item?.failureClass)?item.failureClass:"UNKNOWN";
     if(kind==="rejected"){
       result.errorClasses[failureClass]=(result.errorClasses[failureClass]||0)+1;
-      if(failureClass==="HTTP_TIMEOUT")result.timeout++;
+      if(failureClass==="HTTP_TIMEOUT"){
+        result.timeout++;
+        if(item?.parentCancelled!==true)result.independentTimeout++;
+      }
       if(marks.dns_complete===undefined)result.beforeDnsFailure++;
       else if(marks.headers_received===undefined)result.beforeHeadersFailure++;
       else result.afterHeadersFailure++;
@@ -133,6 +139,9 @@ export function safePdpPhaseSummary(summary){
     attempted:count(summary.attempted),omittedAttempts:count(summary.omittedAttempts),
     succeeded:count(summary.succeeded),unpriced:count(summary.unpriced),
     rejected:count(summary.rejected),timeout:count(summary.timeout),
+    parentCancelled:count(summary.parentCancelled),
+    storeBudgetCancelled:count(summary.storeBudgetCancelled),
+    independentTimeout:count(summary.independentTimeout),
     beforeDnsFailure:count(summary.beforeDnsFailure),
     beforeHeadersFailure:count(summary.beforeHeadersFailure),
     afterHeadersFailure:count(summary.afterHeadersFailure),
