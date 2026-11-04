@@ -1,0 +1,47 @@
+name: Noon UAE Live Currency and Pagination Evidence
+
+on:
+  push:
+    branches:
+      - experiment/noon-ae-sa-catalog-proof-20261105
+    paths:
+      - "scripts/noon-uae-provenance-pagination-live.py"
+      - ".github/workflows/noon-uae-provenance-pagination-live.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noon-uae-provenance-pagination
+  cancel-in-progress: true
+
+jobs:
+  live-source-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install previously verified parsing and transport libraries
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+      - name: Compile and check Python implementation
+        run: |
+          python -m py_compile scripts/noon-uae-provenance-pagination-live.py
+          ruff check --select E4,E7,E9,F scripts/noon-uae-provenance-pagination-live.py
+      - name: Live currency, next-page and one offer-linked PDP evidence
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
+        run: python scripts/noon-uae-provenance-pagination-live.py
+      - name: Save status and bounded evidence, no HTML or credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-uae-provenance-pagination
+          path: noon-uae-provenance-pagination-live.json
+          if-no-files-found: warn
+          retention-days: 14
