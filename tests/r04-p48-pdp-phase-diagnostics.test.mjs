@@ -46,6 +46,23 @@ test("failures before headers are distinct from responses that fail parsing",()=
   assert.equal(s.phaseMs.headerWait.observations,0);
   assert.equal(s.phaseMs.headerWait.p95,null);
 });
+test("parent budget cancellation is not automatically a merchant socket timeout",()=>{
+  const s=summarizePdpAttemptPhases([
+    {...timeline({dns_complete:3,request_started:4,socket_assigned:5,
+      tcp_connected:15,tls_ready:55},{outcome:"rejected"}),
+      parentCancelled:true,storeBudgetCancelled:true},
+    {...timeline({dns_complete:3,request_started:4,tcp_connected:40,tls_ready:75},
+      {outcome:"rejected"}),parentCancelled:false,storeBudgetCancelled:false},
+  ]);
+  assert.equal(s.timeout,2);
+  assert.equal(s.parentCancelled,1);
+  assert.equal(s.storeBudgetCancelled,1);
+  assert.equal(s.independentTimeout,1);
+  assert.equal(s.beforeHeadersFailure,2);
+  const out=safePdpPhaseSummary(s);
+  assert.equal(out.storeBudgetCancelled,1);
+  assert.equal(out.independentTimeout,1);
+});
 test("redirects block single-hop phase durations, but retain observed boundaries",()=>{
   const s=summarizePdpAttemptPhases([
     timeline({dns_complete:2,request_started:3,tcp_connected:5,tls_ready:8,
