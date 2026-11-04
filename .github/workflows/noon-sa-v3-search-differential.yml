@@ -1,0 +1,41 @@
+name: Noon Saudi Correct V3 Search Differential
+
+on:
+  pull_request:
+    paths:
+      - "scripts/noon-sa-v3-search-differential.py"
+      - ".github/workflows/noon-sa-v3-search-differential.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noon-v3-differential-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-correct-v3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Ephemeral open-source curl_cffi install
+        run: python -m pip install --disable-pip-version-check curl_cffi==0.17.0
+      - name: Real source one-session, one-warmup and correct-route search
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python -m py_compile scripts/noon-sa-v3-search-differential.py
+          python scripts/noon-sa-v3-search-differential.py
+      - name: Preserve live transport, endpoint and market-evidence diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-sa-correct-v3-search-live
+          path: noon-sa-v3-search-differential.json
+          if-no-files-found: warn
+          retention-days: 14
