@@ -11,6 +11,7 @@ import {buildSearchPresentationSections} from "../src/search-result-presentation
 import {aggregateSourceErrorEvidence,mergeSourceErrorEvidence}
   from "./r04-source-failure-forensics.mjs";
 import {correlateLiveSearchTraces} from "./r04-p46-correlate-live-traces.mjs";
+import {summarizeGroupClassificationEvidence} from "./r04-p47-classification-evidence.mjs";
 
 const TRACE_ENABLED=process.env.NAWAA_P46_TRACE_ENABLED==="1";
 const SHA=execFileSync("git",["rev-parse","HEAD"],{encoding:"utf8"}).trim();
@@ -153,6 +154,11 @@ async function probe(q){
     const grouped=groupComparableOffers(body.offers,"lowest");
     const sections=buildSearchPresentationSections(q.query,grouped);
     if(sections.partitionedGroups!==grouped.length)throw Error("PRESENTATION_PARTITION_LOSS");
+    const classifierEvidence=summarizeGroupClassificationEvidence(q.query,grouped);
+    if(classifierEvidence.invalidDecisions>0||
+       classifierEvidence.omittedGroups===0 &&
+       (classifierEvidence.laneCounts.direct||0)!==sections.classified.primaryGroups.length)
+      throw Error("CLASSIFIER_AUDIT_PARITY_LOSS");
     const failures=aggregateSourceErrorEvidence(body.errors);
     const row={
       id:q.id,group:q.group,language:q.language,status:"OBSERVED",
@@ -163,6 +169,7 @@ async function probe(q){
       primaryGroups:sections.exactGroups.length,relatedGroups:sections.relatedGroups.length,
       // These are the customer presentation lanes from the same production
       // partition function. Counts, not titles, prices or query-specific fixes.
+      classifierEvidence,
       presentationLanes:Object.fromEntries(sections.secondarySections
         .filter(section=>["alternative","accessory","bundle","other"].includes(section.key))
         .map(section=>[section.key,section.groups.length])),
@@ -180,7 +187,10 @@ async function probe(q){
     console.log("R04_P36_CANDIDATE_QUERY "+JSON.stringify({
       id:row.id,status:row.status,elapsedMs:row.elapsedMs,
       offers:row.offers,primaryGroups:row.primaryGroups,
-      presentationLanes:row.presentationLanes,partial:row.partial,
+      presentationLanes:row.presentationLanes,
+      classifierReasons:row.classifierEvidence.reasonCounts,
+      classifierCoverage:row.classifierEvidence.coverageBins,
+      partial:row.partial,
       deadlineExceeded:row.deadlineExceeded,sourceErrors:row.sourceErrors,
     }));
     return row;
