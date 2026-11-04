@@ -1,0 +1,58 @@
+name: NAWAA R04 Principal Product Postdeploy Evidence
+on:
+  pull_request:
+    paths:
+      - 'scripts/r04-principal-postdeploy-live.mjs'
+      - 'tests/r04-principal-postdeploy-contract.test.mjs'
+      - '.github/workflows/r04-principal-postdeploy-live.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r04-principal-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  postdeploy-principal-issues:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      NAWAA_EXPECT_LIVE_SHA: ''
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require independent negative controls and syntax
+        run: |
+          node --check scripts/r04-principal-postdeploy-live.mjs
+          node --test tests/r04-principal-postdeploy-contract.test.mjs
+      - name: Pin the actual current main SHA (PR base.sha can be stale)
+        run: |
+          set -euo pipefail
+          sha="$(git ls-remote origin refs/heads/main | cut -f1)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "NAWAA_EXPECT_LIVE_SHA=$sha" >> "$GITHUB_ENV"
+          echo "R04_PINNED_MAIN_SHA=$sha"
+      - name: Probe eleven frozen intents via read-only public HTTP
+        run: node scripts/r04-principal-postdeploy-live.mjs
+      - name: Refuse moving main after evidence collection
+        if: always()
+        run: |
+          set -euo pipefail
+          [[ "$NAWAA_EXPECT_LIVE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
+      - name: Retain evidence on both PASS and FAIL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-principal-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-principal-postdeploy-live.json
+          retention-days: 14
+          if-no-files-found: warn
