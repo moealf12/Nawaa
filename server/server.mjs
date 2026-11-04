@@ -10,6 +10,8 @@ import http from "node:http";
 import {beginProcessPressure,endProcessPressure,processPressureBetween} from "./search-process-pressure.mjs";
 import {observedDeadlineExceeded} from "./search-deadline-status.mjs";
 import {createSearchHttpLifecycleTrace} from "./search-http-lifecycle.mjs";
+import {SEARCH_TRACE_ENABLED,newSearchDiagnosticId,withSearchDiagnosticOwner,
+  currentSearchDiagnosticOwner,searchCriticalPathEvidence} from "./search-critical-path.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -337,6 +339,7 @@ async function runProviderPass(providerQuery, pass = "primary", matchingQuery = 
     const dispatchAt = trace ? performance.now() : 0;
     if(trace) trace({stage:"providerCompleted",sourceId:settled.task.id,
       offers:settled.chunk.offers?.length||0,
+      errors:settled.chunk.errors?.length||0,
       providerWallMs:Math.max(0,dispatchAt-settled.launchedAt),
       queueMs:Math.max(0,dispatchAt-settled.readyAt)});
     chunks.push(settled.chunk);
@@ -695,6 +698,8 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   if (Number(depth) > 0) return searchExpansion(query, Number(depth), {signal});
   // Measure internal boundaries only. No query text, URLs, SKUs or prices in logs.
   const pipelineStarted = performance.now();
+  const generationId=SEARCH_TRACE_ENABLED?newSearchDiagnosticId():null;
+  const ownerRequestId=SEARCH_TRACE_ENABLED?currentSearchDiagnosticOwner():null;
   const pipelinePressure = beginProcessPressure();
   query = normalizeSearchQuery(query);
   const assessSearchOffer=createOfferMatchAssessor(query);
@@ -785,14 +790,19 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   // Only bounded known provider IDs and wall-clock completion are recorded.
   // A providerWallMs span includes network/CPU/queue waits and is NOT provider CPU.
   const providerTimings=[];
+  let providerEventsDropped=0;
   const traceProvider=(event,pass)=>{
-    if(event.stage!=="providerCompleted"||providerTimings.length>=24)return;
+    if(event.stage!=="providerCompleted")return;
+    if(providerTimings.length>=24){providerEventsDropped++;return;}
     providerTimings.push({
       sourceId:String(event.sourceId||"unknown").replace(/[^a-z0-9:_-]/gi,"").slice(0,56),
       pass,
       providerWallMs:Math.round(Math.max(0,event.providerWallMs||0)),
       queueMs:Math.round(Math.max(0,event.queueMs||0)),
+      completedFromSearchStartMs:SEARCH_TRACE_ENABLED?
+        Math.round(Math.max(0,performance.now()-pipelineStarted)):null,
       offers:Math.max(0,Math.min(100000,Math.floor(event.offers||0))),
+      errors:Math.max(0,Math.min(100000,Math.floor(event.errors||0))),
     });
   };
   // The total primary phase waits on FOUR concurrent barriers. Per-provider
@@ -858,6 +868,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       dataKind:"live",
     }))
     .filter(admitSearchOffer);
+  const providerRawOffers=primary.offers.length;
   let offers = primary.offers;
   let fallbackQuery = null;
 
@@ -933,7 +944,9 @@ async function searchAll(query, { depth = 0, signal } = {}) {
 
   const preSelectionMs = performance.now() - pipelineStarted - primaryAcquiredMs;
   const afterPreSelectionPressure = beginProcessPressure();
+  const beforeCanonicalOffers=offers.length;
   offers=await canonicalCandidates(offers,true);
+  const afterCanonicalOffers=offers.length;
   const amazonUrls = new Set(amazonValidated.map((offer) => offer.sourceUrl).filter(Boolean));
   const rescoredOffers = dedupeNormalizedOffers(offers)
     .filter((offer) => !amazonUrls.has(offer.sourceUrl))
@@ -948,6 +961,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   offers = OMEGA_CANONICAL ? retainRelatedOffers(query,offers) : dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
 
   const sources = currentSources();
+  const afterAdmissionOffers=offers.length;
   const {allSelectedOffers,selectedOffers,rankedCandidates,resultLimit,
     resultLimitReached}=prepareSearchResultWindow(offers,plan);
   // A busy event loop can delay timer callbacks beyond the nominal 12s budget.
@@ -977,6 +991,29 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       providerTimings,
       primaryComponents,
     }));
+  }
+
+  // Per-generation evidence only: the HTTP owner is the caller that initiated
+  // this cache refresh. Concurrent coalesced waiters are separate requests.
+  // Reports never mutate the shopper result, and any trace failure is isolated.
+  if(SEARCH_TRACE_ENABLED){
+    try{
+      console.info("NAWAA_SEARCH_CRITICAL_PATH "+JSON.stringify(searchCriticalPathEvidence({
+        generationId,ownerRequestId,
+        primaryAcquiredMs,preSelectionMs,
+        finalizationMs:Math.max(0,pipelineMs-primaryAcquiredMs-preSelectionMs),
+        totalMs:pipelineMs,providerTimings,primaryComponents,
+        providerEventsDropped,deadlineExceeded,fallbackUsed:Boolean(fallbackQuery),
+        offerStages:{
+          providerRaw:providerRawOffers,amazonRaw:amazon.offers?.length||0,
+          amazonValidated:amazonValidated.length,indexRaw:indexed.offers?.length||0,
+          catalogRaw:persisted.offers?.length||0,
+          beforeCanonical:beforeCanonicalOffers,afterCanonical:afterCanonicalOffers,
+          rescoredAccepted:rescoredOffers.length,afterAdmission:afterAdmissionOffers,
+          selected:selectedOffers.length,errorEvents:errors.length,
+        },
+      })));
+    }catch{console.warn("NAWAA_SEARCH_CRITICAL_PATH_UNAVAILABLE");}
   }
 
   // Persistence/indexing are optional accelerators and must never delay the
@@ -1368,6 +1405,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/search") {
     const responseStarted = performance.now();
+    const requestTraceId=SEARCH_TRACE_ENABLED?newSearchDiagnosticId():null;
+    if(requestTraceId)res.setHeader("x-nawaa-request-id",requestTraceId);
     const responsePressure = beginProcessPressure();
     const q = String(url.searchParams.get("q") || "").trim();
     const productUrl = String(url.searchParams.get("url") || "").trim();
@@ -1379,8 +1418,9 @@ const server = http.createServer(async (req, res) => {
     // Independent from the 12s acquisition budget: observe how much time
     // the actual HTTP response spends in lookup/coalescing and final delivery.
     const httpTrace=createSearchHttpLifecycleTrace(res,{
-      startedAt:responseStarted,
-      onSlow:record=>console.info("NAWAA_SEARCH_HTTP_LIFECYCLE "+JSON.stringify(record)),
+      startedAt:responseStarted,thresholdMs:SEARCH_TRACE_ENABLED?0:10500,
+      onSlow:record=>console.info("NAWAA_SEARCH_HTTP_LIFECYCLE "+JSON.stringify(
+        requestTraceId?{...record,requestId:requestTraceId}:record)),
     });
 
     try {
@@ -1401,10 +1441,13 @@ const server = http.createServer(async (req, res) => {
       const coalescedOnEntry=cachedSearch.isPending(lookupKey);
       let cacheRefreshReplays=null;
       let cacheInvalidationReason=null;
-      let result = await cachedSearch(lookupKey,{allowStale:false,
+      const cacheOptions={allowStale:false,
         onDiagnostic:diag=>{cacheRefreshReplays=diag.refreshReplays;
           cacheInvalidationReason=diag.lastInvalidationReason;},
-      });
+      };
+      let result = requestTraceId
+        ?await withSearchDiagnosticOwner(requestTraceId,()=>cachedSearch(lookupKey,cacheOptions))
+        :await cachedSearch(lookupKey,cacheOptions);
       const cacheLookupMs=performance.now()-cacheLookupStarted;
       const cacheWaitMs = performance.now() - responseStarted;
       if (resolvedOffer) result.offers = mergeComparisonOffers(resolvedOffer, result.offers);
