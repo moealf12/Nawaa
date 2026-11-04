@@ -54,3 +54,46 @@ class Amazon503RetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body, "<html>ok</html>")
         self.assertEqual(len(calls), 2)
         sleeper.assert_called_once()
+
+
+class AmazonAdversarialCardTests(unittest.TestCase):
+    def _parse(self, html):
+        return parse_html_cards(html, "https://www.amazon.com/s?k=wireless", "https://www.amazon.com", 8)
+
+    def test_no_data_asin_uses_strict_single_asin_parent(self):
+        html = """<div class="unlabeled-result"><h2><a href="/x/dp/B0C3HCD34R/ref=a">Headphones by Anker Q20i Black</a></h2>
+        <span class="a-price"><span class="a-offscreen">$62.40</span></span>
+        <img class="s-image" src="https://m.media-amazon.com/images/I/imgA.jpg" /></div>"""
+        products = self._parse(html)
+        self.assertEqual(len(products), 1)
+        self.assertEqual(products[0].price, "62.40")
+        self.assertEqual(products[0].sku, "B0C3HCD34R")
+
+    def test_do_not_mix_sibling_products_without_boundaries(self):
+        html = """<div><h2><a href="/dp/B0C3HCD34R">First headphone black edition</a></h2>
+          <h2><a href="/dp/B0CZPLV566">Second headphone white edition</a></h2>
+          <img class="s-image" src="https://m.media-amazon.com/images/I/sample.jpg" />
+          <span class="a-price"><span class="a-offscreen">$30.00</span></span></div>"""
+        products = self._parse(html)
+        self.assertEqual(len(products), 2)
+        self.assertEqual({p.sku for p in products}, {"B0C3HCD34R", "B0CZPLV566"})
+        self.assertTrue(all(p.price is None and p.image is None for p in products))
+
+    def test_multiple_current_prices_are_ambiguous(self):
+        html = """<div data-component-type="s-search-result" data-asin="B0C3HCD34R">
+        <h2><a href="/dp/B0C3HCD34R">Headphones by Anker Q20i Black</a></h2>
+        <img class="s-image" src="https://m.media-amazon.com/images/I/sample.jpg" />
+        <span class="a-price"><span class="a-offscreen">$30.00</span></span>
+        <span class="a-price"><span class="a-offscreen">$35.00</span></span></div>"""
+        product = self._parse(html)[0]
+        self.assertIsNone(product.price)
+        self.assertIn("AMAZON_MULTIPLE_CURRENT_PRICES", product.issues)
+
+    def test_placeholder_is_not_product_image(self):
+        html = """<div data-component-type="s-search-result" data-asin="B0C3HCD34R">
+        <h2><a href="/dp/B0C3HCD34R">Headphones by Anker Q20i Black</a></h2>
+        <img class="s-image" src="https://m.media-amazon.com/images/G/01/x-locale/placeholder.gif" />
+        <span class="a-price"><span class="a-offscreen">$59.00</span></span></div>"""
+        product = self._parse(html)[0]
+        self.assertIsNone(product.image)
+        self.assertIn("AMAZON_PRODUCT_IMAGE_MISSING", product.issues)
