@@ -27,6 +27,18 @@ test("explicit condition, missing condition and actual mismatch remain separate"
   assert.equal(out.conditionUnknownMeans,"NOT_PROVEN_NEW");
   assert.equal(out.nextProbe,"VERIFY_SOURCE_CONDITION_PROVENANCE");
 });
+test("literal unknown, unrecognized labels and missing condition are NOT known used/new",()=>{
+  const g=[group("literal","unknown"),group("unrecognized","renewed"),
+    group("unset",undefined),group("clear","new")];
+  const o=auditPresentationStages("laptop",g);
+  assert.equal(o.classifierDirect,4);
+  assert.equal(o.conditionUnknown,3);
+  assert.equal(o.conditionUnrecognizedCodes,2);
+  assert.equal(o.conditionExplicitMismatch,0);
+  assert.equal(o.finalPrincipal,1);
+  assert.equal(o.unplacedUnknownCondition,3);
+  assert.equal(o.nextProbe,"VERIFY_SOURCE_CONDITION_PROVENANCE");
+});
 test("explicit used condition admits only matching used item, never guesses unknown",()=>{
   const g=[group("new","new"),group("used","used"),group("missing")];
   const out=auditPresentationStages("laptop used",g);
