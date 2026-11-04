@@ -30,6 +30,17 @@ export function cosrxUSD(value){
   const n=Number(s.replace(/^(?:US)?\$\s*/,"").replaceAll(",",""));
   return Number.isFinite(n)&&n>0&&n<1_000_000?Math.round(n*100)/100:null;
 }
+function safeCosrxImage(value){
+  if(!value)return null;
+  try{
+    const raw=String(value).replaceAll("{width}","460")
+      .replace(/%7Bwidth%7D/gi,"460");
+    const u=new URL(raw,ORIGIN);
+    if(u.origin!==ORIGIN||!u.pathname.startsWith("/cdn/shop/")||
+       u.username||u.password||u.port)return null;
+    return u.href;
+  }catch{return null}
+}
 export function cosrxSearchContext({query,requestedUrl,finalUrl}={}){
   const q=clean(query).toLowerCase();
   if(!q)return false;
@@ -74,8 +85,10 @@ export function parseCosrxSearchCards(html,query,{requestedUrl,finalUrl,maxCards
       if(!productId.test(numericId)||!identity||!name||name.length>320||price===null){
         d.rejected++;return;
       }
+      const imageEl=node.find(".product-block__image--primary img").first();
+      const image=safeCosrxImage(imageEl.attr("data-src")||imageEl.attr("src"));
       const item={productId:numericId,handle:identity.handle,
-        sourceUrl:identity.sourceUrl,title:name,price,currency:"USD",
+        sourceUrl:identity.sourceUrl,title:name,image,price,currency:"USD",
         priceEvidence:"VISIBLE_US_DEFAULT_SEARCH_PRICE",
         availability:"unknown",variantId:null,shippingToSaudiVerified:false,
         canShipToSaudi:null,customerPublishable:false};
