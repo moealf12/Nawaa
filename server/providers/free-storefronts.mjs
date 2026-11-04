@@ -2024,29 +2024,58 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       ? [] : recoveryPlan.links;
     // Shadow trace existing PDPs only. Collection cannot add a request, alter
     // pricing, retry a failure or interfere with cancellation.
-    const pdpAttempts=stageStarted?[]:null;
-    const settled = await Promise.allSettled(resolutionLinks.map(async (candidate,index) => {
-      const probe=pdpAttempts?createPdpMilestoneProbe():null;
-      try{
-        const product=await resolveProductUrl(candidate.url,{
-          signal:options.signal,
-          ...(probe?{onPdpStage:stage=>probe.mark(stage)}:{}),
-        });
-        if(probe)pdpAttempts[index]={...probe.snapshot(),
-          totalMs:probe.elapsedMs?.()??null,
-          outcome:Number.isFinite(product?.productPrice)?"succeeded":"unpriced"};
-        return product;
-      }catch(error){
-        if(probe)pdpAttempts[index]={...probe.snapshot(),
-          totalMs:probe.elapsedMs?.()??null,outcome:"rejected",
-          failureClass:classifySourceError(error).failureClass};
-        throw error;
-      }
-    }));
-    if(pdpAttempts){
-      const summary=summarizePdpAttemptPhases(pdpAttempts.filter(Boolean));
-      try{options.onPdpSummary?.(summary);}catch{}
+    const pdpTraces=stageStarted?
+      resolutionLinks.map(()=>createPdpMilestoneProbe()):null;
+    const pdpAttempts=pdpTraces?new Array(resolutionLinks.length):null;
+    const parentCancelled=()=>options.signal?.aborted===true;
+    const storeBudgetCancelled=()=>parentCancelled()&&
+      /^store_deadline_exceeded:/.test(String(options.signal?.reason?.message||""));
+    let pdpSummaryPublished=false;
+    const publishPdpSummary=()=>{
+      if(!pdpTraces||pdpSummaryPublished)return;
+      pdpSummaryPublished=true;
+      // When the store-wide deadline fires, Promise.race in withDeadline()
+      // settles before the in-flight PDP promises. Snapshot their known stages
+      // synchronously rather than reporting a fictitious empty PDP histogram.
+      const observed=pdpTraces.map((probe,index)=>pdpAttempts[index]||{
+        ...probe.snapshot(),totalMs:probe.elapsedMs(),outcome:"rejected",
+        parentCancelled:parentCancelled(),
+        storeBudgetCancelled:storeBudgetCancelled(),
+        failureClass:storeBudgetCancelled()?"HTTP_TIMEOUT":"HTTP_ABORTED",
+      });
+      try{options.onPdpSummary?.(summarizePdpAttemptPhases(observed));}catch{}
+    };
+    const onPdpAbort=()=>publishPdpSummary();
+    if(pdpTraces&&options.signal){
+      options.signal.addEventListener("abort",onPdpAbort,{once:true});
+      if(options.signal.aborted)onPdpAbort();
     }
+    let settled;
+    try{
+      settled=await Promise.allSettled(resolutionLinks.map(async (candidate,index) => {
+        const probe=pdpTraces?.[index]||null;
+        try{
+          const product=await resolveProductUrl(candidate.url,{
+            signal:options.signal,
+            ...(probe?{onPdpStage:stage=>probe.mark(stage)}:{}),
+          });
+          if(probe)pdpAttempts[index]={...probe.snapshot(),
+            totalMs:probe.elapsedMs(),
+            outcome:Number.isFinite(product?.productPrice)?"succeeded":"unpriced"};
+          return product;
+        }catch(error){
+          if(probe)pdpAttempts[index]={...probe.snapshot(),
+            totalMs:probe.elapsedMs(),outcome:"rejected",
+            parentCancelled:parentCancelled(),
+            storeBudgetCancelled:storeBudgetCancelled(),
+            failureClass:classifySourceError(error).failureClass};
+          throw error;
+        }
+      }));
+    }finally{
+      options.signal?.removeEventListener("abort",onPdpAbort);
+    }
+    publishPdpSummary();
     const resolvedOffers = settled
       .filter((result) => amazonDePriceHold.customerPublishable &&
         result.status === "fulfilled" && Number.isFinite(result.value?.productPrice))
