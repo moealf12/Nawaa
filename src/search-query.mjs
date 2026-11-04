@@ -29,7 +29,12 @@ const ALIASES = [
   ["مكياج", "makeup"], ["عطر", "perfume"], ["عطور", "perfume"], ["عنايه بالبشره", "skincare"],
   ["اثاث", "furniture"], ["كنب", "sofa"], ["كرسي", "chair"], ["كراسي", "chair"], ["طاوله", "table"], ["طاولات", "table"],
   ["مطبخ", "kitchen"], ["العاب اطفال", "toys"], ["لعب اطفال", "toys"],
-  ["كتب", "books"], ["كتاب", "book"], ["رياضه", "sports"], ["مستلزمات رياضيه", "sports"],
+  ["كتب", "books"], ["كتاب", "book"], ["رياضه", "sports"],
+  // Arabic athletic adjectives are semantic retail descriptors, not mystery
+  // free-text tokens. An English merchant still must prove the athletic style
+  // in the actual title before the offer can be an exact match.
+  ["رياضيه", "sports"], ["رياضي", "sports"], ["للرياضه", "sports"],
+  ["مستلزمات رياضيه", "sports"],
   ["حيوانات اليفه", "pet"], ["مستلزمات حيوانات", "pet"], ["سياره", "automotive"], ["سيارات", "automotive"],
   ["مكتب", "office"], ["مكتبيه", "office"], ["بقاله", "grocery"], ["مواد غذائيه", "grocery"],
   ["برو", "pro"], ["ماكس", "max"], ["بلس", "plus"], ["الترا", "ultra"], ["اير", "air"],
@@ -756,6 +761,17 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   if (!normalizedQuery || !title) return { exactMatch: false, matchConfidence: 0 };
 
   const titleTokens = new Set(title.split(" ").filter(Boolean));
+  // A query's "sports/رياضي" modifier may be evidenced by running, training,
+  // trainer, sneaker or another athletic FOOTWEAR term in the merchant's own
+  // sold-item title. No metadata, brand inference, URL or price can establish
+  // the requested footwear style. A generic Nike shoe without that evidence
+  // remains related, never exact, preserving the original shopper constraint.
+  if (effectiveCategory==="shoes" && q.includes("sports")) {
+    const retailFootwear=normalizeSearchQuery(offer?.title||"");
+    const athleticTitle=/(?:^| )(?:athletic|running|training|trainers?|sneakers?|basketball|tennis|football|soccer|jogging|gym|fitness|cleats?)(?= |$)/.test(retailFootwear) ||
+      /(?:^| )sports? (?:shoes?|sneakers?|trainers?)(?= |$)/.test(retailFootwear);
+    if (athleticTitle) titleTokens.add("sports");
+  }
   // Match RAM quantities semantically for RAM-constrained laptop queries:
   // "16 RAM" and "16GB DDR4 RAM" are equivalent. Never rewrite global
   // model names (e.g. "iPhone 17 RAM 8GB") into fictitious capacities.
