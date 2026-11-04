@@ -1,0 +1,75 @@
+name: Noon Existing Merchant Export Ingestion
+
+on:
+  pull_request:
+    paths:
+      - "src/noon-sa-existing-export.mjs"
+      - "scripts/noon-sa-existing-export-live.mjs"
+      - "docs/noon-existing-export-bridge.md"
+      - ".github/workflows/noon-sa-existing-export.yml"
+  workflow_dispatch:
+    inputs:
+      export_format:
+        description: "Actual approved export format (CSV, TSV or JSON)"
+        type: choice
+        required: true
+        default: csv
+        options:
+          - csv
+          - tsv
+          - json
+
+permissions:
+  contents: read
+
+jobs:
+  parse-contract-and-fail-closed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Syntax checks, no mocked merchant products
+        run: |
+          node --check src/noon-sa-existing-export.mjs
+          node --check scripts/noon-sa-existing-export-live.mjs
+          node --input-type=module -e "import('./src/noon-sa-existing-export.mjs').then(m=>{if(typeof m.inspectNoonExistingExport!=='function') process.exitCode=1})"
+      - name: Ensure absent source cannot be counted as success
+        env:
+          NOON_EXISTING_EXPORT_URL: ""
+          NOON_EXISTING_EXPORT_HOST: ""
+          NOON_EXISTING_EXPORT_TOKEN: ""
+        run: |
+          node scripts/noon-sa-existing-export-live.mjs || true
+          node --input-type=module -e "import('node:fs').then(fs=>{const r=JSON.parse(fs.readFileSync('noon-sa-existing-export-live.json','utf8'));if(r.state!=='EXISTING_EXPORT_NOT_CONFIGURED'||r.customerPublished!==false)process.exitCode=1})"
+
+  live-existing-export:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Read approved source export LIVE (not a simulator)
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
+          NOON_EXISTING_EXPORT_URL: ${{ secrets.NOON_EXISTING_EXPORT_URL }}
+          NOON_EXISTING_EXPORT_HOST: ${{ secrets.NOON_EXISTING_EXPORT_HOST }}
+          NOON_EXISTING_EXPORT_TOKEN: ${{ secrets.NOON_EXISTING_EXPORT_TOKEN }}
+          NOON_EXISTING_EXPORT_COLUMNS: ${{ secrets.NOON_EXISTING_EXPORT_COLUMNS }}
+          NOON_EXISTING_EXPORT_FORMAT: ${{ inputs.export_format }}
+        run: node scripts/noon-sa-existing-export-live.mjs
+      - name: Archive actual live counts and validation errors
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-existing-export-live-evidence
+          path: noon-sa-existing-export-live.json
+          if-no-files-found: warn
+          retention-days: 14
