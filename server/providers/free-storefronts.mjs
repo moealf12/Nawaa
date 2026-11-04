@@ -2273,8 +2273,10 @@ export async function searchFreeStorefronts(query, options = {}) {
       if(safe&&state.stages.length<6&&!state.stages.some(x=>x.stage===safe.stage))
         state.stages.push(safe);
     }:undefined;
+    const onPdpSummary=state?summary=>{state.pdpPhases=summary;}:undefined;
     const task=withDeadline((signal)=>searchStore(store,query,productPageLimit,
-      options.matchingQuery || query,catalogLimit,{...options,signal,onStoreStage}),store.id);
+      options.matchingQuery || query,catalogLimit,
+      {...options,signal,onStoreStage,onPdpSummary}),store.id);
     return state?task.finally(()=>{state.finished=performance.now();}):task;
   }));
   const offers = [];
@@ -2297,7 +2299,7 @@ export async function searchFreeStorefronts(query, options = {}) {
         candidates:value?.candidates??null,
         verifiedOffers:value?.offers?.length??0,
         failures:result.status==="rejected"?1:(value?.failures??0),
-        failureClass,stages:trace?.stages||[],
+        failureClass,stages:trace?.stages||[],pdpPhases:trace?.pdpPhases,
       },{knownStoreIds});
       try{options.onStoreTrace(record);}catch{}
     }
