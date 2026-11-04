@@ -98,7 +98,7 @@ test("duplicate/oversized inputs fail closed and are never presented as live",()
   assert.equal(duplicate.state,"DUPLICATE_COLUMNS");
   const huge=inspectNoonExistingExport("x".repeat(8_000_001));
   assert.equal(huge.state,"INVALID_OR_OVERSIZED_BODY");
-  assert.equal(huge.customerPublishable,undefined);
+  assert.equal(huge.customerPublishable,false);
 });
 const feedRecord={
   sku:SKU,product_url:URL,offer_code:"offer-1",title:"Neutral Device",
