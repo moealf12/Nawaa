@@ -867,11 +867,20 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
     !speakerRequested &&
     /\b(?:speakers?|soundbars?)\b/.test(retailAudioSubject) &&
     !/\b(?:headphones?|headsets?|earphones?|earbuds?|airpods)\b/.test(retailAudioSubject);
+  // Q14 LIVE: an audio-category Bluetooth *headphone* is not the speaker the
+  // shopper requested, even if an SEO URL or provider metadata says speaker.
+  // Inspect only the primary retail subject before included accessories.
+  const retailAudioPrimary=normalizeSearchQuery(
+    String(offer?.title||"").split(/\b(?:with|including|includes)\b/i,1)[0]);
+  const speakerSubjectVerified=/(?:^| )(?:speakers?|soundbars?|boombox(?:es)?)(?= |$)/.test(retailAudioPrimary);
+  const speakerSubjectUnverified=effectiveCategory==="audio" && speakerRequested &&
+    !headphonesRequested && !speakerSubjectVerified;
   const kindMismatch = Boolean(storageMediaMismatch || controllerBundleMismatch ||
     audioSubjectMismatch ||
     (intent.kind && intent.kind !== description.kind) ||
     (effectiveCategory && effectiveCategory !== offerCategory));
   if (kindMismatch) confidence *= 0.2;
+  if(speakerSubjectUnverified) confidence=Math.min(confidence,0.69);
   // A high lexical match cannot upgrade a standalone retail part to the
   // complete camera/vacuum/chair/watch/food/PS5 drive requested by the shopper.
   const principalRetailConflict=contradictedPrincipalRetailItem(normalizedQuery,offer?.title||"");
@@ -979,13 +988,13 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
       !hasUnrequestedVariant && !conflictingGalaxyModel &&
       !unrequestedCarrierVariant && !conditionMismatch && !kindMismatch &&
       !ramMismatch && !ramUnverified && !principalRetailConflict &&
-      !retailDysonModelMissing && !athleticStyleUnverified;
+      !retailDysonModelMissing && !athleticStyleUnverified && !speakerSubjectUnverified;
   return {
     exactMatch,
     matchConfidence: Math.round(confidence * 100) / 100,
     missingTerms,
     productKind: description.kind,
-    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : athleticStyleUnverified ? "استخدام الحذاء الرياضي غير مثبت في عنوان العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
+    matchReason: exactMatch ? "يطابق مواصفات بحثك" : ramMismatch ? "سعة RAM المعلنة تختلف عن المطلوبة" : ramUnverified ? "سعة RAM المطلوبة غير مثبتة في العرض" : athleticStyleUnverified ? "استخدام الحذاء الرياضي غير مثبت في عنوان العرض" : speakerSubjectUnverified ? "هوية مكبر الصوت غير مثبتة في عنوان العرض" : unrequestedCarrierVariant ? "نسخة مخصصة لمشغّل اتصالات؛ لم تُتحقق أهلية التفعيل أو الاستخدام والشحن إلى السعودية" : controllerBundleMismatch ? "الحزمة لا تثبت وجود يد تحكم ضمن محتويات الجهاز" : storageMediaMismatch ? "نوع الملحق يختلف عن وسيط التخزين المطلوب" : kindMismatch ?
       (description.kind === "game" ? "لعبة للجهاز، وليست الجهاز نفسه" : description.kind === "accessory" ? "ملحق للجهاز، وليس الجهاز نفسه" : "نوع المنتج يختلف عن المطلوب") : conditionMismatch ? "حالة المنتج تختلف عن المطلوب" :
       principalRetailConflict ? "العرض يخص ملحقًا أو قطعة أو لعبة، وليس المنتج الأساسي المطلوب" :
       !queryHasAccessoryIntent && titleHasAccessory ? "ملحق للمنتج، وليس الجهاز المطلوب" :
