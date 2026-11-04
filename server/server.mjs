@@ -171,7 +171,7 @@ async function serveStaticFile(req, res, pathname) {
   }
 }
 
-function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, skipFailedStorefrontIds = [], plan = acquisitionPlan(0, configuredFreeStorefronts().length), onOffers } = {}) {
+function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = false, skipFailedStorefrontIds = [], plan = acquisitionPlan(0, configuredFreeStorefronts().length), onOffers, onStoreTrace, tracePass="primary" } = {}) {
   const tasks = [];
   const add = (id, run, { explicit = false, deadlineMs = null } = {}) => {
     if (!sourceReliability.shouldSkip(id, { explicit })) tasks.push({ id, run, deadlineMs });
@@ -213,6 +213,7 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
       productPageLimit:plan.productPageLimit,
       catalogLimit:Infinity,
       storeDeadlineMs:6500,
+      onStoreTrace,tracePass,
     }), { explicit:true, deadlineMs:7500 });
   }
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
@@ -308,7 +309,7 @@ function mergeProviderChunks(chunks) {
 async function runProviderPass(providerQuery, pass = "primary", matchingQuery = providerQuery, options = {}) {
   const onChunk = typeof options.onChunk === "function" ? options.onChunk : null;
   const trace = typeof options.onTrace === "function" ? options.onTrace : null;
-  const tasks = providerTasks(providerQuery, matchingQuery, options);
+  const tasks = providerTasks(providerQuery, matchingQuery, {...options,tracePass:pass});
   if (!tasks.length) return {providers:[],errors:[],offers:[]};
 
   const rankedIds = sourceReliability.rank(tasks.map(task=>task.id));
@@ -791,6 +792,13 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   // A providerWallMs span includes network/CPU/queue waits and is NOT provider CPU.
   const providerTimings=[];
   let providerEventsDropped=0;
+  const storefrontTimings=[];
+  let storefrontEventsDropped=0;
+  const recordStoreTrace=(record,pass)=>{
+    if(!SEARCH_TRACE_ENABLED)return;
+    if(storefrontTimings.length>=64){storefrontEventsDropped++;return;}
+    storefrontTimings.push({...record,pass});
+  };
   const traceProvider=(event,pass)=>{
     if(event.stage!=="providerCompleted")return;
     if(providerTimings.length>=24){providerEventsDropped++;return;}
@@ -829,6 +837,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         plan, signal:requestController.signal,
         onChunk: (chunk) => { completedPrimaryChunks.push(chunk); },
         onTrace:(event)=>traceProvider(event,"primary"),
+        onStoreTrace:event=>recordStoreTrace(event,"primary"),
       }),
       () => {
         const completed = mergeProviderChunks(completedPrimaryChunks);
@@ -918,6 +927,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
             skipFailedStorefrontIds:retryDeniedIds,
             onChunk:chunk=>{completedFallbackChunks.push(chunk);},
             onTrace:(event)=>traceProvider(event,"fallback"),
+            onStoreTrace:event=>recordStoreTrace(event,"fallback"),
           }),
           () => {
             // Never erase verified offers from a fast provider when another
@@ -948,14 +958,14 @@ async function searchAll(query, { depth = 0, signal } = {}) {
   offers=await canonicalCandidates(offers,true);
   const afterCanonicalOffers=offers.length;
   const amazonUrls = new Set(amazonValidated.map((offer) => offer.sourceUrl).filter(Boolean));
-  const rescoredOffers = dedupeNormalizedOffers(offers)
+  const rescoredAssessed = dedupeNormalizedOffers(offers)
     .filter((offer) => !amazonUrls.has(offer.sourceUrl))
     .map((offer) => ({
       ...offer,
       ...assessSearchOffer(offer),
       dataKind: offer.dataKind || "live",
-    }))
-    .filter(admitSearchOffer);
+    }));
+  const rescoredOffers = rescoredAssessed.filter(admitSearchOffer);
   // Amazon search cards are scored once against the shopper query above.
   // Merge those validated offers without scoring them a second time.
   offers = OMEGA_CANONICAL ? retainRelatedOffers(query,offers) : dedupeNormalizedOffers([...amazonValidated, ...rescoredOffers]);
@@ -1003,12 +1013,17 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         primaryAcquiredMs,preSelectionMs,
         finalizationMs:Math.max(0,pipelineMs-primaryAcquiredMs-preSelectionMs),
         totalMs:pipelineMs,providerTimings,primaryComponents,
-        providerEventsDropped,deadlineExceeded,fallbackUsed:Boolean(fallbackQuery),
+        providerEventsDropped,storefrontTimings,storefrontEventsDropped,
+        knownStoreIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
+        deadlineExceeded,fallbackUsed:Boolean(fallbackQuery),
         offerStages:{
-          providerRaw:providerRawOffers,amazonRaw:amazon.offers?.length||0,
+          providerRaw:providerRawOffers,primaryAssessed:primaryAssessed.length,
+          primaryRelevant:relevantPrimary.length,primaryMerchants,
+          amazonRaw:amazon.offers?.length||0,
           amazonValidated:amazonValidated.length,indexRaw:indexed.offers?.length||0,
           catalogRaw:persisted.offers?.length||0,
           beforeCanonical:beforeCanonicalOffers,afterCanonical:afterCanonicalOffers,
+          rescoredAssessed:rescoredAssessed.length,
           rescoredAccepted:rescoredOffers.length,afterAdmission:afterAdmissionOffers,
           selected:selectedOffers.length,errorEvents:errors.length,
         },
