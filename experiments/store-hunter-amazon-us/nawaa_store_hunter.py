@@ -635,6 +635,8 @@ class Scraper:
         self._robots: RobotFileParser | None = None
         self._robots_blocked = False
         self._browser_used = False
+        # Search-scoped, not per product: at most two extra PDP reads.
+        self._amazon_pdp_retry_budget = 2
         self._client = httpx.AsyncClient(
             follow_redirects=False, trust_env=False, timeout=httpx.Timeout(15.0, connect=8.0),
             limits=httpx.Limits(max_connections=4),
@@ -937,6 +939,29 @@ class Scraper:
                 if not matches:
                     return
                 prices = {(p.price, p.currency) for p in matches if p.price and p.currency}
+                # One bounded recovery if a valid Amazon PDP has identity and
+                # image but no main price. Never retry on a missing HTTP body,
+                # identity mismatch, or contradictory buy-box evidence.
+                amazon_identity = any(p.method == "amazon-us-pdp-main-buybox" for p in matches)
+                ambiguous = any("AMAZON_PDP_MULTIPLE_BUYBOX_PRICES" in p.issues for p in matches)
+                if (not prices and amazon_identity and not ambiguous
+                        and host(self.origin) in {"www.amazon.com", "amazon.com"}
+                        and self._amazon_pdp_retry_budget > 0):
+                    self._amazon_pdp_retry_budget -= 1
+                    self.log("pdp-price-recovery", product.url, "AMAZON_MISSING_PRIMARY_PRICE_RETRY_ONCE")
+                    await asyncio.sleep(0.4)
+                    retried_body = await self.fetch("product-detail-price-retry", product.url)
+                    if retried_body:
+                        retried = (parse_jsonld(retried_body, product.url)
+                                   + parse_microdata(retried_body, product.url)
+                                   + parse_meta_product(retried_body, product.url)
+                                   + parse_amazon_us_pdp(retried_body, product.url))
+                        retried_matches = [p for p in retried if pdp_identity_matches(product, p)]
+                        if retried_matches:
+                            matches = retried_matches
+                            prices = {(p.price, p.currency) for p in matches if p.price and p.currency}
+                            if len(prices) == 1:
+                                product.issues.append("AMAZON_PDP_RETRY_PRICE_RECOVERED")
                 if len(prices) > 1:
                     product.price = None
                     product.price_status = "conflict"
@@ -948,8 +973,11 @@ class Scraper:
                         product.price_status = "conflict"
                         product.issues.append("LISTING_PDP_PRICE_CONFLICT")
                     else:
+                        had_listing_price = bool(product.price and product.currency)
                         product.price, product.currency = price, currency
-                        product.price_status = "evidence_correlated"
+                        # A PDP alone is NOT listing-to-PDP price parity.
+                        product.price_status = ("evidence_correlated" if had_listing_price
+                                                else "single_source_unverified")
                 if not product.image:
                     product.image = next((p.image for p in matches if p.image), None)
                 if not product.sku:
