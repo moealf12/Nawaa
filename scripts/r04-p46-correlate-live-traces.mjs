@@ -92,12 +92,51 @@ export function correlateLiveSearchTraces({
   }
   const counts={};
   for(const o of observations)counts[o.linkage]=(counts[o.linkage]||0)+1;
+  const linked=observations.filter(o=>o.linkage==="GENERATION_OWNER_OBSERVED"&&o.generation);
+  const p=(values,q)=>{
+    const sorted=values.filter(Number.isFinite).sort((a,b)=>a-b);
+    return sorted.length?sorted[Math.max(0,Math.ceil(q*sorted.length)-1)]:null;
+  };
+  const phaseValues={
+    primaryAcquisition:linked.map(o=>o.generation.phases.primaryAcquisitionMs),
+    preSelection:linked.map(o=>o.generation.phases.preSelectionMs),
+    finalization:linked.map(o=>o.generation.phases.finalizationMs),
+  };
+  const phaseSample=Object.fromEntries(Object.entries(phaseValues).map(([name,values])=>
+    [name,{observations:values.filter(Number.isFinite).length,p50Ms:p(values,.5),p95Ms:p(values,.95)}]));
+  const dominantCounts={},lastBarrierCounts={},providers=new Map();
+  for(const o of linked){
+    for(const stage of o.generation.dominantStages)
+      dominantCounts[stage]=(dominantCounts[stage]||0)+1;
+    for(const barrier of o.generation.lastBarrierCandidates)
+      lastBarrierCounts[barrier]=(lastBarrierCounts[barrier]||0)+1;
+    for(const span of o.generation.providerSpans){
+      if(span.sourceId==="unknown")continue;
+      const values=providers.get(span.sourceId)||{wall:[],errors:0,observations:0};
+      if(span.wallMs!==null)values.wall.push(span.wallMs);
+      values.errors+=span.errors||0;
+      values.observations++;
+      providers.set(span.sourceId,values);
+    }
+  }
+  const slowProviderSamples=[...providers.entries()].map(([sourceId,data])=>({
+    sourceId,observations:data.observations,
+    wallP50Ms:p(data.wall,.5),wallP95Ms:p(data.wall,.95),errorEventsObserved:data.errors,
+  })).sort((a,b)=>(b.wallP95Ms??-1)-(a.wallP95Ms??-1)||
+    a.sourceId.localeCompare(b.sourceId)).slice(0,12);
+  const measured={
+    linkedGenerationCount:linked.length,
+    phaseSample,dominantStageCounts:dominantCounts,
+    lastObservedBarrierCounts:lastBarrierCounts,
+    slowProviderSamples,
+    caveat:"ranked_wall_times_and_last_settled_barriers_are_not_causal_root_attribution",
+  };
   return {
     schemaVersion:"nawaa.r04.p46.correlated-live.v1",
     classification:"REAL_MERCHANT_CANDIDATE_OBSERVATIONS_NOT_RENDER_CAUSAL_AB",
     expectedIntents,observedIntents:observations.length,
     receivedHttpEvents:httpSpans.length,receivedGenerationEvents:generations.length,
-    association:counts,observations,
+    association:counts,measured,observations,
     limitations:[
       "Cache coalesced request is never misidentified as the generation owner.",
       "An owner context may be superseded after cache invalidation; lineage is observational.",
