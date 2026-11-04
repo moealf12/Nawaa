@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'server/server.mjs'
+      # Source admission and fallback policy affect live merchant acquisition.
+      - 'server/source-fallback-policy.mjs'
       - 'server/catalog-recall-budget.mjs'
       - 'server/persistence.mjs'
       - 'server/catalog-write-through.mjs'
