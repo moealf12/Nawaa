@@ -35,7 +35,11 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Live transport differential (session versus real browser)
         continue-on-error: true
-        run: node scripts/noon-sa-transport-matrix.mjs
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node --check scripts/noon-sa-transport-matrix.mjs
+          node scripts/noon-sa-transport-matrix.mjs
       - name: Archive transport matrix whether access passes or fails
         if: always()
         uses: actions/upload-artifact@v4
