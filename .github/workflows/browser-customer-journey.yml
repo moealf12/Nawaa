@@ -27,7 +27,6 @@ on:
       - 'product.html'
       - 'config.js'
       - 'scripts/browser-customer-journey.mjs'
-      - 'scripts/browser-fixture-customer-journey.mjs'
       - 'scripts/browser-v218-matrix.mjs'
       - 'tests/ui-flow.test.mjs'
       - '.github/workflows/browser-customer-journey.yml'
@@ -93,15 +92,11 @@ jobs:
           MEILI_HOST: ''
           MEILI_MASTER_KEY: ''
         run: node scripts/browser-v218-matrix.mjs
-      - name: Replay fixture buyer journeys with zero external merchant requests
-        env:
-          NODE_ENV: test
-          DATABASE_URL: ''
-          MEILI_HOST: ''
-          MEILI_MASTER_KEY: ''
-        run: node scripts/browser-fixture-customer-journey.mjs
-      - name: Observe the currently published GitHub Pages and Render UI
-        continue-on-error: true
+      - name: Require LIVE published GitHub Pages and Render customer journey
+        # A real published-site failure must fail the LIVE release check.
+        # This step observes the deployed main; candidate PR is verified by
+        # the isolated live-source Chromium steps above.
+        continue-on-error: false
         env:
           NODE_ENV: test
         run: node scripts/browser-customer-journey.mjs published
