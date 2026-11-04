@@ -26,8 +26,25 @@ const parsed=parseCosrxSearchCards(html,query,{
   requestedUrl:url,finalUrl:response.url,maxCards:50,
 });
 if(parsed.diagnostics.status!=="PARSED_QUERY_BOUND_USD_CARDS" ||
-   parsed.candidates.length===0)
+   parsed.candidates.length===0){
+  const {load}=await import("cheerio");
+  const $=load(html);
+  const first=$(".collection-listing .product-list .product-block[data-product-id]").first();
+  console.error("NAWAA_COSRX_SEARCH_DIAGNOSTIC "+JSON.stringify({
+    ...parsed.diagnostics,htmlBytes:html.length,
+    rawCardNodes:$(".product-block[data-product-id]").length,
+    scopedCardNodes:$(".collection-listing .product-list .product-block[data-product-id]").length,
+    productListNodes:$(".product-list").length,
+    first:{
+      productId:first.attr("data-product-id")||null,
+      title:first.find(".product-info .product-block__title").first().text().trim().slice(0,120),
+      href:first.find(".product-info a.product-link[href]").first().attr("href")||null,
+      amounts:first.find(".product-info .product-price-data .product-price__amount")
+        .toArray().map(n=>$(n).text().trim().slice(0,60)),
+    }
+  }));
   throw Error("COSRX_SEARCH_EVIDENCE_UNAVAILABLE_"+parsed.diagnostics.status);
+}
 const attempts=[];
 for(const card of parsed.candidates.slice(0,2)){
   signal.throwIfAborted();
