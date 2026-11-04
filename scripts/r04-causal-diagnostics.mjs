@@ -21,6 +21,9 @@ const CODE_TO_PROBE=Object.freeze({
   CLIENT_BODY_READ_DOMINANT:"TRACE_RESPONSE_STREAM_AND_TRANSFER_PATH",
   CLIENT_PARSE_COST_DOMINANT:"PROFILE_LARGE_JSON_PARSE_AND_RESPONSE_SIZE",
   COVERAGE_EVIDENCE_MISSING:"TRACE_SOURCE_WAVE_COMPLETENESS_CONTRACT",
+  SOURCE_ERROR_EVIDENCE_MISSING:"TRACE_SOURCE_ERROR_ENVELOPE_CONTRACT",
+  DEADLINE_EVIDENCE_MISSING:"TRACE_DEADLINE_COVERAGE_CONTRACT",
+  CATALOG_EVIDENCE_MISSING:"TRACE_CATALOG_RECALL_STATUS_CONTRACT",
   COVERAGE_CONTRADICTION:"TRACE_PARTIAL_COVERAGE_ADMISSION_CONTRACT",
   REQUEST_EVIDENCE_MISSING:"RECOLLECT_MISSING_INTENT_WITH_SHA_GUARD",
 });
@@ -83,6 +86,8 @@ export function diagnoseR04Evidence(report){
       else if(row.partial!==false)mark(flags,"COVERAGE_EVIDENCE_MISSING");
       if(row.partial===false&&count(row.sourceErrors)>0)
         mark(flags,"COVERAGE_CONTRADICTION");
+      if(count(row.sourceErrors)===null)mark(flags,"SOURCE_ERROR_EVIDENCE_MISSING");
+      if(typeof row.deadlineExceeded!=="boolean")mark(flags,"DEADLINE_EVIDENCE_MISSING");
       const offers=count(row.offers),principal=count(row.primaryGroups);
       if(principal===0){
         missingPrincipal++;
@@ -95,6 +100,8 @@ export function diagnoseR04Evidence(report){
         mark(flags,"INTERNAL_DEADLINE");
       }
       const catalog=row.catalogRecallStatus;
+      if(catalog===null||catalog===undefined)
+        mark(flags,"CATALOG_EVIDENCE_MISSING");
       if(catalog==="failed"){
         mark(flags,"CATALOG_RECALL_FAILURE");
         if(row.partial===false)mark(flags,"COVERAGE_CONTRADICTION");
@@ -158,7 +165,8 @@ export function diagnoseR04Evidence(report){
        "PRINCIPAL_PRESENTATION_GAP","PRINCIPAL_UNCLASSIFIED_GAP"].includes(code)?10:
       ["INTERNAL_DEADLINE","CATALOG_RECALL_FAILURE",
        "SOURCE_ERROR_ACCOUNTING_GAP","COVERAGE_CONTRADICTION",
-       "COVERAGE_EVIDENCE_MISSING"].includes(code)?7:3),
+       "COVERAGE_EVIDENCE_MISSING","DEADLINE_EVIDENCE_MISSING",
+       "SOURCE_ERROR_EVIDENCE_MISSING","CATALOG_EVIDENCE_MISSING"].includes(code)?7:3),
   })).sort((a,b)=>b.priorityPoints-a.priorityPoints||
     order.indexOf(a.code)-order.indexOf(b.code));
   const sampleP50Ms=quantile(latency,.5),sampleP95Ms=quantile(latency,.95);
