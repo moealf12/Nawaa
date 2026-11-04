@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "src/noon-sa-existing-export.mjs"
+      - "tests/noon-sa-staging-integrity.test.mjs"
       - "scripts/noon-sa-existing-export-live.mjs"
       - "docs/noon-existing-export-bridge.md"
       - ".github/workflows/noon-sa-existing-export.yml"
@@ -37,6 +38,8 @@ jobs:
           node --check src/noon-sa-existing-export.mjs
           node --check scripts/noon-sa-existing-export-live.mjs
           node --input-type=module -e "import('./src/noon-sa-existing-export.mjs').then(m=>{if(typeof m.inspectNoonExistingExport!=='function') process.exitCode=1})"
+      - name: Verify price/identity/conflict/fail-closed invariants (unit only)
+        run: node --test tests/noon-sa-staging-integrity.test.mjs
       - name: Ensure absent source cannot be counted as success
         env:
           NOON_EXISTING_EXPORT_URL: ""
