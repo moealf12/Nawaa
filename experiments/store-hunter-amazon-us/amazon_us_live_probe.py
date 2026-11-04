@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone
 from dataclasses import asdict
-from nawaa_store_hunter import Scraper, parse_jsonld, parse_html_cards
+from nawaa_store_hunter import Scraper, parse_jsonld, parse_html_cards, parse_microdata, parse_meta_product
 
 async def main():
     query = os.environ.get("AMAZON_US_QUERY", "wireless headphones")
@@ -21,6 +21,11 @@ async def main():
     # Do not spray generic non-Amazon search routes.
     scraper.search_targets = lambda _: [("https://www.amazon.com/s", {"k": query})]
     browser_diagnostic = {"attempted": False, "html_received": False, "parsed_items": 0}
+    # This ASIN was observed in the prior 2026-11-04 LIVE Amazon search artifact.
+    # It is diagnostic-only, not a hardcoded product for the universal scraper.
+    pdp_diagnostic = {"attempted": False, "html_received": False,
+                      "structured_candidates": 0, "candidates_with_price": 0,
+                      "candidates_with_image": 0, "dom_price_nodes": 0}
     try:
         result = await scraper.search()
         # Single diagnostic retry with an ordinary Chromium browser, NOT stealth,
@@ -43,6 +48,20 @@ async def main():
                     bool(p.title and p.url and p.price and p.currency == "USD" and p.image)
                     for p in candidates
                 )
+        # If search is unavailable, test ONE known public PDP to separate
+        # discovery-route denial from page parsing. No full-page artifacts.
+        if result.get("count", 0) == 0:
+            pdp_url = "https://www.amazon.com/dp/B0C3HCD34R"
+            pdp_diagnostic["attempted"] = True
+            body = await scraper.fetch("pdp-diagnostic", pdp_url)
+            if body:
+                pdp_diagnostic["html_received"] = True
+                from bs4 import BeautifulSoup
+                parsed = parse_jsonld(body, pdp_url) + parse_microdata(body, pdp_url) + parse_meta_product(body, pdp_url)
+                pdp_diagnostic["structured_candidates"] = len(parsed)
+                pdp_diagnostic["candidates_with_price"] = sum(bool(p.price and p.currency) for p in parsed)
+                pdp_diagnostic["candidates_with_image"] = sum(bool(p.image) for p in parsed)
+                pdp_diagnostic["dom_price_nodes"] = len(BeautifulSoup(body, "html.parser").select("span.a-price:not(.a-text-price) span.a-offscreen"))
     except Exception as exc:
         result = {
             "store": "https://www.amazon.com", "query": query,
@@ -69,6 +88,7 @@ async def main():
         "source": "LIVE_REMOTE_HTTP",
         "status": result.get("status"),
         "browser_diagnostic": browser_diagnostic,
+        "pdp_diagnostic": pdp_diagnostic,
         "count": len(products),
         "priced_usd_with_image": len(complete),
         "pdp_correlated": len(correlated),
