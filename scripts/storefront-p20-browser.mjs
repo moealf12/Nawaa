@@ -74,6 +74,43 @@ try{
   assert.equal(await page.locator("#drawer").getAttribute("aria-hidden"),"false");
   await page.locator("#drawerClose").click();
   assert.equal(await page.locator("#drawer").getAttribute("aria-hidden"),"true");
+
+  // P2.2: visual polish is restricted to the existing three editorial photo cards.
+  assert.equal(await page.locator(".cards > .card").count(),3);
+  assert.equal(await page.locator(".cards .card-light[aria-hidden='true']").count(),3);
+  const mediaSources=await page.locator(".cards > .card > img").evaluateAll(images=>images.map(img=>new URL(img.src).pathname));
+  assert.deepEqual(mediaSources,[
+   "/assets/nawaa-work-study.jpg","/assets/nawaa-hero-sculpture.png","/assets/nawaa-home.jpg"
+  ]);
+  const workCard=page.locator(".cards > .card").first();
+  await workCard.scrollIntoViewIfNeeded();
+  await workCard.evaluate(el=>el.blur()); // screenshots capture visual design, not earlier keyboard-test focus ring
+  await page.screenshot({path:join(evidence,config.name+"-editorial-default.png")});
+  if(!config.mobile){
+   const bounds=await workCard.boundingBox();
+   await page.mouse.move(bounds.x+bounds.width*.72,bounds.y+bounds.height*.38);
+   await page.waitForTimeout(450);
+   const hovered=await workCard.evaluate(card=>({
+    x:card.style.getPropertyValue("--card-light-x"),
+    pan:card.style.getPropertyValue("--card-pan-x"),
+    opacity:Number(getComputedStyle(card.querySelector(".card-light")).opacity),
+    borderColor:getComputedStyle(card).borderColor
+   }));
+   assert.ok(hovered.x && hovered.x!=="50%","light follows pointer: "+JSON.stringify(hovered));
+   assert.ok(hovered.pan && hovered.pan!=="0px","image parallax follows pointer: "+JSON.stringify(hovered));
+   assert.ok(hovered.opacity>.3,"desktop glow should be visible on hover: "+JSON.stringify(hovered));
+   await page.screenshot({path:join(evidence,config.name+"-editorial-motion.png")});
+   await page.emulateMedia({reducedMotion:"reduce"});
+   await page.waitForTimeout(80);
+   const reduced=await workCard.locator(".card-light").evaluate(el=>getComputedStyle(el).opacity);
+   assert.equal(Number(reduced),0,"Reduced Motion removes animated pointer glint");
+   await page.emulateMedia({reducedMotion:"no-preference"});
+   await page.mouse.move(0,0);
+  }else{
+   const coarse=await page.evaluate(()=>matchMedia("(hover:none)").matches);
+   assert.ok(coarse,"touch context must use non-hover behavior");
+   await page.screenshot({path:join(evidence,config.name+"-editorial-motion.png")});
+  }
   assert.deepEqual(errors,[],"JS and local asset errors");
   await page.screenshot({path:join(evidence,config.name+".png")});
   const record={name:config.name,passed:true,overflow:false,heroImageLoaded:true,anchors:true,keyboard:true,menu:config.mobile};
