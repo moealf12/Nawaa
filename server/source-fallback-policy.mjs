@@ -34,3 +34,26 @@ export function providersPendingAfterFallback(errors,{deadlineExceeded=false}={}
     x?.pass==="fallback"&&x?.error==="fallback_budget_limited"))return null;
   return 0;
 }
+
+
+// Both of these merchant/store IDs have an independent first-wave acquisition
+// task in providerTasks. Sending the identical query through the generic
+// storefront pass duplicates public HTTP work, inflates failure observations,
+// and increases source pressure on Render's free compute. In particular,
+// the "virgin-ae" direct task already calls searchFreeStorefrontById with a
+// *larger* PDP budget than its generic storefront route.
+//
+// Keep every other live merchant eligible and preserve source-scoped
+// non-retryable fallback observations. The generic store router backfills
+// excluded slots with the next ranked merchant; the full cursor still
+// retains unrelated stores.
+const DEDICATED_FIRST_WAVE_STOREFRONTS=Object.freeze(["amazon-sa","virgin-ae"]);
+export function genericStorefrontPassExclusions(deniedIds=[],{registeredIds}={}){
+  const known=registeredIds instanceof Set?registeredIds:
+    new Set(Array.isArray(registeredIds)?registeredIds:[]);
+  const excluded=new Set(DEDICATED_FIRST_WAVE_STOREFRONTS);
+  for(const id of Array.isArray(deniedIds)?deniedIds:[]){
+    if(typeof id==="string"&&known.has(id))excluded.add(id);
+  }
+  return [...excluded];
+}

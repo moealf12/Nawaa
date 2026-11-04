@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {retryDeniedStorefrontIds,providersPendingAfterFallback} from "../server/source-fallback-policy.mjs";
+import {retryDeniedStorefrontIds,providersPendingAfterFallback,genericStorefrontPassExclusions} from "../server/source-fallback-policy.mjs";
 
 const available=new Set(["noon-sa","amazon-ae","virgin-ae","lulu-sa","nike-sa","extra-unbxd"]);
 
@@ -44,7 +44,7 @@ test("R04-P3.6: same-request non-retry neither removes primary errors nor makes 
 test("R04-P3.6: fallback alone is source-scoped; first-wave collection, Amazon and cursor routing stay unchanged",()=>{
   const server=readFileSync(new URL("../server/server.mjs",import.meta.url),"utf8");
   assert.match(server,/skipFailedStorefrontIds\s*=\s*\[\]/);
-  assert.match(server,/excludeStoreIds:\["amazon-sa",\.\.\.skipFailedStorefrontIds\]/);
+  assert.match(server,/excludeStoreIds:genericStorefrontPassExclusions\(skipFailedStorefrontIds/);
   assert.match(server,/retryDeniedStorefrontIds\(primary\.errors/);
   assert.match(server,/skipFailedStorefrontIds:\s*retryDeniedIds/);
   assert.match(server,/runProviderPass\(providerQuery,\s*"primary"/);
@@ -59,4 +59,46 @@ test("R04 P42 stopped fallback never claims all providers completed",()=>{
   assert.equal(providersPendingAfterFallback([]),0);
   assert.equal(providersPendingAfterFallback([{pass:"primary",error:"HTTP 403"}]),0);
   assert.equal(providersPendingAfterFallback([{pass:"primary",error:"fallback_budget_limited"}]),0);
+});
+
+
+test("R04-P44: direct Virgin and Amazon are never duplicated in generic source fanout",()=>{
+  const observedFailures=["noon-sa","noon-sa","virgin-ae","untrusted-merchant"];
+  const copy=[...observedFailures];
+  const excluded=genericStorefrontPassExclusions(observedFailures,{registeredIds:available});
+  assert.deepEqual(excluded,["amazon-sa","virgin-ae","noon-sa"]);
+  assert.deepEqual(observedFailures,copy,"exclusion policy must be pure and request-scoped");
+  assert.deepEqual(genericStorefrontPassExclusions([]),["amazon-sa","virgin-ae"]);
+  assert.deepEqual(genericStorefrontPassExclusions(null),["amazon-sa","virgin-ae"]);
+});
+
+test("R04-P44: generic first wave backfills excluded Virgin from ranked merchants without dropping eligible merchant breadth",async()=>{
+  const {routeFreeStorefronts,configuredFreeStorefronts}=await import("../server/providers/free-storefronts.mjs");
+  const {acquisitionPlan}=await import("../server/search-cursor.mjs");
+  const plan=acquisitionPlan(0,configuredFreeStorefronts().length);
+  for(const query of ["iPhone 17","PS5","Dior perfume","Nike running shoes","Apple Watch Series 11"]){
+    const routes=routeFreeStorefronts(query,Infinity,{stable:true});
+    const genericExclusions=new Set(genericStorefrontPassExclusions([]));
+    const generic=routes.filter(r=>!genericExclusions.has(r.store.id)).slice(0,plan.storefrontLimit);
+    const prior=routes.filter(r=>r.store.id!=="amazon-sa").slice(0,plan.storefrontLimit);
+    const merchantIds=generic.map(r=>r.store.id);
+    assert.equal(new Set(merchantIds).size,merchantIds.length,
+      "duplicate generic merchant for "+query);
+    assert.ok(!merchantIds.includes("virgin-ae")&&!merchantIds.includes("amazon-sa"));
+    assert.equal(generic.length,
+      Math.min(plan.storefrontLimit,routes.filter(r=>!genericExclusions.has(r.store.id)).length),
+      "excluded merchant slot must be backfilled if an eligible store remains");
+    const priorDistinct=new Set([...prior.map(r=>r.store.id),"virgin-ae"]);
+    const nowDistinct=new Set([...merchantIds,"virgin-ae"]);
+    assert.ok(nowDistinct.size>=priorDistinct.size,
+      "exclusion must not decrease total first-wave merchant diversity for "+query);
+  }
+});
+
+test("R04-P44: dedicated Virgin acquisition cannot be erased by generic exclusion",()=>{
+  const server=readFileSync(new URL("../server/server.mjs",import.meta.url),"utf8");
+  assert.match(server,/add\("virgin-ae", \(signal\) => searchFreeStorefrontById\("virgin-ae"/);
+  assert.match(server,/productPageLimit:8/);
+  assert.match(server,/storeDeadlineMs:7000/);
+  assert.match(server,/excludeStoreIds:genericStorefrontPassExclusions/);
 });
