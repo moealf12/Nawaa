@@ -53,6 +53,7 @@ export function summarizePdpAttemptPhases(attempts=[],{maxAttempts=20}={}){
   const fields=[
     "dns","tcpHandshake","tlsHandshake","headerWait","bodyRead",
     "productExtraction","priceSelection","elapsed",
+    "tlsReadyToCancellationLowerBound",
   ];
   for(const k of fields)sample[k]=[];
   const result={
@@ -61,6 +62,7 @@ export function summarizePdpAttemptPhases(attempts=[],{maxAttempts=20}={}){
     parentCancelled:0,storeBudgetCancelled:0,independentTimeout:0,
     beforeDnsFailure:0,beforeHeadersFailure:0,afterHeadersFailure:0,
     multiHop:0,clockInconsistent:0,
+    tlsReadyWithoutHeadersAtTermination:0,
     errorClasses:{},milestoneCounts:Object.fromEntries(PDP_MILESTONES.map(s=>[s,0])),
   };
   for(const item of limited){
@@ -97,7 +99,17 @@ export function summarizePdpAttemptPhases(attempts=[],{maxAttempts=20}={}){
     // milestone pairs; missing socket/TLS evidence NEVER becomes zero.
     const interval=(start,end)=>start!==undefined&&end!==undefined&&end>=start?
       end-start:null;
-    const singleHop=!(count(item?.redirects)>0);
+    const singleHop=count(item?.redirects)===0;
+    // A cancelled request with a completed TLS handshake and no observed
+    // headers has a CENSORED wait duration, not an ordinary completed
+    // response-header latency. Do not blend these into successful P95.
+    const terminalMs=number(item?.totalMs);
+    const censoredHeaderWait=singleHop&&kind==="rejected"&&
+      marks.tls_ready!==undefined&&marks.headers_received===undefined&&
+      terminalMs!==null&&terminalMs>=marks.tls_ready?
+      terminalMs-marks.tls_ready:null;
+    if(censoredHeaderWait!==null)
+      result.tlsReadyWithoutHeadersAtTermination++;
     const pair={
       dns:marks.dns_complete,
       tcpHandshake:singleHop?interval(marks.request_started,marks.tcp_connected):null,
@@ -106,7 +118,8 @@ export function summarizePdpAttemptPhases(attempts=[],{maxAttempts=20}={}){
       bodyRead:singleHop?interval(marks.headers_received,marks.body_complete):null,
       productExtraction:singleHop?interval(marks.body_complete,marks.candidates_extracted):null,
       priceSelection:singleHop?interval(marks.candidates_extracted,marks.price_selected):null,
-      elapsed:number(item?.totalMs),
+      elapsed:terminalMs,
+      tlsReadyToCancellationLowerBound:censoredHeaderWait,
     };
     for(const [k,v] of Object.entries(pair))if(v!==null)sample[k].push(v);
   }
@@ -115,6 +128,7 @@ export function summarizePdpAttemptPhases(attempts=[],{maxAttempts=20}={}){
       observations:sample[k].length,p50:quantile(sample[k],.5),p95:quantile(sample[k],.95),
     }])),
     evidenceLevel:"OBSERVED_BOUNDARIES_NOT_CAUSAL_PROOF",
+    censoring:"TLS_READY_NO_HEADERS_UNTIL_OBSERVATION_ENDED",
   };
 }
 // Strict pass-through whitelist also protects logs from untrusted callbacks.
@@ -122,7 +136,8 @@ export function safePdpPhaseSummary(summary){
   if(!summary||typeof summary!=="object")return null;
   const phaseMs={};
   for(const name of ["dns","tcpHandshake","tlsHandshake","headerWait","bodyRead",
-    "productExtraction","priceSelection","elapsed"]){
+    "productExtraction","priceSelection","elapsed",
+    "tlsReadyToCancellationLowerBound"]){
     const phase=summary.phaseMs?.[name];
     phaseMs[name]={
       observations:count(phase?.observations),
@@ -146,6 +161,7 @@ export function safePdpPhaseSummary(summary){
     beforeHeadersFailure:count(summary.beforeHeadersFailure),
     afterHeadersFailure:count(summary.afterHeadersFailure),
     multiHop:count(summary.multiHop),clockInconsistent:count(summary.clockInconsistent),
+    tlsReadyWithoutHeadersAtTermination:count(summary.tlsReadyWithoutHeadersAtTermination),
     errorClasses,milestoneCounts,phaseMs,
     evidenceLevel:"OBSERVED_BOUNDARIES_NOT_CAUSAL_PROOF",
   };
