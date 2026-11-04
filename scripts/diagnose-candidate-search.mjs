@@ -60,6 +60,16 @@ async function query(text){
       productCategory(o)!=="shoes"||!hasAthleticTitle(o)).length:0;
     const supportedAthleticExact=athleticShoeIntent?exact.filter(o=>
       productCategory(o)==="shoes"&&hasAthleticTitle(o)).length:0;
+    const speakerIntent=shopperTerms.includes("speaker")||
+      shopperTerms.includes("speakers");
+    const primaryAudioTitle=o=>normalizeSearchQuery(String(o?.title||"")
+      .split(/\b(?:with|including|includes)\b/i,1)[0]);
+    const speakerTitleSupported=o=>
+      /(?:^| )(?:speakers?|soundbars?|boombox(?:es)?)(?= |$)/.test(primaryAudioTitle(o));
+    const unsupportedSpeakerExact=speakerIntent?exact.filter(o=>
+      !speakerTitleSupported(o)).length:0;
+    const supportedSpeakerExact=speakerIntent?exact.filter(o=>
+      speakerTitleSupported(o)).length:0;
     const structurallyValid=offers.filter(o=>{
       try{
         return typeof o.title==='string' && o.title.trim().length>0 &&
@@ -80,6 +90,7 @@ async function query(text){
       athleticFootwearIntent:athleticShoeIntent,
       providerQuery:athleticShoeIntent?parseSearchIntent(text).providerQuery:null,
       supportedAthleticExact,unsupportedAthleticExact,
+      speakerIntent,supportedSpeakerExact,unsupportedSpeakerExact,
       partial:typeof data.coverage?.partial==='boolean'?data.coverage.partial:null,
       deadlineExceeded:typeof data.coverage?.deadlineExceeded==='boolean'?data.coverage.deadlineExceeded:null,
       providersPending:data.coverage?.providersPending??null,
@@ -164,6 +175,7 @@ try{
   // that old production's subsequent successful audit was due to this PR.
   // Sequential, no retries, no paid services, no production writes.
   const p36Cases=[
+    ['Q14','سبيكر بلوتوث'],
     ['Q15','HP laptop 16GB RAM'],
     ['Q16','لابتوب اتش بي 16 رام'],
     ['Q26','حذاء نايك رياضي'],
@@ -182,12 +194,16 @@ try{
       athleticFootwearIntent:result.athleticFootwearIntent??false,
       supportedAthleticExact:result.supportedAthleticExact??null,
       unsupportedAthleticExact:result.unsupportedAthleticExact??null,
+      speakerIntent:result.speakerIntent??false,
+      supportedSpeakerExact:result.supportedSpeakerExact??null,
+      unsupportedSpeakerExact:result.unsupportedSpeakerExact??null,
       failure:result.error?'CANDIDATE_REQUEST_FAILED':null,
     });
   }
   const p36Passed=p36Results.every(x=>x.status===200&&
     x.hasOffersArray===true&&Number.isInteger(x.offers)&&x.offers>=0&&
     x.valid===x.offers&&x.unsupportedAthleticExact===0&&
+    x.unsupportedSpeakerExact===0&&
     (x.partial===true||x.partial===false));
   console.log('R04_P36_CANDIDATE_CRITICAL '+JSON.stringify({
     candidateOnly:true,baselineComparison:false,
