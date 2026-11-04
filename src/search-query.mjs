@@ -608,7 +608,19 @@ const UNREQUESTED_VARIANT_TERMS = [
 const ACCESSORY_LED_BRANDS = new Set(["logitech"]);
 const hasNormalizedPhrase = (text, term) => (" " + text + " ").includes(" " + term + " ");
 function prepareMatchContext(intent) {
-  const normalizedQuery = intent.providerQuery;
+  // Retrieval may deliberately broaden an athletic-footwear query for
+  // merchant search ("nike shoes"), but the shopper's original adjective
+  // ("sports") MUST survive in offer matching. Never reuse a broadened
+  // providerQuery as proof the customer relaxed a requested attribute.
+  // Restrict the fix to this one reviewed retrieval transform: generic
+  // condition/model/storage matching retains its established semantics.
+  const terms=intent.normalizedQuery.split(" ");
+  const narrowedAthleticShopperIntent=intent.category==="shoes" &&
+    typeof intent.brand==="string" && terms.length===3 &&
+    [intent.brand,"shoes","sports"].every(term=>terms.includes(term)) &&
+    intent.providerQuery===intent.brand+" shoes";
+  const normalizedQuery=narrowedAthleticShopperIntent
+    ? intent.normalizedQuery : intent.providerQuery;
   const matchedCategory = PRODUCT_CATEGORIES.find(([, , pattern]) => pattern.test(normalizedQuery));
   const effectiveCategory = intent.category || matchedCategory?.[0] || null;
   const categoryPattern = matchedCategory?.[2] || /$^/;
