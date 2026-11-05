@@ -17,6 +17,7 @@ import {selectSearchStreamResult,needsExtraSourceRecovery,mergeExtraSourceRecove
 import {coverageStatusText} from "./search-coverage-status.mjs";
 import {buildSearchPresentationSections} from "./search-result-presentation.mjs";
 import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
+import {googleShoppingDiscoveryDescriptor} from "./google-shopping-discovery.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -26,6 +27,8 @@ const els = {
   recent: $("#recentSearches"),
   chips: $("#modeChips"),
   urlHint: $("#urlHint"),
+  googleShopping: $("#googleShoppingDiscovery"),
+  googleShoppingLink: $("#googleShoppingDiscoverLink"),
   status: $("#searchStatus"),
   quoteModal: $("#quoteModal"),
   quoteBody: $("#quoteBody"),
@@ -1332,8 +1335,22 @@ async function loadMoreRemote(query) {
     }
   }
 }
+// External Shopping discovery never enters NAWAA SSE, offer ranking, or historical prices.
+function updateGoogleShoppingDiscovery(rawQuery) {
+  if (!els.googleShopping || !els.googleShoppingLink) return;
+  const external = googleShoppingDiscoveryDescriptor(rawQuery);
+  if (!external) {
+    els.googleShopping.hidden = true;
+    els.googleShoppingLink.removeAttribute("href");
+    return;
+  }
+  els.googleShoppingLink.href = external.href;
+  els.googleShopping.hidden = false;
+}
+
 async function runSearch(rawQuery) {
   const query = String(rawQuery || "").trim();
+  updateGoogleShoppingDiscovery(query);
   if (query.length < 2) {
     els.status.textContent = "اكتب حرفين على الأقل";
     els.input.focus();
@@ -1704,6 +1721,9 @@ async function openQuote(product, offer, sourceQuery) {
   els.quoteModal.classList.add("open");
   els.quoteModal.setAttribute("aria-hidden", "false");
 }
+
+els.input.addEventListener("input", () => updateGoogleShoppingDiscovery(els.input.value));
+updateGoogleShoppingDiscovery(els.input.value);
 
 els.form.addEventListener("submit", (event) => {
   event.preventDefault();
