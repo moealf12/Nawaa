@@ -16,7 +16,9 @@ test("R04-P51: unsafe URLs, missing evidence and other Schema.org enums are not 
     "https://merchant.invalid/path/new", "https://schema.org/DamagedCondition",
     "https://schema.org/NewCondition?product=used",
     "https://schema.org/NewCondition#untrusted",
-    { "@id": "https://not-schema.org/NewCondition" }]){
+    { "@id": "https://not-schema.org/NewCondition" },
+    "javascript:new","data:text/plain,new","not new","non-new",
+    "not brand new"]){
     assert.equal(normalizeCondition(raw),"unknown");
   }
   assert.equal(normalizeCondition({"@id":"https://schema.org/NewCondition"}),"new");
