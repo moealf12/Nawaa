@@ -21,7 +21,7 @@ test("P54: unknown-category queries explore registered specialists without produ
     "professor's archival map", "robotic adhesive dispenser",
     "carbon polymer RF111","artesanias de madera", "café biologique",
     "intercambio de accesorios 47mm","生物陶瓷 电池",
-    "library reading lamp adjustable"];
+    "archival vellum apparatus"];
   let covered=0;
   for(const query of sample){
     const p=planUnknownCategorySpecialists({query,stores:sources,maxStores:4});
@@ -106,11 +106,11 @@ test("P54: no source registry fanout or unbounded per-query allocations at scale
   const large=Array.from({length:500},(_,i)=>({
     id:"merchant-"+i,categories:["tool","kitchen","audio","home"],
   }));
-  const p=planUnknownCategorySpecialists({query:"unfamiliar tool JKL-123",stores:large,maxStores:9999});
+  const p=planUnknownCategorySpecialists({query:"unfamiliar apparatus JKL-123",stores:large,maxStores:9999});
   assert.ok(p.storeIds.length<=6);
   assert.equal(new Set(p.storeIds).size,p.storeIds.length);
   assert.throws(()=>planUnknownCategorySpecialists({
-    query:"unfamiliar tool JKL-123",stores:[...large,large[0]],maxStores:6,
+    query:"unfamiliar apparatus JKL-123",stores:[...large,large[0]],maxStores:6,
   }),/INVALID_SOURCE_REGISTRY/);
 });
 
