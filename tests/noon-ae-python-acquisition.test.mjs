@@ -121,3 +121,41 @@ test("Noon UAE Python JSON worker supports empty verified search pages without N
   assert.equal(result.cards.length,0);
   assert.equal(child.calls,1);
 });
+
+test("Noon UAE Python records precisely which merchant stage returned 403",async()=>{
+  for(const stage of ["warmup_uae","uae_search_html"]){
+    const child=fakeSpawn(r=>({
+      schemaVersion:r.schemaVersion,requestId:r.requestId,
+      sourceId:"noon-ae",status:"ERROR",errorCode:"HTTP_403_ACCESS_DENIED",
+      sourceDiagnostic:{stage,httpStatus:403,elapsedMs:124},
+    }));
+    await assert.rejects(fetchNoonUaePythonCards("laptop",{
+      pythonBin,spawnImpl:child.impl,
+    }),e=>{
+      assert.equal(e.failureClass,"HTTP_403_ACCESS_DENIED");
+      assert.equal(e.sourceStage,stage);
+      assert.equal(e.sourceHttpStatus,403);
+      assert.equal(e.sourceElapsedMs,124);
+      return true;
+    });
+    assert.equal(child.calls,1);
+  }
+});
+test("Noon UAE Python drops untrusted free-text and impossible source diagnostic fields",async()=>{
+  const child=fakeSpawn(r=>({
+    schemaVersion:r.schemaVersion,requestId:r.requestId,
+    sourceId:"noon-ae",status:"ERROR",errorCode:"HTTP_403_ACCESS_DENIED",
+    sourceDiagnostic:{stage:"https://untrusted.example/secret?query=laptop",
+      httpStatus:999,elapsedMs:-150,requestUrl:"https://secrets.example"},
+  }));
+  await assert.rejects(fetchNoonUaePythonCards("laptop",{
+    pythonBin,spawnImpl:child.impl,
+  }),e=>{
+    assert.equal(e.failureClass,"HTTP_403_ACCESS_DENIED");
+    assert.equal(e.sourceStage,undefined);
+    assert.equal(e.sourceHttpStatus,undefined);
+    assert.equal(e.sourceElapsedMs,undefined);
+    assert.equal("requestUrl" in e,false);
+    return true;
+  });
+});
