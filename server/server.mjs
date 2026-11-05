@@ -678,6 +678,8 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
             });
             const recovered=await searchFreeStorefronts(providerQuery,{
               ...backfill,matchingQuery:query,
+              exploreUnknownSpecialists:true,
+              firstWaveStoreLimit:plan.storefrontLimit,
               excludeStoreIds:genericStorefrontPassExclusions(denied,{
                 registeredIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
               }),
@@ -1026,6 +1028,8 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         const fallback=await beforeRequestDeadline(
           () => searchFreeStorefronts(providerQuery,{
             ...backfill,matchingQuery:query,
+            exploreUnknownSpecialists:true,
+            firstWaveStoreLimit:plan.storefrontLimit,
             excludeStoreIds:excluded,stableRouting:true,
             signal:fallbackSignal,
           }).catch(error=>({
