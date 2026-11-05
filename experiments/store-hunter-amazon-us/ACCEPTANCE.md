@@ -33,3 +33,24 @@ Official docs:
 - https://affiliate-program.amazon.com/creatorsapi/docs/en-us/api-reference/resources/offersV2
 
 An Amazon HTML PDP with no eligible main offer price cannot be made independently price-verified by loosening numeric/ASIN/variant checks. Source reliability is not under NAWAA's control.
+
+## Optional official API bridge (NOT ACTIVE)
+
+The standalone amazon_creators_official.py implementation uses the official
+US marketplace OAuth token and GetItems endpoints and accepts only a single
+explicit USD winning featured offer for the exact ASIN. It is not connected
+to the live Store Hunter search path and must not be counted as a successful
+live connection; its tests use httpx.MockTransport only.
+
+It remains disabled unless approved Creators API access is obtained and these
+environment variables are provisioned in a secret store (never GitHub source):
+NAWAA_AMAZON_CREATORS_ID, NAWAA_AMAZON_CREATORS_SECRET,
+NAWAA_AMAZON_US_PARTNER_TAG; optional credential version
+NAWAA_AMAZON_CREATORS_VERSION (3.1 for North America; 3.2 for Europe;
+3.3 for Far East). The API path does not claim to verify shopper-specific
+checkout prices or shipping costs, and does not claim source availability
+until a real authorized test passes.
+
+Only a future approved integration may use this adapter to enrich the
+catalog; account eligibility and access must be verified first.
+
