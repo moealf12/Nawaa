@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 16
     env:
-      R04_BASELINE_SHA: c13cf9ea27367c2d27ad0cf6b1b8e86af479eb81
+      R04_BASELINE_SHA: c1cd6e4151b8b39a8783fe5214f65a809f093e0b
       DATABASE_URL: ''
       MEILI_HOST: ''
       MEILI_MASTER_KEY: ''
