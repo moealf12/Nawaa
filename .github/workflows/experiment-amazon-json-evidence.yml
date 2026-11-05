@@ -15,7 +15,7 @@ permissions:
 concurrency:
   # Shared across experiment workflows so independent test suites do not
   # hit the same public source concurrently and distort acquisition evidence.
-  group: nawaa-amazon-us-experimental-acquisition-${{ github.ref }}
+  group: nawaa-amazon-us-experimental-acquisition
   cancel-in-progress: false
 
 jobs:
