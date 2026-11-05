@@ -22,8 +22,9 @@ def _dict(value):
 def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
     """Return explicit gates and missing evidence; never a product listing.
 
-    Market, price, provenance and destination must all be independently
-    attested before a future production adapter can consider an offer.
+    Source, price and currency evidence remain mandatory. Delivery to Saudi
+    Arabia is an optional display attribute, never a release blocker.
+    This diagnostic still does not publish offers automatically.
     """
     r = _dict(report)
     stages = [_dict(v) for v in r.get("observations", [])
@@ -92,16 +93,44 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
         # A one-run 3-session snapshot does not prove a production uptime SLA.
         "independent_long_window_stability": False,
     }
-    missing = [key for key, passed in gates.items() if not passed]
+    # Keep historical gate keys for diagnostic compatibility, but do NOT
+    # make Saudi delivery a condition for listing a UAE-store offer.
+    optional_gate_names = (
+        "saudi_country_delivery_authenticated",
+        "saudi_destination_city_verified",
+    )
+    required_gate_names = tuple(
+        key for key in gates if key not in optional_gate_names
+    )
+    missing = [key for key in required_gate_names if not gates[key]]
+    delivery_status = (
+        "VERIFIED_ELIGIBLE_TO_SA"
+        if country_shippable else
+        "VERIFIED_INELIGIBLE_TO_SA"
+        if delivery.get("sourceEvidenceValid") is True
+        and delivery.get("countryEligible") is False else
+        "NOT_VERIFIED"
+    )
     return {
-        "schema": "nawaa.noon-uae.admission-gate.v1",
+        "schema": "nawaa.noon-uae.admission-gate.v2",
+        "sourceMarket": "AE",
         "gates": gates,
+        "requiredGateNames": list(required_gate_names),
+        "optionalGateNames": list(optional_gate_names),
+        "optionalDelivery": {
+            "status": delivery_status,
+            "country": "SA",
+            "verifiedCountryEligibility": (
+                delivery_status == "VERIFIED_ELIGIBLE_TO_SA"
+            ),
+            "affectsReleaseAdmission": False,
+        },
         "missing": missing,
-        "passingCount": sum(gates.values()),
-        "requiredCount": len(gates),
+        "passingCount": sum(gates[key] for key in required_gate_names),
+        "requiredCount": len(required_gate_names),
         "customerPublishable": False,
         "releaseDecision": (
-            "NOT_READY_LONG_WINDOW_AND_ROLLOUT_GATES"
+            "REVIEW_REQUIRED_NO_AUTOMATIC_PUBLICATION"
             if not missing else "BLOCKED_EVIDENCE_INCOMPLETE"
         ),
     }
