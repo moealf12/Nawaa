@@ -62,6 +62,7 @@ class Product:
     intent_reasons: list[str] = field(default_factory=list)
     condition: str = "unknown"
     price_evidence: str = "unavailable"
+    price_source: str = "unavailable"
 
 
 @dataclass
@@ -1185,6 +1186,10 @@ class Scraper:
                     else:
                         had_listing_price = bool(product.price and product.currency)
                         product.price, product.currency = price, currency
+                        # Keep provenance explicit for consumer-facing price
+                        # labels: a PDP-only observation is not PLP/PDP parity.
+                        product.price_source = ("search_and_pdp_agree" if had_listing_price else
+                                                "pdp_main_only")
                         # A PDP alone is NOT listing-to-PDP price parity.
                         product.price_status = ("evidence_correlated" if had_listing_price
                                                 else "single_source_unverified")
@@ -1209,6 +1214,15 @@ class Scraper:
             p.price_evidence = ("listing_pdp_agree" if p.price_status == "evidence_correlated" else
                                 "single_source" if p.price and p.currency else
                                 "conflict" if p.price_status == "conflict" else "unavailable")
+            if p.price_status == "evidence_correlated":
+                p.price_source = "search_and_pdp_agree"
+            elif p.price_status == "conflict":
+                p.price_source = "conflict"
+            elif not p.price or not p.currency:
+                p.price_source = "unavailable"
+            elif p.price_source not in {"pdp_main_only", "search_and_pdp_agree"}:
+                p.price_source = ("search_only" if host(self.origin) in {"amazon.com", "www.amazon.com"}
+                                  else "single_source_unknown")
             p.observed_at_utc = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
         # Rank, do not discard: a price-complete accessory must never displace
         # an actual console; uncertain/related offers remain visible and labeled.
@@ -1217,7 +1231,10 @@ class Scraper:
                                      0 if p.price_evidence == "listing_pdp_agree" else 1,
                                      0 if p.price and p.image else 1))
         products = products[:self.maximum]
-        outcome = "ok" if any(x.price for x in products) else "partial_or_unavailable"
+        # A priced game/Portal must not make a console search seem successful.
+        # Unclassified intents remain discoverable but never claim an exact fit.
+        outcome = ("ok" if any(p.price and p.currency and p.intent_match != "mismatch"
+                               for p in products) else "partial_or_unavailable")
         return self.result(products, outcome)
 
     def merge(self, products: list[Product]) -> list[Product]:
@@ -1246,7 +1263,28 @@ class Scraper:
         return list(merged.values())
 
     def result(self, products: list[Product], status: str):
+        # Zero cards during a 503 is unavailable source acquisition, never
+        # evidence that the seller has zero inventory or products are OOS.
+        search_ok = any(d.method == "search-html" and d.status == "OK"
+                        for d in self.diagnostics)
+        has_block = any(d.status in {"BLOCKED_OR_RATE_LIMITED", "CHALLENGE_PAGE",
+                                     "ROBOTS_DENIED_OR_UNSAFE"} for d in self.diagnostics)
+        transient = any(d.method == "search-html" and d.status == "HTTP_ERROR"
+                        and str(d.detail) in {"500", "502", "503", "504"}
+                        for d in self.diagnostics)
+        if status == "robots_unavailable":
+            source_availability = "robots_unavailable"
+        elif has_block:
+            source_availability = "access_denied"
+        elif search_ok:
+            source_availability = "search_accessible"
+        elif transient:
+            source_availability = "transient_failure"
+        else:
+            source_availability = "unconfirmed"
         return {"store": self.store_url, "query": self.query, "status": status,
+                "source_availability": source_availability,
+                "empty_means_out_of_stock": False,
                 "count": len(products), "products": [asdict(p) for p in products],
                 "diagnostics": [asdict(d) for d in self.diagnostics]}
 
