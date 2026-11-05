@@ -1,0 +1,24 @@
+[Unit]
+Description=NAWAA Oracle Python Noon UAE isolated API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nawaa
+Group=nawaa
+WorkingDirectory=/opt/nawaa/workers/python-intelligence
+Environment=PYTHONPATH=/opt/nawaa/workers/python-intelligence
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=/etc/nawaa-noon-ae.env
+ExecStart=/opt/nawaa/workers/python-intelligence/.venv/bin/python -m uvicorn service:app --app-dir /opt/nawaa/deploy/oracle-noon-ae --host 127.0.0.1 --port 8080 --workers 1 --no-access-log
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
