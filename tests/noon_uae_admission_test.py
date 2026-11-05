@@ -48,6 +48,15 @@ def live_report():
     }
 
 
+def with_direct_aed_evidence(report):
+    """Synthetic cross-representation fixture, NOT merchant LIVE evidence."""
+    report["tanstackTsrAst"]["candidateRecords"][0]["currency"] = "AED"
+    report["jsonLd"] = {"matchedSkuOffers": [
+        {"currency": "AED", "price": "1979.00"}
+    ]}
+    return report
+
+
 def gate(report, **kw):
     return evaluate_noon_uae_admission(report, now_utc=NOW, **kw)
 
@@ -116,9 +125,7 @@ class AdmissionGateTests(unittest.TestCase):
         self.assertFalse(gate(None)["customerPublishable"])
 
     def test_unknown_saudi_delivery_is_optional_for_uae_offers(self):
-        r = live_report()
-        r["crossSurfaceCorroboration"]["sameOfferCurrencyAttested"] = True
-        r["tanstackTsrAst"]["exactOfferWithExplicitSkuCurrencyPrice"] = True
+        r = with_direct_aed_evidence(live_report())
         result = gate(r)
         self.assertEqual(result["requiredCount"], 7)
         self.assertEqual(result["optionalDelivery"]["status"], "NOT_VERIFIED")
@@ -129,9 +136,7 @@ class AdmissionGateTests(unittest.TestCase):
         self.assertFalse(result["customerPublishable"])
 
     def test_verified_ineligible_shipping_does_not_block_uae_offer(self):
-        r = live_report()
-        r["crossSurfaceCorroboration"]["sameOfferCurrencyAttested"] = True
-        r["tanstackTsrAst"]["exactOfferWithExplicitSkuCurrencyPrice"] = True
+        r = with_direct_aed_evidence(live_report())
         r["saudiDeliveryEvidence"] = {
             "sourceEvidenceValid": True, "countryEligible": False,
             "cityEligible": False,
@@ -271,6 +276,47 @@ class AdmissionGateTests(unittest.TestCase):
         ]}
         result = gate(report)
         self.assertFalse(result["gates"]["same_offer_amount_verified"])
+        self.assertFalse(result["customerPublishable"])
+
+
+
+    def test_claimed_boolean_cannot_create_direct_currency_evidence(self):
+        report = live_report()
+        report["crossSurfaceCorroboration"]["sameOfferCurrencyAttested"] = True
+        report["tanstackTsrAst"]["exactOfferWithExplicitSkuCurrencyPrice"] = True
+        result = gate(report)
+        self.assertFalse(result["gates"]["same_offer_currency_aed_verified"])
+        self.assertEqual(result["currencyEvidenceTier"], "UNVERIFIED")
+
+    def test_same_price_same_sku_without_direct_aed_is_only_product_corrob(self):
+        report = live_report()
+        report["jsonLd"] = {"matchedSkuOffers": [
+            {"currency": "AED", "price": "1979.00"}
+        ]}
+        result = gate(report)
+        self.assertEqual(result["currencyEvidenceTier"], "PRODUCT_SAME_SKU_EXACT_AMOUNT")
+        self.assertFalse(result["gates"]["same_offer_currency_aed_verified"])
+
+    def test_exact_source_offer_aed_and_product_price_both_required(self):
+        report = with_direct_aed_evidence(live_report())
+        result = gate(report)
+        self.assertEqual(result["currencyEvidenceTier"], "OFFER_DIRECT")
+        self.assertTrue(result["gates"]["same_offer_currency_aed_verified"])
+        self.assertFalse(result["customerPublishable"])
+
+    def test_conflicting_source_offer_currency_still_blocks_admission(self):
+        report = with_direct_aed_evidence(live_report())
+        report["tanstackTsrAst"]["candidateRecords"].append({
+            "sameSku": True,
+            "skuExplicitInOfferRecord": True,
+            "skuAliasesConflict": False,
+            "priceKind": "saleprice",
+            "priceCents": 197900,
+            "currency": "USD",
+        })
+        result = gate(report)
+        self.assertEqual(result["currencyEvidenceTier"], "CONFLICTED")
+        self.assertFalse(result["gates"]["same_offer_currency_aed_verified"])
         self.assertFalse(result["customerPublishable"])
 
 
