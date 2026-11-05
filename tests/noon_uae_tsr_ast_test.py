@@ -82,5 +82,33 @@ class TsrAstTests(unittest.TestCase):
         self.assertTrue(inspect(source)["samePriceOfferAttested"])
 
 
+    def test_valid_tsr_script_larger_than_historical_260k_limit(self):
+        payload = (
+            'self.$R={}; $_TSR.router={sku_config:"' + SKU + '",'
+            'offer_code:"' + OFFER + '",sale_price:"2099.00",'
+            'currency:"AED"};'
+        )
+        assert len(payload) < 262580
+        payload += " " * (262580 - len(payload))
+        result = inspect(payload)
+        self.assertEqual(result["maxOfferTsrScriptChars"], 262580)
+        self.assertEqual(result["oversizedOfferTsrScriptCount"], 0)
+        self.assertGreater(result["astNodesInspected"], 0)
+        self.assertTrue(result["samePriceOfferAttested"])
+
+    def test_reject_above_512k_without_executing_or_truncating_js(self):
+        source = (
+            'self.$R={}; $_TSR.router={sku_config:"' + SKU + '",'
+            'offer_code:"' + OFFER + '",price:"2099.00",currency:"AED"};'
+        )
+        source += " " * (512001 - len(source))
+        result = inspect(source)
+        self.assertEqual(result["oversizedOfferTsrScriptCount"], 1)
+        self.assertEqual(result["maxOfferTsrScriptChars"], 512001)
+        self.assertEqual(result["astNodesInspected"], 0)
+        self.assertFalse(result["samePriceOfferAttested"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
