@@ -79,6 +79,24 @@ test("mixed malformed JSON, duplicate items, unrelated queries and 5MB cap fail 
   assert.equal(extract("x".repeat(5_000_001),"Bluetooth",{},norm).length,0);
 });
 
+test("real exact-ID anchor recovers a source-backed PDP when item object points to a campaign",()=>{
+  const campaign={...base,productDetailUrl:"https://www.aliexpress.com/p/BundleDeals2.html"};
+  assert.equal(extract(html(campaign),"Bluetooth",{},norm).length,0);
+  const sourceAnchor="https://www.aliexpress.us/item/"+ID+".html";
+  const withLink=html(campaign)+'<a data-id="evidence" href="'+sourceAnchor+'?campaign=1">product</a>';
+  const d={};
+  const recovered=extract(withLink,"Bluetooth",d,norm);
+  assert.equal(recovered.length,1);
+  assert.equal(new URL(recovered[0].sourceUrl).pathname,"/item/"+ID+".html");
+  assert.equal(recovered[0].customerPublishable,false);
+  assert.equal(d.rejectedProductLinks,0);
+  for(const spoof of [
+    '<a href="https://www.aliexpress.us/item/3256812557229083.html">different item</a>',
+    '<a href="https://www.aliexpress.us.evil.test/item/'+ID+'.html">impostor</a>',
+    '<a href="http://www.aliexpress.us/item/'+ID+'.html">unsafe</a>',
+  ]) assert.equal(extract(html(campaign)+spoof,"Bluetooth",{},norm).length,0);
+});
+
 test("top-level legacy salePrice remains recognized, without allowing unrelated originalPrice",()=>{
   const item={...base,prices:undefined,salePrice:{minPrice:11.25,currencyCode:"SAR"}};
   assert.equal(extract(html(item),"Bluetooth",{},norm)[0].price,11.25);
