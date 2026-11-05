@@ -5,6 +5,7 @@ import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets } from "./prov
 import { configuredFreeStorefronts } from "./providers/free-storefronts.mjs";
 import {legacyNoonProviderActive} from "./noon-source-policy.mjs";
 import { carrefourConfigured } from "./providers/carrefour.mjs";
+import { is1688Configured } from "./authorized-1688-catalog.mjs";
 
 export function configuredProviders() {
   return ["extra-unbxd","jarir-direct","sharafdg-algolia","swarovski-direct",
@@ -12,6 +13,7 @@ export function configuredProviders() {
     ...configuredFreeStorefronts().map(store=>"free-storefronts:"+store.id),
     ...(carrefourConfigured() ? ["carrefour-ksa"] : []),
     ...(legacyNoonProviderActive() ? ["noon-catalog"] : []),
+    ...(is1688Configured() ? ["1688-cn"] : []),
     ...(ebayConfigured() ? ["ebay"] : []),
     ...(shopifyConfigured() ? ["shopify"] : [])];
 }
