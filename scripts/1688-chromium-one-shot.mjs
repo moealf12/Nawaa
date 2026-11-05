@@ -4,7 +4,7 @@
 // No stealth, proxy, captcha solving, retries, or leaked HTML/cookies.
 import {writeFile} from "node:fs/promises";
 import {inspect1688SearchEvidence} from "../src/1688-html-evidence.mjs";
-const URL="https://s.1688.com/selloffer/offer_search.htm?keywords=%C0%B6%D1%C0%B6%FA%BB%FA";
+const SEARCH_URL="https://s.1688.com/selloffer/offer_search.htm?keywords=%C0%B6%D1%C0%B6%FA%BB%FA";
 const result={
   schema:"nawaa.1688.chromium-single-navigation.v1",
   observedAt:new Date().toISOString(),
@@ -24,7 +24,7 @@ try {
   });
   const page=await context.newPage();
   result.navigations++;
-  const response=await page.goto(URL,{waitUntil:"domcontentloaded",timeout:12000});
+  const response=await page.goto(SEARCH_URL,{waitUntil:"domcontentloaded",timeout:12000});
   result.navigationStatus=response?.status()??null;
   const final=new URL(page.url());
   result.finalHost=final.hostname;
@@ -50,6 +50,7 @@ try {
   }
 }catch(e){
   const message=String(e?.message||"");
+  result.errorKind=e?.name==="TypeError"?"IMPLEMENTATION_TYPE_ERROR":"RUNTIME_OR_BROWSER_ERROR";
   result.state=/timeout/i.test(message)?"BROWSER_TIMEOUT":
     /Executable doesn't exist|not found/i.test(message)?"BROWSER_BINARY_MISSING":
     /net::ERR_/.test(message)?"BROWSER_NETWORK_ERROR":"BROWSER_ERROR";
