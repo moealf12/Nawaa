@@ -42,6 +42,7 @@ import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards}
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
 import {extractNoonUaeSearchCardEvidence} from "../../src/noon-ae-search-card-evidence.mjs";
+import {fetchNoonUaePythonHtml,noonUaePythonEnabled} from "../../src/noon-ae-python-acquisition.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1711,7 +1712,34 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // Store-specific APIs are fallbacks only when the HTML path yields no offers.
     let htmlFirstAttempted = false;
     try {
-      if (store.id === "amazon-sa") {
+      if (store.id==="noon-ae" && noonUaePythonEnabled()) {
+        // Source-scoped Python acquisition replaces the Node fetch, never
+        // follows a rejected 403 with a second route or amplifies requests.
+        const access=sourceRateLimitGuard.canRequest(store.id);
+        if(!access.allowed){
+          const denied=access.failureClass==="HTTP_403_ACCESS_DENIED";
+          const error=new Error(denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN");
+          error.failureClass=denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN";
+          throw error;
+        }
+        try{
+          const page=await fetchNoonUaePythonHtml(query,{
+            signal:options.signal,
+            budgetMs:Math.min(5300,Math.max(2100,Number(options.storeDeadlineMs)||6500)-350),
+          });
+          html=page.html;
+          searchPageFinalUrl=page.finalUrl;
+          searchDiagnostics={...searchPageDiagnostics(html,searchUrl,searchPageFinalUrl),
+            acquisitionTransport:"PYTHON_NOON_AE_HTML"};
+          sourceRateLimitGuard.recordNon403(store.id);
+        }catch(error){
+          if(error?.failureClass==="HTTP_403_ACCESS_DENIED")
+            sourceRateLimitGuard.record403(store.id);
+          else if(error?.failureClass==="HTTP_429_RATE_LIMITED")
+            sourceRateLimitGuard.record429(store.id,null);
+          throw error;
+        }
+      } else if (store.id === "amazon-sa") {
         const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
         const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
