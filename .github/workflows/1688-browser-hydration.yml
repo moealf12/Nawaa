@@ -1,0 +1,55 @@
+name: 1688 Browser Hydration Check — Live Only
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/1688-browser-hydration.yml"
+      - "scripts/1688-chromium-one-shot.mjs"
+      - "src/1688-html-evidence.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: 1688-browser-hydration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actual-chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install locked dependencies without postinstall
+        run: npm ci --ignore-scripts
+      - name: Install temporary Playwright without changing repository lock
+        run: npm install --no-save --no-package-lock --ignore-scripts playwright@1.64.1
+      - name: Install actual Chromium browser binaries and system requirements
+        run: npx playwright install --with-deps chromium
+      - name: Validate probe script
+        run: node --check scripts/1688-chromium-one-shot.mjs
+      - name: Browser navigation and actual hydration observation (read only)
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/1688-chromium-one-shot.mjs
+      - name: Fail source acceptance if no real rendered product links
+        run: |
+          node --input-type=module -e '
+            import {readFileSync} from "node:fs";
+            const x=JSON.parse(readFileSync("1688-chromium-one-shot.json","utf8"));
+            const count=x.evidence?.links||0;
+            console.log(JSON.stringify({status:x.navigationStatus,state:x.state,links:count,customerPublishable:false}));
+            if (x.navigationStatus!==200||x.evidence?.challenge||count===0)process.exit(1);
+          '
+      - name: Preserve bounded render evidence (no HTML or cookies)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1688-chromium-hydration
+          path: 1688-chromium-one-shot.json
+          if-no-files-found: warn
+          retention-days: 14
