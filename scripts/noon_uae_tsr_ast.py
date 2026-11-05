@@ -107,6 +107,7 @@ def inspect_tsr_ast(soup, *, sku, offer_code, plp_price):
         "objectExpressionsInspected": 0,
         "offerCodePresentInTsrScript": False,
         "candidateRecords": [],
+        "exactOfferRecordShapes": [],
         "exactOfferWithExplicitSkuCurrencyPrice": False,
         "samePriceOfferAttested": False,
         "customerPublishable": False,
@@ -155,6 +156,37 @@ def inspect_tsr_ast(soup, *, sku, offer_code, plp_price):
             record = _unpack(node, aliases)
             if not isinstance(record, dict):
                 continue
+            # Record structural field names only, never raw source content.
+            direct_offer = any(
+                re.sub(r"[^a-z0-9]", "", str(key).lower()) in
+                ("offercode", "offerid") and value == offer_code
+                for key, value in record.items()
+                if isinstance(value, str)
+            )
+            if direct_offer and len(report["exactOfferRecordShapes"]) < 8:
+                selected = {}
+                for key, value in record.items():
+                    lk = re.sub(r"[^a-z0-9]", "", str(key).lower())
+                    if (lk in ("price", "saleprice", "offerprice", "currentprice",
+                               "sellingprice", "originalprice", "listprice",
+                               "currency", "pricecurrency", "currencycode",
+                               "sku", "skuconfig", "productsku") and
+                            isinstance(value, (str, int, float))):
+                        selected[str(key)[:40]] = (
+                            value if ("price" in lk and lk not in ("pricecurrency",))
+                            else "AED" if lk in ("currency", "pricecurrency", "currencycode")
+                            and value == "AED"
+                            else "PRESENT"
+                        )
+                report["exactOfferRecordShapes"].append({
+                    "relevantFieldNames": sorted(selected.keys())[:20],
+                    "priceOrCurrencyFields": selected,
+                    "hasExplicitSkuField": any(
+                        re.sub(r"[^a-z0-9]", "", str(k).lower()) in
+                        ("sku", "skuconfig", "productsku")
+                        for k in record
+                    ),
+                })
             # A first-level object whose offer_code is exact is decisive;
             # parent/child or sibling matching never grants offer parity.
             evidence, _ = candidate_objects(
