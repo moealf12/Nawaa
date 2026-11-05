@@ -118,6 +118,8 @@ def embedded_search(html):
             state = balanced_json(html, brace)
             if state and isinstance(state.get("root"), dict):
                 return state
+            if state and isinstance(state.get("data"), dict) and isinstance(state["data"].get("root"), dict):
+                return state["data"]
     # Some rendered pages emit init-data markers rather than a JS assignment.
     start = html.find("init-data-start")
     end = html.find("init-data-end", start + 1) if start >= 0 else -1
@@ -128,7 +130,30 @@ def embedded_search(html):
             state = balanced_json(segment, marker.end() - 1)
             if state and isinstance(state.get("root"), dict):
                 return state
+            if state and isinstance(state.get("data"), dict) and isinstance(state["data"].get("root"), dict):
+                return state["data"]
     return None
+
+
+def embedded_product_blocks(html, cap=MAX_CANDIDATES):
+    """Structured productV3 fallback when the top-level JS hydration wrapper drifts.
+
+    This only decodes complete JSON objects explicitly starting with redirectedId.
+    It never infers prices from unrelated markup or invents merchant PDP links.
+    """
+    objects = []
+    inspected = 0
+    marker = re.compile(r'\{\s*"redirectedId"\s*:')
+    for hit in marker.finditer(html):
+        if inspected >= cap:
+            break
+        inspected += 1
+        candidate = balanced_json(html, hit.start(), cap=180_000)
+        if (isinstance(candidate, dict)
+                and candidate.get("itemType") == "productV3"
+                and isinstance(candidate.get("prices"), dict)):
+            objects.append(candidate)
+    return inspected, objects
 
 
 def normalize_query(raw):
@@ -172,6 +197,13 @@ def parsed_search_cards(html, query):
             facts["parser"] = "ALIEXPRESS_EMBEDDED_INIT_DATA"
     if not isinstance(raw_items, list):
         raw_items = []
+    if not raw_items:
+        inspected, discovered = embedded_product_blocks(html)
+        facts["markupSignals"]["structuredJsonBlocksInspected"] = inspected
+        facts["markupSignals"]["structuredProductBlocksParsed"] = len(discovered)
+        if discovered:
+            raw_items = discovered
+            facts["parser"] = "ALIEXPRESS_STRUCTURED_PRODUCTV3_OBJECTS"
 
     seen = set()
     valid_tokens = [t for t in normalize_query(query).split(" ") if len(t) >= 2]
