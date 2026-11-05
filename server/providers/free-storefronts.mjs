@@ -41,6 +41,7 @@ import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../sr
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
+import {extractAliExpressSearchEvidence} from "../../src/aliexpress-search-evidence.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -741,62 +742,8 @@ function attestAliExpressItemUrl(raw, productId) {
 }
 
 export function extractAliExpressSearchOffers(html, query, diagnostics = null) {
-  const source = String(html || "");
-  const tokens = normalizeSearchQuery(query).split(" ").filter((t) => t.length >= 2);
-  const starts = [];
-  const marker = /{"redirectedId"/g;
-  let markerMatch;
-  while ((markerMatch = marker.exec(source))) starts.push(markerMatch.index);
-  const offers = [];
-  const seen = new Set();
-
-  const decodeJsonString = (value = "") => {
-    try { return JSON.parse('"' + value + '"'); } catch { return decodeHtml(value).replace(/\\u0026/gi, "&").replace(/\\//g, "/"); }
-  };
-
-  for (let n = 0; n < starts.length; n++) {
-    const start = starts[n];
-    const end = starts[n + 1] ?? Math.min(source.length, start + 30000);
-    const block = source.slice(start, end);
-    if (!/"itemType":"productV3"/.test(block)) continue;
-
-    const productId = block.match(/"productId":"?(\d+)"?/)?.[1] || null;
-    const titleRaw = block.match(/"title":{"displayTitle":"((?:\\.|[^"\\])*)"/)?.[1] || null;
-    const imageRaw = block.match(/"image":{"imgUrl":"((?:\\.|[^"\\])*)"/)?.[1] || null;
-    const priceBlock =
-      block.match(/"salePrice":{[\s\S]{0,1200}?}/)?.[0] ||
-      block.match(/"originalPrice":{[\s\S]{0,1200}?}/)?.[0] ||
-      null;
-    const currency = priceBlock?.match(/"currencyCode":"([A-Z]{3})"/)?.[1] || null;
-    const price = Number(priceBlock?.match(/"minPrice":([0-9]+(?:\.[0-9]+)?)/)?.[1]);
-    const sourceRaw = block.match(/"productDetailUrl":"((?:\\.|[^"\\])*)"/)?.[1] || null;
-
-    if (!productId || !titleRaw || !currency || !Number.isFinite(price) || price <= 0 || !sourceRaw) continue;
-    const title = decodeJsonString(titleRaw);
-    const haystack = normalizeSearchQuery(title);
-    const hits = tokens.filter((token) => haystack.includes(token)).length;
-    if (tokens.length > 1 && hits / tokens.length < 0.2) continue;
-    if (seen.has(productId)) continue;
-
-    let image = imageRaw ? decodeJsonString(imageRaw) : null;
-    if (image?.startsWith("//")) image = "https:" + image;
-    const rawProductUrl = decodeJsonString(sourceRaw).replace(/&amp;/g, "&");
-    const attested = attestAliExpressItemUrl(rawProductUrl, productId);
-    if (!attested.url) {
-      if (diagnostics && typeof diagnostics === "object") {
-        diagnostics.rejectedProductLinks = (diagnostics.rejectedProductLinks || 0) + 1;
-        diagnostics.rejectionSamples ||= [];
-        if (diagnostics.rejectionSamples.length < 5)
-          diagnostics.rejectionSamples.push({productId,reason:attested.reason});
-      }
-      continue;
-    }
-    seen.add(productId);
-    offers.push({ productId, title, image, price, currency, sourceUrl:attested.url });
-  }
-  return offers;
+  return extractAliExpressSearchEvidence(html,query,diagnostics,normalizeSearchQuery);
 }
-
 
 
 export function parseIkeaSikPayload(payload, query) {
@@ -1956,7 +1903,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // A source search card gives no proof of the seller/buybox on the
     // selected PDP. Do not expose Amazon DE prices to shoppers in this pilot.
     const amazonDePriceHold=amazonDeCustomerPriceDecision({sourceId:store.id});
-    const independentlyPricedOffers = amazonDePriceHold.customerPublishable
+    // AliExpress catalog search proves only a minimum variant price. A real
+    // same-item PDP/offer parity gate must pass before customers see prices.
+    // The diagnostic source can still discover products without publishing.
+    const aliexpressPublicationHeld = store.id === "aliexpress-cn";
+    const independentlyPricedOffers = amazonDePriceHold.customerPublishable && !aliexpressPublicationHeld
       ? (thomannParity ? thomannParity.accepted : directSearchOffers)
       : [];
     // Scan more links in the already loaded search HTML when structured cards
@@ -2013,7 +1964,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // customer-facing output. Keep the exact legacy scan on every recovery path.
     const hasMatchingDirectOffers=directOffers.length>0 &&
       filterQueryOffers(matchingQuery,directOffers).offers.length>0;
-    const links=html && !hasMatchingDirectOffers
+    const links=html && !aliexpressPublicationHeld && !hasMatchingDirectOffers
       ? extractProductLinks(html,searchUrl,store,query,discoveryLimit)
       : [];
     const recoveryPlan=selectStorefrontRecoveryLinks({
@@ -2026,7 +1977,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // No secondary PDP probes for Amazon DE while prices are held. Search
     // acquisition is one transparent request, without retries or alternate routes.
     const resolutionLinks = !amazonDePriceHold.customerPublishable ||
-      store.id==="noon-sa" ||
+      aliexpressPublicationHeld || store.id==="noon-sa" ||
       (thomannFamilyRequested && directSearchOffers.length)
       ? [] : recoveryPlan.links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
@@ -2127,6 +2078,12 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         // Keep bounded rejection reasons without replaying user-specific URL
         // query strings, credentials or merchant cookies into CI artifacts.
         productLinkTrust:store.id === "aliexpress-cn" ? aliexpressProductLinkTrust : null,
+        ...(aliexpressPublicationHeld?{aliexpressPublicationGate:{
+          status:"LIVE_SEARCH_CARD_ONLY_PDP_PARITY_UNVERIFIED",
+          customerPublishable:false, sourceCurrencyObserved:true,
+          unpublishedCatalogCandidates:directSearchOffers.length,
+          pdpPriceVerified:false, shippingToSaudiVerified:false,
+        }}:{}),
         searchPage:searchDiagnostics || (html ? searchPageDiagnostics(html, searchUrl, searchPageFinalUrl) : null),
         primarySearchError,
         sourceAccessFailure,
