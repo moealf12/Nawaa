@@ -9,6 +9,7 @@ on:
       - "src/1688-html-evidence.mjs"
       - "src/1688-public-discovery.mjs"
       - "tests/1688-html-evidence.test.mjs"
+      - "scripts/1688-method-comparison-gate.mjs"
   workflow_dispatch:
 
 permissions:
@@ -47,6 +48,8 @@ jobs:
         env:
           PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python scripts/1688-noon-uae-style-live.py
+      - name: Enforce real search-acquisition evidence instead of diagnostic-only success
+        run: node scripts/1688-method-comparison-gate.mjs
       - name: Preserve bounded real-source evidence (never HTML or session cookies)
         if: always()
         uses: actions/upload-artifact@v4
