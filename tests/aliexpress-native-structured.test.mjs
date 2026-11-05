@@ -39,7 +39,7 @@ test("price, currency and variant range are strictly validated",()=>{
     assert.equal(extract(html(item),"Bluetooth",{},norm).length,0,String(amount));
   }
   for(const currency of [null,"usd","US D","USDD"]){
-    const item={...base,prices:{salePrice:{currencyCode,minPrice:29.99}}};
+    const item={...base,prices:{salePrice:{currencyCode:currency,minPrice:29.99}}};
     assert.equal(extract(html(item),"Bluetooth",{},norm).length,0,String(currency));
   }
   const ranged={...base,prices:{salePrice:{currencyCode:"USD",minPrice:29.99,maxPrice:31}}};
