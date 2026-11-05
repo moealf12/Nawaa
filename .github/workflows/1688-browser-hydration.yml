@@ -28,8 +28,17 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Install temporary Playwright without changing repository lock
         run: npm install --no-save --no-package-lock --ignore-scripts playwright@1.64.1
-      - name: Install actual Chromium browser binaries and system requirements
-        run: npx playwright install --with-deps chromium
+      - name: Prefer preinstalled Chrome to avoid costly Chromium download
+        run: |
+          if command -v google-chrome-stable >/dev/null; then
+            echo "NAWAA_CHROME_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "NAWAA_CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "NAWAA_CHROME_EXECUTABLE=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            npx playwright install chromium
+          fi
       - name: Validate probe script
         run: node --check scripts/1688-chromium-one-shot.mjs
       - name: Browser navigation and actual hydration observation (read only)
