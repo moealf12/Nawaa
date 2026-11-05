@@ -232,9 +232,18 @@ def parsed_search_cards(html, query):
         if not ID.fullmatch(pid) or not 3 <= len(title) <= 250:
             reject("INVALID_ID_OR_TITLE")
             continue
+        query_relevance = "TITLE_TOKEN_OVERLAP"
         if valid_tokens and not any(token in normalize_query(title) for token in valid_tokens):
-            reject("QUERY_NOT_RELEVANT")
-            continue
+            # An Arabic query may yield English card titles. Preserve as
+            # cross-script merchant DISCOVERY only, not trusted semantics.
+            # The publishing gate independently denies these unverified cards.
+            cross_script = any(ord(c) > 127 for c in query) and bool(
+                re.search(r"[A-Za-z]{3,}", title)
+            )
+            if not cross_script:
+                reject("QUERY_NOT_RELEVANT")
+                continue
+            query_relevance = "MERCHANT_SEARCH_CROSS_SCRIPT_UNVERIFIED"
         if pid in seen:
             reject("DUPLICATE_ID")
             continue
