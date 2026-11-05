@@ -604,6 +604,7 @@ class AmazonSelectedAsinPriceProvenanceTests(unittest.IsolatedAsyncioTestCase):
         p=result["products"][0]
         self.assertEqual(p["price"],"44.99")
         self.assertEqual(p["price_status"],"single_source_unverified")
+        self.assertEqual(p["price_source"],"search_only")
         self.assertNotIn("LISTING_PDP_PRICE_CONFLICT",p["issues"])
         self.assertIn("product-detail-price-retry",calls)
         self.assertTrue(any(d["status"]=="PDP_MAIN_PRICE_NOT_EVIDENCED"
@@ -615,3 +616,35 @@ class AmazonSelectedAsinPriceProvenanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(p["price"])
         self.assertEqual(p["price_status"],"unresolved")
         self.assertNotEqual(p["price_evidence"],"listing_pdp_agree")
+
+
+class AmazonSourceAvailabilityStateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_three_503s_never_implicate_stock(self):
+        import nawaa_store_hunter as m
+        scraper=m.Scraper("https://www.amazon.com","ps5 console",1,1,"never")
+        for _ in range(3):
+            scraper.log("search-html","https://www.amazon.com/s","HTTP_ERROR",detail="503")
+        result=scraper.result([],"partial_or_unavailable")
+        await scraper.close()
+        self.assertEqual(result["source_availability"],"transient_failure")
+        self.assertFalse(result["empty_means_out_of_stock"])
+        self.assertEqual(result["count"],0)
+        self.assertNotEqual(result["status"],"ok")
+
+    async def test_search_success_wins_over_initial_retry_503(self):
+        import nawaa_store_hunter as m
+        scraper=m.Scraper("https://www.amazon.com","headphones",1,1,"never")
+        scraper.log("search-html","https://www.amazon.com/s","HTTP_ERROR",detail="503")
+        scraper.log("search-html","https://www.amazon.com/s","OK")
+        result=scraper.result([],"partial_or_unavailable")
+        await scraper.close()
+        self.assertEqual(result["source_availability"],"search_accessible")
+        self.assertFalse(result["empty_means_out_of_stock"])
+
+    async def test_robots_error_is_independent_from_stock(self):
+        import nawaa_store_hunter as m
+        scraper=m.Scraper("https://www.amazon.com","headphones",1,1,"never")
+        result=scraper.result([],"robots_unavailable")
+        await scraper.close()
+        self.assertEqual(result["source_availability"],"robots_unavailable")
+        self.assertFalse(result["empty_means_out_of_stock"])
