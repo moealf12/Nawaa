@@ -178,6 +178,10 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
       reject("UNPARSEABLE_PRODUCT_OBJECT"); continue;
     }
     const productId = String(item.productId || item.redirectedId || "");
+    if (item.productId != null && item.redirectedId != null &&
+        String(item.productId) !== String(item.redirectedId)) {
+      reject("EMBEDDED_PRODUCT_ID_CONFLICT"); continue;
+    }
     const title = decodeTitle(item.title?.displayTitle || item.title?.seoTitle);
     if (!ITEM_ID.test(productId) || !title) { reject("INVALID_ID_OR_TITLE"); continue; }
     if (seen.has(productId)) { reject("DUPLICATE_PRODUCT"); continue; }
