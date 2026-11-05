@@ -1,11 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {EventEmitter} from "node:events";
-import {fetchNoonUaePythonHtml,noonUaePythonEnabled} from "../src/noon-ae-python-acquisition.mjs";
+import {fetchNoonUaePythonCards,noonUaePythonEnabled} from "../src/noon-ae-python-acquisition.mjs";
 
 const pythonBin="python3";
 const url="https://www.noon.com/uae-en/search/?q=laptop";
-const HTML='<html lang="en-AE"><h1>laptop</h1><a href="/uae-en/a/N70312362V/p/?o=offer">test</a></html>';
+const CARD={productId:"N70312362V",offerCode:"offerA01",
+  sourceUrl:"https://www.noon.com/uae-en/laptop-16gb-512gb/N70312362V/p/?o=offerA01",
+  title:"Pro Laptop 16GB 512GB",priceText:"2,499.50",priceAED:2499.5,
+  currency:"AED",image:"https://f.nooncdn.com/p/pzsku/item.jpg?width=800"};
+const goodReply=r=>({schemaVersion:r.schemaVersion,requestId:r.requestId,
+  sourceId:"noon-ae",status:"OK",language:"en-AE",heading:"laptop",
+  cards:[CARD],finalUrl:url});
 function fakeSpawn(reply, {hang=false}={}){
   let calls=0,kills=0;
   const impl=(bin,args,config)=>{
@@ -37,11 +43,13 @@ function fakeSpawn(reply, {hang=false}={}){
 test("Noon UAE Python transport is opt-in and uses fixed source-only Python module",async()=>{
   assert.equal(noonUaePythonEnabled({NAWAA_NOON_AE_PYTHON:"0"}),false);
   assert.equal(noonUaePythonEnabled({NAWAA_NOON_AE_PYTHON:"1"}),true);
-  const child=fakeSpawn(r=>({schemaVersion:r.schemaVersion,requestId:r.requestId,
-    sourceId:"noon-ae",status:"OK",html:HTML,finalUrl:url}));
-  const result=await fetchNoonUaePythonHtml("laptop",{pythonBin,spawnImpl:child.impl});
+  const child=fakeSpawn(goodReply);
+  const result=await fetchNoonUaePythonCards("laptop",{pythonBin,spawnImpl:child.impl});
   assert.equal(result.finalUrl,url);
-  assert.equal(result.html,HTML);
+  assert.deepEqual(result.cards,[CARD]);
+  assert.equal(result.language,"en-AE");
+  assert.equal(result.transport,"PYTHON_NOON_AE_JSON");
+  assert.equal("html" in result,false);
   assert.equal(child.calls,1);
 });
 
@@ -52,9 +60,8 @@ test("Noon UAE Python rejects cross-merchant and cross-query final URLs",async()
     "https://www.noon.com/uae-en/search/?q=phone",
     "http://www.noon.com/uae-en/search/?q=laptop"
   ]){
-    const child=fakeSpawn(r=>({schemaVersion:r.schemaVersion,requestId:r.requestId,
-      sourceId:"noon-ae",status:"OK",html:HTML,finalUrl}));
-    await assert.rejects(fetchNoonUaePythonHtml("laptop",{
+    const child=fakeSpawn(r=>({...goodReply(r),finalUrl}));
+    await assert.rejects(fetchNoonUaePythonCards("laptop",{
       pythonBin,spawnImpl:child.impl
     }),/SOURCE_SEARCH_URL_MISMATCH/);
   }
@@ -63,7 +70,7 @@ test("Noon UAE Python rejects cross-merchant and cross-query final URLs",async()
 test("Noon UAE Python classifies live 403 instead of retrying or turning it into zero products",async()=>{
   const child=fakeSpawn(r=>({schemaVersion:r.schemaVersion,requestId:r.requestId,
     sourceId:"noon-ae",status:"ERROR",errorCode:"HTTP_403_ACCESS_DENIED"}));
-  await assert.rejects(fetchNoonUaePythonHtml("laptop",{
+  await assert.rejects(fetchNoonUaePythonCards("laptop",{
     pythonBin,spawnImpl:child.impl
   }),e=>e.failureClass==="HTTP_403_ACCESS_DENIED");
   assert.equal(child.calls,1);
@@ -72,7 +79,7 @@ test("Noon UAE Python classifies live 403 instead of retrying or turning it into
 test("Noon UAE Python rejects invalid user query before spawning child",async()=>{
   let called=false;
   for(const query of ["x","x\nmore","x".repeat(121)]){
-    await assert.rejects(fetchNoonUaePythonHtml(query,{pythonBin,spawnImpl:()=>{
+    await assert.rejects(fetchNoonUaePythonCards(query,{pythonBin,spawnImpl:()=>{
       called=true;throw Error("should-not-run");
     }}),/NOON_AE_QUERY_INVALID/);
   }
@@ -82,14 +89,35 @@ test("Noon UAE Python rejects invalid user query before spawning child",async()=
 test("Noon UAE Python one-child rule rejects concurrency and abort kills running worker",async()=>{
   const child=fakeSpawn(()=>{}, {hang:true});
   const c=new AbortController();
-  const running=fetchNoonUaePythonHtml("laptop",{
+  const running=fetchNoonUaePythonCards("laptop",{
     pythonBin,spawnImpl:child.impl,signal:c.signal
   });
-  await assert.rejects(fetchNoonUaePythonHtml("laptop",{
+  await assert.rejects(fetchNoonUaePythonCards("laptop",{
     pythonBin,spawnImpl:child.impl
   }),/NOON_AE_PYTHON_BUSY/);
   c.abort(Error("test_client_disconnect"));
   await assert.rejects(running,/test_client_disconnect/);
   assert.equal(child.kills,1);
+  assert.equal(child.calls,1);
+});
+
+test("Noon UAE Python JSON bridge rejects oversized or malformed card responses",async()=>{
+  for(const altered of [
+    {cards:"not an array"},
+    {cards:Array.from({length:251},()=>CARD)},
+    {cards:[{...CARD,priceAED:"2499.5"}]},
+    {cards:[{...CARD,currency:"USD"}]},
+    {cards:[{...CARD,sourceUrl:"x".repeat(2501)}]},
+    {language:"en-SA"},
+  ]){
+    const child=fakeSpawn(r=>({...goodReply(r),...altered}));
+    await assert.rejects(fetchNoonUaePythonCards("laptop",{pythonBin,spawnImpl:child.impl}),
+      /NOON_AE_PYTHON_RESULT_INVALID|NOON_AE_PYTHON_OUTPUT_LIMIT/);
+  }
+});
+test("Noon UAE Python JSON worker supports empty verified search pages without Node retry",async()=>{
+  const child=fakeSpawn(r=>({...goodReply(r),cards:[]}));
+  const result=await fetchNoonUaePythonCards("laptop",{pythonBin,spawnImpl:child.impl});
+  assert.equal(result.cards.length,0);
   assert.equal(child.calls,1);
 });
