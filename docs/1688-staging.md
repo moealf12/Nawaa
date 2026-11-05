@@ -107,6 +107,32 @@ After the project owner clarified that 1688's communication closely mirrors the 
 
 This is the same acquisition-and-evidence separation used for Noon. A positive commercial discussion is not a claim that a particular technical endpoint, credential, or request profile works.
 
+## Jarir vs Noon UAE acquisition-method experiment — 2026-11-05
+
+Objective: explicitly test actual Jarir and Noon UAE patterns against 1688, without importing another merchant's identity or assuming successful source access.
+
+**Jarir method:** Jarir uses Constructor search and an HTML/JSON-LD fallback. Constructor's public browser search key is *Jarir-specific* and cannot be reused as if 1688 has a Constructor index. The applicable transferable mechanism is direct first-party HTML search plus tightly linked JSON-LD Product/Offer extraction (`scripts/1688-jarir-style-live.mjs`, `src/1688-html-evidence.mjs`). No product-page fetch or customer publication occurs.
+
+**Noon UAE method:** Test a single `curl_cffi` session with the same pinned HTML parsing stack (BeautifulSoup/lxml), transient cookies, origin-safe robots discovery, and optional Chinese GB18030 query encoding (`scripts/1688-noon-uae-style-live.py`). The query is attempted **only if robots access is verified**; never solve a challenge, rotate identities, proxy, or retry after denial.
+
+**Exact live comparison run:** https://github.com/moealf12/Nawaa/actions/runs/41945027588, candidate SHA `0af09943859ee3f2d9c372761add29456cb70908`.
+
+| Evidence | Jarir-style direct Node | Noon-UAE-style session |
+|---|---|---|
+| Local test contracts | 21/21 passed in one comparison job | Same job |
+| Actual robots response | HTTP 302 | HTTP 302 (curl_cffi, HTTP version 3) |
+| Observed redirect host/path | s.1688.com / non-robots path | s.1688.com / |
+| Search GETs | 0 | 0 |
+| Product IDs, search prices, SKU/quantity/PDP matches | 0 | 0 |
+| Reason | UNVERIFIED_ROBOTS_REDIRECT | ROBOTS_NONFILE_REDIRECT |
+| Customer publication | Disabled | Disabled |
+
+The successful workflow execution of the evidence-collection step is **not an accepted product-source integration**. A separate strict gate now rejects `LIVE_ACQUISITION_NOT_PROVEN`, even when code tests and diagnostic collection pass. This prevents confusing transport information with product-price verification.
+
+Do not claim that 1688's site cannot ever be searched, that browser fingerprinting is proven to be the cause, or that another method would automatically succeed. The present evidence shows only that **from this GitHub Actions runner and these two methods**, the robots path redirected to the site root rather than yielding a verifiable robots file.
+
+**Next authorization/data prerequisite:** Explicit technical access scope or approved 1688 Open Platform search feed, or 1688's written confirmation of permitted public indexing even when robots discovery is inconclusive. Once provided, keep the source in this branch and run genuine live card/PDP/MOQ parity checks before asking to merge.
+
 ## Pre-merge release gates
 
 1. Provide verifiable terms/authorization and the approved feed's API specification and credentials (privately).
