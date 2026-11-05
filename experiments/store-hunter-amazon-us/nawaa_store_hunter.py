@@ -470,31 +470,51 @@ def parse_amazon_us_pdp(html: str, page: str) -> list[Product]:
     # Multiple Amazon display modules may coexist. An empty first module is
     # NOT evidence the other primary modules lack a usable current price.
     # Disagreeing primary modules are *conflicts*, never a chosen cheapest price.
-    selectors = (
+    # Amazon can render *both* the $44.99 buy price and a crossed-out
+    # $69.99 reference price under the same broad apex parent. Firecrawl's
+    # live 2026-11-05 HTML exposed apex-pricetopay-value in corePrice and
+    # corePriceDisplay, while broad #apex_desktop also included reference
+    # prices. Only narrow price-to-pay selectors may prove a main offer.
+    strong_selectors = (
+        ("corePrice_feature", "#corePrice_feature_div .apex-pricetopay-value .a-offscreen"),
+        ("corePriceDisplay_desktop",
+         "#corePriceDisplay_desktop_feature_div .apex-pricetopay-value .a-offscreen, "
+         "#corePriceDisplay_desktop_feature_div #priceToPay .a-offscreen"),
+        ("apex_desktop", "#apex_desktop .apex-pricetopay-value .a-offscreen"),
+    )
+    # Legacy layouts with no price-to-pay class may expose one price only in
+    # the corePrice or corePriceDisplay modules. Never scrape the entire apex
+    # as a fallback: it can contain list prices, coupons and accessory offers.
+    fallback_selectors = (
         ("corePrice_feature", "#corePrice_feature_div .a-price:not(.a-text-price) .a-offscreen"),
-        ("corePriceDisplay_desktop", "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price) .a-offscreen"),
-        ("apex_desktop", "#apex_desktop .a-price:not(.a-text-price) .a-offscreen"),
+        ("corePriceDisplay_desktop",
+         "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price) .a-offscreen"),
         ("buybox_deal", "#priceblock_dealprice"),
         ("buybox_our", "#priceblock_ourprice"),
         ("buybox_inside", "#price_inside_buybox"),
     )
-    primary_values: set[str] = set()
-    regions_seen: list[str] = []
-    ambiguous_region = False
-    for name, selector in selectors:
-        nodes = soup.select(selector)
-        if not nodes:
-            continue
-        prices = {value for el in nodes if (raw := el.get_text(" ", strip=True))
-                  if (raw.startswith("$") or re.search(r"\bUSD\b", raw, re.I))
-                  if (value := number_price(raw)) is not None}
-        if len(prices) > 1:
-            ambiguous_region = True
-            regions_seen.append(name)
-            break
-        if prices:
-            primary_values.update(prices)
-            regions_seen.append(name)
+    def inspect_regions(regions):
+        values = set()
+        names = []
+        ambiguous = False
+        for region_name, selector in regions:
+            nodes = soup.select(selector)
+            if not nodes:
+                continue
+            current = {num for node in nodes
+                       if (raw := node.get_text(" ", strip=True))
+                       if raw.startswith("$") or re.search(r"\bUSD\b", raw, re.I)
+                       if (num := number_price(raw)) is not None}
+            if len(current) > 1:
+                ambiguous = True
+            if current:
+                values.update(current)
+                names.append(region_name)
+        return values, names, ambiguous
+
+    primary_values, regions_seen, ambiguous_region = inspect_regions(strong_selectors)
+    if not primary_values and not ambiguous_region:
+        primary_values, regions_seen, ambiguous_region = inspect_regions(fallback_selectors)
     if ambiguous_region or len(primary_values) > 1:
         price_problem = "AMAZON_PDP_MULTIPLE_BUYBOX_PRICES"
     elif len(primary_values) == 1:
