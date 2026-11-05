@@ -861,14 +861,15 @@ class Scraper:
         except Exception:
             return False
 
-    async def fetch(self, method: str, url: str, params: dict | None = None) -> str | None:
+    async def fetch(self, method: str, url: str, params: dict | None = None,
+                    headers: dict[str, str] | None = None) -> str | None:
         requested = str(httpx.URL(url, params=params)) if params else url
         if not self.permitted(requested):
             self.log(method, requested, "ROBOTS_DENIED_OR_UNSAFE")
             return None
         started = time.monotonic()
         try:
-            response = await self._raw_get(url, params)
+            response = await self._raw_get(url, params, headers=headers)
             # Content negotiation only: transparent, unchanged NAWAA User-Agent
             # and exact same HTTPS origin. This is NOT a block/CAPTCHA bypass.
             # Never switch headers on 403/429, challenge HTML, robots denials,
