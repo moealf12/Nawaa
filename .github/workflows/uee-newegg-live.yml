@@ -1,0 +1,21 @@
+name: UEE Newegg isolated live
+on:
+  push:
+    branches: [uee-isolated-live-smoke-20261105]
+    paths: ['uee-sandbox/newegg-probe.mjs','.github/workflows/uee-newegg-live.yml']
+permissions:
+  contents: read
+jobs:
+  newegg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node uee-sandbox/newegg-probe.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uee-newegg-evidence
+          path: uee-sandbox/newegg-results.json
