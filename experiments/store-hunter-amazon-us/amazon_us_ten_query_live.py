@@ -60,7 +60,10 @@ def summary_for(query, result, elapsed_ms):
         acceptance = "FAIL_NO_COMPLETE_PRODUCT"
     return {
         "query": query, "observed_utc": now_utc(),
-        "status": result.get("status"), "acceptance": acceptance,
+        "status": result.get("status"),
+        "source_availability": result.get("source_availability", "unknown"),
+        "empty_means_out_of_stock": result.get("empty_means_out_of_stock", False),
+        "acceptance": acceptance,
         "elapsed_ms": round(elapsed_ms),
         "product_count": len(products),
         "complete_usd_image_asin": len(complete),
