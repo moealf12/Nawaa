@@ -88,7 +88,7 @@ test("zero cost: paid or ambiguous account means ZERO Shopping search requests",
   assert.equal(r.body.error,"GOOGLE_SHOPPING_ZERO_COST_GUARD");
   assert.equal(accountCalls,1);
   assert.equal(shoppingCalls,0);
-  assert.equal(c.status().calls,0);
+  assert.equal(c.status().calls,1, "local budget slot reserved even for denied account to fail conservatively");
 });
 
 test("zero cost: verifier crashes are denied without upstream Shopping request",async()=>{
