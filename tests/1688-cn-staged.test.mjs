@@ -14,6 +14,7 @@ const product = (overrides = {}) => ({
   image: "https://cbu01.alicdn.com/img/ibank/test.jpg",
   currency: "CNY",
   minimumOrderQuantity: 1,
+  priceObservedAt: new Date().toISOString(),
   priceTiers: [{minQuantity: 1, unitPriceCny: 20}, {minQuantity: 10, unitPriceCny: 12}],
   stockQuantity: 200, condition: "new",
   ...overrides,
@@ -126,4 +127,14 @@ test("1688: network client errors remain source-scoped and aborts propagate", as
   const c = new AbortController();
   c.abort(new Error("customer disconnected"));
   await assert.rejects(search1688("phone", {signal: c.signal, catalogSearch: async () => ({products:[]})}), /customer disconnected/);
+});
+
+test("1688: stale, missing or implausibly future-priced records are rejected", async () => {
+  const result = await parse1688Catalog({products: [
+    product({priceObservedAt: undefined}),
+    product({offerId: "123456789013", priceObservedAt: "2020-01-01T00:00:00Z"}),
+    product({offerId: "123456789014", priceObservedAt: "2099-01-01T00:00:00Z"}),
+  ]}, {convertMoney: fx});
+  assert.equal(result.offers.length, 0);
+  assert.equal(result.diagnostics.rejected.PRICE_EVIDENCE_STALE_OR_MISSING, 3);
 });
