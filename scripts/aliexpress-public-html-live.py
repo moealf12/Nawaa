@@ -74,7 +74,8 @@ def product_image(raw):
         u = urlsplit(candidate)
         if (u.scheme == "https" and u.username is None and u.password is None
                 and u.port in (None, 443)
-                and (u.hostname or "").lower().endswith(".alicdn.com")
+                and ((u.hostname or "").lower().endswith(".alicdn.com")
+                     or (u.hostname or "").lower().endswith(".aliexpress-media.com"))
                 and u.path and u.path != "/"):
             return candidate
     except ValueError:
