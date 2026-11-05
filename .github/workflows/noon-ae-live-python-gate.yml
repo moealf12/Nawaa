@@ -1,0 +1,37 @@
+name: NAWAA Noon UAE Python Live Source Gate
+on:
+  pull_request:
+    paths:
+      - "workers/python-intelligence/pyproject.toml"
+      - "workers/python-intelligence/uv.lock"
+      - "workers/python-intelligence/nawaa_py/noon_ae_search.py"
+      - "src/noon-ae-python-acquisition.mjs"
+      - "server/providers/free-storefronts.mjs"
+      - "scripts/noon-ae-live-reader-gate.mjs"
+      - ".github/workflows/noon-ae-live-python-gate.yml"
+permissions:
+  contents: read
+jobs:
+  noon-uae-real-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      NAWAA_NOON_AE_PYTHON: "1"
+      NAWAA_TEST_TRANSPORT: fetch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install Node runtime without production postinstall
+        run: npm ci --ignore-scripts
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.0"
+      - name: Verify locked Python 3.12 runtime
+        run: |
+          uv sync --project workers/python-intelligence --python 3.12 --locked --no-dev --no-editable
+          workers/python-intelligence/.venv/bin/python -c "import curl_cffi, httpx, bs4, lxml; print('PYTHON_NOON_AE_LOCK_OK')"
+      - name: Real multi-query Node-Python customer-offer gate
+        run: node scripts/noon-ae-live-reader-gate.mjs
