@@ -145,8 +145,8 @@ def classify_redirect_destination(raw_location, current_url, item_id):
         return {"targetHostClass": "UNKNOWN", "targetPathClass": "INVALID_URL"}
 
 
-def approved_pdp_redirect(raw_location, current_url, item_id):
-    """Classify a merchant redirect; never follow a challenge or generic landing."""
+def approved_pdp_redirect(raw_location, current_url, item_id, *, trace_alias=False):
+    """Follow safe canonical destinations; cross-ID tracing never certifies product identity."""
     if not isinstance(raw_location, str) or not 0 < len(raw_location) <= 2048:
         return None, "REDIRECT_LOCATION_MISSING_OR_LONG"
     try:
@@ -159,6 +159,12 @@ def approved_pdp_redirect(raw_location, current_url, item_id):
         if canonical is None:
             if re.search(r"/(?:punish|verify|captcha|login|passport)(?:/|$)", split.path, re.I):
                 return None, "CHALLENGE_OR_LOGIN_REDIRECT"
+            if trace_alias:
+                match = re.fullmatch(r"/item/(\d{10,20})\.html/?", split.path, re.I)
+                if match and match.group(1) != item_id:
+                    alias = _shared.product_link(target, match.group(1))
+                    if alias:
+                        return alias, "REDIRECT_CROSS_ITEM_DIAGNOSTIC_ONLY"
             return None, "REDIRECT_NOT_SAME_ITEM_PDP"
         if canonical == _shared.product_link(current_url, item_id):
             return None, "REDIRECT_TO_SAME_CANONICAL_ITEM"
@@ -252,7 +258,7 @@ def verify_public_robots(session, target_url, headers):
     return False, stage
 
 
-def probe_item(item_id):
+def probe_item(item_id, *, trace_alias=False):
     if not _shared.ID.fullmatch(item_id):
         raise ValueError("INVALID_ITEM_ID")
     if PDP_HOST not in ALLOWED_PDP_HOSTS:
@@ -264,7 +270,8 @@ def probe_item(item_id):
         "observedUtc": datetime.now(timezone.utc).isoformat(),
         "retries": 0, "proxyUsed": False, "captchaSolved": False,
         "customerPublishable": False, "stages": [],
-        "redirectsFollowed": 0, "conclusion": "NOT_STARTED",
+        "redirectsFollowed": 0, "aliasCandidate": None,
+        "aliasIdentityVerified": False, "conclusion": "NOT_STARTED",
     }
     with requests.Session(impersonate="chrome") as sess:
         headers = {
@@ -275,6 +282,7 @@ def probe_item(item_id):
         robots_hosts = set()
         visited = set()
         current = url
+        current_item_id = item_id
         for hop in range(MAX_REDIRECT_HOPS + 1):
             host = urlsplit(current).hostname
             if host not in robots_hosts:
@@ -310,7 +318,8 @@ def probe_item(item_id):
                     return report
                 if response.status_code in REDIRECT_STATUSES:
                     destination, reason = approved_pdp_redirect(
-                        response.headers.get("location"), current, item_id
+                        response.headers.get("location"), current, current_item_id,
+                        trace_alias=trace_alias and report["aliasCandidate"] is None,
                     )
                     stage["state"] = reason
                     stage["redirectTarget"] = classify_redirect_destination(
@@ -327,6 +336,18 @@ def probe_item(item_id):
                     if hop == MAX_REDIRECT_HOPS:
                         report["conclusion"] = "PDP_REDIRECT_HOP_LIMIT"
                         return report
+                    if reason == "REDIRECT_CROSS_ITEM_DIAGNOSTIC_ONLY":
+                        alias = stage["redirectTarget"].get("targetItemId")
+                        if not _shared.ID.fullmatch(alias or ""):
+                            report["conclusion"] = "PDP_REDIRECT_IDENTITY_NOT_VERIFIED"
+                            return report
+                        report["aliasCandidate"] = {
+                            "originalItemId": item_id,
+                            "destinationItemId": alias,
+                            "evidence": "OFFICIAL_HTTP_REDIRECT_ONLY",
+                            "customerPublishable": False,
+                        }
+                        current_item_id = alias
                     report["redirectsFollowed"] += 1
                     current = destination
                     continue
@@ -354,7 +375,7 @@ def probe_item(item_id):
                 image = _shared.product_image(
                     image_meta.get("content") if image_meta else None
                 )
-                jsonld = safely_matched_product_jsonld(html, item_id)
+                jsonld = safely_matched_product_jsonld(html, current_item_id)
                 report["productIdentity"] = {
                     "pageTitleCandidate": title or None,
                     "sourceImageCandidate": image,
@@ -362,6 +383,8 @@ def probe_item(item_id):
                     "jsonLd": jsonld,
                 }
                 report["conclusion"] = (
+                    "PDP_ALIAS_IDENTITY_AND_PRICE_NOT_CORROBORATED"
+                    if report["aliasCandidate"] else
                     "PDP_PRODUCT_JSONLD_PRICE_CANDIDATE"
                     if jsonld["state"] == "SAME_ITEM_JSONLD_PRICE_CANDIDATE"
                     else "PDP_RECEIVED_PRICE_NOT_ATTESTED"
@@ -382,7 +405,7 @@ def main():
     raw = os.getenv("ALIEXPRESS_ITEM_ID", "")
     if not _shared.ID.fullmatch(raw):
         raise SystemExit("INVALID_ALIEXPRESS_ITEM_ID")
-    report = probe_item(raw)
+    report = probe_item(raw, trace_alias=os.getenv("ALIEXPRESS_ALIAS_TRACE") == "1")
     with open("aliexpress-pdp-" + raw + ".json", "w", encoding="utf8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
