@@ -298,6 +298,7 @@ def parsed_search_cards(html, query):
             "productId": pid, "title": title, "sourceUrl": url,
             "image": image, "priceOriginal": price, "currency": currency,
             "maxVariantPrice": maximum,
+            "queryRelevanceEvidence": query_relevance,
             "priceKind": "SEARCH_CARD_MINIMUM_VARIANT_UNVERIFIED",
             "market": "ALIEXPRESS_GLOBAL", "canShipToSaudi": None,
             "pdpPriceVerified": False, "customerPublishable": False,
