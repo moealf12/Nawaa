@@ -1,7 +1,7 @@
 """Offline source-identity and HTML admission tests for the Noon UAE worker."""
 import unittest
 from types import SimpleNamespace
-from nawaa_py.noon_ae_search import request_url, attested_result
+from nawaa_py.noon_ae_search import request_url, attested_result, extract_cards, numeric_price
 
 class NoonUaeTransportContracts(unittest.TestCase):
     def response(self, *, url=None, status=200, content=b"<html lang='en-AE'></html>",
@@ -45,6 +45,43 @@ class NoonUaeTransportContracts(unittest.TestCase):
             attested_result(self.response(content_type="application/json"),url)
         with self.assertRaisesRegex(ValueError,"RESPONSE_TOO_LARGE"):
             attested_result(self.response(content=b"x"*3_000_001),url)
+
+    def test_real_pr310_selector_shape_emits_json_cards(self):
+        # Visible card surface mirrors historical live PR #310 selector shape.
+        html = """<html lang="en-AE"><body><h1>iPhone 17</h1>
+        <a href="/uae-en/iphone-17-256gb-black/N70211553V/p/?o=a46bd3942170c30c">
+          <div data-qa="plp-product-box-name">Apple iPhone 17 256GB Black</div>
+          <div data-qa="plp-product-box-price"><strong class="amount">3,399</strong></div>
+          <picture><source srcset="https://f.nooncdn.com/p/pzsku/test.jpg?width=800 800w"/></picture>
+        </a></body></html>"""
+        out=extract_cards(html, "iPhone 17")
+        self.assertEqual(out["language"], "en-AE")
+        self.assertEqual(out["heading"], "iPhone 17")
+        self.assertEqual(len(out["cards"]),1)
+        card=out["cards"][0]
+        self.assertEqual(card["productId"],"N70211553V")
+        self.assertEqual(card["offerCode"],"a46bd3942170c30c")
+        self.assertEqual(card["priceAED"],3399)
+        self.assertEqual(card["priceText"],"3,399")
+        self.assertEqual(card["currency"],"AED")
+        self.assertIn("?o=a46bd3942170c30c",card["sourceUrl"])
+
+    def test_python_does_not_fabricate_price_from_page_context(self):
+        html = """<html lang="en-AE"><body><h1>iPhone 17</h1>
+        <a href="/uae-en/iphone-17-256gb-black/N70211553V/p/?o=a46bd3942170c30c">
+          <div data-qa="plp-product-box-name">Apple iPhone 17 256GB Black</div>
+          <div data-qa="plp-product-box-price"><strong class="amount">SAR 3,399</strong></div>
+          <img src="https://f.nooncdn.com/p/item.jpg"/></a></body></html>"""
+        self.assertEqual(extract_cards(html,"iPhone 17")["cards"],[])
+        with self.assertRaisesRegex(ValueError,"SEARCH_PAGE_CONTEXT_NOT_ATTESTED"):
+            extract_cards(html,"PlayStation 5")
+        with self.assertRaisesRegex(ValueError,"UAE_MARKET_LOCALE_NOT_ATTESTED"):
+            extract_cards(html.replace('en-AE','en-SA'),"iPhone 17")
+
+    def test_amount_parser_accepts_arabic_digits_and_rejects_multiple_prices(self):
+        self.assertEqual(numeric_price("٣٬٣٩٩٫٥٠"),3399.5)
+        self.assertIsNone(numeric_price("3,399 4,599"))
+        self.assertIsNone(numeric_price("USD 3,399"))
 
 if __name__=="__main__":
     unittest.main()
