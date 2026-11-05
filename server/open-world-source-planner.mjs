@@ -88,8 +88,11 @@ export function planUnknownCategorySpecialists({
 // query is exact source-owned RETRIEVAL syntax, not translation of meaning.
 // Original shopper query is ALWAYS the matching/condition/identity contract.
 export function planSourceNativeModelQuery(query,{allowModelRecall=false}={}){
-  const primary=normalizeSearchQuery(query||"");
-  const fallback={query:primary,mode:"ORIGINAL_QUERY",constraintsPreserved:true};
+  const raw=typeof query==="string"?query:"";
+  const primary=normalizeSearchQuery(raw);
+  // An ORIGINAL query must remain byte-for-byte unchanged. Search APIs may
+  // treat case or accent differences as material (e.g. Noon q=Laptop).
+  const fallback={query:raw,mode:"ORIGINAL_QUERY",constraintsPreserved:true};
   if(!allowModelRecall||!primary)return fallback;
   const intent=parseSearchIntent(primary);
   if(intent.category||intent.brand)return fallback;
