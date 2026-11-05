@@ -1,4 +1,24 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
+// Every STORES.productPath entry is a *pathname* pattern. Testing it against
+// an absolute https:// URL always fails for anchored /^\\// expressions
+// (for example PcComponentes /product slug), silently rejecting priced cards
+// and discovery links before source and model validation.
+// Keep URL ownership checks at call sites; never accept an arbitrary host.
+function matchesStoreProductPath(value,store){
+  try{
+    const url=new URL(value);
+    if(url.protocol!=="https:"||url.username||url.password)return false;
+    const rule=store?.productPath;
+    if(!(rule instanceof RegExp))return false;
+    // Preserve existing patterns that deliberately include query suffixes.
+    // A stateful future regex must not leak lastIndex between merchant cards.
+    rule.lastIndex=0;
+    const matched=rule.test(url.pathname+url.search);
+    rule.lastIndex=0;
+    return matched;
+  }catch{return false;}
+}
+
 import {retainAcquiredStorefrontOffers} from "../search-offer-admission.mjs";
 import {readAmazonHtmlStream} from "../amazon-body-stream.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
@@ -1047,7 +1067,7 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
     let sourceUrl = null;
     try { if (rawUrl) sourceUrl = new URL(String(rawUrl).replace(/\\u002F/gi,"/").replace(/\\\//g,"/"), searchUrl).href; } catch {}
     const image = node.image ?? node.imageUrl ?? node.mainImageUrl ?? node.thumbnail ?? node?.images?.[0]?.url ?? null;
-    if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && store.productPath.test(sourceUrl) && Number.isFinite(price) && price > 0 && /^[A-Z]{3}$/.test(currency)) {
+    if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && matchesStoreProductPath(sourceUrl,store) && Number.isFinite(price) && price > 0 && /^[A-Z]{3}$/.test(currency)) {
       const hay = normalizeSearchQuery(title + " " + sourceUrl);
       const hits = tokens.filter(t => hay.includes(t)).length;
       const key = canonicalizeCandidateUrl(sourceUrl) + "|" + price;
@@ -1117,7 +1137,7 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   const addCandidate = (rawUrl, rawLabel = "") => {
     let url;
     try { url = new URL(decodeHtml(rawUrl).replace(/\\u002F/gi, "/").replace(/\\\//g, "/"), searchUrl).href; } catch { return; }
-    if (!sameHost(url, searchUrl) || !store.productPath.test(url)) return;
+    if (!sameHost(url, searchUrl) || !matchesStoreProductPath(url,store)) return;
     // Product discovery must never promote static assets (images/fonts/etc.) to
     // product pages even when a loose storefront regex happens to match them.
     try {
@@ -1807,7 +1827,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           // An embedded Product/Offer can be off-domain advertising or a
           // marketplace recommendation. It never owns this EU merchant's price.
           .filter(offer => !store.euSource ||
-            (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)));
+            (sameHost(offer.sourceUrl, searchUrl) && matchesStoreProductPath(offer.sourceUrl,store)));
         const merged = []; const seen = new Set();
         for (const offer of [...embedded, ...jsonLd]) {
           const key = canonicalizeCandidateUrl(offer.sourceUrl || "") + "|" + Number(offer.price) + "|" + String(offer.currency || "");
@@ -1912,7 +1932,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const jsonLdOffers = html && !htmlFirstOffers.length && !primarySearchOffers.length
       ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query)
         .filter(offer => !store.euSource ||
-          (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)))
+          (sameHost(offer.sourceUrl, searchUrl) && matchesStoreProductPath(offer.sourceUrl,store)))
       : [];
     // A generic JSON-LD fallback could revive a recommendation's price after
     // Noon-specific SKU/seller/variant binding rejected it. Keep this source
