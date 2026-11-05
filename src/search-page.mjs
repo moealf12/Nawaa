@@ -1145,6 +1145,7 @@ function renderProduct(product, query) {
     });
   });
   $("#loadMoreRemote")?.addEventListener("click",()=>loadMoreRemote(query));
+  observeRemoteMore(query);
   document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (event.target.isConnected === false) return; if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
   $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
@@ -1253,6 +1254,23 @@ function mergeSearchOffers(current = [], incoming = []) {
   return [...merged.values()];
 }
 
+let remoteMoreObserver = null;
+function observeRemoteMore(query) {
+  remoteMoreObserver?.disconnect();
+  remoteMoreObserver = null;
+  const button = document.querySelector("#loadMoreRemote");
+  if (!button || state.remoteLoading || typeof IntersectionObserver === "undefined") return;
+  remoteMoreObserver = new IntersectionObserver((entries, observer) => {
+    if (!entries.some(entry => entry.isIntersecting)) return;
+    observer.disconnect();
+    remoteMoreObserver = null;
+    if (state.query !== query || state.remoteLoading || state.remoteExhausted ||
+        !(state.overflowCursor || state.nextCursor)) return;
+    void loadMoreRemote(query);
+  }, { rootMargin: "0px 0px 320px 0px", threshold: 0 });
+  remoteMoreObserver.observe(button);
+}
+
 async function loadMoreRemote(query) {
   if (!(state.nextCursor || state.overflowCursor) || state.remoteLoading || !state.product) return;
   const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
@@ -1358,6 +1376,8 @@ async function runSearch(rawQuery) {
   state.resultWindowCapped = false;
   state.remoteLoading = false;
   state.remoteExhausted = false;
+  remoteMoreObserver?.disconnect();
+  remoteMoreObserver = null;
   saveRecent(query);
 
   if (isLikelyUrl(query)) {
