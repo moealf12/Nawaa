@@ -20,7 +20,7 @@ test("R04 boundary: priced accessories survive early source filtering but never 
     "documents the original source-side early-loss defect");
   const result=retainAcquiredStorefrontOffers(query,[caseOffer]);
   assert.equal(result.offers.length,1);
-  assert.equal(result.queryFilter.relatedRetained,1);
+  assert.deepEqual(result.queryFilter,{input:1,retained:1,removed:0});
   const item=result.offers[0];
   assert.equal(item.exactMatch,false);
   const classified=classifyResultGroup(query,{bestOffer:{...item,...assessOfferMatch(query,item)}});
@@ -72,7 +72,7 @@ test("R04 boundary: cannot resurrect wrong-model cards or perfume packaging on g
     offer("Empty Perfume Bottle Atomizer"),
   ]);
   assert.deepEqual(broad.offers.map(x=>x.title),["Niceone Musk Eau De Perfume"]);
-  assert.equal(broad.queryFilter.relatedRetained,0);
+  assert.deepEqual(broad.queryFilter,{input:2,retained:1,removed:1});
 });
 
 test("R04 boundary: the live adapter must actually call central admission before customer publication",async()=>{
