@@ -97,11 +97,16 @@ def parse_featured_offers(payload: object, requested_asins: list[str]) -> list[d
         price = _money(money.get("amount"))
         if price is None:
             continue
-        title = ((item.get("itemInfo") or {}).get("title") or {}).get("displayValue") if isinstance(item.get("itemInfo"), dict) else None
+        item_info = item.get("itemInfo") if isinstance(item.get("itemInfo"), dict) else {}
+        title_data = item_info.get("title") if isinstance(item_info.get("title"), dict) else {}
+        title = title_data.get("displayValue")
         primary = (item.get("images") or {}).get("primary") if isinstance(item.get("images"), dict) else None
         image = (primary.get("large") or {}).get("url") if isinstance(primary, dict) and isinstance(primary.get("large"), dict) else None
         page = item.get("detailPageURL") or ""
-        parsed = urlsplit(page) if isinstance(page, str) else None
+        try:
+            parsed = urlsplit(page) if isinstance(page, str) else None
+        except ValueError:
+            parsed = None
         if not parsed or parsed.scheme != "https" or parsed.hostname not in {"www.amazon.com", "amazon.com"}:
             page = "https://www.amazon.com/dp/" + asin
         elif not re.search(r"/(?:dp|gp/product)/" + asin + r"(?:[/?#]|$)", parsed.path, re.I):
@@ -155,6 +160,8 @@ class CreatorsAPI:
                 if response.status_code != 200:
                     return None
                 data = response.json()
+                if not isinstance(data, dict):
+                    return None
                 token = data.get("access_token")
                 duration = data.get("expires_in")
                 if not isinstance(token, str) or not token or not isinstance(duration, (int, float)):
