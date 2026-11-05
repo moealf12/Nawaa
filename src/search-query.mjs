@@ -269,10 +269,14 @@ export const PRODUCT_CATEGORIES = [
 // captured in the R04 actual LIVE first-ten evidence. Only the *primary* sold
 // item preceding an explicit "with/including" bundle boundary is inspected:
 // a real console/phone with an included accessory stays a principal product.
+// Package inclusion is not limited to English merchant titles. Only
+// standalone marker words separate the primary sold subject from included
+// extras. The title-leading item still must prove its own physical identity.
+const INCLUDED_PACKAGE_MARKER=/\b(?:with|including|includes|con|avec|mit)\b/;
 function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
-  const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  const subject=retail.split(INCLUDED_PACKAGE_MARKER,1)[0];
   // A standalone watch band/strap/case compatible with Apple Watch is an
   // accessory, not the complete watch. Inspect SOLD subject, never included
   // bundled accessories after "with". Observed Jarir accessory titles.
@@ -428,12 +432,17 @@ function productCategoryWithDescription(offer, gaming) {
   if(hpClaim && !computerSubjectBeforeClaim) return 'accessory';
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   if (isEvidencedCompleteLaptop(offer)) return 'laptop';
-  // A complete title-leading smartphone may include a free screen protector.
-  // The INCLUDED accessory does not replace the sold handset subject.
-  const primary=normalizedRetailTitle.split(/\b(?:with|including|includes)\b/,1)[0];
-  if (/^(?:(?:apple )?iphone \d+|samsung galaxy s\d+)/.test(primary) &&
-      /\b(?:smartphone|phone|handset)\b/.test(primary) &&
-      !/\b(?:screen protectors?|photo stick|case|cover|digitizer)\b/.test(primary))
+  // Protect the SOLD full handset when its merchant title includes a
+  // separately listed accessory after an explicit package-inclusion marker.
+  // A standalone case "for Galaxy" has the case in the primary subject and
+  // remains an accessory, even if its compatibility metadata names a phone.
+  const primary=normalizedRetailTitle.split(INCLUDED_PACKAGE_MARKER,1)[0];
+  const titleLeadingPhone=/^(?:(?:apple )?iphone \d+|samsung galaxy s\d+)/.test(primary);
+  const physicalPhoneClaim=/\b(?:smartphone|phone|handset)\b/.test(primary);
+  const completePackageClaim=INCLUDED_PACKAGE_MARKER.test(normalizedRetailTitle) &&
+    /\b\d+(?:gb|tb)\b/.test(primary);
+  if (titleLeadingPhone && (physicalPhoneClaim||completePackageClaim) &&
+      !/\b(?:screen protectors?|photo stick|case|cover|digitizer|chargers?|repair|replacement)\b/.test(primary))
     return 'phone';
   let urlSemantic = "";
   try {
@@ -1012,8 +1021,21 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
+  // The full multilingual package title contains the *included* charger or
+  // case; counting that noun as the sold product was a false accessory veto.
+  // Restrict the exemption to a title-leading, capacity-evidenced handset
+  // whose seller explicitly separates the extras. Every standalone accessory
+  // keeps the original whole-title strictness.
+  const physicalRetail=normalizeSearchQuery(offer?.title||"");
+  const includedPrimary=physicalRetail.split(INCLUDED_PACKAGE_MARKER,1)[0];
+  const completePhoneWithExtras=offerCategory==="phone" &&
+    INCLUDED_PACKAGE_MARKER.test(physicalRetail) &&
+    /^(?:(?:apple )?iphone \d+|samsung galaxy s\d+)/.test(includedPrimary) &&
+    /\b\d+(?:gb|tb)\b/.test(includedPrimary) &&
+    !/\b(?:cases?|covers?|chargers?|protectors?|replacement|repair)\b/.test(includedPrimary);
+  const accessoryEvidenceText=completePhoneWithExtras?includedPrimary:title;
   const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) &&
-    !(watchSeriesIntent&&!wholeWatchUnverified) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
+    !(watchSeriesIntent&&!wholeWatchUnverified) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(accessoryEvidenceText, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
