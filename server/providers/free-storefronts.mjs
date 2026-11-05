@@ -1068,9 +1068,7 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
     try { if (rawUrl) sourceUrl = new URL(String(rawUrl).replace(/\\u002F/gi,"/").replace(/\\\//g,"/"), searchUrl).href; } catch {}
     const image = node.image ?? node.imageUrl ?? node.mainImageUrl ?? node.thumbnail ?? node?.images?.[0]?.url ?? null;
     if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && matchesStoreProductPath(sourceUrl,store) && Number.isFinite(price) && price > 0 && /^[A-Z]{3}$/.test(currency)) {
-      // The URL establishes source ownership, not the sold product subject.
-      // Otherwise an irrelevant title at /iphone-17-256gb... can pass as a match.
-      const hay = normalizeSearchQuery(title);
+      const hay = normalizeSearchQuery(title + " " + sourceUrl);
       const hits = tokens.filter(t => hay.includes(t)).length;
       const key = canonicalizeCandidateUrl(sourceUrl) + "|" + price;
       if ((tokens.length <= 1 || hits / tokens.length >= 0.2) && !seen.has(key)) {
