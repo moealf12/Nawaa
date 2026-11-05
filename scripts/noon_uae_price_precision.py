@@ -113,3 +113,51 @@ def select_source_current_offer_amount(candidate_records):
         "priceKinds": sorted({x["priceKind"] for x in selected}),
         "evidenceRecords": len(selected),
     }
+
+
+
+def corroborate_selected_pdp_offer_amount(ast_records, product_jsonld_offers):
+    """Compare exact selected-source offer amount to same-SKU PDP JSON-LD.
+
+    Caller must have already validated a single matching SKU and origin.
+    This is product-level currency *corroboration*, NOT a direct per-offer
+    currency claim. Does not infer any shipping or make an offer publishable.
+    """
+    current = select_source_current_offer_amount(ast_records)
+    amount = current.get("priceCents")
+    result = {
+        "state": "PDP_OFFER_SOURCE_UNVERIFIED",
+        "selectedSourceOfferPriceCents": amount,
+        "productCurrencyCorroborated": None,
+        "sourceOfferAmountProductPriceCorroborated": False,
+        "offerCurrencyDirectlyVerified": False,
+        "customerPublishable": False,
+    }
+    if type(amount) is not int or not isinstance(product_jsonld_offers, list):
+        return result
+    pairs = set()
+    for offer in product_jsonld_offers:
+        if not isinstance(offer, dict):
+            return result
+        currency = offer.get("currency")
+        price = offer.get("priceCents")
+        if not isinstance(currency, str) or type(price) is not int:
+            return result
+        pairs.add((currency.upper().strip(), price))
+    if not pairs:
+        result["state"] = "PDP_PRODUCT_CURRENCY_PRICE_MISSING"
+        return result
+    if len(pairs) != 1:
+        result["state"] = "PDP_PRODUCT_OFFERS_CONFLICTING"
+        return result
+    currency, product_price = next(iter(pairs))
+    if product_price != amount:
+        result["state"] = "PDP_PRODUCT_OFFER_AMOUNT_MISMATCH"
+        return result
+    if currency != "AED":
+        result["state"] = "PDP_PRODUCT_CURRENCY_NOT_AED"
+        return result
+    result["state"] = "OFFER_PRICE_MATCHES_PRODUCT_AED_PRICE_NOT_SAME_OFFER_CURRENCY"
+    result["productCurrencyCorroborated"] = "AED"
+    result["sourceOfferAmountProductPriceCorroborated"] = True
+    return result
