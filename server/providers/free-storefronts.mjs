@@ -1,6 +1,7 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
 import {readAmazonHtmlStream} from "../amazon-body-stream.mjs";
-import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
+import { assessOfferMatch, createOfferMatchAssessor, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
+import {classifyResultGroup} from "../../src/search-result-intelligence.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
 import { moneyToSAR } from "../fx.mjs";
 import { SourceHttpError, parseRetryAfter, classifySourceError, classifySourceObservation, sourceRateLimitGuard } from "../../src/source-access-intelligence.mjs";
@@ -1636,6 +1637,26 @@ function virginAeCatalogUrl(query) {
   return null;
 }
 
+// Search-card lexical relevance is NOT proof that a buyer can see a correct
+// principal item. A related phone case, book, device part or unknown-condition
+// listing must never short-circuit the bounded PDP recovery window.
+// Reuse the same matching AND sold-subject classifier as JSON/SSE presentation.
+// Does not change any merchant price, condition, product or published exact flag.
+export function hasPresentableStorefrontPrincipal(query,offers=[]){
+  if(!Array.isArray(offers)||offers.length===0)return false;
+  const intent=parseSearchIntent(query);
+  const wantedCondition=intent.condition||"new";
+  const assess=createOfferMatchAssessor(query);
+  for(const raw of offers){
+    if(!raw || raw.condition!==wantedCondition)continue;
+    const scored={...raw,...assess(raw)};
+    if(scored.exactMatch!==true || scored.matchConfidence<0.9)continue;
+    if(classifyResultGroup(query,{bestOffer:scored},intent).lane==="direct")
+      return true;
+  }
+  return false;
+}
+
 export function selectStorefrontRecoveryLinks({
   query, directOffers = [], links = [], pageLimit = Infinity, searchBlocked = false,
   hadStructuredCards = false,
@@ -1644,8 +1665,10 @@ export function selectStorefrontRecoveryLinks({
   // Raw cards with unconvertible currencies are NOT an excuse for unbounded
   // network fan-out: treat them as rejected candidates and cap recovery at 2.
   if(!directOffers.length && !hadStructuredCards) return {links,attempted:0,reason:"NO_DIRECT_OFFERS",pageBudget:0};
-  const relevant=directOffers.length ? filterQueryOffers(query,directOffers).offers : [];
-  if(relevant.length) return {links:[],attempted:0,reason:"DIRECT_MATCHES_RETAINED",pageBudget:0};
+  // Do not confuse a source card being related with a presentable principal.
+  // This is a zero-network assessment of an already acquired bounded batch.
+  if(hasPresentableStorefrontPrincipal(query,directOffers))
+    return {links:[],attempted:0,reason:"DIRECT_MATCHES_RETAINED",pageBudget:0};
   const pageBudget=Math.max(0,Math.min(2,Number.isFinite(pageLimit) ? Math.floor(pageLimit) : 2));
   if(searchBlocked || !pageBudget) return {
     links:[],attempted:0,reason:searchBlocked?"ACQUISITION_BLOCKED":"BUDGET_DISABLED",pageBudget,
@@ -1997,8 +2020,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // DIRECT_MATCHES_RETAINED without consulting links. Avoid scanning a large
     // hydrated HTML page for links that cannot enter either PDP resolution or
     // customer-facing output. Keep the exact legacy scan on every recovery path.
-    const hasMatchingDirectOffers=directOffers.length>0 &&
-      filterQueryOffers(matchingQuery,directOffers).offers.length>0;
+    const hasMatchingDirectOffers=hasPresentableStorefrontPrincipal(
+      matchingQuery,directOffers);
     const links=html && !hasMatchingDirectOffers
       ? extractProductLinks(html,searchUrl,store,query,discoveryLimit)
       : [];
