@@ -663,8 +663,10 @@ def classify_product_intent(query: str, title: str) -> tuple[str, list[str], str
         if is_console_request:
             if not found(ps5):
                 return "mismatch", ["WRONG_CONSOLE_FAMILY"], condition
-            if found(r"\b(?:portal|remote player|video\s*game|videogame|physical disc|game disc|standard edition|game code|disc only|game only|download code)\b"):
-                return "mismatch", ["GAME_OR_REMOTE_PLAYER_NOT_PS5_CONSOLE"], condition
+            if found(r"\b(?:portal|remote player)\b"):
+                return "mismatch", ["ACCESSORY_NOT_PS5_CONSOLE"], condition
+            if found(r"\b(?:video\s*game|videogame|physical disc|game disc|standard edition|game code|disc only|game only|download code)\b"):
+                return "mismatch", ["GAME_NOT_PS5_CONSOLE"], condition
             if found(r"\b(?:cover|skin|case|faceplate|stand|dock|charging station|replacement|repair|disc drive|disk drive|optical drive)\b"):
                 return "mismatch", ["ACCESSORY_NOT_PS5_CONSOLE"], condition
             # "Controller for PS5 console" is not a console. But a console
