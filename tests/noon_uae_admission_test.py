@@ -297,6 +297,33 @@ class AdmissionGateTests(unittest.TestCase):
         self.assertEqual(result["currencyEvidenceTier"], "PRODUCT_SAME_SKU_EXACT_AMOUNT")
         self.assertFalse(result["gates"]["same_offer_currency_aed_verified"])
 
+    def test_fx_preview_only_after_offer_direct_evidence(self):
+        unproven = gate(live_report())["fxDisplayPreview"]
+        self.assertIsNone(unproven["convertedSarApprox"])
+        self.assertIsNone(unproven["sourcePriceAED"])
+        self.assertFalse(unproven["customerPublishable"])
+
+        proven = gate(with_direct_aed_evidence(live_report()))["fxDisplayPreview"]
+        self.assertEqual(proven["sourcePriceAED"], "1979.00")
+        self.assertEqual(proven["convertedSarApprox"], "2024.52")
+        self.assertEqual(proven["currencyEvidence"], "OFFER_DIRECT")
+        self.assertFalse(proven["customerPublishable"])
+
+    def test_fx_preview_refuses_stale_wrong_market_conflicts_and_missing_source(self):
+        for failure in ("stale", "wrong_market", "wrong_sku", "unavailable", "conflicting_currency"):
+            report = with_direct_aed_evidence(live_report())
+            if failure == "stale":
+                report["observedUtc"] = (NOW - timedelta(seconds=901)).isoformat()
+            elif failure == "wrong_market":
+                report["sourceMarket"] = "SA"
+            elif failure == "wrong_sku":
+                report["selectedSku"] = "N40633048X"
+            elif failure == "unavailable":
+                report["observations"][2]["httpStatus"] = 403
+            else:
+                report["tanstackTsrAst"]["candidateRecords"][0]["currency"] = "USD"
+            self.assertIsNone(gate(report)["fxDisplayPreview"]["convertedSarApprox"], failure)
+
     def test_exact_source_offer_aed_and_product_price_both_required(self):
         report = with_direct_aed_evidence(live_report())
         result = gate(report)
