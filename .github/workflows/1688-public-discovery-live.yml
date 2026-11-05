@@ -25,6 +25,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install locked test dependencies without postinstall scripts
+        run: npm ci --ignore-scripts
       - name: Validate staged discovery/robots rules
         run: node --test tests/1688-public-discovery.test.mjs tests/1688-cn-staged.test.mjs tests/1688-authorized-catalog.test.mjs
       - name: Collect actual 1688 robots and public-search diagnostic evidence (no retries)
