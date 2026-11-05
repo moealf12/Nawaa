@@ -1327,6 +1327,16 @@ class Scraper:
                 "diagnostics": [asdict(d) for d in self.diagnostics]}
 
 
+def result_exit_code(result: dict) -> int:
+    """Source outage is not a successful CLI search even with a partial label."""
+    if result.get("status") == "ok":
+        return 0
+    if (result.get("status") == "partial_or_unavailable"
+            and result.get("source_availability") == "search_accessible"):
+        return 0
+    return 2
+
+
 def main():
     parser = argparse.ArgumentParser(description="Public ecommerce product discovery and verified-evidence scraper")
     parser.add_argument("--store", required=True, help="HTTPS storefront URL")
@@ -1359,7 +1369,7 @@ def main():
         with open(args.out, "w", encoding="utf-8") as output:
             output.write(body + "\n")
         print(f"Saved {result['count']} products to {args.out}", file=sys.stderr)
-    return 0 if result["status"] in {"ok", "partial_or_unavailable"} else 2
+    return result_exit_code(result)
 
 
 if __name__ == "__main__":
