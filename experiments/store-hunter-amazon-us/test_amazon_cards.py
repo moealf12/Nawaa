@@ -747,3 +747,66 @@ class AmazonPriceProvenanceDedupTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(merged[0].currency)
         self.assertEqual(merged[0].price_source,"conflict")
         self.assertIn("SOURCE_PRICE_DISAGREEMENT",merged[0].issues)
+
+
+class AmazonRequestReductionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_successful_robots_policy_reused_between_queries(self):
+        from unittest.mock import AsyncMock, patch
+        import httpx
+        import nawaa_store_hunter as m
+        a=m.Scraper("https://www.amazon.com","headphones",1,1,"never")
+        b=m.Scraper("https://www.amazon.com","ps5",1,1,"never")
+        a._raw_get=AsyncMock(return_value=httpx.Response(
+            200,text="User-agent: *\nDisallow: /private\nAllow: /"))
+        b._raw_get=AsyncMock(side_effect=AssertionError("robots cache should satisfy this"))
+        try:
+            with patch.object(m,"_ROBOTS_CACHE",{}), \
+                 patch.object(m,"ensure_public_url",side_effect=lambda url,origin=None:url):
+                await a.prepare()
+                await b.prepare()
+                self.assertTrue(b.permitted("https://www.amazon.com/s?k=ps5"))
+                self.assertFalse(b.permitted("https://www.amazon.com/private"))
+                self.assertEqual(b._raw_get.await_count,0)
+                self.assertTrue(any(d.status=="cache_hit" for d in b.diagnostics))
+        finally:
+            await a.close()
+            await b.close()
+
+    async def test_robots_503_is_never_cached_as_allow(self):
+        from unittest.mock import AsyncMock, patch
+        import httpx
+        import nawaa_store_hunter as m
+        a=m.Scraper("https://www.amazon.com","headphones",1,1,"never")
+        b=m.Scraper("https://www.amazon.com","ps5",1,1,"never")
+        a._raw_get=AsyncMock(return_value=httpx.Response(503))
+        b._raw_get=AsyncMock(return_value=httpx.Response(
+            200,text="User-agent: *\nDisallow: /private\nAllow: /"))
+        try:
+            with patch.object(m,"_ROBOTS_CACHE",{}), \
+                 patch.object(m,"ensure_public_url",side_effect=lambda url,origin=None:url):
+                await a.prepare()
+                self.assertTrue(a._robots_blocked)
+                await b.prepare()
+                self.assertEqual(b._raw_get.await_count,1)
+                self.assertFalse(b.permitted("https://www.amazon.com/private"))
+        finally:
+            await a.close()
+            await b.close()
+
+    async def test_amazon_explicit_search_skips_homepage_fetch(self):
+        from unittest.mock import AsyncMock
+        import nawaa_store_hunter as m
+        scraper=m.Scraper("https://www.amazon.com","wireless headphones",1,1,"never","none",
+                          search_url="https://www.amazon.com/s?k={query}")
+        scraper.prepare=AsyncMock()
+        calls=[]
+        async def fake_fetch(method,url,params=None,headers=None):
+            calls.append(method)
+            if method=="search-html":return None
+            raise AssertionError("unexpected extra source request "+method)
+        scraper.fetch=fake_fetch
+        scraper.search_targets=lambda _:[("https://www.amazon.com/s",{"k":"wireless headphones"})]
+        result=await scraper.search()
+        await scraper.close()
+        self.assertEqual(calls,["search-html"])
+        self.assertEqual(result["count"],0)
