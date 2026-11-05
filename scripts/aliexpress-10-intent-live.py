@@ -87,7 +87,10 @@ def run_matrix():
         "customerPublishable": False,
         "pdpPriceVerified": False,
         "productsAccepted": 0,
+        "productsWithTitleTokenOverlap": 0,
+        "productsCrossScriptRelevanceUnverified": 0,
         "queriesWithTrustedSearchCards": 0,
+        "queriesWithCrossScriptCandidates": 0,
         "queries": [],
     }
     with requests.Session(impersonate="chrome") as session:
@@ -124,19 +127,40 @@ def run_matrix():
                     item["sourceItems"] = metrics["sourceItems"]
                     item["accepted"] = len(offers)
                     item["rejectedReasons"] = metrics["rejected"]
+                    direct = sum(
+                        offer.get("queryRelevanceEvidence") == "TITLE_TOKEN_OVERLAP"
+                        for offer in offers
+                    )
+                    cross_script = sum(
+                        offer.get("queryRelevanceEvidence") ==
+                        "MERCHANT_SEARCH_CROSS_SCRIPT_UNVERIFIED"
+                        for offer in offers
+                    )
+                    item["titleTokenOverlap"] = direct
+                    item["crossScriptRelevanceUnverified"] = cross_script
                     item["state"] = (
-                        "SEARCH_CARDS_UNVERIFIED_PDP" if offers
+                        "SEARCH_CROSS_SCRIPT_RELEVANCE_UNVERIFIED"
+                        if cross_script and not direct
+                        else "SEARCH_CARDS_UNVERIFIED_PDP" if offers
                         else "SEARCH_NO_ADMISSIBLE_CARDS"
                     )
                     report["productsAccepted"] += len(offers)
-                    if offers:
+                    report["productsWithTitleTokenOverlap"] += direct
+                    report["productsCrossScriptRelevanceUnverified"] += cross_script
+                    if direct:
                         report["queriesWithTrustedSearchCards"] += 1
+                    if cross_script:
+                        report["queriesWithCrossScriptCandidates"] += 1
             elif robot is not None:
                 item["state"] = "ROBOTS_DISALLOWED"
             report["queries"].append(item)
     assert len(report["queries"]) == MAX_ATTEMPTS
     assert all(item["customerPublishable"] is False for item in report["queries"])
     assert report["productsAccepted"] == sum(item["accepted"] for item in report["queries"])
+    assert report["productsAccepted"] == (
+        report["productsWithTitleTokenOverlap"] +
+        report["productsCrossScriptRelevanceUnverified"]
+    )
     return report
 
 
