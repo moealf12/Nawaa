@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {planUnknownCategorySpecialists}
+import {planUnknownCategorySpecialists,planSourceNativeModelQuery}
  from "../server/open-world-source-planner.mjs";
 import {planFreeStorefrontSpecialistBackfill,routeFreeStorefronts}
  from "../server/providers/free-storefronts.mjs";
@@ -122,4 +122,34 @@ test("P54: both real client paths use the same source planning, without touching
   assert.match(provider,/planFreeStorefrontSpecialistBackfill\(query/);
   assert.match(provider,/maxStores:storeLimit/);
   assert.match(server,/matchingQuery:query/);
+});
+
+test("P54: only source-native exact identifier is shortened for unknown-script model retrieval",()=>{
+  const input="جهاز مراقبة صناعي RF111";
+  const plan=planSourceNativeModelQuery(input,{allowModelRecall:true});
+  assert.equal(plan.query,"rf111");
+  assert.equal(plan.mode,"SOURCE_NATIVE_EXACT_MODEL_TOKEN");
+  assert.equal(plan.constraintsPreserved,false);
+  assert.equal(plan.finalMatchMustUseOriginal,true);
+  assert.equal(planSourceNativeModelQuery(input,{allowModelRecall:false}).mode,"ORIGINAL_QUERY");
+  for(const q of [
+    "English induction motor RF111",
+    "iPhone 17 256GB",
+    "صندوق يحتوي موديل RF111 و JKL123",
+    "هاتف سامسونج S25 Ultra",
+    "عطر رجالي للعيد",
+    "مستشعر تيار 44",
+    "câble de réseau RF111",
+  ]){
+    const x=planSourceNativeModelQuery(q,{allowModelRecall:true});
+    assert.equal(x.mode,"ORIGINAL_QUERY",q);
+  }
+});
+test("P54: query shortening cannot reclassify product, merge conditions or overwrite matching query",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const source=readFileSync(new URL("../server/providers/free-storefronts.mjs",import.meta.url),"utf8");
+  assert.match(source,/const nativePlan=planSourceNativeModelQuery\(query/);
+  assert.match(source,/const searchUrl = store\.search\(nativePlan\.query\)/);
+  assert.match(source,/extractEmbeddedSearchOffers\(html, searchPageFinalUrl \|\| searchUrl, store, query\)/);
+  assert.match(source,/filterQueryOffers\(matchingQuery,/);
 });
