@@ -1,0 +1,55 @@
+name: Google Shopping Direct — Robots-Gated Live Evidence
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/google-shopping-direct-live.yml"
+      - "scripts/google-shopping-direct-live.mjs"
+      - "src/google-shopping-direct-policy.mjs"
+      - "tests/google-shopping-direct-policy.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-shopping-direct-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  robots-first-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install existing locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Verify policy precedence and fail-closed behavior
+        run: node --test tests/google-shopping-direct-policy.test.mjs
+      - name: Run actual robots and admitted-landing HTTP probe — NO Shopping search fetches
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/google-shopping-direct-live.mjs
+      - name: Verify source-isolation acceptance from real run
+        run: |
+          node --input-type=module -e '
+          import {readFileSync} from "node:fs";
+          const a=JSON.parse(readFileSync("google-shopping-direct-live.json","utf8"));
+          if(a.state!=="DIRECT_SEARCH_ROBOTS_BLOCKED" ||
+             a.queriedIntents.length!==3 ||
+             a.queriedIntents.some(q=>q.allowedSearchPaths!==0) ||
+             a.directQueriesFetched!==0 || a.publishableOffers!==0 ||
+             a.verifiedPrices!==0) process.exit(1);
+          console.log("PROVEN: direct Google Shopping acquisition is disallowed by live robots; no query requests made");
+          '
+      - name: Upload bounded live evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-shopping-direct-live-robots-audit
+          path: google-shopping-direct-live.json
+          retention-days: 14
+          if-no-files-found: warn
