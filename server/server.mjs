@@ -39,6 +39,7 @@ import { amazonPartialEvidenceError } from "./amazon-page-evidence.mjs";
 import {amazonBatchBudgetWithinRequest} from "./amazon-request-budget.mjs";
 import { sourceReliability } from "./source-reliability.mjs";
 import {retryDeniedStorefrontIds,providersPendingAfterFallback,genericStorefrontPassExclusions} from "./source-fallback-policy.mjs";
+import {inspectFirstPassRecall,planOpenWorldStorefrontBackfill} from "./open-world-recall-policy.mjs";
 import { auditFreeStorefronts } from "./source-audit.mjs";
 import { createInternalAuditHandler } from "./internal-audit.mjs";
 import { upsertPimProduct, pimConfigured } from "./pim-bridge.mjs";
@@ -871,17 +872,15 @@ async function searchAll(query, { depth = 0, signal } = {}) {
     ...offer,
     ...assessSearchOffer(offer),
   }));
-  const relevantPrimary = primaryAssessed.filter((offer) => (offer.matchConfidence || 0) >= 0.65);
-  const primaryMerchants = new Set(relevantPrimary.map(offerMerchantKey)).size;
-  const intent = parseSearchIntent(query);
-  const broadDiscovery = intent.discoveryMode === "brand" || (!intent.model && !intent.storage && !intent.color && !intent.condition);
-  const minimumUsefulOffers = broadDiscovery ? 20 : 6;
-  // Never suppress global/local discovery merely because one marketplace
-  // (usually Amazon) already returned many hits. More sources can still contain
-  // the world's lowest price.
-  const needsRecallExpansion =
-    relevantPrimary.length < minimumUsefulOffers ||
-    (broadDiscovery && primaryMerchants < 2 && relevantPrimary.length < 40);
+  // Related cards are not an adequate stopping condition. The real
+  // browser's sold-subject, condition and discovery gates determine whether
+  // even ONE confirmed principal can be presented. This applies equally to
+  // arbitrary Arabic/English vocabulary and recognized device models.
+  const recallEvidence=inspectFirstPassRecall(query,primaryAssessed,{
+    merchantKey:offerMerchantKey,
+  });
+  const needsRecallExpansion=recallEvidence.needsExpansion;
+  let recallBackfillMode="none";
   let hardDeniedFallbackStores=0;
   if (needsRecallExpansion) {
     const retryDeniedIds=retryDeniedStorefrontIds(primary.errors,{
@@ -897,6 +896,7 @@ async function searchAll(query, { depth = 0, signal } = {}) {
       ? fallbackQueries.slice(0, 4)
       : fallbackQueries.slice(0, 1);
     if (expansionQueries.length) {
+      recallBackfillMode="alternate_source_query";
       const expansions = await Promise.all(expansionQueries.map((candidate) => {
         const completedFallbackChunks=[];
         const controller=new AbortController();
@@ -927,6 +927,52 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         providers = providers.concat(fallback.providers);
         errors = errors.concat(fallback.errors);
         offers = offers.concat(fallback.offers);
+      }
+    } else if(recallEvidence.strictPrincipalObserved===0) {
+      // Unrecognized/open-world queries have no safe lexical relaxation.
+      // Search the next disjoint MERCHANT window once, not the same first
+      // wave twice. Final admission still matches the ORIGINAL query.
+      const backfill=planOpenWorldStorefrontBackfill(query,
+        configuredFreeStorefronts().length,{
+          firstWaveStorefrontLimit:plan.storefrontLimit,
+        });
+      if(backfill){
+        recallBackfillMode="disjoint_storefronts";
+        fallbackQuery=providerQuery;
+        const controller=new AbortController();
+        const fallbackSignal=AbortSignal.any([requestController.signal,controller.signal]);
+        const excluded=genericStorefrontPassExclusions(retryDeniedIds,{
+          registeredIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
+        });
+        const fallback=await beforeRequestDeadline(
+          () => searchFreeStorefronts(providerQuery,{
+            ...backfill,matchingQuery:query,
+            excludeStoreIds:excluded,stableRouting:true,
+            signal:fallbackSignal,
+          }).catch(error=>({
+            provider:"free-storefronts",offers:[],errors:[{
+              error:error instanceof Error?error.message:"open_world_source_failed",
+            }],diagnostics:[],searchedMarkets:[],
+          })),
+          () => ({provider:"free-storefronts",offers:[],errors:[{
+            error:"fallback_budget_limited",
+          }],diagnostics:[],searchedMarkets:[]}),
+          {reserveMs:1800,
+            onBudget:()=>controller.abort(new Error("fallback_budget_limited"))}
+        );
+        providers.push({
+          provider:"free-storefronts",
+          sourceId:"free-storefronts:open-world-backfill",
+          ok:Boolean(fallback.offers?.length),pass:"fallback",
+          returnedOffers:fallback.offers?.length||0,
+          searchedMarkets:fallback.searchedMarkets||[],
+          diagnostics:fallback.diagnostics||[],
+        });
+        errors.push(...(fallback.errors||[]).map(issue=>({
+          provider:"free-storefronts",
+          sourceId:"free-storefronts",pass:"fallback",...issue,
+        })));
+        offers=offers.concat(fallback.offers||[]);
       }
     }
   }
@@ -1010,6 +1056,14 @@ async function searchAll(query, { depth = 0, signal } = {}) {
         perWaveResults:plan.resultLimit,
       },
       fallbackUsed: Boolean(fallbackQuery),
+      recallExpansionEvidence:{
+        reason:recallEvidence.reason,
+        principalGroupsObserved:recallEvidence.strictPrincipalObserved,
+        weakRelatedOffers:recallEvidence.weakRelatedCount,
+        primaryMerchants:recallEvidence.relevantMerchants,
+        probeTruncated:recallEvidence.strictProbeTruncated===true,
+        mode:recallBackfillMode,
+      },
       partial:deadlineExceeded || errors.length>0,
       complete:!deadlineExceeded && errors.length===0,
       deadlineExceeded,
