@@ -18,6 +18,7 @@ on:
       - "tests/aliexpress-product-evidence.test.mjs"
       - "scripts/aliexpress-product-evidence-live.mjs"
       - "scripts/aliexpress-10-intent-live.py"
+      - "scripts/aliexpress-official-pdp-host-matrix.py"
       - "scripts/aliexpress-browser-dom-smoke.py"
       - "tests/aliexpress_browser_dom_test.py"
       - "tests/aliexpress_public_html_test.py"
@@ -146,6 +147,52 @@ jobs:
         with:
           name: aliexpress-10-intent-live
           path: aliexpress-10-intent-live-matrix.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Inspect same-ID PDP access on regional first-party hosts. Each direct
+  # origin is independently robots-gated; never merge cross-ID aliases.
+  merchant-official-pdp-host-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install isolated public PDP parser dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+      - name: Syntax and provenance guard
+        run: |
+          python -m py_compile scripts/aliexpress-official-pdp-host-matrix.py
+          ruff check --select E4,E7,E9,F scripts/aliexpress-official-pdp-host-matrix.py
+      - name: Read four official exact-ID PDP entrypoints under robots policy
+        run: |
+          python scripts/aliexpress-official-pdp-host-matrix.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("aliexpress-official-pdp-host-matrix.json").read_text())
+          assert d["caseCount"] == 4
+          assert len(d["cases"]) == 4
+          assert d["proxyUsed"] is False
+          assert d["captchaSolved"] is False
+          assert d["loginAttempted"] is False
+          assert d["retries"] == 0
+          assert d["customerPublishable"] is False
+          assert d["priceVerifiedForOriginalSearchItem"] is False
+          assert all(case["selectedSkuProven"] is False for case in d["cases"])
+          assert all(case["customerPublishable"] is False for case in d["cases"])
+          print("NAWAA_ALIEXPRESS_OFFICIAL_HOST_GUARD PASS")
+          PY
+      - name: Preserve only bounded source-policy and PDP states
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aliexpress-official-pdp-host-matrix
+          path: aliexpress-official-pdp-host-matrix.json
           if-no-files-found: warn
           retention-days: 14
 
