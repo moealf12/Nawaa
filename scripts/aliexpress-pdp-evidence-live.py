@@ -14,6 +14,7 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
@@ -27,6 +28,13 @@ _spec = importlib.util.spec_from_file_location(
 _shared = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = _shared
 _spec.loader.exec_module(_shared)
+
+_dom_spec = importlib.util.spec_from_file_location(
+    "aliexpress_pdp_dom", Path(__file__).resolve().with_name("aliexpress-pdp-dom.py")
+)
+_dom = importlib.util.module_from_spec(_dom_spec)
+sys.modules[_dom_spec.name] = _dom
+_dom_spec.loader.exec_module(_dom)
 
 MAX_PDP_BYTES = 3_500_000
 PDP_HOST = os.getenv("ALIEXPRESS_PDP_HOST", "ar.aliexpress.com").strip()
@@ -376,19 +384,39 @@ def probe_item(item_id, *, trace_alias=False):
                     image_meta.get("content") if image_meta else None
                 )
                 jsonld = safely_matched_product_jsonld(html, current_item_id)
+                dom = _dom.read_pdp_dom_evidence(html, current_item_id, current)
                 report["productIdentity"] = {
                     "pageTitleCandidate": title or None,
                     "sourceImageCandidate": image,
                     "identitySource": "PDP_META_NOT_OFFER_PROOF",
                     "jsonLd": jsonld,
+                    "dom": dom,
                 }
-                report["conclusion"] = (
-                    "PDP_ALIAS_IDENTITY_AND_PRICE_NOT_CORROBORATED"
-                    if report["aliasCandidate"] else
-                    "PDP_PRODUCT_JSONLD_PRICE_CANDIDATE"
-                    if jsonld["state"] == "SAME_ITEM_JSONLD_PRICE_CANDIDATE"
-                    else "PDP_RECEIVED_PRICE_NOT_ATTESTED"
-                )
+                # A DOM price can corroborate JSON-LD or supply an independently
+                # sourced PDP candidate, but disagreement voids both.
+                jsonld_price = jsonld.get("priceEvidence")
+                dom_price = dom.get("priceCandidate")
+                conflict = bool(jsonld_price and dom_price and (
+                    Decimal(jsonld_price["priceOriginal"]) !=
+                    Decimal(dom_price["priceOriginal"]) or
+                    jsonld_price["currency"] != dom_price["currency"]
+                ))
+                if dom["state"] == "DOM_CANONICAL_ID_CONFLICT":
+                    report["conclusion"] = "PDP_DOCUMENT_IDENTITY_CONFLICT"
+                elif conflict or dom["state"] == "DOM_PRICE_EVIDENCE_CONFLICT":
+                    report["conclusion"] = "PDP_PRICE_EVIDENCE_CONFLICT"
+                elif report["aliasCandidate"]:
+                    report["conclusion"] = "PDP_ALIAS_IDENTITY_AND_PRICE_NOT_CORROBORATED"
+                elif jsonld_price:
+                    report["conclusion"] = "PDP_PRODUCT_JSONLD_PRICE_CANDIDATE"
+                elif dom_price:
+                    report["conclusion"] = (
+                        "PDP_DOM_PRICE_WITH_VARIANT_AMBIGUITY"
+                        if dom["state"] == "DOM_PRICE_CANDIDATE_VARIANT_AMBIGUOUS"
+                        else "PDP_PRODUCT_DOM_PRICE_CANDIDATE"
+                    )
+                else:
+                    report["conclusion"] = "PDP_RECEIVED_PRICE_NOT_ATTESTED"
                 return report
             except Exception as exc:
                 report["stages"].append({
@@ -411,7 +439,8 @@ def main():
         handle.write("\n")
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if report["conclusion"] not in (
-        "PDP_PRODUCT_JSONLD_PRICE_CANDIDATE", "PDP_RECEIVED_PRICE_NOT_ATTESTED"
+        "PDP_PRODUCT_JSONLD_PRICE_CANDIDATE", "PDP_RECEIVED_PRICE_NOT_ATTESTED",
+        "PDP_PRODUCT_DOM_PRICE_CANDIDATE", "PDP_DOM_PRICE_WITH_VARIANT_AMBIGUITY"
     ):
         raise SystemExit(1)
 
