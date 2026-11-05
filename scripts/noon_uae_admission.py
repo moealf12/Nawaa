@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 
 from noon_uae_price_precision import (
     interpret_price_surfaces, select_source_current_offer_amount,
+    corroborate_selected_pdp_offer_amount,
 )
+from noon_uae_price_policy import cents
 
 SKU = re.compile(r"(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)", re.I)
 REQUIRED_STAGES = ("warmup", "plp_live", "one_offer_linked_pdp")
