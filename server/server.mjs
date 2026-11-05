@@ -551,6 +551,7 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   const configuredDeadline=Number(process.env.SEARCH_STREAM_DEADLINE_MS);
   const streamDeadlineMs=Number.isFinite(configuredDeadline) && configuredDeadline>0
     ? Math.max(150,Math.min(25000,Math.floor(configuredDeadline))) : 11000;
+  const streamDeadlineAt=Date.now()+streamDeadlineMs;
   const primaryCount=OMEGA_INDEX_ONLY?0:providerTasks(providerQuery,query,{plan}).length;
   const controller=new AbortController();
   const forwardAbort=()=>controller.abort(signal.reason || new Error("search_client_disconnected"));
@@ -641,6 +642,82 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
   });
   const outcome=await Promise.race([finished,deadline,disconnected]);
   clearTimeout(timer);
+
+  // SSE is the customer's default search path. When its first wave completes
+  // without a REAL presentable principal, use the NEXT independent merchant
+  // window (not a second run of the same source). Stay within the original
+  // stream deadline and reserve CPU time for final publication.
+  let streamBackfillMode="none",streamBackfillBudgetExpired=false;
+  if(outcome==="complete"&&!controller.signal.aborted &&
+      streamDeadlineAt-Date.now()>2200){
+    const assessor=createOfferMatchAssessor(query);
+    const scored=dedupeNormalizedOffers(offers)
+      .map(offer=>({...offer,...assessor(offer)}));
+    const observed=inspectFirstPassRecall(query,scored,{
+      merchantKey:offerMerchantKey,
+    });
+    if(observed.strictPrincipalObserved===0){
+      const backfill=planOpenWorldStorefrontBackfill(query,
+        configuredFreeStorefronts().length,{
+          firstWaveStorefrontLimit:plan.storefrontLimit,
+        });
+      if(backfill){
+        const available=streamDeadlineAt-Date.now()-800;
+        if(available>=1200){
+          streamBackfillMode="disjoint_storefronts";
+          const backfillController=new AbortController();
+          const backfillSignal=AbortSignal.any([
+            controller.signal,backfillController.signal,
+          ]);
+          const budgetTimer=setTimeout(()=>
+            backfillController.abort(new Error("fallback_budget_limited")),
+            Math.min(3500,available));
+          try{
+            const denied=retryDeniedStorefrontIds(errors,{
+              registeredIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
+            });
+            const recovered=await searchFreeStorefronts(providerQuery,{
+              ...backfill,matchingQuery:query,
+              excludeStoreIds:genericStorefrontPassExclusions(denied,{
+                registeredIds:new Set(configuredFreeStorefronts().map(store=>store.id)),
+              }),
+              stableRouting:true,signal:backfillSignal,
+            });
+            if(!controller.signal.aborted){
+              providers.push({
+                provider:"free-storefronts",
+                sourceId:"free-storefronts:open-world-backfill",
+                ok:Boolean(recovered.offers?.length),pass:"fallback",
+                returnedOffers:recovered.offers?.length||0,
+                searchedMarkets:recovered.searchedMarkets||[],
+                diagnostics:recovered.diagnostics||[],
+              });
+              errors.push(...(recovered.errors||[]).map(issue=>({
+                provider:"free-storefronts",sourceId:"free-storefronts",
+                pass:"fallback",...issue,
+              })));
+              if(recovered.offers?.length){
+                offers.push(...recovered.offers);
+                await emit({completed:primaryCompleted,pending:0});
+              }
+            }
+          }catch{
+            if(!controller.signal.aborted)errors.push({
+              provider:"free-storefronts",sourceId:"free-storefronts",
+              pass:"fallback",error:"open_world_source_failed",
+            });
+          }finally{
+            clearTimeout(budgetTimer);
+            if(backfillController.signal.aborted && !controller.signal.aborted){
+              streamBackfillBudgetExpired=true;
+              errors.push({provider:"search",sourceId:"search",
+                pass:"fallback",error:"fallback_budget_limited"});
+            }
+          }
+        }
+      }
+    }
+  }
   // Freeze the result before aborting the remaining transport. Late fulfillment
   // cannot send more SSE data or corrupt the finalized offer list.
   accepting=false;
@@ -677,14 +754,16 @@ async function streamSearchProgress(query, onSnapshot, {signal} = {}) {
       deadlineExceeded,
       streamDeadlineMs,
       catalogRecall:summarizeCatalogRecall(localCatalogEvidence,catalogRecallPlan(0)),
-      providersPending,
+      providersPending:streamBackfillBudgetExpired?null:providersPending,
+      fallbackUsed:streamBackfillMode!=="none",
+      recallBackfillMode:streamBackfillMode,
       sourceFailures:summarizeSourceFailures(errors),
       acquisitionDepth:plan.depth,
       moreAvailable:plan.depth<MAX_SEARCH_DEPTH,
     },
     providers,
     normalizedQuery:query,
-    fallbackQuery:null,
+    fallbackQuery:streamBackfillMode!=="none"?providerQuery:null,
     offers:selectedOffers,
     errors,
   };
