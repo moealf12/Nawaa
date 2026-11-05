@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from noon_uae_price_policy import assess_offer, cents, corroborate_sources  # noqa: E402
+from noon_uae_price_policy import assess_offer, cents, corroborate_sources, aed_to_sar_estimate  # noqa: E402
 
 SKU = "N40633047A"
 OFFER = "f24643243856845e"
@@ -76,6 +76,13 @@ class PolicyTests(unittest.TestCase):
             self.assertEqual(
                 audit(pdp_price=price)["decision"], "PRICE_MISSING_OR_INVALID"
             )
+
+    def test_simple_aed_to_sar_estimate(self):
+        self.assertEqual(aed_to_sar_estimate("1000.00"), "1023.00")
+        self.assertEqual(aed_to_sar_estimate("19.99"), "20.45")
+        self.assertEqual(aed_to_sar_estimate("0.01"), "0.01")
+        for invalid in (None, True, -5, "1e3", "2,099.00", "NaN"):
+            self.assertIsNone(aed_to_sar_estimate(invalid))
 
     def test_cent_precision_exact(self):
         self.assertEqual(cents("2099.05"), 209905)
