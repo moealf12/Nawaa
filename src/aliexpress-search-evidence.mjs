@@ -69,6 +69,25 @@ function merchantImage(raw) {
   } catch { return null; }
 }
 
+function itemAnchorsByExactId(html) {
+  // A source DOM anchor is an independent publisher-origin link; if
+  // productDetailUrl points at a campaign/BundleDeals page, never fabricate a
+  // PDP from the numeric ID. Keep only an ACTUAL <a href> from that HTML with
+  // the same item ID and a strictly verified AliExpress HTTPS hostname.
+  const found=new Map();
+  const re=/<a\b[^>]*\bhref\s*=\s*(["'])([\s\S]*?)\1/gi;
+  let scanned=0;
+  for(const match of html.matchAll(re)){
+    if(++scanned>550)break;
+    const raw=match[2].replace(/&amp;/gi,"&").replace(/&#38;/g,"&");
+    const id=/\/item\/(\d{10,20})\.html/i.exec(raw)?.[1];
+    if(!id || found.has(id))continue;
+    const url=merchantItemUrl(raw,id);
+    if(url)found.set(id,url);
+  }
+  return found;
+}
+
 // normalizeQuery is injected from the central NAWAA query engine so Arabic,
 // English and mixed search retain the same existing token normalization.
 export function extractAliExpressSearchEvidence(html, query, diagnostics = null, normalizeQuery = value => String(value).toLowerCase().trim()) {
@@ -101,6 +120,7 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
   const tokens = String(normalizeQuery(query) || "").split(/\s+/).filter(token => token.length >= 2);
   const offers = [];
   const seen = new Set();
+  const anchorLinks = itemAnchorsByExactId(src);
   // Cap both the number of inspected objects and how much of each object is
   // scanned; malformed hydration may not fan out into an unbounded parse.
   for (const match of src.matchAll(PRODUCT_MARKER)) {
@@ -130,7 +150,8 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
     }
     const image = merchantImage(item.image?.imgUrl);
     if (!image) { reject("SOURCE_IMAGE_UNVERIFIED"); continue; }
-    const sourceUrl = merchantItemUrl(item.productDetailUrl || item.productUrl, productId);
+    const sourceUrl = merchantItemUrl(item.productDetailUrl || item.productUrl, productId)
+      || anchorLinks.get(productId) || null;
     if (!sourceUrl) { reject("SOURCE_PDP_LINK_IDENTITY_UNVERIFIED", productId); continue; }
     seen.add(productId);
     offers.push({
