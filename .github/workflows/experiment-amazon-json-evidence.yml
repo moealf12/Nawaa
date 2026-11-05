@@ -1,0 +1,49 @@
+name: EXPERIMENT Amazon US JSON and JSON-LD Evidence (no-deploy)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - experiments/store-hunter-amazon-us/amazon_us_json_jsonld_probe.py
+      - experiments/store-hunter-amazon-us/amazon_us_inline_json_forensics.py
+      - .github/workflows/experiment-amazon-json-evidence.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: experiment-amazon-json-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  json-pdp-evidence:
+    if: github.event_name == 'pull_request' && github.head_ref == 'experiment/store-hunter-amazon-us-isolated-20261105'
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install standalone experiment parsers
+        run: python -m pip install --disable-pip-version-check 'httpx>=0.27,<1' 'beautifulsoup4>=4.12,<5'
+      - name: Compile evidence probes
+        run: python -m py_compile experiments/store-hunter-amazon-us/amazon_us_json_jsonld_probe.py experiments/store-hunter-amazon-us/amazon_us_inline_json_forensics.py
+      - name: Public Amazon PDP JSON-LD and typed JSON 10-ASIN study
+        env:
+          PYTHONPATH: experiments/store-hunter-amazon-us
+        run: python experiments/store-hunter-amazon-us/amazon_us_json_jsonld_probe.py
+      - name: Amazon embedded inline JSON structural evidence 6-ASIN study
+        env:
+          PYTHONPATH: experiments/store-hunter-amazon-us
+        run: python experiments/store-hunter-amazon-us/amazon_us_inline_json_forensics.py
+      - name: Preserve raw-result-free evidence JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amazon-us-json-jsonld-evidence-macos
+          path: |
+            artifacts/amazon-us-json-ld-json-live.json
+            artifacts/amazon-us-inline-json-forensics.json
+          if-no-files-found: warn
+          retention-days: 3
