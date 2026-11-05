@@ -52,7 +52,8 @@ jobs:
         run: |
           python -m py_compile scripts/noon-uae-multi-query-live.py scripts/noon_uae_price_policy.py
           ruff check --select E4,E7,E9,F scripts/noon-uae-multi-query-live.py scripts/noon_uae_price_policy.py tests/noon_uae_price_policy_test.py
-          python -m unittest discover -s tests -p "noon_uae_*_test.py" -v
+          python -m unittest discover -s tests -p "noon_uae_price_policy_test.py" -v
+          python -m unittest discover -s tests -p "noon_uae_admission_test.py" -v
       - name: Acquire merchant HTML LIVE and validate product cards
         env:
           PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
