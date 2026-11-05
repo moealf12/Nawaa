@@ -6,6 +6,7 @@ on:
     paths:
       - experiments/store-hunter-amazon-us/amazon_us_json_jsonld_probe.py
       - experiments/store-hunter-amazon-us/amazon_us_inline_json_forensics.py
+      - experiments/store-hunter-amazon-us/amazon_us_a_state_price_json_probe.py
       - .github/workflows/experiment-amazon-json-evidence.yml
 
 permissions:
@@ -37,6 +38,10 @@ jobs:
         env:
           PYTHONPATH: experiments/store-hunter-amazon-us
         run: python experiments/store-hunter-amazon-us/amazon_us_inline_json_forensics.py
+      - name: Verify live Amazon a-state JSON priceToPay is ASIN- and USD-bound
+        env:
+          PYTHONPATH: experiments/store-hunter-amazon-us
+        run: python experiments/store-hunter-amazon-us/amazon_us_a_state_price_json_probe.py
       - name: Preserve raw-result-free evidence JSON
         if: always()
         uses: actions/upload-artifact@v4
@@ -45,5 +50,6 @@ jobs:
           path: |
             artifacts/amazon-us-json-ld-json-live.json
             artifacts/amazon-us-inline-json-forensics.json
+            artifacts/amazon-us-a-state-price-json.json
           if-no-files-found: warn
           retention-days: 3
