@@ -81,3 +81,29 @@ export function planUnknownCategorySpecialists({
     selection:"QUERY_STABLE_APPROVED_SOURCE_CATEGORY_ROUND_ROBIN",
   };
 }
+
+// Source-native model recall is the ONLY reversible query shortening allowed
+// without a multilingual dictionary or verified merchant language contract.
+// A manufacturer-like ASCII model token in an otherwise unfamiliar-script
+// query is exact source-owned RETRIEVAL syntax, not translation of meaning.
+// Original shopper query is ALWAYS the matching/condition/identity contract.
+export function planSourceNativeModelQuery(query,{allowModelRecall=false}={}){
+  const primary=normalizeSearchQuery(query||"");
+  const fallback={query:primary,mode:"ORIGINAL_QUERY",constraintsPreserved:true};
+  if(!allowModelRecall||!primary)return fallback;
+  const intent=parseSearchIntent(primary);
+  if(intent.category||intent.brand)return fallback;
+  const foreignScript=/[\p{Script=Arabic}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Cyrillic}]/u.test(primary);
+  if(!foreignScript)return fallback;
+  const tokens=primary.split(" ");
+  const ids=[...new Set(tokens.filter(t=>t.length>=5&&t.length<=24&&
+    /^[a-z0-9]+$/.test(t)&&/[a-z]/.test(t)&&/[0-9]/.test(t) &&
+    !/^(?:iphone|galaxy|ps5)/.test(t)))];
+  if(ids.length!==1)return fallback;
+  return {query:ids[0],mode:"SOURCE_NATIVE_EXACT_MODEL_TOKEN",
+    constraintsPreserved:false,
+    // This is a discovery-only broadening. Do not send this shortened query
+    // to classification, source-price identity or final ranking.
+    finalMatchMustUseOriginal:true,
+  };
+}
