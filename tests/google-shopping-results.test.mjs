@@ -139,6 +139,22 @@ test("Google Shopping: absolute monthly quota stops additional distinct searches
  assert.equal(calls,1);
 });
 
+test("Google Shopping: cap hourly free-tier requests independently of monthly budget",async()=>{
+ let calls=0;
+ const client=createGoogleShoppingResultsClient({
+   enabled:true,apiKey:"example_private_serpapi_key_123456",
+   monthlyCap:200,hourlyCap:1,
+   fetchImpl:async()=>{calls++;return new Response(JSON.stringify(body([product()])),{
+     headers:{"content-type":"application/json"}})},
+ });
+ assert.equal((await client.run("AirPods 3")).status,200);
+ const blocked=await client.run("Galaxy S26");
+ assert.equal(blocked.status,429);
+ assert.equal(blocked.body.error,"shopping_hourly_budget_exhausted");
+ assert.equal(calls,1);
+ assert.equal(client.status().hourlyCalls,1);
+});
+
 test("Google Shopping: concurrent identical queries reuse a single provider call",async()=>{
  let calls=0;
  const client=createGoogleShoppingResultsClient({
