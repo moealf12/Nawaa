@@ -81,6 +81,28 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # Exact production-import contract, not just the isolated Python adapter.
+  native-node-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install checked-in dependencies without provisioning runtimes
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run AliExpress and actual production provider import contracts
+        env:
+          NAWAA_TEST_TRANSPORT: fetch
+        run: |
+          node --test \
+            tests/aliexpress-native-structured.test.mjs \
+            tests/aliexpress-product-url-provenance.test.mjs \
+            tests/r04-aliexpress-redirect-identity.test.mjs \
+            tests/providers.test.mjs
+
   # One representative live alias trace. A challenge or blocked PDP remains
   # explicit diagnostic evidence, never a verified offer or CI false positive.
   merchant-alias-lineage-diagnostic:
