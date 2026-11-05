@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
 
 SKU = re.compile(r"(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)", re.I)
 OFFER = re.compile(r"[A-Za-z0-9-]{1,100}")
