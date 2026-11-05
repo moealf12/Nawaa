@@ -1,6 +1,7 @@
 // NAWAA 1688 staged provider. No network requests or production activation.
 // Catalog input must come from an independently authorized 1688 data channel.
 import { moneyToSAR } from "../fx.mjs";
+import { fetchAuthorized1688Catalog, is1688Configured } from "../authorized-1688-catalog.mjs";
 
 function number(value) {
   if (typeof value !== "number" && (typeof value !== "string" || !/^\d+(?:\.\d+)?$/.test(value.trim()))) return null;
@@ -96,7 +97,7 @@ export async function parse1688Catalog(payload, {
 
 // Explicitly injected authorized catalog client. No fallback to page scraping.
 export async function search1688(query, {catalogSearch, signal, ...options} = {}) {
-  if (typeof catalogSearch !== "function") return {
+  if (typeof catalogSearch !== "function" && !is1688Configured(options.env || process.env)) return {
     provider: "1688-cn", ok: false, offers: [],
     errors: [{ error: "1688_AUTHORIZED_CATALOG_NOT_CONFIGURED" }],
   };
@@ -105,7 +106,7 @@ export async function search1688(query, {catalogSearch, signal, ...options} = {}
   };
   signal?.throwIfAborted();
   try {
-    const payload = await catalogSearch(query.trim(), {signal, limit: options.limit ?? 20});
+    const payload = await (catalogSearch || ((q, args) => fetchAuthorized1688Catalog(q, {...args, ...options})))(query.trim(), {signal, limit: options.limit ?? 20});
     signal?.throwIfAborted();
     const parsed = await parse1688Catalog(payload, options);
     return { provider: "1688-cn", ok: parsed.offers.length > 0,
