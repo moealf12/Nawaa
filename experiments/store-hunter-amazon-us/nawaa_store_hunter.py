@@ -1200,7 +1200,19 @@ class Scraper:
                     product.image = next((p.image for p in matches if p.image), None)
                 if not product.sku:
                     product.sku = next((p.sku for p in matches if p.sku), None)
-        await asyncio.gather(*(enrich(p) for p in unresolved[:self.maximum]))
+        async def isolated_enrich(product: Product):
+            try:
+                await enrich(product)
+            except asyncio.CancelledError:
+                # Aborted requests must propagate rather than silently
+                # continuing source traffic after caller cancellation.
+                raise
+            except Exception as exc:
+                product.issues.append("PDP_ENRICHMENT_EXCEPTION")
+                self.log("pdp-evidence", product.url, "PDP_ENRICHMENT_EXCEPTION",
+                         detail=type(exc).__name__ + ": " + str(exc)[:120])
+
+        await asyncio.gather(*(isolated_enrich(p) for p in unresolved[:self.maximum]))
         products = self.merge(products)
         for p in products:
             if p.price_status == "candidate":
