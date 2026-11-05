@@ -459,28 +459,43 @@ def parse_amazon_us_pdp(html: str, page: str) -> list[Product]:
 
     price = None
     price_problem = "AMAZON_PDP_BUYBOX_PRICE_NOT_FOUND"
+    price_region = None
+    # Multiple Amazon display modules may coexist. An empty first module is
+    # NOT evidence the other primary modules lack a usable current price.
+    # Disagreeing primary modules are *conflicts*, never a chosen cheapest price.
     selectors = (
-        "#corePrice_feature_div .a-price:not(.a-text-price) .a-offscreen",
-        "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price) .a-offscreen",
-        "#apex_desktop .a-price:not(.a-text-price) .a-offscreen",
-        "#priceblock_dealprice", "#priceblock_ourprice", "#price_inside_buybox"
+        ("corePrice_feature", "#corePrice_feature_div .a-price:not(.a-text-price) .a-offscreen"),
+        ("corePriceDisplay_desktop", "#corePriceDisplay_desktop_feature_div .a-price:not(.a-text-price) .a-offscreen"),
+        ("apex_desktop", "#apex_desktop .a-price:not(.a-text-price) .a-offscreen"),
+        ("buybox_deal", "#priceblock_dealprice"),
+        ("buybox_our", "#priceblock_ourprice"),
+        ("buybox_inside", "#price_inside_buybox"),
     )
-    for selector in selectors:
-        matches = soup.select(selector)
-        if not matches:
+    primary_values: set[str] = set()
+    regions_seen: list[str] = []
+    ambiguous_region = False
+    for name, selector in selectors:
+        nodes = soup.select(selector)
+        if not nodes:
             continue
-        prices = {v for el in matches if (raw := el.get_text(" ", strip=True))
+        prices = {value for el in nodes if (raw := el.get_text(" ", strip=True))
                   if (raw.startswith("$") or re.search(r"\bUSD\b", raw, re.I))
-                  if (v := number_price(raw)) is not None}
-        if len(prices) == 1:
-            price = next(iter(prices))
-            price_problem = ""
-        elif len(prices) > 1:
-            price_problem = "AMAZON_PDP_MULTIPLE_BUYBOX_PRICES"
-        break
-    if price is None and price_problem == "AMAZON_PDP_BUYBOX_PRICE_NOT_FOUND":
-        if soup.select("span.a-price:not(.a-text-price) span.a-offscreen"):
-            price_problem = "AMAZON_PDP_PRIMARY_PRICE_NOT_EVIDENCED"
+                  if (value := number_price(raw)) is not None}
+        if len(prices) > 1:
+            ambiguous_region = True
+            regions_seen.append(name)
+            break
+        if prices:
+            primary_values.update(prices)
+            regions_seen.append(name)
+    if ambiguous_region or len(primary_values) > 1:
+        price_problem = "AMAZON_PDP_MULTIPLE_BUYBOX_PRICES"
+    elif len(primary_values) == 1:
+        price = next(iter(primary_values))
+        price_problem = ""
+        price_region = regions_seen[0]
+    elif soup.select("span.a-price:not(.a-text-price) span.a-offscreen"):
+        price_problem = "AMAZON_PDP_PRIMARY_PRICE_NOT_EVIDENCED"
 
     image = None
     for element in soup.select("img#landingImage, #imgTagWrapperId img, meta[property='og:image']"):
@@ -494,6 +509,8 @@ def parse_amazon_us_pdp(html: str, page: str) -> list[Product]:
             break
     issues = [price_problem] if price_problem else ["USD_INFERRED_FROM_AMAZON_US_CONTEXT"]
     issues.append("AMAZON_PDP_ASIN_PROOF")
+    if price_region:
+        issues.append("AMAZON_PDP_PRIMARY_PRICE_SOURCE_" + price_region.upper())
     if not image:
         issues.append("AMAZON_PDP_PRODUCT_IMAGE_NOT_FOUND")
     return [Product(title=title, url=f"https://www.amazon.com/dp/{asin}", sku=asin,
