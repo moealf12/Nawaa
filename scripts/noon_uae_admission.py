@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
+from noon_uae_price_policy import cents
+
 SKU = re.compile(r"(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)", re.I)
 REQUIRED_STAGES = ("warmup", "plp_live", "one_offer_linked_pdp")
 
@@ -43,8 +45,18 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
     ast = _dict(r.get("tanstackTsrAst"))
     cross = _dict(r.get("crossSurfaceCorroboration"))
     delivery = _dict(r.get("saudiDeliveryEvidence"))
+    current_price_cents = cents(r.get("plpDisplayedPrice"))
+    records = [
+        item for item in ast.get("candidateRecords", [])
+        if isinstance(item, dict) and
+        item.get("sameSku") is True and
+        item.get("skuExplicitInOfferRecord") is True and
+        item.get("skuAliasesConflict") is False and
+        type(item.get("priceCents")) is int
+    ] if isinstance(ast.get("candidateRecords"), list) else []
+    prices = {item["priceCents"] for item in records}
     same_offer_amount = bool(
-        ast.get("samePriceOfferAttested") is True
+        current_price_cents is not None and prices == {current_price_cents}
     )
     currency_per_offer = bool(
         cross.get("sameOfferCurrencyAttested") is True
