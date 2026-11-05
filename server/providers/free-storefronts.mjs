@@ -2193,7 +2193,11 @@ export async function searchFreeStorefronts(query, options = {}) {
   const storeLimit = Number.isFinite(requestedStoreLimit) && requestedStoreLimit >= 0 ? Math.floor(requestedStoreLimit) : 16;
   const storeOffset = Math.max(0, Math.floor(Number(options.storeOffset) || 0));
   const excludedStoreIds = new Set(Array.isArray(options.excludeStoreIds) ? options.excludeStoreIds : []);
-  const specialistPlan=options.exploreUnknownSpecialists===true
+  const requestedIntent=options.exploreUnknownSpecialists===true
+    ? parseSearchIntent(query) : null;
+  const specialistExploration=Boolean(requestedIntent &&
+    !requestedIntent.category&&!requestedIntent.brand);
+  const specialistPlan=specialistExploration
     ? planFreeStorefrontSpecialistBackfill(query,{
       firstWaveStoreLimit:options.firstWaveStoreLimit ?? 16,
       excludedStoreIds:[
@@ -2203,7 +2207,10 @@ export async function searchFreeStorefronts(query, options = {}) {
       ],
       maxStores:storeLimit,
     }) : null;
-  const routes=specialistPlan?.storeIds?.length
+  // If all specialists are cooling down, do not silently reselect blocked
+  // general merchants. A clean zero-store exploration is an honest partial
+  // coverage observation, not permission to amplify failed transport.
+  const routes=specialistExploration
     ? specialistPlan.storeIds.map((id,rank)=>({
       store:STORES.find(store=>store.id===id),
       score:0,reasons:["open_world_specialist"],rank:rank+1,
