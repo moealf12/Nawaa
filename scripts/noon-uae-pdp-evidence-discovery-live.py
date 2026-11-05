@@ -20,6 +20,7 @@ from noon_uae_price_policy import assess_offer, cents, corroborate_sources
 from noon_uae_embedded_offer import inspect_offer_scripts
 from noon_uae_request_policy import classify_source_response
 from noon_uae_tsr_ast import inspect_tsr_ast
+from noon_uae_delivery_policy import attest_saudi_delivery
 
 BASE = "https://www.noon.com"
 SEARCH = BASE + "/uae-en/search/?" + urlencode({"q": "PlayStation 5"})
@@ -219,6 +220,84 @@ def inspect_jsonld(soup, item):
                     "decision": verdict["decision"],
                 })
     return {"nodesInspected": count, "matchedSkuOffers": matches[:10]}
+
+
+def inspect_product_shipping_hints(soup, sku, offer_code):
+    """Inspect SKU-scoped structured shipping *hints*, not KSA deliverability.
+
+    No item-specific quote for an actual selected Saudi destination is
+    requested or fabricated. JSON-LD shippingDetails or a Global badge alone
+    never passes the per-offer shipping/checkout gate.
+    """
+    hints = {
+        "productJsonLdCount": 0,
+        "shippingDetailsCount": 0,
+        "destinationsInProductMarkup": [],
+        "hasExplicitShippingQuoteForSaudiAddress": False,
+        "sameOfferShippingEvidence": False,
+        "customerPublishable": False,
+    }
+    for tag in soup.select('script[type="application/ld+json"]')[:40]:
+        raw = tag.string or tag.get_text()
+        if not raw or len(raw) > 300_000:
+            continue
+        try:
+            obj = json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        queue = [obj]
+        budget = 0
+        while queue and budget < 1000:
+            budget += 1
+            node = queue.pop()
+            if isinstance(node, list):
+                queue.extend(node[:100])
+                continue
+            if not isinstance(node, dict):
+                continue
+            typ = node.get("@type")
+            if typ not in ("Product", ["Product"]):
+                for name in ("@graph", "itemListElement", "mainEntity"):
+                    if name in node:
+                        queue.append(node[name])
+                continue
+            if str(node.get("sku") or "").upper() != sku:
+                continue
+            hints["productJsonLdCount"] += 1
+            offers = node.get("offers") or []
+            if isinstance(offers, dict):
+                offers = [offers]
+            if not isinstance(offers, list):
+                continue
+            for offer in offers[:30]:
+                if not isinstance(offer, dict):
+                    continue
+                details = offer.get("shippingDetails") or []
+                if isinstance(details, dict):
+                    details = [details]
+                if not isinstance(details, list):
+                    continue
+                hints["shippingDetailsCount"] += len(details)
+                for detail in details[:15]:
+                    if not isinstance(detail, dict):
+                        continue
+                    destination = detail.get("shippingDestination") or []
+                    if isinstance(destination, dict):
+                        destination = [destination]
+                    if not isinstance(destination, list):
+                        continue
+                    for entry in destination[:10]:
+                        if not isinstance(entry, dict):
+                            continue
+                        country = entry.get("addressCountry")
+                        if isinstance(country, dict):
+                            country = country.get("name")
+                        if isinstance(country, str) and country.upper() in ("SA", "AE"):
+                            if country.upper() not in hints["destinationsInProductMarkup"]:
+                                hints["destinationsInProductMarkup"].append(country.upper())
+    # Even source SEO shippingDetails without destination address/offer-code quote
+    # does not prove selected customer's item will ship to Saudi Arabia.
+    return hints
 
 
 def inspect_dom(soup, item):
@@ -525,6 +604,13 @@ try:
                             soup.html.get("lang") or "" if soup.html else ""
                         )[:25]
                         REPORT["jsonLd"] = inspect_jsonld(soup, item)
+                        REPORT["pdpShippingHints"] = inspect_product_shipping_hints(
+                            soup, item["sku"], item["offerCode"]
+                        )
+                        REPORT["saudiDeliveryEvidence"] = attest_saudi_delivery(
+                            sku=item["sku"], offer_code=item["offerCode"],
+                            evidence=None,
+                        )
                         REPORT["domEvidence"] = inspect_dom(soup, item)
                         REPORT["embeddedState"] = script_shape(soup, item)
                         REPORT["reactFlight"] = flight_payload_diagnostics(soup, item)
