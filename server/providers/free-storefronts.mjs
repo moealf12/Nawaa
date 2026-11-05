@@ -2298,7 +2298,20 @@ export async function searchFreeStorefronts(query, options = {}) {
     const store = stores[index];
     if (result.status === "fulfilled") {
       offers.push(...result.value.offers);
-      diagnostics.push({ store:store.id, routeRank:routes[index]?.rank, routeScore:routes[index]?.score, routeReasons:routes[index]?.reasons || [], reliability:sourceReliability.view(store.id), candidates:result.value.candidates, verifiedOffers:result.value.offers.length, failures:result.value.failures });
+      diagnostics.push({
+        store:store.id, routeRank:routes[index]?.rank,
+        routeScore:routes[index]?.score,routeReasons:routes[index]?.reasons||[],
+        reliability:sourceReliability.view(store.id),
+        candidates:result.value.candidates,
+        verifiedOffers:result.value.offers.length,failures:result.value.failures,
+        // Source-scoped evidence, bounded counts only (no query, PDP URLs,
+        // merchant titles or buyer data). Available to JSON and SSE diagnosis.
+        intentRecovery:{
+          reason:result.value.diagnostics?.intentRecovery?.reason||null,
+          attempted:result.value.diagnostics?.intentRecovery?.attempted||0,
+          recovered:result.value.diagnostics?.intentRecovery?.recovered||0,
+        },
+      });
       if(result.value.diagnostics?.primarySearchError) errors.push(storefrontSourceFailure(store.id,result.value.diagnostics.primarySearchError,{observedFailureClass:result.value.diagnostics.sourceAccessFailure}));
       else if(result.value.diagnostics?.sourceObservation==="HTTP_200_JS_SHELL")
         errors.push(storefrontSourceFailure(store.id,"HTTP_200_JS_SHELL",{observedFailureClass:"HTTP_200_JS_SHELL"}));
