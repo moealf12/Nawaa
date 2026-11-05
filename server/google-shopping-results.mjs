@@ -8,6 +8,7 @@ const MAX_JSON_BYTES=900_000;
 const MAX_ITEMS=24;
 const PROVIDER_TIMEOUT_MS=8500;
 const MONTHLY_CAP=200; // leave margin beneath the documented 250 free searches
+const HOURLY_CAP=40; // free tier documents 50 successful requests/hour
 const DISCOVERY_CACHE_TTL_MS=90_000;
 const SAFE_GOOGLE_HOST=/(^|\.)google\.com$/i;
 const SAFE_IMAGE_HOST=/(^|\.)(?:gstatic\.com|googleusercontent\.com)$/i;
@@ -110,7 +111,7 @@ export function buildSerpApiGoogleShoppingUrl(query,{key}={}){
   u.searchParams.set("hl","ar");
   u.searchParams.set("google_domain","google.com");
   u.searchParams.set("api_key",key.trim());
-  u.searchParams.set("no_cache","true");
+  // Permit SerpApi own cache where available; avoid burning a free credit for repeats.
   return u;
 }
 function validPlainObject(x){return Boolean(x)&&typeof x==="object"&&!Array.isArray(x);}
@@ -126,8 +127,9 @@ export function createGoogleShoppingResultsClient({
   fetchImpl=globalThis.fetch,
   clock=()=>Date.now(),
   monthlyCap=MONTHLY_CAP,
+  hourlyCap=HOURLY_CAP,
 }={}){
-  let month=null,calls=0;
+  let month=null,calls=0,hour=null,hourlyCalls=0;
   const cache=new Map();
   const pending=new Map();
   async function run(query) {
@@ -138,13 +140,17 @@ export function createGoogleShoppingResultsClient({
     };
     const t=clock();
     const monthKey=new Date(t).toISOString().slice(0,7);
+    const hourKey=new Date(t).toISOString().slice(0,13);
+    if(hour!==hourKey){hour=hourKey;hourlyCalls=0;}
     if(month!==monthKey){month=monthKey;calls=0;cache.clear();}
     const key=q.toLocaleLowerCase("und");
     const saved=cache.get(key);
     if(saved && saved.expires>t)return {...saved.data,body:{...saved.data.body,fromCache:true}};
     if(pending.has(key))return pending.get(key);
     if(calls>=monthlyCap)return {status:429,body:{error:"shopping_monthly_budget_exhausted",cards:[]}};
+    if(hourlyCalls>=hourlyCap)return {status:429,body:{error:"shopping_hourly_budget_exhausted",cards:[]}};
     calls++; // count BEFORE attempting upstream request; do not retry errors
+    hourlyCalls++;
     const action=(async()=>{
       try{
         const target=buildSerpApiGoogleShoppingUrl(q,{key:apiKey});
@@ -191,5 +197,5 @@ export function createGoogleShoppingResultsClient({
     pending.set(key,action);
     try{return await action;}finally{pending.delete(key);}
   }
-  return {run,status:()=>({enabled:Boolean(enabled&&apiKey&&apiKey.length>=12),calls,monthlyCap,month})};
+  return {run,status:()=>({enabled:Boolean(enabled&&apiKey&&apiKey.length>=12),calls,monthlyCap,month,hourlyCalls,hourlyCap,hour})};
 }
