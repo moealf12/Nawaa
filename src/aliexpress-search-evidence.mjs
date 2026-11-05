@@ -186,8 +186,15 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
     if (!ITEM_ID.test(productId) || !title) { reject("INVALID_ID_OR_TITLE"); continue; }
     if (seen.has(productId)) { reject("DUPLICATE_PRODUCT"); continue; }
     const normalized = String(normalizeQuery(title) || "");
+    let queryRelevanceEvidence = "TITLE_TOKEN_OVERLAP";
     if (tokens.length && !tokens.some(token => normalized.includes(token))) {
-      reject("QUERY_NOT_RELEVANT"); continue;
+      // Merchant may return English titles for an Arabic query. Retain these
+      // as SOURCE DISCOVERY ONLY, never assert semantic relevance or
+      // customer publication. The main AliExpress price hold remains active.
+      const crossScript = /[^\x00-\x7f]/.test(String(query || "")) &&
+        /[a-z]{3,}/i.test(title);
+      if (!crossScript) { reject("QUERY_NOT_RELEVANT"); continue; }
+      queryRelevanceEvidence = "MERCHANT_SEARCH_CROSS_SCRIPT_UNVERIFIED";
     }
     const sale = item.prices?.salePrice || item.salePrice;
     if (!sale || typeof sale !== "object") { reject("SALE_PRICE_MISSING"); continue; }
