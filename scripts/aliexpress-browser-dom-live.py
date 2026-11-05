@@ -204,7 +204,15 @@ async def inspect_browser(url, item_id, report):
                 report["navigationFailureClass"] = type(exc).__name__[:65]
                 # The document may nevertheless have loaded before timeout.
             page_url = page.url
-            html = await page.content()
+            try:
+                html = await page.content()
+            except Exception as exc:
+                # A blocked HTTP redirect can leave Chromium on a transient
+                # internal error document whose frame cannot be serialized.
+                # Preserve the observed guard event; never classify such a
+                # failure as a valid PDP or source offer.
+                html = ""
+                report["domContentFailureClass"] = type(exc).__name__[:65]
             report["rendering"] = {
                 "engine": "playwright-chromium",
                 "guardMode": "CDP_FETCH_REQUEST_STAGE_EVERY_REDIRECT",
@@ -233,7 +241,12 @@ async def inspect_browser(url, item_id, report):
                 )
                 report["domEvidence"] = evidence
                 report["conclusion"] = evidence["state"]
-            await context.close()
+            try:
+                await context.close()
+            except Exception as exc:
+                # A cancelled request may race browser teardown. Keep the
+                # previously observed block decision and record teardown.
+                report["browserCleanupFailureClass"] = type(exc).__name__[:65]
         finally:
             await browser.close()
 
