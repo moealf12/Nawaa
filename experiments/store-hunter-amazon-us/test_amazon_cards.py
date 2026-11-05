@@ -377,7 +377,7 @@ class AmazonLiveFalsePositiveRegressions(unittest.TestCase):
         title = "EA SPORTS FC 27 Standard Edition PlayStation5 |Physical Disc I VideoGame |English"
         match, reason, _ = self.classify("PlayStation 5 console", title)
         self.assertEqual(match, "mismatch")
-        self.assertIn("GAME_OR_REMOTE_PLAYER_NOT_PS5_CONSOLE", reason)
+        self.assertIn("GAME_NOT_PS5_CONSOLE", reason)
 
     def test_nba_game_title_cannot_claim_console(self):
         match, _, _ = self.classify("PlayStation 5 console", "NBA 2K27 - PlayStation 5")
