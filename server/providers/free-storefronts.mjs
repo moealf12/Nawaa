@@ -1941,7 +1941,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const candidateLimit = store.id === "amazon-sa" ? Infinity : perStore;
     // JSON-LD is only a fallback when the already-priced search adapters
     // produced nothing. Parsing it when those results win is discarded work.
-    const jsonLdOffers = html && !htmlFirstOffers.length && !primarySearchOffers.length
+    const jsonLdOffers = html && store.id!=="noon-ae" && !htmlFirstOffers.length && !primarySearchOffers.length
       ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query)
         .filter(offer => !store.euSource ||
           (sameHost(offer.sourceUrl, searchUrl) && matchesStoreProductPath(offer.sourceUrl,store)))
@@ -1949,7 +1949,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // A generic JSON-LD fallback could revive a recommendation's price after
     // Noon-specific SKU/seller/variant binding rejected it. Keep this source
     // strictly attached to its scoped first-party evidence adapter.
-    const directSearchOffers = store.id==="noon-sa" ? htmlFirstOffers :
+    const directSearchOffers = (store.id==="noon-sa" || store.id==="noon-ae") ? htmlFirstOffers :
       htmlFirstOffers.length ? htmlFirstOffers :
       primarySearchOffers.length ? primarySearchOffers : jsonLdOffers;
     // Only independently search-priced Thomann cards can earn a search/PDP
