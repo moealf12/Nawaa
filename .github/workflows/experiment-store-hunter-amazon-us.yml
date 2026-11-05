@@ -40,6 +40,5 @@ jobs:
         with:
           name: experiment-amazon-us-store-hunter-live-macos-15
           path: artifacts/amazon-us-ten-live-intents.json
-            artifacts/amazon-us-inline-json-forensics.json
           if-no-files-found: warn
           retention-days: 3
