@@ -1,3 +1,4 @@
+import {canonicalizeForeignRetailTerms} from "./retail-language-normalization.mjs";
 // Shared by the API and browser: aliases affect matching and provider queries alike.
 const ALIASES = [
   // R04-P0: structural Arabic retail concepts are required by live source titles.
@@ -87,15 +88,15 @@ export function normalizeSearchQuery(value = "") {
   // the explicit inclusion phrase; ordinary controller searches are unchanged.
   text=text.replace(/(^| )مع (?:يد تحكم|يد) اضافيه(?= |$)/g,
     "$1console bundle controller");
-  // Every configured alias begins with an Arabic-script character. When
-  // normalized merchant text contains no Arabic script, none of these Arabic-script
-  // patterns can match. Avoid scanning all patterns for every Latin product
-  // title and URL; mixed Arabic/English keeps the original exact behavior.
+  // Preserve the existing Arabic fast path. The independent, closed-list
+  // Latin lexicon then runs on BOTH buyer and source text, so acquisition,
+  // source-card filtering and title-only final classification agree.
   if (/[\u0600-\u06ff]/u.test(text)) {
     for (const [pattern, canonical] of COMPILED_ALIASES) {
       text = text.replace(pattern, "$1" + canonical);
     }
   }
+  text=canonicalizeForeignRetailTerms(text);
   if (/\b(?:iphone|galaxy)\b/.test(text)) text = text.replace(/\b(64|128|256|512|1024)(?= |$)(?!\s+(?:gb|tb)\b)/g, "$1gb");
   return text.replace(/(^| )(?:ابغي|ابي|اريد|ابحث|عن|لي|بافضل|افضل|ارخص|سعر|اشتري|please|find)(?= |$)/g, " ")
     .replace(/\b(iphone|airpods|ps)\s*(\d+)/g, "$1 $2")
