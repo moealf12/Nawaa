@@ -2222,6 +2222,15 @@ export async function searchFreeStorefronts(query, options = {}) {
       .filter((entry)=>!excludedStoreIds.has(entry.store.id))
       .slice(storeOffset,storeOffset+storeLimit);
   const stores=routes.map((entry)=>entry.store);
+  if(specialistExploration&&stores.length===0){
+    return {
+      provider:"free-storefronts",ok:false,searchedMarkets:[],offers:[],
+      errors:[{sourceId:"free-storefronts",error:"OPEN_WORLD_NO_ELIGIBLE_SPECIALIST",
+        failureClass:"SOURCE_ROUTING_UNAVAILABLE"}],
+      diagnostics:[{selectionReason:specialistPlan.reason,selectedStores:0,
+        verifiedOffers:0,sourceWindowComplete:false}],
+    };
+  }
   const requestedProductPageLimit = Number(options.productPageLimit ?? options.perStore);
   const productPageLimit = Number.isFinite(requestedProductPageLimit) && requestedProductPageLimit > 0
     ? Math.min(20, Math.floor(requestedProductPageLimit))
