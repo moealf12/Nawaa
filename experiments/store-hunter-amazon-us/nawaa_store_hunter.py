@@ -648,13 +648,14 @@ class Scraper:
     def log(self, method, url, status, found=0, detail=None, ms=0):
         self.diagnostics.append(Diagnostic(method, url, status, found, detail, int(ms)))
 
-    async def _raw_get(self, url: str, params: dict | None = None) -> httpx.Response:
+    async def _raw_get(self, url: str, params: dict | None = None,
+                       headers: dict[str, str] | None = None) -> httpx.Response:
         for _ in range(4):
             ensure_public_url(url, self.origin)
             if self._robots is not None and not self._robots.can_fetch(
                     USER_AGENT, str(httpx.URL(url, params=params)) if params else url):
                 raise ValueError("ROBOTS_DENIED_REDIRECT")
-            response = await self._client.get(url, params=params)
+            response = await self._client.get(url, params=params, headers=headers)
             if response.status_code in (301, 302, 303, 307, 308):
                 dest = response.headers.get("location")
                 if not dest:
@@ -704,12 +705,26 @@ class Scraper:
         started = time.monotonic()
         try:
             response = await self._raw_get(url, params)
-            if method == "search-html" and response.status_code == 503:
-                # One conservative retry for transient upstream unavailability.
-                # Do not retry 403/429, challenges, or robots denial.
-                self.log(method, requested, "TRANSIENT_503_RETRY_ONCE", detail="backoff_2s")
+            # Content negotiation only: transparent, unchanged NAWAA User-Agent
+            # and exact same HTTPS origin. This is NOT a block/CAPTCHA bypass.
+            # Never switch headers on 403/429, challenge HTML, robots denials,
+            # redirect policy failures or ordinary 4xx.
+            transient = {500, 502, 503, 504}
+            if method == "search-html" and response.status_code in transient:
+                self.log(method, requested, "TRANSIENT_HTTP_HEADER_FALLBACK_ONCE",
+                         detail=f"initial_http_{response.status_code}; profile=alternate; backoff_2s")
                 await asyncio.sleep(2.0)
-                response = await self._raw_get(url, params)
+                # An alternate honest Accept negotiation can change a
+                # server's response representation, not our crawler identity.
+                # Applied to THIS attempt only; the next request returns
+                # automatically to the client's standard headers.
+                fallback_headers = {
+                    "Accept": "text/html,application/xhtml+xml;q=0.9,application/xml;q=0.8,*/*;q=0.5",
+                    "Accept-Language": "en-US,en;q=0.8",
+                }
+                response = await self._raw_get(url, params, headers=fallback_headers)
+                self.log(method, requested, "HEADER_PROFILE_RESTORED",
+                         detail=f"baseline_next_request; retry_http_{response.status_code}")
             elapsed = (time.monotonic() - started) * 1000
             if response.status_code in (403, 429):
                 self.log(method, requested, "BLOCKED_OR_RATE_LIMITED", detail=str(response.status_code), ms=elapsed)
