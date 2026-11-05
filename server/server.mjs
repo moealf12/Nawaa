@@ -3,6 +3,7 @@ import { probeDatabaseOnStartup } from "./database-startup-probe.mjs";
 import { createEbayDeletionHandler } from "./ebay-notifications.mjs";
 import { sourceCoverageSummary } from "../src/source-registry.mjs";
 import { configuredProviders, currentSources } from "./source-config.mjs";
+import { createGoogleShoppingResultsClient } from "./google-shopping-results.mjs";
 import { selectDiverseOffers, offerMerchantKey } from "./offer-selection.mjs";
 import { createSearchOfferAdmission } from "./search-offer-admission.mjs";
 import {enforceCustomerOfferPublication} from "./customer-offer-output.mjs";
@@ -1038,6 +1039,7 @@ const cachedSearch = createSearchCache(async (key,{signal}={}) => {
   classifyAdmission:result=>classifySearchCacheAdmission(result,{requireExplicitComplete:true}),
 });
 const rateLimit = createRateLimiter();
+const googleShoppingClient=createGoogleShoppingResultsClient();
 
 function enforceRateLimit(req, res, scope, policy, origin = "*") {
   const key = requestClientKey(req) + ":" + scope;
@@ -1144,6 +1146,20 @@ const server = http.createServer(async (req, res) => {
       const publicMessage=status===500?"persistence_failed":message;
       return jsonResponse(res,status,{error:"ingest_failed",message:publicMessage},origin||"*");
     }
+  }
+
+  // This endpoint serves unverified Shopping DISCOVERY cards only, outside
+  // normalized offers, SSE, persisted observations and cheapest-price ranking.
+  // The SerpApi key is never exposed to the browser and is only read server-side.
+  if (req.method === "GET" && url.pathname === "/api/discovery/google-shopping") {
+    if (!googleShoppingClient.status().enabled)
+      return jsonResponse(res,503,{error:"google_shopping_not_configured",cards:[]},origin||"*",
+        {"cache-control":"no-store"});
+    if (!enforceRateLimit(req,res,"google-shopping-discovery",
+      {capacity:2,refillPerSecond:1/120},origin||"*"))return;
+    const q=String(url.searchParams.get("q")||"");
+    const reply=await googleShoppingClient.run(q);
+    return jsonResponse(res,reply.status,reply.body,origin||"*",{"cache-control":"no-store"});
   }
 
   if (req.method === "GET" && url.pathname === "/api/sources") {
