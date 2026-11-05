@@ -9,7 +9,9 @@ if(process.env.NAWAA_NOON_AE_PYTHON!=="1")
 const queries=["iPhone 17","headphones","coffee machine"];
 let passed=0,total=0;
 const reports=[];
+let stoppedOnSourceDenial=false;
 for(const query of queries){
+  if(stoppedOnSourceDenial)break;
   const started=performance.now();
   try{
     const result=await searchFreeStorefrontById("noon-ae",query,{
@@ -44,7 +46,15 @@ for(const query of queries){
     reports.push({query,observed:0,
       elapsedMs:Math.round(performance.now()-started),
       failureClass:error?.failureClass||"SOURCE_ERROR",
-      errorCode:String(error?.message||"SOURCE_ERROR").slice(0,100)});
+      errorCode:String(error?.message||"SOURCE_ERROR").slice(0,100),
+      sourceStage:error?.sourceStage||null,
+      sourceHttpStatus:error?.sourceHttpStatus??null,
+      sourceElapsedMs:error?.sourceElapsedMs??null,
+    });
+    // A merchant 403/429 is a stop signal, not an invitation to probe
+    // more keywords and potentially amplify a source access restriction.
+    if(["HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED"].includes(error?.failureClass))
+      stoppedOnSourceDenial=true;
   }
 }
 // Certification of the JSON bridge is separate from source availability.
@@ -60,11 +70,14 @@ const unexpectedFailures=reports.filter(r=>
     "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN"]
     .includes(r.failureClass)).length;
 const transportCertified=passed>=1&&total>=1&&unexpectedFailures===0;
+const releaseGatePassed=passed===queries.length&&reports.length===queries.length&&
+  total>=queries.length&&accessDenials===0&&unexpectedFailures===0;
 console.info("NOON_AE_PYTHON_LIVE_GATE "+JSON.stringify({
   schema:"nawaa.noon-ae.live-gate.v2",sampleSize:queries.length,
   queriesWithOffers:passed,verifiedOffers:total,sourceOwned:true,
-  transportCertified,availability:passed===queries.length
+  transportCertified,releaseGatePassed,attemptedQueries:reports.length,
+  stoppedOnSourceDenial,availability:passed===queries.length
     ?"ALL_QUERIES":"DEGRADED_SOURCE_ACCESS",
   accessDenials,unexpectedFailures,reports,
 }));
-if(!transportCertified)process.exitCode=1;
+if(!releaseGatePassed)process.exitCode=1;
