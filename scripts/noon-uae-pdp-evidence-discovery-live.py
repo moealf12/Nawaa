@@ -17,6 +17,8 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 from noon_uae_price_policy import assess_offer, cents
+from noon_uae_embedded_offer import inspect_offer_scripts
+from noon_uae_request_policy import classify_source_response
 
 BASE = "https://www.noon.com"
 SEARCH = BASE + "/uae-en/search/?" + urlencode({"q": "PlayStation 5"})
@@ -83,6 +85,10 @@ def fetch(session, url, step):
         observation["httpStatus"] = response.status_code
         observation["htmlBytes"] = len(response.content)
         observation["mime"] = str(response.headers.get("content-type") or "")[:80]
+        observation["sourceDecision"] = classify_source_response(
+            status=response.status_code,
+            retry_after=response.headers.get("retry-after"),
+        )
         if (response.status_code == 200 and
                 observation["mime"].lower().startswith("text/html") and
                 len(response.content) <= MAX_BYTES and origin(str(response.url))):
@@ -96,6 +102,7 @@ def fetch(session, url, step):
     except Exception as exc:
         observation["state"] = error_class(exc)
         observation["errorType"] = type(exc).__name__[:50]
+        observation["sourceDecision"] = classify_source_response(error=exc)
     finally:
         observation["elapsedMs"] = round(1000 * (time.monotonic() - started))
         REPORT["observations"].append(observation)
@@ -520,6 +527,17 @@ try:
                         REPORT["domEvidence"] = inspect_dom(soup, item)
                         REPORT["embeddedState"] = script_shape(soup, item)
                         REPORT["reactFlight"] = flight_payload_diagnostics(soup, item)
+                        REPORT["parsedEmbeddedOfferEvidence"] = inspect_offer_scripts(
+                            soup, sku=item["sku"], offer_code=item["offerCode"],
+                            plp_price=item["plpPrice"],
+                        )
+                        REPORT["embeddedSameOfferPriceAttested"] = bool(
+                            REPORT["parsedEmbeddedOfferEvidence"]["samePriceOfferAttested"]
+                        )
+                        # Cross-border KSA delivery requires product/checkout proof,
+                        # not inferred from UAE listing currency or locale.
+                        REPORT["saudiDeliveryEligibilityVerified"] = False
+                        REPORT["customerPublishable"] = False
                         REPORT["conclusion"] = "PDP_STRUCTURES_OBSERVED_UNVERIFIED_OFFER"
 except Exception as exc:
     REPORT["conclusion"] = error_class(exc)
