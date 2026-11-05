@@ -23,6 +23,9 @@ from noon_uae_request_policy import classify_source_response
 from noon_uae_tsr_ast import inspect_tsr_ast
 from noon_uae_delivery_policy import attest_saudi_delivery
 from noon_uae_admission import evaluate_noon_uae_admission
+from noon_uae_price_precision import (
+    interpret_price_surfaces, select_source_current_offer_amount,
+)
 
 BASE = "https://www.noon.com"
 SEARCH = BASE + "/uae-en/search/?" + urlencode({"q": "PlayStation 5"})
@@ -626,6 +629,15 @@ try:
                         )
                         REPORT["tsrAstSameOfferPriceAttested"] = bool(
                             REPORT["tanstackTsrAst"]["samePriceOfferAttested"]
+                        )
+                        REPORT["sourceOfferCurrentAmount"] = (
+                            select_source_current_offer_amount(
+                                REPORT["tanstackTsrAst"]["candidateRecords"]
+                            )
+                        )
+                        REPORT["priceSurfacePrecision"] = interpret_price_surfaces(
+                            item["plpPrice"],
+                            REPORT["sourceOfferCurrentAmount"]["priceCents"],
                         )
                         REPORT["crossSurfaceCorroboration"] = corroborate_sources(
                             plp_price=item["plpPrice"],
