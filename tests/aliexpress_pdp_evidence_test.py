@@ -262,7 +262,6 @@ class PdpEvidenceTests(unittest.TestCase):
         self.assertFalse(report["customerPublishable"])
 
     def test_robots_redirect_to_official_robots_policy_is_bounded(self):
-        from unittest.mock import patch
         url = "https://www.aliexpress.us/item/" + PID + ".html"
         calls = []
 
