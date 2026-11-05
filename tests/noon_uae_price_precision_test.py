@@ -4,7 +4,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from noon_uae_price_precision import interpret_price_surfaces  # noqa: E402
+from noon_uae_price_precision import (  # noqa: E402
+    interpret_price_surfaces, select_source_current_offer_amount,
+)
 
 
 class PrecisionTests(unittest.TestCase):
@@ -76,6 +78,52 @@ class PrecisionTests(unittest.TestCase):
         self.assertNotIn("currencyVerified", r)
         self.assertNotIn("shippingVerified", r)
         self.assertFalse(r["customerPublishable"])
+
+
+    def test_offer_sale_price_beats_original_price(self):
+        records = [
+            {"sameSku": True, "skuExplicitInOfferRecord": True,
+             "skuAliasesConflict": False, "priceKind": "price", "priceCents": 399900},
+            {"sameSku": True, "skuExplicitInOfferRecord": True,
+             "skuAliasesConflict": False, "priceKind": "saleprice", "priceCents": 209905},
+        ]
+        result = select_source_current_offer_amount(records)
+        self.assertEqual(result["priceCents"], 209905)
+        self.assertEqual(result["priceKinds"], ["saleprice"])
+
+    def test_two_different_sale_prices_conflict(self):
+        records = [
+            {"sameSku": True, "skuExplicitInOfferRecord": True,
+             "skuAliasesConflict": False, "priceKind": "saleprice", "priceCents": x}
+            for x in (209900, 209905)
+        ]
+        result = select_source_current_offer_amount(records)
+        self.assertEqual(result["state"], "CONFLICTING_CURRENT_SOURCE_AMOUNTS")
+        self.assertIsNone(result["priceCents"])
+
+    def test_wrong_sku_cannot_be_promoted(self):
+        records = [{"sameSku": False, "skuExplicitInOfferRecord": True,
+                    "skuAliasesConflict": False, "priceKind": "saleprice",
+                    "priceCents": 209905}]
+        self.assertIsNone(select_source_current_offer_amount(records)["priceCents"])
+
+    def test_same_current_price_multiple_records_not_conflict(self):
+        records = [
+            {"sameSku": True, "skuExplicitInOfferRecord": True,
+             "skuAliasesConflict": False, "priceKind": "saleprice", "priceCents": 209905},
+            {"sameSku": True, "skuExplicitInOfferRecord": True,
+             "skuAliasesConflict": False, "priceKind": "currentprice", "priceCents": 209905},
+        ]
+        self.assertEqual(select_source_current_offer_amount(records)["priceCents"], 209905)
+
+    def test_missing_currency_never_fabricated_by_amount_selector(self):
+        record = {"sameSku": True, "skuExplicitInOfferRecord": True,
+                  "skuAliasesConflict": False, "priceKind": "saleprice",
+                  "priceCents": 209905, "currency": None}
+        result = select_source_current_offer_amount([record])
+        self.assertEqual(result["priceCents"], 209905)
+        self.assertNotIn("currency", result)
+
 
 
 if __name__ == "__main__":
