@@ -31,6 +31,8 @@ import { searchSharafDG } from "./providers/sharafdg.mjs";
 import { searchSwarovskiSaudi, swarovskiSaudiEligible } from "./providers/swarovski.mjs";
 import { amazonCreatorsConfigured, configuredAmazonCreatorMarkets, searchAmazonCreators } from "./providers/amazon-creators.mjs";
 import { configuredFreeStorefronts, searchFreeStorefronts, searchFreeStorefrontById } from "./providers/free-storefronts.mjs";
+import { search1688 } from "./providers/1688-cn.mjs";
+import { is1688Configured } from "./authorized-1688-catalog.mjs";
 import { normalizeSearchQuery, parseSearchIntent, buildComparisonQuery, mergeComparisonOffers, buildProviderFallbackQueries, createOfferMatchAssessor } from "../src/search-query.mjs";
 import { firstOfferMilestones } from "../src/search-first-offer-metrics.mjs";
 import { summarizeSourceFailures } from "../src/search-coverage-status.mjs";
@@ -215,6 +217,8 @@ function providerTasks(providerQuery, matchingQuery, { skipFreeStorefronts = fal
   }
   if (carrefourConfigured()) add("carrefour-ksa", () => searchCarrefour(providerQuery));
   if (legacyNoonProviderActive()) add("noon-catalog", () => searchNoon(providerQuery));
+  // Guarded staging: no 1688 requests unless the operator configures an approved feed.
+  if (is1688Configured()) add("1688-cn", (signal) => search1688(providerQuery, {signal, limit:20}), {deadlineMs:5500});
   if (ebayConfigured()) add("ebay", () => searchEbayWorldwide(providerQuery));
   if (shopifyConfigured()) add("shopify", () => searchConfiguredShopifyStores(providerQuery));
   return tasks;
