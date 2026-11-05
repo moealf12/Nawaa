@@ -18,7 +18,8 @@ let browser;
 const start=performance.now();
 try {
   const {chromium}=await import("playwright");
-  browser=await chromium.launch({headless:true});
+  const executablePath=process.env.NAWAA_CHROME_EXECUTABLE || undefined;
+  browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
   const context=await browser.newContext({
     locale:"zh-CN",viewport:{width:1280,height:850},
   });
