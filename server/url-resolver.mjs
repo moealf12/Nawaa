@@ -569,8 +569,35 @@ function declaredSchemaProductType(product) {
   return types.size === 1 ? types.values().next().value : null;
 }
 
+// An AliExpress PDP redirect may legitimately change regional storefront hosts,
+// but cannot attest a *different item ID*. A real live fetch of the Arabic item
+// 1005009881103371 was redirected to the US listing 3256809694788619.
+// Without this guard, the resolver can wrongly publish the destination price
+// under the customer's originally discovered product link.
+// This is an identity gate, NOT evidence that either page exposed a valid price.
+export function assertAliExpressItemRedirectIdentity(requestedUrl, finalUrl) {
+  const requested = new URL(requestedUrl);
+  const isAliExpressHost = host =>
+    /^(?:(?:www|m|[a-z]{2})\.)?aliexpress\.(?:com|us)$/i.test(host);
+  if (!isAliExpressHost(requested.hostname)) return;
+  const requestedId = requested.pathname.match(/^\/item\/(\d{10,})\.html$/i)?.[1];
+  if (!requestedId) return;
+
+  const resolved = new URL(finalUrl);
+  const resolvedId = resolved.pathname.match(/^\/item\/(\d{10,})\.html$/i)?.[1];
+  if (resolved.protocol === "https:" &&
+      !resolved.username && !resolved.password &&
+      isAliExpressHost(resolved.hostname) &&
+      resolvedId === requestedId) return;
+
+  const error = new Error("ALIEXPRESS_PDP_ITEM_IDENTITY_MISMATCH");
+  error.failureClass = "UNVERIFIED_PRODUCT_DOCUMENT";
+  throw error;
+}
+
 export async function extractProductDocument(url, options = {}) {
   const fetched = await fetchHtmlSafe(url, 0, options);
+  assertAliExpressItemRedirectIdentity(url, fetched.finalUrl);
   // An HTML 200 that lacks the product's requested Amazon DE ASIN is not
   // valid product evidence, even if generic meta or cross-sell content exists.
   const amazonIdentity=inspectAmazonDePdpHtml(fetched.html,fetched.finalUrl);
