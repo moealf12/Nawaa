@@ -220,6 +220,10 @@ def parsed_search_cards(html, query):
             reject("ITEM_NOT_OBJECT")
             continue
         pid = str(item.get("productId") or item.get("redirectedId") or "")
+        if (item.get("productId") is not None and item.get("redirectedId") is not None
+                and str(item["productId"]) != str(item["redirectedId"])):
+            reject("EMBEDDED_PRODUCT_ID_CONFLICT")
+            continue
         title_field = item.get("title")
         title = (title_field.get("displayTitle") or title_field.get("seoTitle") or ""
                  if isinstance(title_field, dict) else "")
