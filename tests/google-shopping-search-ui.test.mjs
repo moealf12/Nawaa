@@ -32,7 +32,15 @@ test("Google Shopping: no registry/provider/source coupling or migration of pric
   const publicModuleEntry='["/src/google-shopping-discovery.mjs", "src/google-shopping-discovery.mjs"],';
   assert.ok(server.includes(publicModuleEntry),
     "Render may serve the public client module, but never treat Shopping as a provider");
-  assert.doesNotMatch(server.replace(publicModuleEntry,""),/google-shopping|googleShoppingDiscovery/);
+  assert.ok(server.includes('["/src/google-shopping-cards.mjs", "src/google-shopping-cards.mjs"],'),
+    "The visual card renderer must be served as a public module by Render");
+  assert.ok(server.includes('"/api/discovery/google-shopping"'),
+    "Dedicated provider-backed discovery endpoint must be present");
+  assert.ok(server.includes('createGoogleShoppingResultsClient()'),
+    "Google Shopping discovery must be a separate disabled-by-default budgeted client");
+  assert.doesNotMatch(config,/google-shopping|googleShoppingDiscovery/,
+    "Google Shopping is never in configuredProviders");
+
   const d=googleShoppingDiscoveryDescriptor("PS5 Pro");
   assert.equal(d.returnsOffers,false);
   assert.equal(d.comparableWithNawaa,false);
