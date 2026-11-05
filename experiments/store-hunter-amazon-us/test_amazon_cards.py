@@ -427,3 +427,90 @@ class AmazonLiveFalsePositiveRegressions(unittest.TestCase):
         )
         self.assertEqual(match, "related")
         self.assertIn("GALAXY_S25_MODEL_VARIANT_DIFFERENT", reasons)
+
+
+
+class AmazonPdpRootCauseRegressions(unittest.TestCase):
+    """Do not equate marketing-title numerical drift with a new Amazon ASIN."""
+    def product(self, title, sku="B0C3HCD34R", source=False):
+        from nawaa_store_hunter import Product
+        return Product(
+            title=title, url=f"https://www.amazon.com/dp/{sku}",
+            sku=sku,
+            method="amazon-us-pdp-main-buybox" if source else "amazon-us-html-card",
+            issues=["AMAZON_PDP_ASIN_PROOF"] if source else []
+        )
+
+    def test_strong_asin_accepts_title_marketing_numbers(self):
+        from nawaa_store_hunter import pdp_identity_matches
+        plp=self.product("Soundcore Q20i Wireless Headphones 54H Playtime 2026")
+        pdp=self.product("Soundcore Q20i Bluetooth Headphones 60H Playtime",source=True)
+        self.assertTrue(pdp_identity_matches(plp,pdp))
+
+    def test_asin_proof_required_to_relax_title_numbers(self):
+        from nawaa_store_hunter import pdp_identity_matches
+        plp=self.product("Soundcore Q20i Wireless Headphones 54H Playtime 2026")
+        pdp=self.product("Soundcore Q20i Bluetooth Headphones 60H Playtime")
+        pdp.method="amazon-us-pdp-main-buybox"
+        self.assertFalse(pdp_identity_matches(plp,pdp))
+
+    def test_different_asin_rejects_even_same_title(self):
+        from nawaa_store_hunter import pdp_identity_matches
+        plp=self.product("Soundcore Q20i Black Headphones")
+        pdp=self.product("Soundcore Q20i Black Headphones",sku="B0CZPLV566",source=True)
+        self.assertFalse(pdp_identity_matches(plp,pdp))
+
+    def test_asin_equal_but_storage_conflicting_fails_closed(self):
+        from nawaa_store_hunter import pdp_identity_matches
+        plp=self.product("Samsung Galaxy S25 128GB Black")
+        pdp=self.product("Samsung Galaxy S25 256GB Black",source=True)
+        self.assertFalse(pdp_identity_matches(plp,pdp))
+
+    def test_asin_equal_but_variant_conflicting_fails_closed(self):
+        from nawaa_store_hunter import pdp_identity_matches
+        plp=self.product("Apple iPhone 17 256GB Black")
+        pdp=self.product("Apple iPhone 17 Pro 256GB Black",source=True)
+        self.assertFalse(pdp_identity_matches(plp,pdp))
+
+    def test_asin_equal_but_color_conflicting_fails_closed(self):
+        from nawaa_store_hunter import pdp_identity_matches
+        plp=self.product("Soundcore Q20i White Headphones")
+        pdp=self.product("Soundcore Q20i Black Headphones",source=True)
+        self.assertFalse(pdp_identity_matches(plp,pdp))
+
+    def test_empty_primary_slot_does_not_suppress_valid_second_primary(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        asin="B0C3HCD34R"
+        html=f'''<link rel="canonical" href="https://www.amazon.com/dp/{asin}" />
+          <input id="ASIN" value="{asin}" />
+          <span id="productTitle">Soundcore Q20i Wireless Headphones Black</span>
+          <div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">Unavailable</span></span></div>
+          <div id="corePriceDisplay_desktop_feature_div"><span class="a-price"><span class="a-offscreen">$44.99</span></span></div>'''
+        out=parse_amazon_us_pdp(html,f"https://www.amazon.com/dp/{asin}")
+        self.assertEqual(len(out),1)
+        self.assertEqual(out[0].price,"44.99")
+        self.assertIn("AMAZON_PDP_PRIMARY_PRICE_SOURCE_COREPRICEDISPLAY_DESKTOP",out[0].issues)
+
+    def test_two_buybox_modules_with_different_prices_fail_closed(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        asin="B0C3HCD34R"
+        html=f'''<link rel="canonical" href="https://www.amazon.com/dp/{asin}" />
+          <input id="ASIN" value="{asin}" />
+          <span id="productTitle">Soundcore Q20i Wireless Headphones Black</span>
+          <div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">$44.99</span></span></div>
+          <div id="corePriceDisplay_desktop_feature_div"><span class="a-price"><span class="a-offscreen">$49.99</span></span></div>'''
+        out=parse_amazon_us_pdp(html,f"https://www.amazon.com/dp/{asin}")
+        self.assertIsNone(out[0].price)
+        self.assertIn("AMAZON_PDP_MULTIPLE_BUYBOX_PRICES",out[0].issues)
+
+    def test_other_sellers_price_never_becomes_main_buybox(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        asin="B0C3HCD34R"
+        html=f'''<link rel="canonical" href="https://www.amazon.com/dp/{asin}" />
+          <input id="ASIN" value="{asin}" />
+          <span id="productTitle">Soundcore Q20i Wireless Headphones Black</span>
+          <div id="aod-ingress-link"><span class="a-price"><span class="a-offscreen">$11.99</span></span></div>
+          <div id="ProductSpecs-1"><span class="a-price"><span class="a-offscreen">$9.00</span></span></div>'''
+        out=parse_amazon_us_pdp(html,f"https://www.amazon.com/dp/{asin}")
+        self.assertIsNone(out[0].price)
+        self.assertIn("AMAZON_PDP_PRIMARY_PRICE_NOT_EVIDENCED",out[0].issues)
