@@ -10,6 +10,11 @@ on:
       - "tests/google-shopping-discovery.test.mjs"
       - "tests/google-shopping-search-ui.test.mjs"
       - "scripts/google-shopping-browser-smoke.mjs"
+      - "scripts/google-shopping-serpapi-live.mjs"
+      - "server/google-shopping-results.mjs"
+      - "src/google-shopping-cards.mjs"
+      - "server/server.mjs"
+      - "tests/google-shopping-results.test.mjs"
   workflow_dispatch:
 
 permissions:
@@ -31,7 +36,7 @@ jobs:
       - name: Install locked dependencies without postinstall
         run: npm ci --ignore-scripts
       - name: Validate exact links, query isolation and UI contracts
-        run: node --test tests/google-shopping-discovery.test.mjs tests/google-shopping-search-ui.test.mjs
+        run: node --test tests/google-shopping-discovery.test.mjs tests/google-shopping-search-ui.test.mjs tests/google-shopping-results.test.mjs
       - name: Use temporary Playwright for actual browser DOM assertions
         run: npm install --no-save --no-package-lock --ignore-scripts playwright@1.64.1
       - name: Resolve native Chrome
@@ -45,3 +50,16 @@ jobs:
           fi
       - name: Real desktop/mobile DOM smoke with external requests BLOCKED
         run: node scripts/google-shopping-browser-smoke.mjs
+      - name: Single real SerpApi Google Shopping check (only if key exists)
+        env:
+          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/google-shopping-serpapi-live.mjs
+      - name: Preserve secret-free live probe result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-shopping-real-provider-evidence
+          path: google-shopping-serpapi-live.json
+          retention-days: 14
+          if-no-files-found: warn
