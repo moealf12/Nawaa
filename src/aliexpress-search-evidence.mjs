@@ -219,7 +219,7 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
     seen.add(productId);
     offers.push({
       productId, title, image, price, currency, sourceUrl,
-      maxVariantPrice:maxPrice,
+      maxVariantPrice:maxPrice,queryRelevanceEvidence,
       priceKind:"SEARCH_CARD_MINIMUM_VARIANT_UNVERIFIED",
       customerPublishable:false,
       pdpPriceVerified:false,
