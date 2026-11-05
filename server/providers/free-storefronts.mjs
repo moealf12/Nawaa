@@ -1708,6 +1708,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     let primarySearchOffers = [];
     let primarySearchError = null;
     let sourceAccessFailure = null;
+    let noonUaeSourceStage = null;
     // HTML is the universal first acquisition layer. It is cheap, cache-friendly,
     // and often contains JSON-LD/SSR state with complete product cards.
     // Store-specific APIs are fallbacks only when the HTML path yields no offers.
@@ -1738,6 +1739,21 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
             sourceRateLimitGuard.record403(store.id);
           else if(error?.failureClass==="HTTP_429_RATE_LIMITED")
             sourceRateLimitGuard.record429(store.id,null);
+          if(error?.sourceStage){
+            noonUaeSourceStage={
+              stage:error.sourceStage,
+              httpStatus:error.sourceHttpStatus??null,
+              elapsedMs:error.sourceElapsedMs??null,
+            };
+            // Fixed taxonomy only; never log customer query, prices,
+            // response HTML, request URL, cookies or proxy details.
+            console.info("NAWAA_NOON_AE_SOURCE_STAGE "+JSON.stringify({
+              stage:noonUaeSourceStage.stage,
+              httpStatus:noonUaeSourceStage.httpStatus,
+              elapsedMs:noonUaeSourceStage.elapsedMs,
+              failureClass:error.failureClass||"SOURCE_TRANSPORT_FAILURE",
+            }));
+          }
           throw error;
         }
       } else if (store.id === "amazon-sa") {
@@ -1805,6 +1821,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       // catalog or a stockout, even if its message contains no "HTTP 403".
       const denied=new Error(primarySearchError || sourceAccessFailure);
       denied.failureClass=sourceAccessFailure;
+      if(store.id==="noon-ae" && noonUaeSourceStage){
+        denied.sourceStage=noonUaeSourceStage.stage;
+        denied.sourceHttpStatus=noonUaeSourceStage.httpStatus;
+        denied.sourceElapsedMs=noonUaeSourceStage.elapsedMs;
+      }
       throw denied;
     }
     // Real, first-party HTML search cards are Noon's primary source path.
