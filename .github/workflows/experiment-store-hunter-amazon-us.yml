@@ -34,6 +34,10 @@ jobs:
         env:
           PYTHONPATH: experiments/store-hunter-amazon-us
         run: python experiments/store-hunter-amazon-us/amazon_us_json_jsonld_probe.py
+      - name: Investigate inline JSON public script price references on six PDPs
+        env:
+          PYTHONPATH: experiments/store-hunter-amazon-us
+        run: python experiments/store-hunter-amazon-us/amazon_us_inline_json_forensics.py
       - name: Bounded Amazon PDP primary-price header A/B (ten observed ASINs)
         env:
           PYTHONPATH: experiments/store-hunter-amazon-us
@@ -51,5 +55,6 @@ jobs:
             artifacts/amazon-us-ten-live-intents.json
             artifacts/amazon-us-pdp-header-ab.json
             artifacts/amazon-us-json-ld-json-live.json
+            artifacts/amazon-us-inline-json-forensics.json
           if-no-files-found: warn
           retention-days: 3
