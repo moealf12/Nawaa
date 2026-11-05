@@ -37,24 +37,40 @@ def _record_value(record, names):
 
 
 def _amount_and_currency(record):
+    """Treat sale_price as current; never promote original price as buybox."""
     result = []
     currency_values = [
         str(v).upper().strip() for v in _record_value(record, CURRENCY_KEYS)
         if isinstance(v, str)
     ]
+    currency = currency_values[0] if len(set(currency_values)) == 1 else None
+    raw = {}
     for k, v in record.items():
-        if _key(k) not in PRICE_KEYS:
+        normalized = _key(k)
+        if normalized not in PRICE_KEYS:
             continue
         if isinstance(v, dict):
-            a = _record_value(v, frozenset(("amount", "value", "price")))
-            cs = _record_value(v, CURRENCY_KEYS)
-            if len(a) == 1:
-                result.append((a[0], str(cs[0]).upper().strip() if len(cs) == 1 else None))
-        else:
-            if not isinstance(v, bool):
-                result.append((v, currency_values[0] if len(set(currency_values)) == 1 else None))
-    return result
-
+            amounts = _record_value(v, frozenset(("amount", "value", "price")))
+            local_currency = _record_value(v, CURRENCY_KEYS)
+            if len(amounts) == 1:
+                raw[normalized] = (
+                    amounts[0],
+                    str(local_currency[0]).upper().strip()
+                    if len(local_currency) == 1 else currency,
+                )
+        elif not isinstance(v, bool):
+            raw[normalized] = (v, currency)
+    # Explicit sale/current beats list price. Price remains a fallback only
+    # when no merchant-defined sale/current field exists.
+    preferred = [
+        name for name in ("saleprice", "currentprice", "sellingprice", "offerprice")
+        if name in raw
+    ]
+    selected = preferred if preferred else ["price"] if "price" in raw else []
+    for name in selected:
+        value, curr = raw[name]
+        result.append((name, value, curr))
+    return result, raw
 
 def candidate_objects(decoded, *, sku, offer_code, plp_price):
     """Demand exact record structure; return evidence, never merchant offers."""
@@ -77,22 +93,28 @@ def candidate_objects(decoded, *, sku, offer_code, plp_price):
             str(v).upper() for v in _record_value(node, SKU_KEYS)
             if isinstance(v, str)
         ]
-        current_sku = own_skus[0] if len(own_skus) == 1 else (
-            parent_sku if not own_skus else None
+        distinct_skus = set(own_skus)
+        # A record may legitimately repeat one SKU under sku and skuConfig.
+        # Conflicting SKU aliases fail closed, rather than picking the first.
+        current_sku = (
+            next(iter(distinct_skus)) if len(distinct_skus) == 1
+            else parent_sku if not distinct_skus else None
         )
         own_offers = [
             v for v in _record_value(node, OFFER_KEYS) if isinstance(v, str)
         ]
         exact_offer = offer_code in own_offers
         if exact_offer and len(evidence) < MAX_CANDIDATES:
-            prices = _amount_and_currency(node)
+            prices, price_fields = _amount_and_currency(node)
+            regular = price_fields.get("price")
+            regular_cents = cents(regular[0]) if regular else None
             if not prices:
                 evidence.append({"state": "EXACT_OFFER_WITHOUT_DIRECT_PRICE",
                                  "sameSku": current_sku == expected_sku,
                                  "priceCents": None, "currency": None,
                                  "amountMatchesPlp": False, "publishable": False})
             else:
-                for price, currency in prices[:4]:
+                for price_kind, price, currency in prices[:4]:
                     amount_cents = cents(price)
                     evidence.append({
                         "state": (
@@ -103,7 +125,11 @@ def candidate_objects(decoded, *, sku, offer_code, plp_price):
                             else "EXACT_OFFER_PRICE_OR_PROVENANCE_MISMATCH"
                         ),
                         "sameSku": current_sku == expected_sku,
-                        "skuExplicitInOfferRecord": own_skus == [expected_sku],
+                        "skuExplicitInOfferRecord": distinct_skus == {expected_sku},
+                        "skuAliasCount": len(own_skus),
+                        "skuAliasesConflict": len(distinct_skus) > 1,
+                        "priceKind": price_kind,
+                        "regularListPriceCents": regular_cents,
                         "priceCents": amount_cents,
                         "currency": currency,
                         "amountMatchesPlp": amount_cents is not None and amount_cents == plp_cents,
