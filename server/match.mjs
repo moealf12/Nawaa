@@ -1,5 +1,6 @@
 import { normalizeSearchQuery } from "../src/search-query.mjs";
 import { canonicalOfferUrl } from "./canonical-offer-identity.mjs";
+import {normalizeCondition} from "./provider-utils.mjs";
 export { assessOfferMatch } from "../src/search-query.mjs";
 export const normalizeSearchText = normalizeSearchQuery;
 
@@ -17,8 +18,16 @@ function preferIncomingObservation(previous, incoming) {
 export function dedupeNormalizedOffers(offers = []) {
   const positions = new Map();
   const out = [];
-  for (const offer of offers) {
-    if(!offer||typeof offer!=="object")continue;
+  for (const rawOffer of offers) {
+    if(!rawOffer||typeof rawOffer!=="object")continue;
+    // Source adapters may use the established merchant synonym "renewed".
+    // Normalize known, SOURCE-DECLARED condition values before identity,
+    // relevance and customer presentation. Do not manufacture a condition
+    // for missing/unknown or unrecognized values; do not mutate source input.
+    const canonicalCondition=normalizeCondition(rawOffer.condition);
+    const offer=canonicalCondition!=="unknown"&&rawOffer.condition!==canonicalCondition
+      ? {...rawOffer,condition:canonicalCondition}
+      : rawOffer;
     // A shared listing URL must not merge independently sellable SKUs,
     // models, markets or conditions. Cross-store URLs stay separate.
     const country=String(offer.merchantCountryCode||"").toUpperCase();
