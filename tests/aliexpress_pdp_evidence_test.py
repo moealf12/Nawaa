@@ -364,6 +364,150 @@ class PdpEvidenceTests(unittest.TestCase):
         self.assertTrue(all("/punish" not in url for url in calls))
         self.assertFalse(report["customerPublishable"])
 
+    def test_cross_id_alias_is_traced_but_never_certified_as_same_product(self):
+        from unittest.mock import patch
+
+        alias = "3256812557229083"
+        origin = "https://ar.aliexpress.com/item/" + PID + ".html"
+        destination = "https://www.aliexpress.us/item/" + alias + ".html"
+        calls = []
+
+        class Response:
+            def __init__(self, url, status=200, text="", location=None):
+                self.url = url
+                self.status_code = status
+                self.content = text.encode("utf8")
+                self.text = text
+                self.headers = {
+                    "content-type": "text/plain" if url.endswith("/robots.txt") else "text/html"
+                }
+                if location:
+                    self.headers["location"] = location
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def get(self, url, *, headers, timeout, allow_redirects):
+                calls.append(url)
+                if url.endswith("/robots.txt"):
+                    return Response(url, text="User-agent: *\nAllow: /\n")
+                if url == origin:
+                    return Response(url, status=302, location=destination + "?token=private")
+                if url == destination:
+                    return Response(url, text=html_for(pid=alias))
+                raise AssertionError("Unapproved network destination")
+
+        with patch.object(pdp.requests, "Session", return_value=Session()):
+            plain = pdp.probe_item(PID)
+            traced = pdp.probe_item(PID, trace_alias=True)
+
+        self.assertEqual(plain["conclusion"], "PDP_REDIRECT_IDENTITY_NOT_VERIFIED")
+        self.assertEqual(plain["redirectsFollowed"], 0)
+        self.assertIsNone(plain["aliasCandidate"])
+        self.assertEqual(traced["conclusion"], "PDP_ALIAS_IDENTITY_AND_PRICE_NOT_CORROBORATED")
+        self.assertEqual(traced["redirectsFollowed"], 1)
+        self.assertEqual(traced["aliasCandidate"]["destinationItemId"], alias)
+        self.assertEqual(
+            traced["productIdentity"]["jsonLd"]["priceEvidence"]["currency"], "SAR"
+        )
+        self.assertFalse(traced["aliasIdentityVerified"])
+        self.assertFalse(traced["customerPublishable"])
+        self.assertEqual(calls.count(destination), 1)
+        self.assertEqual(
+            [x["host"] for x in traced["stages"] if x["step"] == "robots_policy"],
+            ["ar.aliexpress.com", "www.aliexpress.us"],
+        )
+        self.assertNotIn("token=private", str(traced))
+
+    def test_cross_id_alias_disallowed_when_target_robots_unavailable(self):
+        from unittest.mock import patch
+
+        alias = "3256812557229083"
+        origin = "https://ar.aliexpress.com/item/" + PID + ".html"
+        destination = "https://www.aliexpress.us/item/" + alias + ".html"
+        calls = []
+
+        class Response:
+            def __init__(self, url, status, text="", location=None):
+                self.url = url
+                self.status_code = status
+                self.content = text.encode("utf8")
+                self.text = text
+                self.headers = {"content-type": "text/plain"}
+                if location:
+                    self.headers["location"] = location
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def get(self, url, *, headers, timeout, allow_redirects):
+                calls.append(url)
+                if url == "https://ar.aliexpress.com/robots.txt":
+                    return Response(url, 200, "User-agent: *\nAllow: /\n")
+                if url == origin:
+                    return Response(url, 302, location=destination)
+                if url == "https://www.aliexpress.us/robots.txt":
+                    return Response(url, 302, location="/login?verify=1")
+                raise AssertionError("Never follow disallowed policy or PDP")
+
+        with patch.object(pdp.requests, "Session", return_value=Session()):
+            result = pdp.probe_item(PID, trace_alias=True)
+        self.assertEqual(result["conclusion"], "ROBOTS_POLICY_NOT_VERIFIED")
+        self.assertEqual(result["aliasCandidate"]["destinationItemId"], alias)
+        self.assertNotIn(destination, calls)
+        self.assertFalse(result["customerPublishable"])
+
+    def test_cross_id_second_swap_is_rejected_even_in_alias_diagnostic_mode(self):
+        from unittest.mock import patch
+        first_alias = "3256812557229083"
+        second_alias = "3256808971276489"
+        origin = "https://ar.aliexpress.com/item/" + PID + ".html"
+        first = "https://www.aliexpress.com/item/" + first_alias + ".html"
+        second = "https://www.aliexpress.us/item/" + second_alias + ".html"
+        calls = []
+
+        class Response:
+            def __init__(self, url, code=200, body="", location=None):
+                self.url=url
+                self.status_code=code
+                self.content=body.encode()
+                self.text=body
+                self.headers={"content-type": "text/plain" if url.endswith("txt") else "text/html"}
+                if location:
+                    self.headers["location"]=location
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def get(self, url, *, headers, timeout, allow_redirects):
+                calls.append(url)
+                if url.endswith("robots.txt"):
+                    return Response(url, body="User-agent: *\nAllow: /\n")
+                if url == origin:
+                    return Response(url, 302, location=first)
+                if url == first:
+                    return Response(url, 302, location=second)
+                raise AssertionError("Never follow a second independent alias")
+
+        with patch.object(pdp.requests, "Session", return_value=Session()):
+            result=pdp.probe_item(PID, trace_alias=True)
+        self.assertEqual(result["conclusion"], "PDP_REDIRECT_IDENTITY_NOT_VERIFIED")
+        self.assertEqual(result["aliasCandidate"]["destinationItemId"], first_alias)
+        self.assertNotIn(second, calls)
+        self.assertFalse(result["customerPublishable"])
+
     def test_url_marketing_price_never_generates_product_evidence(self):
         html = '<html><head><meta property="og:title" content="Headphones"></head>' \
                "<body>pdp_npi=6%40dis%21SAR%2157.97%216.29</body></html>"
