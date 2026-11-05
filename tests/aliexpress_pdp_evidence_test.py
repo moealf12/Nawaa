@@ -146,6 +146,32 @@ class PdpEvidenceTests(unittest.TestCase):
             "REDIRECT_TO_SAME_CANONICAL_ITEM",
         )
 
+    def test_redirect_target_diagnostics_never_include_tracking_or_secrets(self):
+        current = "https://ar.aliexpress.com/item/" + PID + ".html"
+        root = pdp.classify_redirect_destination(
+            "https://www.aliexpress.com/?token=secrets-123", current, PID
+        )
+        self.assertEqual(root["targetHostClass"], "OFFICIAL")
+        self.assertEqual(root["targetPathClass"], "ROOT")
+        self.assertTrue(root["hasQuery"])
+        self.assertNotIn("token", str(root))
+        exact = pdp.classify_redirect_destination(
+            "https://www.aliexpress.com/item/" + PID + ".html?tracking=bad",
+            current, PID
+        )
+        self.assertEqual(exact["targetPathClass"], "EXACT_ITEM_PDP")
+        challenge = pdp.classify_redirect_destination(
+            "/punish?captcha=123", current, PID
+        )
+        self.assertEqual(challenge["targetPathClass"], "CHALLENGE_OR_AUTH")
+        external = pdp.classify_redirect_destination(
+            "https://evil.example/item/" + PID + ".html?secret=1", current, PID
+        )
+        self.assertEqual(external["targetHostClass"], "OTHER")
+        self.assertIsNone(external["targetHost"])
+        self.assertNotIn("evil.example", str(external))
+        self.assertNotIn("secret", str(external))
+
     def test_safe_cross_host_redirect_checks_target_robots_and_jsonld(self):
         from unittest.mock import patch
 
