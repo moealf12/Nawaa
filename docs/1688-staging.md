@@ -92,6 +92,21 @@ All are required. Store secrets only in a secret store; never in code, PR commen
 - Other bulk products are counted as `WHOLESALE_ONLY` in diagnostics, not mislabeled as consumer retail offers.
 - Chinese/English/Arabic titles may be accepted when **provided by the approved feed**. Automatic multilingual translation and product identity parity are **not certified**.
 
+
+## Noon-pattern live public discovery — staging diagnostics
+
+After the project owner clarified that 1688's communication closely mirrors the prior Noon onboarding, this branch now follows the same **real-source-first, draft-only** diagnostic practice:
+
+- `scripts/1688-public-discovery-live.mjs` probes first-party `s.1688.com/robots.txt` with NAWAA's transparent user agent before any search.
+- Only where the source permits it, it sends sequential single-request public keyword searches via the first-party `/selloffer/offer_search.htm?keywords=...` path. No retries, proxies, stealth, session spoofing, cookies, header rotation, or undocumented private APIs.
+- Searches span product categories and Chinese, English, and Arabic text, with no fixture substitution in the live report.
+- Script stops after a prohibited path, HTTP 403/429, unexpected redirect/challenge, network failure, or invalid response, rather than trying alternate access tricks.
+- `src/1688-public-discovery.mjs` classifies HTML shells and discovered product links; it cannot certify an offer price or Saudi shipping.
+- `.github/workflows/1688-public-discovery-live.yml` executes the probe on draft PR changes and retains a 14-day machine-readable artifact. A completed diagnostic workflow does **not** constitute adapter certification.
+- The normalized authorized feed adapter remains the production candidate. Until a real supported data-access route supplies per-SKU prices, the only defensible status is `LIVE_DISCOVERY_ONLY` or `ACCESS_UNVERIFIED`, never `LIVE_PRICED`.
+
+This is the same acquisition-and-evidence separation used for Noon. A positive commercial discussion is not a claim that a particular technical endpoint, credential, or request profile works.
+
 ## Pre-merge release gates
 
 1. Provide verifiable terms/authorization and the approved feed's API specification and credentials (privately).
