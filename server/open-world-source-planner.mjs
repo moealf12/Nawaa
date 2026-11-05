@@ -50,8 +50,12 @@ export function planUnknownCategorySpecialists({
     ? Math.max(0,Math.min(MAX_SPECIALISTS,maxStores)):0;
   if(maximum===0)return {storeIds:[],reason:"BUDGET_DISABLED",categoryBuckets:0,chosenBuckets:0};
   const blocked=new Set([...alreadySearchedIds,...excludedStoreIds]);
+  // A cooldown is a transport-policy exclusion, not a negative relevance
+  // verdict. Never burn a scarce specialist slot on a source already known
+  // unavailable in the active worker; preserve it in the normal registry.
   const candidates=stores.filter(s=>safeStoreId(s?.id)&&
-    !blocked.has(s.id)&&eligibleCategories(s).length);
+    !blocked.has(s.id)&&sourceHealth?.[s.id]?.coolingDown!==true&&
+    eligibleCategories(s).length);
   const byCategory=new Map();
   for(const store of candidates){
     for(const category of eligibleCategories(store)){
@@ -62,26 +66,38 @@ export function planUnknownCategorySpecialists({
   // Stable, seeded rotation gives different UNKNOWN queries exploratory
   // coverage across categories instead of always selecting the first tech
   // retailer. Repeating an identical query selects the identical window.
+  // Candidate reliability is based only on observed transport and useful
+  // public offers, never inferred product relevance or guessed stock.
+  // Zero is a neutral prior: fewer than three attempts do not establish a
+  // ranking. Center observed rates on that prior to avoid treating a source
+  // with no history as provably worse than a failing source.
+  const quality=id=>{
+    const state=sourceHealth?.[id];
+    if(!state||!Number.isFinite(state.attempts)||state.attempts<3)return 0;
+    const transport=Number(state.transportSuccessRate);
+    const yieldRate=Number(state.productiveRate);
+    if(!Number.isFinite(transport)||!Number.isFinite(yieldRate))return 0;
+    const sampleWeight=Math.min(1,state.attempts/12);
+    return Math.max(-1,Math.min(1,
+      (transport*0.75+yieldRate*0.25-0.65)*sampleWeight));
+  };
   const buckets=[...byCategory.keys()].sort();
-  const order=rotate(buckets,hashIndex(normalized,buckets.length));
+  const rotated=rotate(buckets,hashIndex(normalized,buckets.length));
+  const tieRank=new Map(rotated.map((category,index)=>[category,index]));
+  // P55: cross-category source yield matters. The previous category-only
+  // rotation spent scarce slots on known-unproductive merchants even when
+  // other approved categories had independently proven usable transport.
+  // Keep query-stable rotation only among equivalent measured source scores.
+  const order=[...rotated].sort((a,b)=>{
+    const best=category=>Math.max(...byCategory.get(category).map(quality));
+    return best(b)-best(a)||tieRank.get(a)-tieRank.get(b);
+  });
   const chosen=[],chosenSet=new Set(),chosenBuckets=new Set();
   // First attempt one approved specialist from distinct category buckets;
   // later slots never repeat a merchant because it serves several categories.
   for(const category of order){
     const storesForCategory=byCategory.get(category).filter(id=>!chosenSet.has(id));
     if(!storesForCategory.length)continue;
-    // Proven reachability may break a same-category tie, but cannot change
-    // the category-diversity budget or erase a merchant from its regular
-    // cursor route. Unknown evidence starts neutral; no guessed ratings.
-    const quality=id=>{
-      const state=sourceHealth?.[id];
-      if(!state||!Number.isFinite(state.attempts)||state.attempts<3)return 0;
-      if(state.coolingDown)return -1;
-      const transport=Number(state.transportSuccessRate);
-      const yieldRate=Number(state.productiveRate);
-      if(!Number.isFinite(transport)||!Number.isFinite(yieldRate))return 0;
-      return Math.max(-1,Math.min(1,transport*0.75+yieldRate*0.25));
-    };
     const top=Math.max(...storesForCategory.map(quality));
     const best=storesForCategory.filter(id=>quality(id)>=top-0.000001);
     const id=best[hashIndex(normalized+"|"+category,best.length)];
