@@ -131,6 +131,10 @@ def corroborate_selected_pdp_offer_amount(ast_records, product_jsonld_offers):
         "productCurrencyCorroborated": None,
         "sourceOfferAmountProductPriceCorroborated": False,
         "offerCurrencyDirectlyVerified": False,
+        # The merchant's Product JSON-LD and TanStack offer record are two
+        # representations from the same PDP, NOT independent merchants.
+        "currencyEvidenceTier": "UNVERIFIED",
+        "sourceRepresentationCount": 0,
         "customerPublishable": False,
     }
     if type(amount) is not int or not isinstance(product_jsonld_offers, list):
@@ -157,7 +161,36 @@ def corroborate_selected_pdp_offer_amount(ast_records, product_jsonld_offers):
     if currency != "AED":
         result["state"] = "PDP_PRODUCT_CURRENCY_NOT_AED"
         return result
-    result["state"] = "OFFER_PRICE_MATCHES_PRODUCT_AED_PRICE_NOT_SAME_OFFER_CURRENCY"
     result["productCurrencyCorroborated"] = "AED"
     result["sourceOfferAmountProductPriceCorroborated"] = True
+    result["sourceRepresentationCount"] = 2
+    same_offer = [
+        row for row in ast_records if isinstance(row, dict)
+        and row.get("sameSku") is True
+        and row.get("skuExplicitInOfferRecord") is True
+        and row.get("skuAliasesConflict") is False
+        and type(row.get("priceCents")) is int
+        and row["priceCents"] == amount
+        and row.get("priceKind") in (
+            "saleprice", "currentprice", "sellingprice", "offerprice", "price"
+        )
+    ]
+    direct_currencies = {
+        str(row["currency"]).upper().strip() for row in same_offer
+        if isinstance(row.get("currency"), str) and row["currency"].strip()
+    }
+    if direct_currencies == {"AED"}:
+        result["state"] = "OFFER_CURRENCY_AED_DIRECT_AND_PRODUCT_CORROBORATED"
+        result["currencyEvidenceTier"] = "OFFER_DIRECT"
+        result["offerCurrencyDirectlyVerified"] = True
+    elif direct_currencies:
+        # Conflicting source-offer currency cannot be overridden by a
+        # product-level AED currency even if the numeric amount agrees.
+        result["state"] = "OFFER_PRODUCT_CURRENCY_CONFLICT"
+        result["currencyEvidenceTier"] = "CONFLICTED"
+        result["sourceOfferAmountProductPriceCorroborated"] = False
+        result["productCurrencyCorroborated"] = None
+    else:
+        result["state"] = "OFFER_PRICE_MATCHES_PRODUCT_AED_PRICE_NOT_SAME_OFFER_CURRENCY"
+        result["currencyEvidenceTier"] = "PRODUCT_SAME_SKU_EXACT_AMOUNT"
     return result
