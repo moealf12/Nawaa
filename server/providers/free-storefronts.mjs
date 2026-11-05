@@ -15,7 +15,7 @@ import {storefrontSourceFailure} from "../../src/storefront-error-evidence.mjs";
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
 import {retiredSourceRecord} from "../../src/source-retirement.mjs";
-import {planUnknownCategorySpecialists} from "../open-world-source-planner.mjs";
+import {planUnknownCategorySpecialists,planSourceNativeModelQuery} from "../open-world-source-planner.mjs";
 import {diagnoseAmazonGermanyHtml} from "../../src/europe-source-diagnostics.mjs";
 import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../src/amazon-de-price-gate.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
@@ -1677,7 +1677,13 @@ export function selectStorefrontRecoveryLinks({
 async function searchStore(store, query, perStore = Infinity, matchingQuery = query, catalogLimit = perStore, options = {}) {
   options.signal?.throwIfAborted();
   const started = Date.now();
-  const searchUrl = store.search(query);
+  // Retrieval may use an exact source-native model token only in the
+  // explicitly bounded specialist exploration path. Price, variant and sold
+  // subject matching still use the ORIGINAL requested query below.
+  const nativePlan=planSourceNativeModelQuery(query,{
+    allowModelRecall:options.exploreUnknownSpecialists===true,
+  });
+  const searchUrl = store.search(nativePlan.query);
   try {
     let html = "";
     let searchPageFinalUrl = searchUrl;
