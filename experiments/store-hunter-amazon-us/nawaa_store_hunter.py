@@ -649,25 +649,39 @@ def classify_product_intent(query: str, title: str) -> tuple[str, list[str], str
         if is_disc_request:
             if found(r"\b(?:ssd|nvme|solid state|hard drive|storage|game drive)\b") and not found(r"\b(?:disc|disk|blu[\s-]?ray)\s+drive\b"):
                 return "mismatch", ["SSD_STORAGE_NOT_DISC_DRIVE"], condition
-            if found(ps5) and found(r"\b(?:disc|disk|blu[\s-]?ray)\b.*\bdrive\b|\bdrive\b.*\b(?:disc|disk)\b"):
+            has_disc_identity = found(r"\b(?:disc|disk|blu[\s-]?ray)\b.*\bdrive\b|\bdrive\b.*\b(?:disc|disk)\b")
+            if found(ps5) and has_disc_identity:
+                # A KEM optical replacement module, repair kit or connector is
+                # an alternative part, not the complete PS5 disc-drive add-on.
+                if found(r"\b(?:replacement|repair|connector|module|laser|kem[\s-]?\d+|optical|spare part)\b"):
+                    return "related", ["PS5_DISC_DRIVE_REPAIR_PART_NOT_COMPLETE_ADDON"], condition
                 return "exact", ["PS5_DISC_DRIVE_CLASS"], condition
             if found(ps5):
                 return "related", ["PS5_FAMILY_NOT_PROVEN_DISC_DRIVE"], condition
             return "mismatch", ["WRONG_PS5_DISC_DRIVE_FAMILY"], condition
         is_console_request = found(r"\b(?:console|digital edition|slim console|pro console)\b", q)
         if is_console_request:
-            if found(r"\b(?:portal|remote player|controller|dualsense|cover|skin|case|stand|charging station|dock|ssd|nvme|solid state|game drive|disc drive|disk drive)\b"):
+            if not found(ps5):
+                return "mismatch", ["WRONG_CONSOLE_FAMILY"], condition
+            if found(r"\b(?:portal|remote player|video\s*game|videogame|physical disc|game disc|standard edition|game code|disc only|game only|download code)\b"):
+                return "mismatch", ["GAME_OR_REMOTE_PLAYER_NOT_PS5_CONSOLE"], condition
+            if found(r"\b(?:cover|skin|case|faceplate|stand|dock|charging station|replacement|repair|disc drive|disk drive|optical drive)\b"):
                 return "mismatch", ["ACCESSORY_NOT_PS5_CONSOLE"], condition
-            if found(ps5) and found(r"\b(?:console|digital edition|slim|pro|playstation\s*5)\b"):
+            # "Controller for PS5 console" is not a console. But a console
+            # bundle "with two controllers" legitimately remains a console.
+            if found(r"\b(?:controller|dualsense|gamepad)\b") and not found(r"\bconsole\b"):
+                return "mismatch", ["CONTROLLER_NOT_PS5_CONSOLE"], condition
+            if found(r"\b(?:controller|dualsense|gamepad)\b") and found(
+                    r"\b(?:controller|dualsense|gamepad)\b.{0,26}\b(?:for|compatible)\b"):
+                return "mismatch", ["CONTROLLER_NOT_PS5_CONSOLE"], condition
+            if found(r"\b(?:console|digital edition)\b"):
                 return "exact", ["PS5_CONSOLE_CLASS"], condition
-            if found(ps5):
-                return "unclassified", ["PS5_CONSOLE_UNPROVEN"], condition
-            return "mismatch", ["WRONG_CONSOLE_FAMILY"], condition
+            return "unclassified", ["PS5_CONSOLE_IDENTITY_NOT_PROVEN"], condition
 
     # Model-family matches must not silently conflate base/Plus/Ultra/Pro/Max.
     for family,rx,variants in [
         ("IPHONE_17", r"\biphone\s*17\b", r"\b(?:pro|max|plus|air)\b"),
-        ("GALAXY_S25", r"\b(?:samsung\s+)?galaxy\s*s25\b", r"\b(?:ultra|plus)\b|(?<!\w)s25\+"),
+        ("GALAXY_S25", r"\b(?:samsung\s+)?galaxy\s*s25\b", r"\b(?:ultra|plus|fe)\b|(?<!\w)s25\+"),
     ]:
         if found(rx,q):
             if not found(rx):
