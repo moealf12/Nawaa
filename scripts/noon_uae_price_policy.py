@@ -6,7 +6,7 @@ An SEO Offer without matching offer-code identity cannot certify a buybox.
 from __future__ import annotations
 
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.parse import parse_qs, urlsplit
 
 SKU = re.compile(r"(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)", re.I)
@@ -133,3 +133,19 @@ def corroborate_sources(*, plp_price, ast_candidates, jsonld_offers):
         ),
         "customerPublishable": False,
     }
+
+
+# Indicative conversion only, observed rate on 2026-11-05.
+# Callers must establish AED independently; this function cannot attest currency.
+AED_TO_SAR_ESTIMATE_RATE = Decimal("1.023")
+
+
+def aed_to_sar_estimate(price_aed):
+    """Convert a validated AED amount to an approximate SAR display amount."""
+    amount_cents = cents(price_aed)
+    if amount_cents is None:
+        return None
+    converted = (Decimal(amount_cents) / 100 * AED_TO_SAR_ESTIMATE_RATE).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    return str(converted)
