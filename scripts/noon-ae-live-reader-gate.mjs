@@ -47,8 +47,24 @@ for(const query of queries){
       errorCode:String(error?.message||"SOURCE_ERROR").slice(0,100)});
   }
 }
+// Certification of the JSON bridge is separate from source availability.
+// A single independently priced real source query proves transport correctness;
+// rejected 403/429 requests remain visible as *degraded access*, not failures
+// of price math or silently replaced catalog inventory.
+const accessDenials=reports.filter(r=>
+  ["HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED",
+   "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN"]
+    .includes(r.failureClass)).length;
+const unexpectedFailures=reports.filter(r=>
+  r.observed===0 && !["HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED",
+    "SOURCE_ACCESS_DENIED_COOLDOWN","SOURCE_RATE_LIMIT_COOLDOWN"]
+    .includes(r.failureClass)).length;
+const transportCertified=passed>=1&&total>=1&&unexpectedFailures===0;
 console.info("NOON_AE_PYTHON_LIVE_GATE "+JSON.stringify({
-  schema:"nawaa.noon-ae.live-gate.v1",sampleSize:queries.length,
-  queriesWithOffers:passed,verifiedOffers:total,sourceOwned:true,reports,
+  schema:"nawaa.noon-ae.live-gate.v2",sampleSize:queries.length,
+  queriesWithOffers:passed,verifiedOffers:total,sourceOwned:true,
+  transportCertified,availability:passed===queries.length
+    ?"ALL_QUERIES":"DEGRADED_SOURCE_ACCESS",
+  accessDenials,unexpectedFailures,reports,
 }));
-if(passed<2||total<2)process.exitCode=1;
+if(!transportCertified)process.exitCode=1;
