@@ -113,3 +113,43 @@ test("R04 open-world: returns bounded counters, never raw query, product titles,
   for(const phrase of ["PRIVATE_PRODUCT_SECRET","private secret query 777","private.example","SECRET_MERCHANT"])
     assert.equal(s.includes(phrase),false);
 });
+
+test("R04 open-world: Arabic/English new, used and renewed buyer conditions are exact contracts",async()=>{
+  const {parseSearchIntent}=await import("../src/search-query.mjs");
+  const samples=[
+    ["ايفون 17 مجدد","refurbished"],
+    ["ايفون 17 مجددة","refurbished"],
+    ["iPhone 17 renewed","refurbished"],
+    ["iPhone 17 refurbished","refurbished"],
+    ["ايفون 17 مستعمل","used"],
+    ["laptop used","used"],
+    ["سماعات جديد","new"],
+    ["headphones new","new"],
+  ];
+  for(const [query,condition] of samples){
+    const intent=parseSearchIntent(query);
+    assert.equal(intent.condition,condition,query);
+    for(const raw of ["مجدد","مجدده","renewed","refurbished",
+      "مستعمل","مستعمله","used","جديد","جديده","new"])
+      assert.equal((" "+intent.providerQuery+" ").includes(" "+raw+" "),false,
+        query+" leaked condition keyword into merchant acquisition");
+  }
+  const present=offer("Apple iPhone 17 256GB Renewed",{
+    condition:"refurbished",merchant:"jarir",
+  });
+  const d=inspectFirstPassRecall("ايفون 17 مجدد",[present]);
+  assert.ok(d.strictPrincipalObserved>=1,JSON.stringify(d));
+  // A merely related low-confidence pile cannot change requested condition.
+  const unproven=inspectFirstPassRecall("ايفون 17 مجدد",[
+    offer("Apple iPhone 17 256GB New",{condition:"new"}),
+  ]);
+  assert.equal(unproven.strictPrincipalObserved,0);
+});
+
+test("R04 open-world: contradictory buyer condition never guesses new or used",async()=>{
+  const {parseSearchIntent}=await import("../src/search-query.mjs");
+  const q="iphone 17 used new";
+  const parsed=parseSearchIntent(q);
+  assert.equal(parsed.condition,null);
+  assert.equal(parsed.providerQuery,"iphone 17 used new");
+});
