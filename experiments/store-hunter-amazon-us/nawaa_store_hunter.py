@@ -799,8 +799,9 @@ class Scraper:
         self._robots: RobotFileParser | None = None
         self._robots_blocked = False
         self._browser_used = False
-        # Search-scoped, not per product: at most two extra PDP reads.
-        self._amazon_pdp_retry_budget = 2
+        # Search-scoped upper bound: at most three PDP content-negotiation
+        # recovery reads, never on 403/429, challenge or missing HTTP body.
+        self._amazon_pdp_retry_budget = 3
         self._client = httpx.AsyncClient(
             follow_redirects=False, trust_env=False, timeout=httpx.Timeout(15.0, connect=8.0),
             limits=httpx.Limits(max_connections=4),
@@ -1145,9 +1146,12 @@ class Scraper:
                         and host(self.origin) in {"www.amazon.com", "amazon.com"}
                         and self._amazon_pdp_retry_budget > 0):
                     self._amazon_pdp_retry_budget -= 1
-                    self.log("pdp-price-recovery", product.url, "AMAZON_MISSING_PRIMARY_PRICE_RETRY_ONCE")
-                    await asyncio.sleep(0.4)
-                    retried_body = await self.fetch("product-detail-price-retry", product.url)
+                    self.log("pdp-price-recovery", product.url, "AMAZON_MISSING_PRIMARY_PRICE_NEGOTIATION_RETRY_ONCE")
+                    await asyncio.sleep(0.65)
+                    retried_body = await self.fetch(
+                        "product-detail-price-retry", product.url,
+                        headers={"Accept": "text/html,application/xhtml+xml;q=0.9,application/xml;q=0.8,*/*;q=0.5",
+                                 "Accept-Language": "en-US,en;q=0.8"})
                     if retried_body:
                         retried = (parse_jsonld(retried_body, product.url)
                                    + parse_microdata(retried_body, product.url)
