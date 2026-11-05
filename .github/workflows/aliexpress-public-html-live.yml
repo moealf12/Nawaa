@@ -110,7 +110,7 @@ jobs:
           ruff check --select E4,E7,E9,F scripts/aliexpress-10-intent-live.py
       - name: Check ten real intents without inventing PDP prices
         env:
-          HEAD_SHA: \${{ github.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           python scripts/aliexpress-10-intent-live.py
           python - <<'PY'
@@ -124,10 +124,17 @@ jobs:
           assert data["customerPublishable"] is False
           assert data["pdpPriceVerified"] is False
           assert data["productsAccepted"] == sum(x["accepted"] for x in data["queries"])
+          assert data["productsAccepted"] == (
+              data["productsWithTitleTokenOverlap"] +
+              data["productsCrossScriptRelevanceUnverified"]
+          )
           assert all(x["customerPublishable"] is False for x in data["queries"])
           print("NAWAA_ALIEXPRESS_MATRIX_SUMMARY",json.dumps({
               "queried": data["queryCount"],
               "queriesWithTrustedSearchCards": data["queriesWithTrustedSearchCards"],
+              "queriesWithCrossScriptCandidates": data["queriesWithCrossScriptCandidates"],
+              "titleTokenOverlap": data["productsWithTitleTokenOverlap"],
+              "crossScriptRelevanceUnverified": data["productsCrossScriptRelevanceUnverified"],
               "searchCardsOnly": data["productsAccepted"],
               "pdpPriceVerified": False,
               "customerPublishable": False
