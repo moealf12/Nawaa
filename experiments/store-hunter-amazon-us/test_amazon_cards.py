@@ -715,3 +715,35 @@ class AmazonPdpFaultContainmentTests(unittest.IsolatedAsyncioTestCase):
                 await scraper.search()
         finally:
             await scraper.close()
+
+
+class AmazonPriceProvenanceDedupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_duplicate_adopts_pdp_only_price_provenance(self):
+        import nawaa_store_hunter as m
+        url="https://www.amazon.com/dp/B0C3HCD34R"
+        first=m.Product(title="Soundcore Headphones Black",url=url,sku="B0C3HCD34R")
+        second=m.Product(title=first.title,url=url,sku=first.sku,price="44.99",
+                         currency="USD",price_status="single_source_unverified",
+                         price_source="pdp_main_only")
+        scraper=m.Scraper("https://www.amazon.com","headphones",2,1,"never")
+        merged=scraper.merge([first,second])
+        await scraper.close()
+        self.assertEqual(len(merged),1)
+        self.assertEqual(merged[0].price,"44.99")
+        self.assertEqual(merged[0].price_source,"pdp_main_only")
+
+    async def test_duplicate_price_conflict_fails_closed_currency_and_provenance(self):
+        import nawaa_store_hunter as m
+        url="https://www.amazon.com/dp/B0C3HCD34R"
+        first=m.Product(title="Soundcore Headphones Black",url=url,sku="B0C3HCD34R",
+                        price="44.99",currency="USD",price_source="search_only")
+        second=m.Product(title=first.title,url=url,sku=first.sku,
+                         price="49.99",currency="USD",price_source="pdp_main_only")
+        scraper=m.Scraper("https://www.amazon.com","headphones",2,1,"never")
+        merged=scraper.merge([first,second])
+        await scraper.close()
+        self.assertEqual(len(merged),1)
+        self.assertIsNone(merged[0].price)
+        self.assertIsNone(merged[0].currency)
+        self.assertEqual(merged[0].price_source,"conflict")
+        self.assertIn("SOURCE_PRICE_DISAGREEMENT",merged[0].issues)
