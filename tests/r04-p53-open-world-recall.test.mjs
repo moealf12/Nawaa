@@ -153,3 +153,39 @@ test("R04 open-world: contradictory buyer condition never guesses new or used",a
   assert.equal(parsed.condition,null);
   assert.equal(parsed.providerQuery,"iphone 17 used new");
 });
+
+test("R04 universal: canonical merchant condition aliases are normalized before identity and presentation",async()=>{
+  const {dedupeNormalizedOffers}=await import("../server/match.mjs");
+  const raw=offer("Apple iPhone 17 Renewed",{
+    condition:"renewed",provider:"jarir-direct",
+    sourceUrl:"https://www.jarir.com/sa-en/apple-iphone-17-123.html",
+  });
+  const untouched=JSON.stringify(raw);
+  const rows=dedupeNormalizedOffers([raw]);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].condition,"refurbished");
+  assert.equal(raw.condition,"renewed");
+  assert.equal(JSON.stringify(raw),untouched);
+  const certified=inspectFirstPassRecall("ايفون 17 مجدد",rows);
+  assert.ok(certified.strictPrincipalObserved>=1,JSON.stringify(certified));
+  const other=dedupeNormalizedOffers([
+    raw,{...raw,condition:"new"},{...raw,condition:"used"},
+    {...raw,condition:"unknown"},
+  ]);
+  assert.equal(other.length,4,
+    "canonical condition must never fuse new, refurbished, used, unknown");
+  for(const condition of ["new","refurbished","used","unknown"])
+    assert.ok(other.some(o=>o.condition===condition));
+});
+
+test("R04 open-world: both JSON and SSE search paths use the same safe recall decision",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const source=readFileSync(new URL("../server/server.mjs",import.meta.url),"utf8");
+  assert.equal(source.split("inspectFirstPassRecall(query,").length-1,2);
+  assert.equal(source.split("planOpenWorldStorefrontBackfill(query,").length-1,2);
+  assert.match(source,/streamDeadlineAt-Date\.now\(\)>2200/);
+  assert.match(source,/streamBackfillBudgetExpired\?null:providersPending/);
+  assert.match(source,/const fallbackSignal=AbortSignal\.any/);
+  assert.match(source,/const backfillSignal=AbortSignal\.any/);
+  assert.match(source,/streamBackfillMode="disjoint_storefronts"/);
+});
