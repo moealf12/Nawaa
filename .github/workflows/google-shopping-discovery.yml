@@ -1,0 +1,47 @@
+name: Google Shopping Staged Discovery Safety & Browser
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/google-shopping-discovery.yml"
+      - "src/google-shopping-discovery.mjs"
+      - "src/search-page.mjs"
+      - "search.html"
+      - "tests/google-shopping-discovery.test.mjs"
+      - "tests/google-shopping-search-ui.test.mjs"
+      - "scripts/google-shopping-browser-smoke.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-shopping-discovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-and-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install locked dependencies without postinstall
+        run: npm ci --ignore-scripts
+      - name: Validate exact links, query isolation and UI contracts
+        run: node --test tests/google-shopping-discovery.test.mjs tests/google-shopping-search-ui.test.mjs
+      - name: Use temporary Playwright for actual browser DOM assertions
+        run: npm install --no-save --no-package-lock --ignore-scripts playwright@1.64.1
+      - name: Resolve native Chrome
+        run: |
+          if command -v google-chrome-stable >/dev/null; then
+            echo "NAWAA_CHROME_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "NAWAA_CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          else
+            npx playwright install chromium
+          fi
+      - name: Real desktop/mobile DOM smoke with external requests BLOCKED
+        run: node scripts/google-shopping-browser-smoke.mjs
