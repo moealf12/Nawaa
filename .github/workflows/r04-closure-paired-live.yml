@@ -1,0 +1,59 @@
+name: NAWAA R04 Closure One-Shot Paired Live Acceptance
+on:
+  pull_request:
+    paths:
+      - 'server/providers/free-storefronts.mjs'
+      - 'scripts/r04-closure-paired-live.mjs'
+      - 'tests/r04-closure-pdp-principal-recovery.test.mjs'
+      - '.github/workflows/r04-closure-paired-live.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r04-closure-paired-live-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  candidate-vs-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      R04_CLOSURE_BASELINE_SHA: bdf01aed2b9225b1053243ef15d728e31da83fb0
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+      PYTHON_WORKER_URL: ''
+      NAWAA_PY_LIVE_ENABLED: '0'
+      SERPAPI_API_KEY: ''
+      NAWAA_GOOGLE_SHOPPING_RESULTS_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Structural and source-planning negative controls
+        run: |
+          node --check scripts/r04-closure-paired-live.mjs
+          node --check server/providers/free-storefronts.mjs
+          node --test tests/r04-closure-pdp-principal-recovery.test.mjs tests/r04-p54-open-world-source-planner.test.mjs tests/r04-p53-open-world-recall.test.mjs
+      - name: Create read-only exact baseline worktree
+        run: |
+          test "$(git rev-parse HEAD)" != "$R04_CLOSURE_BASELINE_SHA"
+          git cat-file -e "$R04_CLOSURE_BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/nawaa-r04-closure-baseline" "$R04_CLOSURE_BASELINE_SHA"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/nawaa-r04-closure-baseline/node_modules"
+          echo "R04_CLOSURE_BASELINE_DIR=$RUNNER_TEMP/nawaa-r04-closure-baseline" >> "$GITHUB_ENV"
+      - name: Collect paired 36 frozen, 12 prior open-world, 12 novel live intents
+        run: node scripts/r04-closure-paired-live.mjs
+      - name: Preserve immutable exact-SHA per-stage evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-closure-paired-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-closure-paired-live-evidence.json
+          retention-days: 14
+          if-no-files-found: warn
