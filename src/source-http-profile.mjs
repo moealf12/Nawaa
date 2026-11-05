@@ -10,21 +10,36 @@ const THOMANN_HEADERS = Object.freeze({
   "user-agent": NAWAA_INDEXER_USER_AGENT,
 });
 
-// Search and PDP fetchers share one honest header profile. Existing merchants
+// AliExpress's 200/reCAPTCHA response is a challenge, not a price-bearing
+// product page. These headers identify NAWAA truthfully; they do NOT attest
+// human activity or bypass access controls. Keep the request deterministic.
+const ALIEXPRESS_HEADERS = Object.freeze({
+  accept: "text/html,application/xhtml+xml;q=0.9",
+  "accept-language": "ar-SA,ar;q=0.9,en;q=0.5",
+  "user-agent": NAWAA_INDEXER_USER_AGENT,
+});
+
+function isAliExpressPublicHost(hostname) {
+  return /^(?:(?:www|m|[a-z]{2})\.)?aliexpress\.(?:com|us)$/i.test(hostname);
+}
+
+// Search and PDP fetchers share one honest header profile. All other merchants
 // keep their old behavior; never accept arbitrary user-controlled header keys.
 export function merchantRequestHeaders(sourceId, existing = {}) {
-  return sourceId === "thomann-de" ? {...THOMANN_HEADERS} : {...existing};
+  if (sourceId === "thomann-de") return {...THOMANN_HEADERS};
+  if (sourceId === "aliexpress-cn") return {...ALIEXPRESS_HEADERS};
+  return {...existing};
 }
 
 export function productPageRequestHeaders(rawUrl, existing = {}) {
   try {
     const url = new URL(rawUrl);
-    if (url.protocol === "https:" &&
-        url.hostname.toLowerCase() === "www.thomann.de" &&
-        (!url.port || url.port === "443") &&
-        !url.username && !url.password) {
+    if (url.protocol !== "https:" || (url.port && url.port !== "443") ||
+        url.username || url.password) return {...existing};
+    if (url.hostname.toLowerCase() === "www.thomann.de")
       return merchantRequestHeaders("thomann-de");
-    }
+    if (isAliExpressPublicHost(url.hostname))
+      return merchantRequestHeaders("aliexpress-cn");
   } catch {}
   return {...existing};
 }
