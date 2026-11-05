@@ -41,7 +41,8 @@ import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../sr
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
-import {extractNoonUaeSearchCardEvidence} from "../../src/noon-ae-search-card-evidence.mjs";
+import {extractNoonUaeSearchCardEvidence,extractNoonUaeJsonCardEvidence} from "../../src/noon-ae-search-card-evidence.mjs";
+import {fetchNoonUaePythonCards,noonUaePythonEnabled} from "../../src/noon-ae-python-acquisition.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1702,16 +1703,60 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
   try {
     let html = "";
     let searchPageFinalUrl = searchUrl;
+    let noonUaeJsonCards = null;
     let searchDiagnostics = null;
     let primarySearchOffers = [];
     let primarySearchError = null;
     let sourceAccessFailure = null;
+    let noonUaeSourceStage = null;
     // HTML is the universal first acquisition layer. It is cheap, cache-friendly,
     // and often contains JSON-LD/SSR state with complete product cards.
     // Store-specific APIs are fallbacks only when the HTML path yields no offers.
     let htmlFirstAttempted = false;
     try {
-      if (store.id === "amazon-sa") {
+      if (store.id==="noon-ae" && noonUaePythonEnabled()) {
+        // Source-scoped Python acquisition replaces the Node fetch, never
+        // follows a rejected 403 with a second route or amplifies requests.
+        const access=sourceRateLimitGuard.canRequest(store.id);
+        if(!access.allowed){
+          const denied=access.failureClass==="HTTP_403_ACCESS_DENIED";
+          const error=new Error(denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN");
+          error.failureClass=denied?"SOURCE_ACCESS_DENIED_COOLDOWN":"SOURCE_RATE_LIMIT_COOLDOWN";
+          throw error;
+        }
+        try{
+          const page=await fetchNoonUaePythonCards(query,{
+            signal:options.signal,
+            budgetMs:Math.min(5300,Math.max(2100,Number(options.storeDeadlineMs)||6500)-350),
+          });
+          noonUaeJsonCards=page;
+          searchPageFinalUrl=page.finalUrl;
+          searchDiagnostics={acquisitionTransport:"PYTHON_NOON_AE_JSON",
+            cardRecordsReceived:page.cards.length,blockedReason:null};
+          sourceRateLimitGuard.recordNon403(store.id);
+        }catch(error){
+          if(error?.failureClass==="HTTP_403_ACCESS_DENIED")
+            sourceRateLimitGuard.record403(store.id);
+          else if(error?.failureClass==="HTTP_429_RATE_LIMITED")
+            sourceRateLimitGuard.record429(store.id,null);
+          if(error?.sourceStage){
+            noonUaeSourceStage={
+              stage:error.sourceStage,
+              httpStatus:error.sourceHttpStatus??null,
+              elapsedMs:error.sourceElapsedMs??null,
+            };
+            // Fixed taxonomy only; never log customer query, prices,
+            // response HTML, request URL, cookies or proxy details.
+            console.info("NAWAA_NOON_AE_SOURCE_STAGE "+JSON.stringify({
+              stage:noonUaeSourceStage.stage,
+              httpStatus:noonUaeSourceStage.httpStatus,
+              elapsedMs:noonUaeSourceStage.elapsedMs,
+              failureClass:error.failureClass||"SOURCE_TRANSPORT_FAILURE",
+            }));
+          }
+          throw error;
+        }
+      } else if (store.id === "amazon-sa") {
         const pageStart = Math.max(1, Math.min(8, Math.floor(Number(options.amazonPageStart) || 1)));
         const requestedPages = Math.floor(Number(options.amazonPageCount ?? options.amazonPages ?? process.env.AMAZON_SA_SEARCH_PAGES ?? 5) || 5);
         const pageCount = Math.max(1, Math.min(8 - pageStart + 1, requestedPages));
@@ -1776,6 +1821,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       // catalog or a stockout, even if its message contains no "HTTP 403".
       const denied=new Error(primarySearchError || sourceAccessFailure);
       denied.failureClass=sourceAccessFailure;
+      if(store.id==="noon-ae" && noonUaeSourceStage){
+        denied.sourceStage=noonUaeSourceStage.stage;
+        denied.sourceHttpStatus=noonUaeSourceStage.httpStatus;
+        denied.sourceElapsedMs=noonUaeSourceStage.elapsedMs;
+      }
       throw denied;
     }
     // Real, first-party HTML search cards are Noon's primary source path.
@@ -1797,15 +1847,20 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const noonLiveHtmlCards = store.id === "noon-sa" && noonHtmlSearchContextValid
       ? extractNoonSaudiSearchCardEvidence(html,query,{limit:100})
       : null;
-    // Noon UAE experimental HTML collector proved live PLP cards but only
-    // market-inferred AED for 252 cards. The public customer adapter accepts
-    // ONLY a price element explicitly declaring AED on the same offer card.
-    // It never publishes the fixed-rate SAR experiment or context-inferred AED.
-    const noonUaeEvidence = store.id==="noon-ae" && html &&
+    // Noon UAE search evidence arrives as first-party HTML or compact JSON
+    // from the local Python collector. Both pass exact SKU/offer, AE-context,
+    // price and image admission before approximate AED->SAR conversion.
+    const noonUaeEvidence = store.id==="noon-ae" &&
       !searchDiagnostics?.blockedReason
-      ? extractNoonUaeSearchCardEvidence(html,query,{
-          searchUrl,finalUrl:searchPageFinalUrl,limit:500,
-        })
+      ? noonUaeJsonCards
+        ? extractNoonUaeJsonCardEvidence(noonUaeJsonCards,query,{
+            searchUrl,finalUrl:searchPageFinalUrl,limit:500,
+          })
+        : html
+          ? extractNoonUaeSearchCardEvidence(html,query,{
+              searchUrl,finalUrl:searchPageFinalUrl,limit:500,
+            })
+          : null
       : null;
     const aliexpressProductLinkTrust = {rejectedProductLinks:0,rejectionSamples:[]};
     const htmlFirstOffers =
@@ -1895,7 +1950,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       }
     }
     primarySearchError ||= primarySearchOffers.paginationError || null;
-    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html) {
+    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html &&
+        !(store.id==="noon-ae"&&noonUaePythonEnabled())) {
       // A failed HTML-first transport remains a real provider failure unless a
       // fallback produced verified offers. Never mask it as an empty catalog.
       if (primarySearchError && store.id !== "ikea-sa" && !LANDMARK_BLOOMREACH[store.id]) {

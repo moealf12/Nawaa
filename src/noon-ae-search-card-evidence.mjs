@@ -94,6 +94,72 @@ function imageFromCard($,anchor) {
   return null;
 }
 
+// Python emits selected *card evidence*, never arbitrary HTML or a customer
+// price. Validation here uses the same URL/amount/image rules as the browser
+// HTML path. The worker's AED label alone never creates a trusted offer.
+export function extractNoonUaeJsonCardEvidence(
+  packet,query,{searchUrl,finalUrl=packet?.finalUrl,limit=MAX_CARDS}={}
+){
+  const fail=status=>({status,parsedCards:0,accepted:0,missingCurrency:0,
+    invalidLinks:0,conflicts:0,explicitAed:0,marketInferredAed:0,offers:[]});
+  if(!packet||typeof packet!=="object"||!Array.isArray(packet.cards)||
+     packet.cards.length>250)return fail("INVALID_SOURCE_JSON_CARDS");
+  if(!verifiedSearchUrl(query,searchUrl,finalUrl))
+    return fail("SEARCH_URL_IDENTITY_NOT_ATTESTED");
+  const language=String(packet.language||"").toLowerCase();
+  if(!["en-ae","ar-ae"].includes(language)||
+     normalizeSearchQuery(packet.heading||"")!==normalizeSearchQuery(query||""))
+    return fail("SEARCH_PAGE_CONTEXT_NOT_ATTESTED");
+  let invalidLinks=0,missingCurrency=0,parsedCards=0;
+  const candidates=[];
+  for(const item of packet.cards){
+    if(!item||typeof item!=="object"||Array.isArray(item)||
+       typeof item.title!=="string"||item.title.length<4||item.title.length>350||
+       item.currency!=="AED"||typeof item.productId!=="string"||
+       typeof item.offerCode!=="string"){
+      invalidLinks++;continue;
+    }
+    const identity=noonUaeProductLink(item.sourceUrl);
+    const image=noonProductImage(item.image);
+    if(!identity||identity.productId!==item.productId||
+       identity.offerCode!==item.offerCode||!image){
+      invalidLinks++;continue;
+    }
+    parsedCards++;
+    const price=parseAedAmount(item.priceText);
+    if(!price||!Number.isFinite(item.priceAED)||
+       Math.abs(price.price-item.priceAED)>0.001){
+      missingCurrency++;continue;
+    }
+    candidates.push({...identity,title:item.title.replace(/\s+/g," ").trim(),
+      image,price:price.price,currency:"AED",
+      currencyEvidence:price.currencyEvidence,
+      priceEvidence:price.currencyEvidence==="EXPLICIT_AED_PRICE_LABEL"
+        ? "LIVE_AE_SEARCH_CARD_EXPLICIT_AED"
+        : "LIVE_AE_SEARCH_CARD_MARKET_CONTEXT_AED"});
+  }
+  const byOffer=new Map();
+  for(const item of candidates){
+    const key=item.productId+"|"+item.offerCode;
+    if(!byOffer.has(key))byOffer.set(key,[]);
+    byOffer.get(key).push(item);
+  }
+  let conflicts=0;
+  const accepted=[];
+  for(const records of byOffer.values()){
+    if(new Set(records.map(o=>o.title+"|"+o.price+"|"+o.image)).size!==1){
+      conflicts++;continue;
+    }
+    accepted.push(records[0]);
+  }
+  const limitN=Math.max(0,Math.min(MAX_CARDS,Math.floor(Number(limit)||0)));
+  return {status:accepted.length?"VERIFIED_UAE_MARKET_PRICE_CARDS":"NO_USABLE_AE_PRICE_CARD",
+    parsedCards,accepted:accepted.length,missingCurrency,invalidLinks,conflicts,
+    explicitAed:accepted.filter(x=>x.currencyEvidence==="EXPLICIT_AED_PRICE_LABEL").length,
+    marketInferredAed:accepted.filter(x=>x.currencyEvidence==="VERIFIED_UAE_STOREFRONT_CONTEXT").length,
+    offers:accepted.slice(0,limitN)};
+}
+
 export function extractNoonUaeSearchCardEvidence(
   html,query,{searchUrl,finalUrl=searchUrl,limit=MAX_CARDS}={}
 ){
