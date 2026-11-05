@@ -9,9 +9,9 @@ const MAX_HTML_CHARS = 5_000_000;
 const MAX_PRODUCTS = 180;
 const MAX_BLOCK_CHARS = 180_000;
 
-function readObject(html, start) {
+function readObject(html, start, cap = MAX_BLOCK_CHARS) {
   let depth = 0, inString = false, escaped = false;
-  const end = Math.min(html.length, start + MAX_BLOCK_CHARS);
+  const end = Math.min(html.length, start + cap);
   for (let i = start; i < end; i++) {
     const char = html[i];
     if (escaped) { escaped = false; continue; }
@@ -22,6 +22,27 @@ function readObject(html, start) {
     if (char === "}" && --depth === 0) {
       try { return JSON.parse(html.slice(start, i + 1)); } catch { return null; }
     }
+  }
+  return null;
+}
+
+function hydrateItemList(html) {
+  // Prefer AliExpress's real nested catalog array: object key ordering is not
+  // an API contract, and a regex anchored on redirectedId silently drops items.
+  // The wrapper is JS, but only its data:{...} JSON object is parsed as JSON.
+  const assignments = /_dida_config_\._init_data_\s*=/g;
+  let found=0;
+  for (const match of html.matchAll(assignments)) {
+    if (++found > 3) break;
+    const offset=match.index+match[0].length;
+    const prefix=html.slice(offset,offset+350);
+    const field=/(?:["']?data["']?\s*:\s*)\{/.exec(prefix);
+    if (!field) continue;
+    const start=offset+field.index+field[0].length-1;
+    const parsed=readObject(html,start,2_500_000);
+    const state=parsed?.root ? parsed : parsed?.data;
+    const items=state?.root?.fields?.mods?.itemList?.content;
+    if(Array.isArray(items)) return items.slice(0,MAX_PRODUCTS);
   }
   return null;
 }
@@ -115,9 +136,10 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
       samples.push({productId, reason:detail});
   };
   const report = diagnostics && typeof diagnostics === "object" ? diagnostics : null;
+  let parserMode = "STRUCTURED_PRODUCTV3";
   const finalize = accepted => {
     if (report) {
-      report.parser = "STRUCTURED_PRODUCTV3";
+      report.parser = parserMode;
       report.structuredCandidates = scanned;
       report.accepted = accepted.length;
       report.rejectedReasons = {...counts};
@@ -136,11 +158,22 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
   const offers = [];
   const seen = new Set();
   const anchorLinks = itemAnchorsByExactId(src);
-  // Cap both the number of inspected objects and how much of each object is
-  // scanned; malformed hydration may not fan out into an unbounded parse.
-  for (const match of src.matchAll(PRODUCT_MARKER)) {
-    if (++scanned > MAX_PRODUCTS) { scanned = MAX_PRODUCTS; break; }
-    const item = readObject(src, match.index);
+  // Prefer the explicit itemList.content from one valid hydration object.
+  // Fall back to individually balanced productV3 objects for older pages.
+  // Both paths remain bounded and share exactly one admission contract.
+  const hydrated=hydrateItemList(src);
+  const items=[];
+  if (hydrated) {
+    parserMode="ALIEXPRESS_EMBEDDED_INIT_DATA";
+    items.push(...hydrated);
+  } else {
+    for (const match of src.matchAll(PRODUCT_MARKER)) {
+      if (items.length >= MAX_PRODUCTS) break;
+      items.push(readObject(src,match.index));
+    }
+  }
+  for (const item of items) {
+    scanned++;
     if (!item || typeof item !== "object" || item.itemType !== "productV3") {
       reject("UNPARSEABLE_PRODUCT_OBJECT"); continue;
     }
