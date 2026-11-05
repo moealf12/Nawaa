@@ -127,3 +127,27 @@ class CreatorsAPITransportSafetyTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await api.close()
             await client.aclose()
+
+
+class CreatorsSchemaDriftTests(unittest.IsolatedAsyncioTestCase):
+    async def test_malformed_oauth_token_schema_fails_closed(self):
+        def handler(request):
+            if request.url.path.endswith("/token"):
+                return httpx.Response(200, json=["not", "a", "token"])
+            raise AssertionError("no catalog call allowed without token")
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        api=CreatorsAPI(Config("id","secret","unit-20"),client=client)
+        try:
+            result=await api.get_items(["B0C3HCD34R"])
+            self.assertEqual(result["state"],"not_authorized_or_token_unavailable")
+            self.assertEqual(result["offers"],[])
+        finally:
+            await api.close()
+            await client.aclose()
+
+    async def test_malformed_optional_title_does_not_crash_source(self):
+        item=payload()
+        item["itemsResult"]["items"][0]["itemInfo"]={"title":"unexpected-string"}
+        parsed=parse_featured_offers(item,["B0C3HCD34R"])
+        self.assertEqual(len(parsed),1)
+        self.assertIsNone(parsed[0]["title"])
