@@ -19,6 +19,7 @@ from curl_cffi import requests
 from noon_uae_price_policy import assess_offer, cents
 from noon_uae_embedded_offer import inspect_offer_scripts
 from noon_uae_request_policy import classify_source_response
+from noon_uae_tsr_ast import inspect_tsr_ast
 
 BASE = "https://www.noon.com"
 SEARCH = BASE + "/uae-en/search/?" + urlencode({"q": "PlayStation 5"})
@@ -530,6 +531,13 @@ try:
                         REPORT["parsedEmbeddedOfferEvidence"] = inspect_offer_scripts(
                             soup, sku=item["sku"], offer_code=item["offerCode"],
                             plp_price=item["plpPrice"],
+                        )
+                        REPORT["tanstackTsrAst"] = inspect_tsr_ast(
+                            soup, sku=item["sku"], offer_code=item["offerCode"],
+                            plp_price=item["plpPrice"],
+                        )
+                        REPORT["tsrAstSameOfferPriceAttested"] = bool(
+                            REPORT["tanstackTsrAst"]["samePriceOfferAttested"]
                         )
                         REPORT["embeddedSameOfferPriceAttested"] = bool(
                             REPORT["parsedEmbeddedOfferEvidence"]["samePriceOfferAttested"]
