@@ -387,6 +387,16 @@ function normalizedRamCapacityGb(value = "") {
   return claim ? Number(claim[1]) : null;
 }
 
+// Explicit buyer condition is a structured requirement, not a keyword to
+// freely relax. Normalize Arabic/English retail aliases before routing, and
+// retain conflicting requests verbatim rather than guessing one condition.
+const BUYER_CONDITION_ALIASES=new Map([
+  ["new","new"],["جديد","new"],["جديده","new"],
+  ["used","used"],["مستعمل","used"],["مستعمله","used"],
+  ["refurbished","refurbished"],["renewed","refurbished"],
+  ["مجدد","refurbished"],["مجدده","refurbished"],
+]);
+
 export function parseSearchIntent(value = "") {
   const normalizedQuery = normalizeSearchQuery(value);
   const brand = Object.keys(BRAND_CATEGORY_PRIORITIES).find(name => (' '+normalizedQuery+' ').includes(' '+name+' ')) || null;
@@ -401,13 +411,17 @@ export function parseSearchIntent(value = "") {
   // Tab, MacBook, etc.) from being misread as overly-specific free text.
   const residual = normalizedQuery.replace(categoryDefinition?.[2] || /$^/g, ' ').split(' ').filter(token => token && token !== brand);
   const discoveryMode = !kind && !model && !/\b\d+(?:gb|tb)\b/.test(normalizedQuery) && (residual.length === 0 || (!brand && !category && residual.length === 1)) ? (brand ? 'brand' : category ? 'category' : 'general') : 'specific';
-  const condition = normalizedQuery.match(/\b(refurbished|used|new)\b/)?.[1] || null;
+  const tokens=normalizedQuery.split(" ").filter(Boolean);
+  const buyerConditions=[...new Set(tokens.map(t=>BUYER_CONDITION_ALIASES.get(t)).filter(Boolean))];
+  const condition=buyerConditions.length===1?buyerConditions[0]:null;
   // RAM and SSD are independent properties. Preserve a separately specified
   // SSD capacity while excluding the RAM amount from the storage constraint.
   const storageOnlyQuery=normalizedRamCapacityGb(normalizedQuery)!==null
     ? normalizedQuery.replace(/\b\d{1,3}(?:gb)?(?: (?:ddr[345]|lpddr[345]x?|memory)){0,2} ram\b|\bram \d{1,3}(?:gb)?\b/g," ")
     : normalizedQuery;
-  const baseProviderQuery=normalizedQuery.replace(/\b(refurbished|used|new)\b/g, "").replace(/\s+/g," ").trim();
+  const baseProviderQuery=condition
+    ? tokens.filter(t=>!BUYER_CONDITION_ALIASES.has(t)).join(" ")
+    : normalizedQuery;
   // Merchant retrieval and shopper matching are DIFFERENT contracts. A
   // generic "sports" adjective after a brand+footwear request is too narrow
   // for merchant search APIs; "nike shoes" finds all relevant footwear
