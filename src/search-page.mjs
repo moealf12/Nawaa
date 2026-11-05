@@ -1259,7 +1259,8 @@ function observeRemoteMore(query) {
   remoteMoreObserver?.disconnect();
   remoteMoreObserver = null;
   const button = document.querySelector("#loadMoreRemote");
-  if (!button || state.remoteLoading || typeof IntersectionObserver === "undefined") return;
+  if (!button || state.remoteLoading || state.remoteExhausted ||
+      !(state.overflowCursor || state.nextCursor) || typeof IntersectionObserver === "undefined") return;
   remoteMoreObserver = new IntersectionObserver((entries, observer) => {
     if (!entries.some(entry => entry.isIntersecting)) return;
     observer.disconnect();
@@ -1281,6 +1282,7 @@ async function loadMoreRemote(query) {
   els.status.textContent = state.overflowCursor ? "نسترجع بقية النتائج المكتشفة…" : "نوسّع البحث إلى مصادر ونتائج إضافية…";
 
   let completionStatus=null;
+  let lastPageSucceeded=false;
   try {
     let cursor = state.nextCursor;
     let pageCursor = state.overflowCursor;
@@ -1312,6 +1314,7 @@ async function loadMoreRemote(query) {
       }
       lastData = data;
     }
+    lastPageSucceeded=true;
     state.nextCursor = cursor;
     state.overflowCursor = pageCursor;
     state.remoteExhausted = !(cursor || pageCursor);
@@ -1344,6 +1347,8 @@ async function loadMoreRemote(query) {
     if (requestId === state.requestId) {
       state.remoteLoading = false;
       if (state.product) renderProduct(state.product,query);
+      // Re-arm only after a successful page; failures remain manual-retry only.
+      if (lastPageSucceeded && !state.remoteExhausted) observeRemoteMore(query);
       // The product re-render updates the generic status; preserve the real
       // pagination outcome (especially 410 expiry and partial source failures).
       if(completionStatus) els.status.textContent=completionStatus;
