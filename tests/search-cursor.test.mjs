@@ -14,5 +14,5 @@ test("search cursor is query-bound and acquisition depth expands monotonically",
   assert.equal(second.amazonPageStart,first.amazonPageStart+first.amazonPageCount);
   assert.equal(deep.amazonPageCount,0);
   assert.ok(deep.productPageLimit>first.productPageLimit);
-  assert.ok(deep.returnLimit>first.returnLimit);
+  assert.deepEqual([first.returnLimit,second.returnLimit,deep.returnLimit],[600,600,600]);
 });
