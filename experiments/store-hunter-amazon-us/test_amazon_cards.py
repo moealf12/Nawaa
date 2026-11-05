@@ -163,7 +163,7 @@ class AmazonPdpRecoveryTests(unittest.IsolatedAsyncioTestCase):
           <img id="landingImage" src="https://m.media-amazon.com/images/I/pdp.jpg" />'''
         priced = common + '<div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">$44.99</span></span></div>'
         calls = []
-        async def fake_fetch(method, url, params=None):
+        async def fake_fetch(method, url, params=None, headers=None):
             calls.append(method)
             if method == "homepage":
                 return "<html></html>"
@@ -189,6 +189,7 @@ class AmazonPdpRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(product["price_status"], "single_source_unverified")
         self.assertIn("AMAZON_PDP_RETRY_PRICE_RECOVERED", product["issues"])
         self.assertEqual(calls.count("product-detail-price-retry"), 1)
+        self.assertTrue(any(d.status=="AMAZON_MISSING_PRIMARY_PRICE_NEGOTIATION_RETRY_ONCE" for d in s.diagnostics))
 
     async def test_ambiguous_amazon_main_price_does_not_retry(self):
         from unittest.mock import AsyncMock
@@ -202,7 +203,7 @@ class AmazonPdpRecoveryTests(unittest.IsolatedAsyncioTestCase):
           <div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">$44.99</span></span>
           <span class="a-price"><span class="a-offscreen">$54.99</span></span></div>'''
         calls = []
-        async def fake_fetch(method, url, params=None):
+        async def fake_fetch(method, url, params=None, headers=None):
             calls.append(method)
             if method == "homepage": return "<html></html>"
             if method == "search-html": return plp
