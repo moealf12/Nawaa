@@ -2178,9 +2178,11 @@ export function planFreeStorefrontSpecialistBackfill(query,{
     .filter(entry=>!initialExcluded.has(entry.store.id))
     .slice(0,Math.max(0,Math.min(64,Math.floor(firstWaveStoreLimit))))
     .map(entry=>entry.store.id);
+  const sourceHealth=Object.fromEntries(
+    STORES.map(store=>[store.id,sourceReliability.view(store.id)]));
   return planUnknownCategorySpecialists({
     query,stores:STORES,alreadySearchedIds:[...firstWave,...initialExcluded],
-    excludedStoreIds,maxStores,
+    excludedStoreIds,maxStores,sourceHealth,
   });
 }
 
@@ -2194,7 +2196,11 @@ export async function searchFreeStorefronts(query, options = {}) {
   const specialistPlan=options.exploreUnknownSpecialists===true
     ? planFreeStorefrontSpecialistBackfill(query,{
       firstWaveStoreLimit:options.firstWaveStoreLimit ?? 16,
-      excludedStoreIds:[...excludedStoreIds],
+      excludedStoreIds:[
+        ...excludedStoreIds,
+        ...STORES.filter(store=>sourceReliability.view(store.id).coolingDown)
+          .map(store=>store.id),
+      ],
       maxStores:storeLimit,
     }) : null;
   const routes=specialistPlan?.storeIds?.length
