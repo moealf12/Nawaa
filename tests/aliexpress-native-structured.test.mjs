@@ -129,6 +129,18 @@ test("different embedded productId and redirectedId cannot inherit each other's 
   assert.equal(diagnostics.customerPublishable,false);
 });
 
+test("Arabic query retains English merchant results as unverified cross-script discovery only",()=>{
+  const d={};
+  const results=extract(html(),"سماعات بلوتوث",d,norm);
+  assert.equal(results.length,1);
+  assert.equal(results[0].queryRelevanceEvidence,
+    "MERCHANT_SEARCH_CROSS_SCRIPT_UNVERIFIED");
+  assert.equal(results[0].customerPublishable,false);
+  assert.equal(results[0].pdpPriceVerified,false);
+  assert.equal(extract(html(),"coffee",{},norm).length,0,
+    "unrelated English query is still rejected");
+});
+
 test("top-level legacy salePrice remains recognized, without allowing unrelated originalPrice",()=>{
   const item={...base,prices:undefined,salePrice:{minPrice:11.25,currencyCode:"SAR"}};
   assert.equal(extract(html(item),"Bluetooth",{},norm)[0].price,11.25);
