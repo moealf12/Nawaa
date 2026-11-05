@@ -14,6 +14,7 @@ const baseline=()=>{
     productId:ORIGINAL,sourceUrl:ITEM(ORIGINAL),
     title:"Wireless Bluetooth Headphones",price:29.90,currency:"SAR",
     priceKind:"SEARCH_CARD_MINIMUM_VARIANT_UNVERIFIED",
+    queryRelevanceEvidence:"TITLE_TOKEN_OVERLAP",
     customerPublishable:false,pdpPriceVerified:false,
   };
   const pdpEvidence={
