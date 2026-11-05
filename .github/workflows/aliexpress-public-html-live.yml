@@ -81,6 +81,58 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # One representative live alias trace. A challenge or blocked PDP remains
+  # explicit diagnostic evidence, never a verified offer or CI false positive.
+  merchant-alias-lineage-diagnostic:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install bounded public PDP parser dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0
+      - name: Collect one official redirect without promoting unverified price
+        env:
+          ALIEXPRESS_ITEM_ID: "1005012743543835"
+          ALIEXPRESS_PDP_HOST: "ar.aliexpress.com"
+          ALIEXPRESS_ALIAS_TRACE: "1"
+        run: |
+          python scripts/aliexpress-pdp-evidence-live.py || :
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          doc = json.loads(Path("aliexpress-pdp-1005012743543835.json").read_text())
+          assert doc["customerPublishable"] is False
+          assert doc["aliasIdentityVerified"] is False
+          assert doc["captchaSolved"] is False
+          assert doc["redirectsFollowed"] <= 2
+          assert isinstance(doc["conclusion"], str)
+          assert doc["conclusion"] != "NOT_STARTED"
+          if doc.get("aliasCandidate"):
+              assert doc["aliasCandidate"]["customerPublishable"] is False
+              assert doc["aliasCandidate"]["originalItemId"] == doc["itemId"]
+          print("NAWAA_ALIEXPRESS_ALIAS_DIAGNOSTIC", json.dumps({
+              "conclusion": doc["conclusion"],
+              "redirectsFollowed": doc["redirectsFollowed"],
+              "aliasCandidate": doc.get("aliasCandidate"),
+              "pdpPriceVerifiedForOriginalItem": False,
+              "customerPublishable": False,
+          }))
+          PY
+      - name: Upload bounded alias-state evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aliexpress-alias-lineage
+          path: aliexpress-pdp-1005012743543835.json
+          if-no-files-found: warn
+          retention-days: 14
+
   # PDP attempts remain on-demand: previously verified search is not made
   # RED by expected CAPTCHA/identity/robots blocks in unrelated PDPs.
   merchant-pdp-evidence:
