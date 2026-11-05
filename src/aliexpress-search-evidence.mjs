@@ -57,6 +57,21 @@ function merchantItemUrl(raw, productId) {
   } catch { return null; }
 }
 
+function sourceLinkFailureReason(raw, productId) {
+  if (typeof raw !== "string" || !/^(?:https:\/\/|\/\/|\/item\/)/i.test(raw))
+    return "unsupported_link_scheme_or_relative_path";
+  try {
+    const link=new URL(raw,"https://www.aliexpress.com");
+    if (link.protocol !== "https:" || link.username || link.password ||
+        (link.port && link.port !== "443") || !MERCHANT_HOST.test(link.hostname))
+      return "unsafe_or_nonmerchant_host";
+    const id=/^\/item\/(\d{10,20})\.html\/?$/i.exec(link.pathname)?.[1];
+    if (!id) return "non_item_pdp_path";
+    if (id !== productId) return "product_id_mismatch";
+    return "link_not_attested";
+  } catch {return "malformed_url";}
+}
+
 function merchantImage(raw) {
   if (typeof raw !== "string" || raw.length > 2048) return null;
   try {
@@ -94,10 +109,10 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
   const src = String(html || "");
   const samples = [];
   const counts = Object.create(null);
-  const reject = (reason, productId) => {
+  const reject = (reason, productId, detail = reason) => {
     counts[reason] = (counts[reason] || 0) + 1;
     if (reason === "SOURCE_PDP_LINK_IDENTITY_UNVERIFIED" && samples.length < 5)
-      samples.push({productId, reason});
+      samples.push({productId, reason:detail});
   };
   const report = diagnostics && typeof diagnostics === "object" ? diagnostics : null;
   const finalize = accepted => {
@@ -152,7 +167,11 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
     if (!image) { reject("SOURCE_IMAGE_UNVERIFIED"); continue; }
     const sourceUrl = merchantItemUrl(item.productDetailUrl || item.productUrl, productId)
       || anchorLinks.get(productId) || null;
-    if (!sourceUrl) { reject("SOURCE_PDP_LINK_IDENTITY_UNVERIFIED", productId); continue; }
+    if (!sourceUrl) {
+      reject("SOURCE_PDP_LINK_IDENTITY_UNVERIFIED", productId,
+        sourceLinkFailureReason(item.productDetailUrl || item.productUrl, productId));
+      continue;
+    }
     seen.add(productId);
     offers.push({
       productId, title, image, price, currency, sourceUrl,
