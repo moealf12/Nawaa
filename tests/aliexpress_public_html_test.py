@@ -158,6 +158,23 @@ class AliExpressEvidenceTests(unittest.TestCase):
         self.assertEqual(cards, [])
         self.assertEqual(stats["rejected"]["EMBEDDED_PRODUCT_ID_CONFLICT"], 1)
 
+    def test_arabic_search_english_results_are_cross_script_discovery_only(self):
+        stats, cards = probe.parsed_search_cards(
+            search_html(), "سماعات بلوتوث"
+        )
+        self.assertEqual(stats["accepted"], 1)
+        self.assertEqual(
+            cards[0]["queryRelevanceEvidence"],
+            "MERCHANT_SEARCH_CROSS_SCRIPT_UNVERIFIED"
+        )
+        self.assertFalse(cards[0]["customerPublishable"])
+        self.assertFalse(cards[0]["pdpPriceVerified"])
+        other_stats, other = probe.parsed_search_cards(
+            search_html(), "coffee maker"
+        )
+        self.assertEqual(other, [])
+        self.assertEqual(other_stats["rejected"]["QUERY_NOT_RELEVANT"], 1)
+
     def test_challenge_is_not_a_zero_inventory_snapshot(self):
         self.assertEqual(
             probe.classify_html("<html>_____tmd_____ recaptcha</html>"),
