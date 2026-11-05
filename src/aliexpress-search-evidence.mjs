@@ -209,11 +209,25 @@ export function extractAliExpressSearchEvidence(html, query, diagnostics = null,
     }
     const image = merchantImage(item.image?.imgUrl);
     if (!image) { reject("SOURCE_IMAGE_UNVERIFIED"); continue; }
-    const sourceUrl = merchantItemUrl(item.productDetailUrl || item.productUrl, productId)
-      || anchorLinks.get(productId) || null;
+    // A campaign in productDetailUrl must not mask a valid second
+    // merchant-supplied productUrl. Never build a URL from the product ID.
+    // Conversely, an explicit *different-item* PDP is a hard conflict:
+    // another property/anchor must not silently override its identity.
+    const primaryLinkReason=sourceLinkFailureReason(item.productDetailUrl,productId);
+    if(primaryLinkReason==="product_id_mismatch"){
+      reject("SOURCE_PDP_LINK_IDENTITY_UNVERIFIED",productId,primaryLinkReason);
+      continue;
+    }
+    const secondaryLinkReason=sourceLinkFailureReason(item.productUrl,productId);
+    const sourceUrl=merchantItemUrl(item.productDetailUrl,productId) ||
+      (secondaryLinkReason==="product_id_mismatch"?null:
+        merchantItemUrl(item.productUrl,productId)) ||
+      (secondaryLinkReason==="product_id_mismatch"?null:
+        anchorLinks.get(productId)) || null;
     if (!sourceUrl) {
       reject("SOURCE_PDP_LINK_IDENTITY_UNVERIFIED", productId,
-        sourceLinkFailureReason(item.productDetailUrl || item.productUrl, productId));
+        secondaryLinkReason==="product_id_mismatch" ?
+          secondaryLinkReason:primaryLinkReason);
       continue;
     }
     seen.add(productId);
