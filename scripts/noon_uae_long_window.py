@@ -94,21 +94,28 @@ def wilson_lower_95(successes, total):
 
 
 def summarize(samples):
-    # At most one observation per 4h bucket so back-to-back retries cannot
-    # fabricate independent time windows. Failed windows count as failures.
-    buckets = {}
-    for sample in samples:
-        if not isinstance(sample, dict):
-            continue
-        time = _date(sample.get("utc"))
-        if time is None:
-            continue
-        hour_index = int(time.timestamp() // (MIN_WINDOW_GAP_HOURS * 3600))
-        previous = buckets.get(hour_index)
-        # Fail closed if any observed artifact in a window reports failure.
-        if previous is None or (previous["successful"] and not sample["successful"]):
-            buckets[hour_index] = sample
-    entries = sorted(buckets.values(), key=lambda s: s["utc"])
+    # Cluster observations by actual elapsed time, not clock buckets. Samples
+    # at 03:59 and 04:01 UTC must NOT count as independent 4-hour windows.
+    ordered = sorted(
+        (item for item in samples if isinstance(item, dict)
+         and _date(item.get("utc")) is not None
+         and type(item.get("successful")) is bool),
+        key=lambda item: item["utc"],
+    )
+    windows = []
+    for sample in ordered:
+        when = _date(sample["utc"])
+        if (not windows or
+                (when - _date(windows[-1]["utc"])).total_seconds()
+                >= MIN_WINDOW_GAP_HOURS * 3600):
+            windows.append(dict(sample))
+        elif not sample["successful"]:
+            # Every observed failure is significant, even when subsequent
+            # runs in the same time window succeed.
+            windows[-1]["successful"] = False
+            failures = windows[-1].setdefault("observedFailureClasses", [])
+            failures.extend(sample.get("observedFailureClasses", [])[:3])
+    entries = windows
     successes = sum(item["successful"] for item in entries)
     total = len(entries)
     days = len({item["utc"][:10] for item in entries})
