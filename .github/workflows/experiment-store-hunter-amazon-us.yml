@@ -11,8 +11,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: experiment-store-hunter-amazon-us-${{ github.ref }}
-  cancel-in-progress: true
+  # Shared across experiment workflows so independent test suites do not
+  # hit the same public source concurrently and distort acquisition evidence.
+  group: nawaa-amazon-us-experimental-acquisition-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   amazon-us-live:
