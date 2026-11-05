@@ -74,8 +74,20 @@ jobs:
       matrix:
         include:
           - item_id: "1005012743543835"
+            host: "ar.aliexpress.com"
+            host_slug: "ar"
           - item_id: "1005009157591241"
+            host: "ar.aliexpress.com"
+            host_slug: "ar"
           - item_id: "1005006995890595"
+            host: "ar.aliexpress.com"
+            host_slug: "ar"
+          - item_id: "1005012743543835"
+            host: "www.aliexpress.com"
+            host_slug: "www"
+          - item_id: "1005012743543835"
+            host: "www.aliexpress.us"
+            host_slug: "us"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -98,12 +110,13 @@ jobs:
       - name: Check real item PDP using clean URL only
         env:
           ALIEXPRESS_ITEM_ID: ${{ matrix.item_id }}
+          ALIEXPRESS_PDP_HOST: ${{ matrix.host }}
         run: python scripts/aliexpress-pdp-evidence-live.py
       - name: Preserve bounded PDP evidence on failure and success
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aliexpress-pdp-${{ matrix.item_id }}
+          name: aliexpress-pdp-${{ matrix.item_id }}-${{ matrix.host_slug }}
           path: aliexpress-pdp-*.json
           if-no-files-found: warn
           retention-days: 14
