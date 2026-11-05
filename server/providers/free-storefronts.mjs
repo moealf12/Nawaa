@@ -2012,11 +2012,16 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         deliveryDays:null,
         observedAt:new Date().toISOString(),
         dataKind:"live",
-        fx:{ rate:converted.rate, source:converted.source, observedAt:converted.observedAt },
+        fx:{ rate:converted.rate, source:converted.source, observedAt:converted.observedAt,
+          ...(store.id==="noon-ae"?{approximate:true}:{}),
+        },
         sourceMeta:{ storefrontSearch:store.name, freeDiscovery:true, searchUrl, searchPageStructuredPrice:true,
           ...(store.id==="noon-sa"?{sellerDeclared:item.sellerDeclared||null,
             buyboxVerified:false,deliveryVerified:false}:{}),
-          priceEvidence:item.pdpPriceEvidence || "SEARCH_CARD_ONLY" },
+          ...(store.id==="noon-ae"?{currencyEvidence:item.currencyEvidence||"NOT_ATTESTED",
+            sarDisplay:"APPROXIMATE_FX_CONVERSION",buyboxVerified:false,
+            deliveryVerified:false}:{}),
+          priceEvidence:item.priceEvidence || item.pdpPriceEvidence || "SEARCH_CARD_ONLY" },
       };
     }))).filter(Boolean);
     // A matching direct offer causes selectStorefrontRecoveryLinks() to return
@@ -2129,7 +2134,9 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         ...(store.id==="noon-ae"?{noonUaeSearchCards:noonUaeEvidence
           ? {status:noonUaeEvidence.status,parsedCards:noonUaeEvidence.parsedCards,
               accepted:noonUaeEvidence.accepted,missingCurrency:noonUaeEvidence.missingCurrency,
-              invalidLinks:noonUaeEvidence.invalidLinks,conflicts:noonUaeEvidence.conflicts}
+              invalidLinks:noonUaeEvidence.invalidLinks,conflicts:noonUaeEvidence.conflicts,
+              explicitAed:noonUaeEvidence.explicitAed,
+              marketInferredAed:noonUaeEvidence.marketInferredAed}
           : {status:"SOURCE_HTML_UNAVAILABLE",accepted:0}}:{}),
         ...(store.id==="thomann-de"?{
           variantRejected,
