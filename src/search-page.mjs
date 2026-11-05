@@ -18,6 +18,7 @@ import {coverageStatusText} from "./search-coverage-status.mjs";
 import {buildSearchPresentationSections} from "./search-result-presentation.mjs";
 import {arabicCount, visibleProductSpecifications} from "./product-card-presentation.mjs";
 import {googleShoppingDiscoveryDescriptor} from "./google-shopping-discovery.mjs";
+import {renderGoogleShoppingDiscoveryCards} from "./google-shopping-cards.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const els = {
@@ -29,6 +30,10 @@ const els = {
   urlHint: $("#urlHint"),
   googleShopping: $("#googleShoppingDiscovery"),
   googleShoppingLink: $("#googleShoppingDiscoverLink"),
+  googleShoppingFetch: $("#googleShoppingFetchBtn"),
+  googleShoppingCardsSection: $("#googleShoppingCardsSection"),
+  googleShoppingCards: $("#googleShoppingCards"),
+  googleShoppingCardsStatus: $("#googleShoppingCardsStatus"),
   status: $("#searchStatus"),
   quoteModal: $("#quoteModal"),
   quoteBody: $("#quoteBody"),
@@ -55,6 +60,9 @@ const state = {
   remoteLoading: false,
   remoteExhausted: false,
   requestId: 0,
+  googleShoppingCardQuery: null,
+  googleShoppingCardRequestId: 0,
+  googleShoppingCardController: null,
 };
 
 const nf = new Intl.NumberFormat("ar-SA", { maximumFractionDigits: 2 });
@@ -1335,10 +1343,80 @@ async function loadMoreRemote(query) {
     }
   }
 }
+// Opt-in results stay in a separate visual lane; they cannot enter ranked offers.
+async function fetchGoogleShoppingCards() {
+  const query=String(els.input?.value || state.query || "").trim();
+  if(!googleShoppingDiscoveryDescriptor(query) || !els.googleShoppingCardsSection ||
+     !els.googleShoppingCards || !els.googleShoppingCardsStatus)return;
+  const apiBase=String(window.NAWAA_API_BASE||"").replace(/\/$/,"");
+  if(!apiBase){
+    els.googleShoppingCardsSection.hidden=false;
+    els.googleShoppingCardsStatus.textContent="لا يتوفر عنوان لخدمة البحث الحي.";
+    return;
+  }
+  state.googleShoppingCardController?.abort();
+  const controller=new AbortController();
+  state.googleShoppingCardController=controller;
+  const id=++state.googleShoppingCardRequestId;
+  state.googleShoppingCardQuery=query;
+  els.googleShoppingCardsSection.hidden=false;
+  els.googleShoppingCards.innerHTML="";
+  els.googleShoppingCardsStatus.textContent="نجلب نتائج Google Shopping المعلنة…";
+  const deadline=setTimeout(()=>controller.abort(),9500);
+  try{
+    const response=await fetch(apiBase+"/api/discovery/google-shopping?q="+encodeURIComponent(query),{
+      method:"GET",mode:"cors",credentials:"omit",cache:"no-store",
+      headers:{"accept":"application/json"},signal:controller.signal,
+    });
+    if(id!==state.googleShoppingCardRequestId||state.googleShoppingCardQuery!==query)return;
+    if(!response.ok){
+      els.googleShoppingCardsStatus.textContent=response.status===503 ?
+        "ميزة جلب نتائج Google Shopping لم تُفعّل بعد على خادم نواة. يلزم مفتاح المزود وحدّ الاستهلاك." :
+        response.status===429 ? "بلغنا حد الاستعلامات المتاح حاليًا. جرّب البحث الخارجي." :
+        "تعذر جلب نتائج Google Shopping من مزود البيانات.";
+      return;
+    }
+    const json=await response.json();
+    if(id!==state.googleShoppingCardRequestId||state.googleShoppingCardQuery!==query)return;
+    if(json?.source!=="google-shopping"||json?.mode!=="unverified_discovery_cards"||
+       json?.verifiedPriceCount!==0||json?.customerOfferCount!==0) {
+      els.googleShoppingCardsStatus.textContent="رفضنا بيانات لم تستوفِ عقد المصدر.";
+      return;
+    }
+    const markup=renderGoogleShoppingDiscoveryCards(json.cards);
+    if(!markup){
+      els.googleShoppingCardsStatus.textContent="لم نجد بطاقات صالحة لهذا البحث. يمكنك استخدام البحث الخارجي.";
+      return;
+    }
+    els.googleShoppingCards.innerHTML=markup;
+    const count=els.googleShoppingCards.querySelectorAll?.(".google-shopping-card").length ||
+      (markup.match(/class="google-shopping-card"/g)||[]).length;
+    els.googleShoppingCardsStatus.textContent=
+      "عُرضت "+count+" بطاقات من Google Shopping. الأسعار ظاهرة كما أعلنها المصدر، ولم تتحقق نواة من المتاجر أو الشحن.";
+  }catch(e){
+    if(id!==state.googleShoppingCardRequestId)return;
+    els.googleShoppingCardsStatus.textContent=e?.name==="AbortError" ?
+      "انتهى وقت جلب Shopping. لم نستخدم بيانات غير مكتملة." :
+      "تعذر الاتصال بمزود بيانات Shopping. استمر في نتائج نواة المؤكدة.";
+  }finally{
+    clearTimeout(deadline);
+    if(id===state.googleShoppingCardRequestId)state.googleShoppingCardController=null;
+  }
+}
+
 // External Shopping discovery never enters NAWAA SSE, offer ranking, or historical prices.
 function updateGoogleShoppingDiscovery(rawQuery) {
   if (!els.googleShopping || !els.googleShoppingLink) return;
   const external = googleShoppingDiscoveryDescriptor(rawQuery);
+  const candidate=external?String(rawQuery).trim():null;
+  if(candidate!==state.googleShoppingCardQuery){
+    state.googleShoppingCardController?.abort();
+    state.googleShoppingCardRequestId++;
+    state.googleShoppingCardQuery=candidate;
+    if(els.googleShoppingCardsSection)els.googleShoppingCardsSection.hidden=true;
+    if(els.googleShoppingCards)els.googleShoppingCards.innerHTML="";
+    if(els.googleShoppingCardsStatus)els.googleShoppingCardsStatus.textContent="";
+  }
   if (!external) {
     els.googleShopping.hidden = true;
     els.googleShoppingLink.removeAttribute?.("href");
@@ -1722,6 +1800,7 @@ async function openQuote(product, offer, sourceQuery) {
   els.quoteModal.setAttribute("aria-hidden", "false");
 }
 
+els.googleShoppingFetch?.addEventListener?.("click", () => { void fetchGoogleShoppingCards(); });
 els.input.addEventListener("input", () => updateGoogleShoppingDiscovery(els.input.value));
 updateGoogleShoppingDiscovery(els.input.value);
 
