@@ -147,23 +147,50 @@ async def inspect_browser(url, item_id, report):
                 "Accept-Language": "ar-SA,ar;q=0.9,en;q=0.5"
             })
 
-            async def enforce_source(route):
+            # Playwright route() may observe only the FIRST URL in a 30x
+            # redirect chain. CDP Fetch interception at Request stage also
+            # catches redirected document requests before sending them out.
+            page = await context.new_page()
+            cdp = await context.new_cdp_session(page)
+            pending = set()
+
+            async def enforce_request(evt):
                 nonlocal main_document_requests
-                req = route.request
-                is_document = req.resource_type == "document"
+                request_id = evt.get("requestId")
+                url = evt.get("request", {}).get("url", "")
+                is_document = evt.get("resourceType") == "Document"
                 if is_document:
                     main_document_requests += 1
-                if approved_resource(
-                    req.url, navigation=is_document,
+                approved = approved_resource(
+                    url, navigation=is_document,
                     requested_host=requested_host, item_id=item_id
-                ) and (not is_document or main_document_requests <= 3):
-                    await route.continue_()
-                    return
-                blocked["navigation" if is_document else "thirdParty"] += 1
-                await route.abort("blockedbyclient")
+                ) and (not is_document or main_document_requests <= 3)
+                if not approved:
+                    blocked["navigation" if is_document else "thirdParty"] += 1
+                try:
+                    if approved:
+                        await cdp.send(
+                            "Fetch.continueRequest", {"requestId": request_id}
+                        )
+                    else:
+                        await cdp.send(
+                            "Fetch.failRequest",
+                            {"requestId": request_id, "errorReason": "BlockedByClient"},
+                        )
+                except Exception:
+                    # A request can be cancelled while its target is closing.
+                    # No cancellation is interpreted as successful acquisition.
+                    report["interceptionFailureClass"] = "CDP_REQUEST_CANCELLED"
 
-            await context.route("**/*", enforce_source)
-            page = await context.new_page()
+            def on_paused(evt):
+                task = asyncio.create_task(enforce_request(evt))
+                pending.add(task)
+                task.add_done_callback(pending.discard)
+
+            cdp.on("Fetch.requestPaused", on_paused)
+            await cdp.send("Fetch.enable", {
+                "patterns": [{"urlPattern": "*", "requestStage": "Request"}]
+            })
             response_status = None
             try:
                 response = await page.goto(
@@ -180,6 +207,7 @@ async def inspect_browser(url, item_id, report):
             html = await page.content()
             report["rendering"] = {
                 "engine": "playwright-chromium",
+                "guardMode": "CDP_FETCH_REQUEST_STAGE_EVERY_REDIRECT",
                 "javascriptEnabled": True,
                 "responseStatus": response_status,
                 "renderedHtmlBytes": len(html.encode("utf8")),
@@ -189,11 +217,22 @@ async def inspect_browser(url, item_id, report):
                 "finalHost": urlsplit(page_url).hostname,
                 "finalItemId": dom.canonical_item_id(page_url, page_url),
             }
-            evidence = classify_rendered_dom(
-                html, page_url, item_id, response_status
-            )
-            report["domEvidence"] = evidence
-            report["conclusion"] = evidence["state"]
+            if blocked["navigation"]:
+                # Do not inspect HTML after even one disallowed document hop.
+                # Chromium must not turn a blocked alias into price evidence.
+                report["domEvidence"] = {
+                    "state": "BROWSER_UNAPPROVED_DOCUMENT_REDIRECT_BLOCKED",
+                    "identityVerified": False,
+                    "customerPublishable": False,
+                    "pdpPriceVerified": False,
+                }
+                report["conclusion"] = "BROWSER_UNAPPROVED_DOCUMENT_REDIRECT_BLOCKED"
+            else:
+                evidence = classify_rendered_dom(
+                    html, page_url, item_id, response_status
+                )
+                report["domEvidence"] = evidence
+                report["conclusion"] = evidence["state"]
             await context.close()
         finally:
             await browser.close()
