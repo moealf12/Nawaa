@@ -13,7 +13,10 @@ from noon_uae_price_precision import (
     interpret_price_surfaces, select_source_current_offer_amount,
     corroborate_selected_pdp_offer_amount,
 )
-from noon_uae_price_policy import cents
+from noon_uae_price_policy import (
+    cents, aed_to_sar_estimate,
+    AED_TO_SAR_ESTIMATE_RATE, AED_TO_SAR_ESTIMATE_AS_OF,
+)
 
 SKU = re.compile(r"(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)", re.I)
 REQUIRED_STAGES = ("warmup", "plp_live", "one_offer_linked_pdp")
@@ -100,6 +103,28 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
                 fresh = -60 <= delta <= max_age_s
         except (ValueError, TypeError):
             pass
+    # Derived display value only after *all* live-source, identity,
+    # exact-price, direct AED and freshness evidence is valid.
+    source_cents = source_current_price.get("priceCents")
+    can_preview_verified_aed = (
+        source_reached and source_market and offer_identity and fresh
+        and same_offer_amount and currency_per_offer
+        and type(source_cents) is int
+    )
+    source_aed = (
+        f"{source_cents // 100}.{source_cents % 100:02d}"
+        if can_preview_verified_aed else None
+    )
+    fx_preview = {
+        "sourcePriceAED": source_aed,
+        "convertedSarApprox": (
+            aed_to_sar_estimate(source_aed) if source_aed is not None else None
+        ),
+        "fxRateAedSar": str(AED_TO_SAR_ESTIMATE_RATE),
+        "fxRateAsOf": AED_TO_SAR_ESTIMATE_AS_OF,
+        "currencyEvidence": "OFFER_DIRECT" if source_aed is not None else "NOT_VERIFIED",
+        "customerPublishable": False,
+    }
     gates = {
         "source_http_and_html": source_reached,
         "uae_market_context": source_market,
@@ -137,6 +162,7 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
         "sourceOfferPriceStatus": source_current_price.get("state"),
         "productScopedCurrencyCorroboration": currency_corroboration,
         "currencyEvidenceTier": currency_corroboration.get("currencyEvidenceTier"),
+        "fxDisplayPreview": fx_preview,
         "gates": gates,
         "requiredGateNames": list(required_gate_names),
         "optionalGateNames": list(optional_gate_names),
