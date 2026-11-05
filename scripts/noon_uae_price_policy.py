@@ -149,3 +149,32 @@ def aed_to_sar_estimate(price_aed):
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
     return str(converted)
+
+
+AED_TO_SAR_ESTIMATE_AS_OF = "2026-11-05"
+
+
+def aed_sar_card_preview(price, *, market, explicit_aed_label):
+    """Diagnostic-only conversion for an observed PLP card.
+
+    Never assert AED from the source route or from product-level evidence.
+    Unattested currency yields a clearly conditional scenario, not a display
+    price. No branch authorizes a customer offer or live exchange quote.
+    """
+    valid_market = market == "AE"
+    valid_price = cents(price) is not None
+    attested = valid_market and valid_price and explicit_aed_label is True
+    scenario = aed_to_sar_estimate(price) if valid_market and valid_price else None
+    return {
+        "sourceCurrencyVerified": "AED" if attested else None,
+        "sourceCurrencyEvidence": (
+            "EXPLICIT_PLP_PRICE_LABEL" if attested else
+            "NO_PER_CARD_AED_ATTESTATION"
+        ),
+        "convertedSarApprox": scenario if attested else None,
+        "sarScenarioIfAED": scenario if scenario is not None and not attested else None,
+        "fxRateAedSar": str(AED_TO_SAR_ESTIMATE_RATE) if scenario is not None else None,
+        "fxRateAsOf": AED_TO_SAR_ESTIMATE_AS_OF if scenario is not None else None,
+        "fxKind": "FIXED_INDICATIVE_REFERENCE_NOT_LIVE",
+        "customerPublishable": False,
+    }
