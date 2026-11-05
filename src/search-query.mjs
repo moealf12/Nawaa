@@ -70,9 +70,9 @@ for(const [original,canonical] of RETAIL_EQUIVALENCES){
   if(aliases.has(original))throw Error("DUPLICATE_RETAIL_EQUIVALENCE");
   aliases.set(original,canonical);
 }
-const escapeRegex=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+const escapeRetailRegex=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
 const sorted=[...aliases.keys()].sort((a,b)=>b.length-a.length||a.localeCompare(b));
-const pattern=new RegExp("(^| )("+sorted.map(escapeRegex).join("|")+")(?= |$)","gu");
+const pattern=new RegExp("(^| )("+sorted.map(escapeRetailRegex).join("|")+")(?= |$)","gu");
 
 function canonicalizeForeignRetailTerms(value=""){
   const text=String(value||"");
