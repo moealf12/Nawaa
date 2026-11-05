@@ -1,0 +1,39 @@
+name: 1688 China Live Public Discovery (diagnostic only)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/1688-public-discovery-live.yml"
+      - "scripts/1688-public-discovery-live.mjs"
+      - "src/1688-public-discovery.mjs"
+      - "tests/1688-public-discovery.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: 1688-public-discovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  1688-public-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate staged discovery/robots rules
+        run: node --test tests/1688-public-discovery.test.mjs tests/1688-cn-staged.test.mjs tests/1688-authorized-catalog.test.mjs
+      - name: Collect actual 1688 robots and public-search diagnostic evidence (no retries)
+        run: node scripts/1688-public-discovery-live.mjs
+      - name: Preserve live diagnostic artifact even on access refusal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1688-public-discovery-live
+          path: 1688-public-discovery-live.json
+          if-no-files-found: warn
+          retention-days: 14
