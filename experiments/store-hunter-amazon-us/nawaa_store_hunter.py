@@ -57,6 +57,11 @@ class Product:
     price_status: str = "unknown"
     issues: list[str] = field(default_factory=list)
     observed_at_utc: str | None = None
+    # Evidence-based intent annotations, never used to falsify/mask raw offers.
+    intent_match: str = "unclassified"
+    intent_reasons: list[str] = field(default_factory=list)
+    condition: str = "unknown"
+    price_evidence: str = "unavailable"
 
 
 @dataclass
@@ -619,6 +624,105 @@ def has_challenge(html: str) -> bool:
     return any(x in segment for x in BLOCK_PHRASES) and len(segment) < 15000
 
 
+def classify_product_intent(query: str, title: str) -> tuple[str, list[str], str]:
+    """Conservative title-evidence classification. Does not drop a product.
+
+    exact: requested product class/model and explicit constraints evidenced
+    related: same family / alternative class / different requested variant
+    mismatch: contradictory product type or explicit numeric constraint
+    unclassified: title is insufficient; never guess an exact match
+    The parser is intentionally narrow for high-risk confusion cases.
+    """
+    q = re.sub(r"[\s\u00ae]+", " ", clean_str(query).casefold()).strip()
+    t = re.sub(r"[\s\u00ae]+", " ", clean_str(title).casefold()).strip()
+    condition = ("renewed_premium" if re.search(r"\brenewed premium\b", t) else
+                 "renewed" if re.search(r"\b(renewed|refurbished|recertified)\b", t) else
+                 "used" if re.search(r"\b(pre-owned|used|open box)\b", t) else
+                 "new_claimed" if re.search(r"\bbrand new\b", t) else "unspecified")
+
+    def found(pattern: str, target: str = t) -> bool:
+        return bool(re.search(pattern, target, re.I))
+
+    ps5 = r"(?:\bps5\b|\bplaystation\s*5\b)"
+    if found(ps5, q):
+        is_disc_request = found(r"\b(?:disc|disk|blu[\s-]?ray)\b.*\bdrive\b|\bdrive\b.*\b(?:disc|disk)\b", q)
+        if is_disc_request:
+            if found(r"\b(?:ssd|nvme|solid state|hard drive|storage|game drive)\b") and not found(r"\b(?:disc|disk|blu[\s-]?ray)\s+drive\b"):
+                return "mismatch", ["SSD_STORAGE_NOT_DISC_DRIVE"], condition
+            if found(ps5) and found(r"\b(?:disc|disk|blu[\s-]?ray)\b.*\bdrive\b|\bdrive\b.*\b(?:disc|disk)\b"):
+                return "exact", ["PS5_DISC_DRIVE_CLASS"], condition
+            if found(ps5):
+                return "related", ["PS5_FAMILY_NOT_PROVEN_DISC_DRIVE"], condition
+            return "mismatch", ["WRONG_PS5_DISC_DRIVE_FAMILY"], condition
+        is_console_request = found(r"\b(?:console|digital edition|slim console|pro console)\b", q)
+        if is_console_request:
+            if found(r"\b(?:portal|remote player|controller|dualsense|cover|skin|case|stand|charging station|dock|ssd|nvme|solid state|game drive|disc drive|disk drive)\b"):
+                return "mismatch", ["ACCESSORY_NOT_PS5_CONSOLE"], condition
+            if found(ps5) and found(r"\b(?:console|digital edition|slim|pro|playstation\s*5)\b"):
+                return "exact", ["PS5_CONSOLE_CLASS"], condition
+            if found(ps5):
+                return "unclassified", ["PS5_CONSOLE_UNPROVEN"], condition
+            return "mismatch", ["WRONG_CONSOLE_FAMILY"], condition
+
+    # Model-family matches must not silently conflate base/Plus/Ultra/Pro/Max.
+    for family,rx,variants in [
+        ("IPHONE_17", r"\biphone\s*17\b", r"\b(?:pro|max|plus|air)\b"),
+        ("GALAXY_S25", r"\b(?:samsung\s+)?galaxy\s*s25\b", r"\b(?:ultra|plus)\b|(?<!\w)s25\+"),
+    ]:
+        if found(rx,q):
+            if not found(rx):
+                return "mismatch", [family+"_MISSING"], condition
+            requested_special = found(variants, q)
+            actual_special = found(variants, t)
+            if requested_special != actual_special:
+                return "related", [family+"_MODEL_VARIANT_DIFFERENT"], condition
+            return "exact", [family+"_MODEL_EVIDENCED"], condition
+
+    if found(r"\b(?:laptop|notebook|macbook|lap\s*top|لابتوب)\b",q):
+        if not found(r"\b(?:laptop|notebook|macbook|lap\s*top|لابتوب)\b"):
+            return "mismatch", ["NOT_A_LAPTOP"], condition
+        ram_match = re.search(r"\b(\d{1,3})\s*gb\s*(?:ram|ddr\d?|unified\s+memory|memory)\b",q)
+        if ram_match:
+            amount = ram_match.group(1)
+            if found(rf"\b{re.escape(amount)}\s*gb\s*(?:ram|ddr\d?|unified\s+memory|memory)\b"):
+                return "exact", ["EXPLICIT_RAM_MATCH_"+amount+"GB"], condition
+            if found(r"\b\d{1,3}\s*gb\s*(?:ram|ddr\d?|unified\s+memory|memory)\b"):
+                return "mismatch", ["RAM_CAPACITY_CONFLICT"], condition
+            return "unclassified", ["RAM_CAPACITY_UNPROVEN"], condition
+        return "exact", ["LAPTOP_CLASS"], condition
+
+    if found(r"\b(?:4k|uhd|3840)\b",q) and found(r"\b(?:monitor|display)\b",q):
+        if not found(r"\b(?:monitor|pc display|gaming display)\b"):
+            return "mismatch", ["NOT_A_MONITOR"], condition
+        if not found(r"\b(?:4k|uhd|3840\s*[x×]\s*2160)\b"):
+            return "unclassified", ["RESOLUTION_UNPROVEN"], condition
+        return "exact", ["4K_MONITOR_CLASS"], condition
+
+    if found(r"\b(?:robot|robotic)\b",q) and found(r"\bvacuum\b",q):
+        if found(r"\b(?:robot|robotic)\b") and found(r"\b(?:vacuum|cleaner)\b"):
+            return "exact", ["ROBOT_VACUUM_CLASS"], condition
+        return "mismatch", ["NOT_ROBOT_VACUUM"], condition
+
+    if found(r"\bjbl\b",q) and found(r"\b(?:speaker|speakers)\b",q):
+        if not found(r"\b(?:speaker|speakers|boombox)\b"):
+            return "mismatch", ["NOT_A_SPEAKER"], condition
+        return "exact" if found(r"\bjbl\b") else "unclassified", ["JBL_BRAND_EVIDENCED" if found(r"\bjbl\b") else "JBL_BRAND_NOT_EVIDENCED"], condition
+
+    if (found(r"\b(?:headphones|headsets)\b",q) and found(r"\bwireless\b",q)):
+        if found(r"\b(?:earbuds|ear\s*buds|in-ear)\b") and not found(r"\bheadphones\b"):
+            return "related", ["WIRELESS_EARBUDS_ALTERNATIVE"], condition
+        if found(r"\b(?:headphones|headset|on-ear|over-ear)\b"):
+            return "exact", ["WIRELESS_HEADPHONES_CLASS"], condition
+        return "unclassified", ["WIRELESS_HEADPHONES_UNPROVEN"], condition
+
+    if ("بلوتوث" in q and ("سماعات" in q or "سماعة" in q)):
+        if found(r"\b(?:headphones|earbuds|ear\s*buds|earphones|bluetooth|headset)\b|سماعات|سماعة"):
+            return "exact", ["BLUETOOTH_AUDIO_CLASS"], condition
+        return "unclassified", ["BLUETOOTH_AUDIO_UNPROVEN"], condition
+
+    return "unclassified", ["NO_EXPLICIT_INTENT_RULE"], condition
+
+
 class Scraper:
     def __init__(self, store: str, query: str, maximum: int, pages: int, browser: str, pdp: str = "all", search_url: str | None = None):
         parts = urlsplit(store)
@@ -1007,7 +1111,17 @@ class Scraper:
             if not p.price or not p.currency:
                 p.price_status = "conflict" if p.price_status == "conflict" else "unresolved"
             p.issues = sorted(set(p.issues))
+            p.intent_match, p.intent_reasons, p.condition = classify_product_intent(self.query, p.title)
+            p.price_evidence = ("listing_pdp_agree" if p.price_status == "evidence_correlated" else
+                                "single_source" if p.price and p.currency else
+                                "conflict" if p.price_status == "conflict" else "unavailable")
             p.observed_at_utc = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+        # Rank, do not discard: a price-complete accessory must never displace
+        # an actual console; uncertain/related offers remain visible and labeled.
+        match_rank = {"exact": 0, "related": 1, "unclassified": 2, "mismatch": 3}
+        products.sort(key=lambda p: (match_rank.get(p.intent_match, 2),
+                                     0 if p.price_evidence == "listing_pdp_agree" else 1,
+                                     0 if p.price and p.image else 1))
         products = products[:self.maximum]
         outcome = "ok" if any(x.price for x in products) else "partial_or_unavailable"
         return self.result(products, outcome)
