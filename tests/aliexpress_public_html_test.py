@@ -127,6 +127,21 @@ class AliExpressEvidenceTests(unittest.TestCase):
         self.assertEqual(cards[0]["priceKind"], "SEARCH_CARD_MINIMUM_VARIANT_UNVERIFIED")
         self.assertFalse(cards[0]["customerPublishable"])
 
+    def test_live_observed_aliexpress_media_cdn_is_trusted_but_impostors_are_not(self):
+        first_party = "https://ae-pic-a1.aliexpress-media.com/kf/test-product.webp"
+        stats, cards = probe.parsed_search_cards(
+            search_html(image=first_party), "Bluetooth"
+        )
+        self.assertEqual(stats["accepted"], 1)
+        self.assertEqual(cards[0]["image"], first_party)
+        for fake in (
+            "https://ae-pic-a1.aliexpress-media.com.evil.example/kf/fake.webp",
+            "http://ae-pic-a1.aliexpress-media.com/kf/fake.webp",
+            "https://evil-aliexpress-media.com/kf/fake.webp",
+            "https://bad.example/aliexpress-media.com/kf/fake.webp",
+        ):
+            self.assertIsNone(probe.product_image(fake))
+
     def test_price_collision_and_irrelevance_are_dropped(self):
         html = search_html()
         stats, cards = probe.parsed_search_cards(html, "coffee machine")
