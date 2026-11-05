@@ -164,5 +164,51 @@ class AdmissionGateTests(unittest.TestCase):
         self.assertFalse(result["customerPublishable"])
 
 
+    def test_actual_list_price_and_sale_price_are_not_competing_current_prices(self):
+        report = live_report()
+        report["tanstackTsrAst"]["candidateRecords"].append({
+            "sameSku": True,
+            "skuExplicitInOfferRecord": True,
+            "skuAliasesConflict": False,
+            "priceKind": "price",
+            "priceCents": 399900,
+            "currency": None,
+        })
+        result = gate(report)
+        self.assertTrue(result["gates"]["same_offer_amount_verified"])
+        self.assertEqual(result["sourceOfferPriceStatus"],
+                         "UNIQUE_OFFER_LINKED_SOURCE_AMOUNT_NOT_CURRENCY_ATTESTED")
+        self.assertFalse(result["gates"]["same_offer_currency_aed_verified"])
+
+    def test_coarse_plp_numeric_surface_remains_unverified(self):
+        report = live_report()
+        report["tanstackTsrAst"]["candidateRecords"][0]["priceCents"] = 197905
+        result = gate(report)
+        self.assertEqual(
+            result["pricePrecisionEvidence"]["state"],
+            "COARSE_PL_DISPLAY_FRACTIONAL_PDP_UNRESOLVED",
+        )
+        self.assertEqual(result["pricePrecisionEvidence"]["deltaCents"], 5)
+        self.assertFalse(result["gates"]["same_offer_amount_verified"])
+        self.assertFalse(result["customerPublishable"])
+
+    def test_different_selected_sale_prices_are_not_accepted(self):
+        report = live_report()
+        report["tanstackTsrAst"]["candidateRecords"].append({
+            "sameSku": True,
+            "skuExplicitInOfferRecord": True,
+            "skuAliasesConflict": False,
+            "priceKind": "saleprice",
+            "priceCents": 197905,
+            "currency": None,
+        })
+        result = gate(report)
+        self.assertEqual(result["sourceOfferPriceStatus"],
+                         "CONFLICTING_CURRENT_SOURCE_AMOUNTS")
+        self.assertFalse(result["gates"]["same_offer_amount_verified"])
+        self.assertFalse(result["customerPublishable"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
