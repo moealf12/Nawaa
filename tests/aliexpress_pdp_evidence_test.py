@@ -113,6 +113,164 @@ class PdpEvidenceTests(unittest.TestCase):
         self.assertIn("text/html", observed[1][1])
         self.assertEqual(report["conclusion"], "PDP_PRODUCT_JSONLD_PRICE_CANDIDATE")
 
+    def test_only_exact_item_official_redirect_is_eligible(self):
+        here = "https://ar.aliexpress.com/item/" + PID + ".html"
+        safe = "https://www.aliexpress.com/item/" + PID + ".html"
+        approved, reason = pdp.approved_pdp_redirect(
+            safe + "?tracking=ignored", here, PID
+        )
+        self.assertEqual(approved, safe)
+        self.assertEqual(reason, "REDIRECT_SAME_ITEM_APPROVED")
+        for bad in (
+            "https://www.aliexpress.com/p/BundleDeals2.html",
+            "https://www.aliexpress.com/item/1005009157591241.html",
+            "https://www.aliexpress.com.punish.example/item/" + PID + ".html",
+            "http://www.aliexpress.com/item/" + PID + ".html",
+            "https://www.aliexpress.com:8443/item/" + PID + ".html",
+            "https://www.aliexpress.com/punish?foo=bar",
+            "/p/verify?challenge=1",
+            "//evil.example/item/" + PID + ".html",
+        ):
+            new, _ = pdp.approved_pdp_redirect(bad, here, PID)
+            self.assertIsNone(new, bad)
+        self.assertEqual(
+            pdp.approved_pdp_redirect(
+                "/punish?challenge=1", here, PID
+            )[1],
+            "CHALLENGE_OR_LOGIN_REDIRECT",
+        )
+        self.assertEqual(
+            pdp.approved_pdp_redirect(
+                here + "?foo=bar", here, PID
+            )[1],
+            "REDIRECT_TO_SAME_CANONICAL_ITEM",
+        )
+
+    def test_safe_cross_host_redirect_checks_target_robots_and_jsonld(self):
+        from unittest.mock import patch
+
+        calls = []
+        robots = "User-agent: *\nAllow: /\n"
+        start = "https://ar.aliexpress.com/item/" + PID + ".html"
+        target = "https://www.aliexpress.com/item/" + PID + ".html"
+
+        class Response:
+            def __init__(self, url, status, text="", content_type="text/html",
+                         location=None):
+                self.url = url
+                self.status_code = status
+                self.content = text.encode("utf8")
+                self.text = text
+                self.headers = {"content-type": content_type}
+                if location:
+                    self.headers["location"] = location
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def get(self, url, *, headers, timeout, allow_redirects):
+                calls.append((url, headers["accept"], allow_redirects))
+                if url.endswith("robots.txt"):
+                    return Response(url, 200, robots, "text/plain")
+                if url == start:
+                    return Response(url, 302, location=target + "?track=123")
+                if url == target:
+                    return Response(url, 200, html_for())
+                raise AssertionError("Unexpected external request")
+
+        with patch.object(pdp.requests, "Session", return_value=Session()):
+            report = pdp.probe_item(PID)
+        self.assertEqual(report["conclusion"], "PDP_PRODUCT_JSONLD_PRICE_CANDIDATE")
+        self.assertEqual(report["redirectsFollowed"], 1)
+        self.assertEqual(
+            [x["host"] for x in report["stages"] if x["step"] == "robots_policy"],
+            ["ar.aliexpress.com", "www.aliexpress.com"]
+        )
+        self.assertEqual(report["productIdentity"]["jsonLd"]["priceEvidence"]["currency"],
+                         "SAR")
+        self.assertEqual(sum(url.endswith("robots.txt") for url, _, _ in calls), 2)
+        self.assertTrue(all(allow_redirects is False for _, _, allow_redirects in calls))
+        self.assertFalse(any("track=" in url for url, _, _ in calls))
+        self.assertFalse(report["customerPublishable"])
+
+    def test_cross_host_redirect_denied_without_destination_robots(self):
+        from unittest.mock import patch
+        start = "https://ar.aliexpress.com/item/" + PID + ".html"
+        target = "https://www.aliexpress.com/item/" + PID + ".html"
+        calls = []
+
+        class Response:
+            def __init__(self, url, status, text="", location=None):
+                self.url = url
+                self.status_code = status
+                self.content = text.encode()
+                self.text = text
+                self.headers = {"content-type": "text/plain" if url.endswith("txt") else "text/html"}
+                if location:
+                    self.headers["location"] = location
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def get(self, url, *, headers, timeout, allow_redirects):
+                calls.append(url)
+                if url.endswith("/robots.txt"):
+                    return Response(url, 403 if "www." in url else 200,
+                                    "User-agent: *\nAllow: /\n")
+                if url == start:
+                    return Response(url, 302, location=target)
+                raise AssertionError("PDP on denied host must not be requested")
+
+        with patch.object(pdp.requests, "Session", return_value=Session()):
+            report = pdp.probe_item(PID)
+        self.assertEqual(report["conclusion"], "ROBOTS_POLICY_NOT_VERIFIED")
+        self.assertNotIn(target, calls)
+        self.assertFalse(report["customerPublishable"])
+
+    def test_challenge_redirect_never_requested_or_price_promoted(self):
+        from unittest.mock import patch
+        calls = []
+
+        class Response:
+            def __init__(self, url, status=200, location=None, body=""):
+                self.url = url
+                self.status_code = status
+                self.content = body.encode()
+                self.text = body
+                self.headers = {"content-type": "text/plain" if url.endswith("txt") else "text/html"}
+                if location is not None:
+                    self.headers["location"] = location
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def get(self, url, *, headers, timeout, allow_redirects):
+                calls.append(url)
+                if url.endswith("/robots.txt"):
+                    return Response(url, body="User-agent: *\nAllow: /\n")
+                if "/item/" in url:
+                    return Response(url, 302, "/punish?captcha=1")
+                raise AssertionError("Challenge follow would be unsafe")
+
+        with patch.object(pdp.requests, "Session", return_value=Session()):
+            report = pdp.probe_item(PID)
+        self.assertEqual(report["conclusion"], "PDP_CHALLENGE_OR_LOGIN_REDIRECT")
+        self.assertEqual(report["redirectsFollowed"], 0)
+        self.assertTrue(all("/punish" not in url for url in calls))
+        self.assertFalse(report["customerPublishable"])
+
     def test_url_marketing_price_never_generates_product_evidence(self):
         html = '<html><head><meta property="og:title" content="Headphones"></head>' \
                "<body>pdp_npi=6%40dis%21SAR%2157.97%216.29</body></html>"
