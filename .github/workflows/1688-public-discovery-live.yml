@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  1688-public-discovery:
+  live-1688-public-discovery:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
