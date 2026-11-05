@@ -1,16 +1,18 @@
 // Production Node -> existing local Python runtime, Noon UAE only.
 // One child at a time, fixed merchant/query contract, no shell, no hidden
-// network retries, no cross-source effects. Never persist raw source HTML.
+// network retries, no cross-source effects. Only bounded JSON card evidence
+// crosses the process boundary; full source HTML stays in the worker.
 import {spawn} from "node:child_process";
 import {randomUUID} from "node:crypto";
+import {StringDecoder} from "node:string_decoder";
 import {existsSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {join} from "node:path";
 
 const ROOT=fileURLToPath(new URL("../workers/python-intelligence/",import.meta.url));
 const BIN=join(ROOT,".venv/bin/python");
-const SCHEMA="nawaa.noon.ae.html.v1";
-const MAX_OUTPUT=6_500_000;
+const SCHEMA="nawaa.noon.ae.cards.v1";
+const MAX_OUTPUT=512_000;
 const MAX_BUDGET=5600;
 let active=0;
 const MAX_ACTIVE=1;
@@ -33,7 +35,7 @@ function classifiedError(code){
   return error;
 }
 
-export async function fetchNoonUaePythonHtml(query,{
+export async function fetchNoonUaePythonCards(query,{
   signal,budgetMs=5300,pythonBin=BIN,spawnImpl=spawn,
 }={}){
   if(typeof query!=="string"||query.length<2||query.length>120||
@@ -56,6 +58,7 @@ export async function fetchNoonUaePythonHtml(query,{
   return new Promise((resolve,reject)=>{
     let child;
     let done=false,buffer="",size=0;
+    const utf8=new StringDecoder("utf8");
     let timer=null;
     const finalize=(error,value)=>{
       if(done)return;
@@ -85,11 +88,12 @@ export async function fetchNoonUaePythonHtml(query,{
       size+=part.byteLength;
       if(size>MAX_OUTPUT)
         return finalize(Error("NOON_AE_PYTHON_OUTPUT_LIMIT"));
-      buffer+=part.toString("utf8");
+      buffer+=utf8.write(part);
     });
     child.on("close",code=>{
       if(done)return;
       if(code!==0)return finalize(Error("NOON_AE_PYTHON_EXIT_NONZERO"));
+      buffer+=utf8.end();
       const lines=buffer.trimEnd().split(/\r?\n/);
       if(lines.length!==1)return finalize(Error("NOON_AE_PYTHON_JSONL_INVALID"));
       let result;
@@ -101,8 +105,17 @@ export async function fetchNoonUaePythonHtml(query,{
         return finalize(Error("NOON_AE_PYTHON_CONTRACT_INVALID"));
       if(result.status==="ERROR")
         return finalize(classifiedError(result.errorCode));
-      if(typeof result.html!=="string"||result.html.length>3_000_000 ||
-         typeof result.finalUrl!=="string" || result.html.length===0)
+      if(typeof result.finalUrl!=="string"||
+         !["en-AE","ar-AE"].includes(result.language)||
+         typeof result.heading!=="string"||result.heading.length>350||
+         !Array.isArray(result.cards)||result.cards.length>250||
+         result.cards.some(card=>!card||typeof card!=="object"||Array.isArray(card)||
+           typeof card.productId!=="string"||typeof card.offerCode!=="string"||
+           typeof card.sourceUrl!=="string"||card.sourceUrl.length>2500||
+           typeof card.title!=="string"||card.title.length>350||
+           typeof card.priceText!=="string"||card.priceText.length>100||
+           !Number.isFinite(card.priceAED)||card.currency!=="AED"||
+           typeof card.image!=="string"||card.image.length>2500))
         return finalize(Error("NOON_AE_PYTHON_RESULT_INVALID"));
       let actual;
       try{actual=new URL(result.finalUrl);}
@@ -110,11 +123,13 @@ export async function fetchNoonUaePythonHtml(query,{
       const expected=new URL("https://www.noon.com/uae-en/search/?q="+encodeURIComponent(query));
       if(actual.protocol!=="https:"||actual.host!==expected.host||
          actual.pathname.replace(/\/+$/,"")!==expected.pathname.replace(/\/+$/,"")||
+         actual.hash||actual.searchParams.size!==1||
          actual.searchParams.getAll("q").length!==1||
          actual.searchParams.get("q")!==query)
         return finalize(classifiedError("SOURCE_SEARCH_URL_MISMATCH"));
-      finalize(null,{html:result.html,finalUrl:result.finalUrl,
-        transport:"PYTHON_NOON_AE_HTML"});
+      finalize(null,{finalUrl:result.finalUrl,
+        language:result.language,heading:result.heading,cards:result.cards,
+        transport:"PYTHON_NOON_AE_JSON"});
     });
     try{child.stdin.end(JSON.stringify(packet)+"\n");}
     catch{return finalize(Error("NOON_AE_PYTHON_STDIN_FAILED"));}
