@@ -127,6 +127,7 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
         "sourceMarket": "AE",
         "pricePrecisionEvidence": precision_evidence,
         "sourceOfferPriceStatus": source_current_price.get("state"),
+        "productScopedCurrencyCorroboration": currency_corroboration,
         "gates": gates,
         "requiredGateNames": list(required_gate_names),
         "optionalGateNames": list(optional_gate_names),
