@@ -70,3 +70,46 @@ def interpret_price_surfaces(plp_text, pdp_cents):
         "exactEqualityAttested": diff == 0,
         "customerPublishable": False,
     }
+
+
+
+def select_source_current_offer_amount(candidate_records):
+    """Resolve exactly one offer-linked amount with sale-price precedence.
+
+    Only inspect already SKU/offer-code-matched AST records. A list price is
+    never preferred to an explicit sale price. Return source amount only, not
+    currency or merchant live-buybox verification.
+    """
+    if not isinstance(candidate_records, list):
+        return {"state": "INVALID_CANDIDATES", "priceCents": None}
+    valid = [
+        record for record in candidate_records if isinstance(record, dict)
+        and record.get("sameSku") is True
+        and record.get("skuExplicitInOfferRecord") is True
+        and record.get("skuAliasesConflict") is False
+        and record.get("priceKind") in (
+            "saleprice", "currentprice", "sellingprice", "offerprice", "price"
+        )
+        and type(record.get("priceCents")) is int
+        and 0 < record["priceCents"] <= 9999999999
+    ]
+    if not valid:
+        return {"state": "NO_CURRENT_SOURCE_AMOUNT", "priceCents": None}
+    preferred = [
+        x for x in valid
+        if x["priceKind"] in ("saleprice", "currentprice", "sellingprice", "offerprice")
+    ]
+    selected = preferred if preferred else valid
+    distinct = {x["priceCents"] for x in selected}
+    if len(distinct) != 1:
+        return {
+            "state": "CONFLICTING_CURRENT_SOURCE_AMOUNTS",
+            "priceCents": None,
+            "competingAmounts": len(distinct),
+        }
+    return {
+        "state": "UNIQUE_OFFER_LINKED_SOURCE_AMOUNT_NOT_CURRENCY_ATTESTED",
+        "priceCents": next(iter(distinct)),
+        "priceKinds": sorted({x["priceKind"] for x in selected}),
+        "evidenceRecords": len(selected),
+    }
