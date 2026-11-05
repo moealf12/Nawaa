@@ -21,7 +21,7 @@ export function noonUaePythonEnabled(env=process.env){
   return env.NAWAA_NOON_AE_PYTHON==="1";
 }
 
-function classifiedError(code){
+function classifiedError(code, diagnostic=null){
   const known=new Set(["HTTP_403_ACCESS_DENIED","HTTP_429_RATE_LIMITED",
     "SOURCE_HTTP_TIMEOUT","SOURCE_TRANSPORT_FAILURE","SOURCE_HTTP_FAILURE",
     "SOURCE_WARMUP_UNAVAILABLE","SOURCE_SEARCH_URL_MISMATCH",
@@ -32,6 +32,18 @@ function classifiedError(code){
     error.failureClass=name;
   if(name==="SOURCE_HTTP_TIMEOUT")error.failureClass="HTTP_TIMEOUT";
   if(name==="SOURCE_SEARCH_URL_MISMATCH")error.failureClass="HTTP_REDIRECT_CHANGED";
+  // Input from a child process is never trusted as a free-form log message.
+  // Keep only fixed-enum stage, numeric HTTP code and bounded milliseconds.
+  if(diagnostic&&typeof diagnostic==="object"&&!Array.isArray(diagnostic)){
+    if(["warmup_uae","uae_search_html","unknown"].includes(diagnostic.stage))
+      error.sourceStage=diagnostic.stage;
+    if(Number.isInteger(diagnostic.httpStatus)&&
+       diagnostic.httpStatus>=100&&diagnostic.httpStatus<=599)
+      error.sourceHttpStatus=diagnostic.httpStatus;
+    if(Number.isInteger(diagnostic.elapsedMs)&&
+       diagnostic.elapsedMs>=0&&diagnostic.elapsedMs<=60000)
+      error.sourceElapsedMs=diagnostic.elapsedMs;
+  }
   return error;
 }
 
@@ -104,7 +116,7 @@ export async function fetchNoonUaePythonCards(query,{
          !["OK","ERROR"].includes(result.status))
         return finalize(Error("NOON_AE_PYTHON_CONTRACT_INVALID"));
       if(result.status==="ERROR")
-        return finalize(classifiedError(result.errorCode));
+        return finalize(classifiedError(result.errorCode,result.sourceDiagnostic));
       if(typeof result.finalUrl!=="string"||
          !["en-AE","ar-AE"].includes(result.language)||
          typeof result.heading!=="string"||result.heading.length>350||
