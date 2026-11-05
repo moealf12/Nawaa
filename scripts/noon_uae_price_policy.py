@@ -82,3 +82,54 @@ def assess_offer(*, requested_sku, product_sku, plp_price, pdp_price,
         "verified": proven,
         "customerPublishable": False,  # requires independent freshness/market/shipping gates
     }
+
+
+def corroborate_sources(*, plp_price, ast_candidates, jsonld_offers):
+    """Independent PLP + source offer + Product JSON-LD agreement.
+
+    Currency on an SEO Product Offer is product-level evidence, not a
+    merchant buybox same-offer currency attestation. This diagnostic
+    can never independently grant customer publishability.
+    """
+    expected = cents(plp_price)
+    if expected is None or not isinstance(ast_candidates, list) or not isinstance(jsonld_offers, list):
+        return {"state": "INSUFFICIENT_SOURCE_EVIDENCE",
+                "sameOfferCurrencyAttested": False, "customerPublishable": False}
+    same_offer = [
+        x for x in ast_candidates
+        if isinstance(x, dict)
+        and x.get("sameSku") is True
+        and x.get("skuExplicitInOfferRecord") is True
+        and x.get("skuAliasesConflict") is False
+        and x.get("priceKind") in ("saleprice", "currentprice", "sellingprice", "offerprice", "price")
+        and type(x.get("priceCents")) is int
+    ]
+    values = {x["priceCents"] for x in same_offer}
+    # Reject inconsistent prices tied to the same code, instead of selecting
+    # the cheapest/first. Never use list-price as a second buybox candidate.
+    if len(values) > 1:
+        state = "CONFLICTING_OFFER_PRICE_EVIDENCE"
+    elif not values or expected not in values:
+        state = "SOURCE_OFFER_PRICE_NOT_MATCHED"
+    else:
+        same_product_currency = any(
+            isinstance(o, dict) and o.get("currency") == "AED"
+            and cents(o.get("price")) == expected
+            for o in jsonld_offers
+        )
+        currency_in_same_offer = any(x.get("currency") == "AED" for x in same_offer)
+        if currency_in_same_offer:
+            state = "SAME_OFFER_AMOUNT_AND_AED_ATTESTED_NO_DELIVERY_PROOF"
+        elif same_product_currency:
+            state = "OFFER_PRICE_PRODUCT_AED_CORROBORATED_CURRENCY_NOT_PER_OFFER"
+        else:
+            state = "PRODUCT_CURRENCY_OR_PRICE_NOT_CORROBORATED"
+    return {
+        "state": state,
+        "sameOfferCurrencyAttested": state == "SAME_OFFER_AMOUNT_AND_AED_ATTESTED_NO_DELIVERY_PROOF",
+        "productCurrencyCorroborated": state in (
+            "OFFER_PRICE_PRODUCT_AED_CORROBORATED_CURRENCY_NOT_PER_OFFER",
+            "SAME_OFFER_AMOUNT_AND_AED_ATTESTED_NO_DELIVERY_PROOF",
+        ),
+        "customerPublishable": False,
+    }
