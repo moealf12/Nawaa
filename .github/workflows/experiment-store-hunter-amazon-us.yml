@@ -30,18 +30,6 @@ jobs:
         run: |
           python -m py_compile experiments/store-hunter-amazon-us/*.py
           python -m unittest discover -s experiments/store-hunter-amazon-us -p 'test_*.py' -v
-      - name: Inspect 10 LIVE Amazon PDP JSON-LD and embedded JSON evidence
-        env:
-          PYTHONPATH: experiments/store-hunter-amazon-us
-        run: python experiments/store-hunter-amazon-us/amazon_us_json_jsonld_probe.py
-      - name: Investigate inline JSON public script price references on six PDPs
-        env:
-          PYTHONPATH: experiments/store-hunter-amazon-us
-        run: python experiments/store-hunter-amazon-us/amazon_us_inline_json_forensics.py
-      - name: Bounded Amazon PDP primary-price header A/B (ten observed ASINs)
-        env:
-          PYTHONPATH: experiments/store-hunter-amazon-us
-        run: python experiments/store-hunter-amazon-us/amazon_us_pdp_header_ab.py
       - name: Ten independent Amazon US LIVE query intents with price-image-ASIN verification
         env:
           PYTHONPATH: experiments/store-hunter-amazon-us
@@ -51,10 +39,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: experiment-amazon-us-store-hunter-live-macos-15
-          path: |
-            artifacts/amazon-us-ten-live-intents.json
-            artifacts/amazon-us-pdp-header-ab.json
-            artifacts/amazon-us-json-ld-json-live.json
+          path: artifacts/amazon-us-ten-live-intents.json
             artifacts/amazon-us-inline-json-forensics.json
           if-no-files-found: warn
           retention-days: 3
