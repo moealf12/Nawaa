@@ -1,0 +1,61 @@
+name: NAWAA R04 PR328 Targeted Live Acceptance
+on:
+  pull_request:
+    paths:
+      - 'src/search-query.mjs'
+      - 'src/search-result-intelligence.mjs'
+      - 'scripts/r04-pr328-targeted-live.mjs'
+      - 'tests/r04-root-multilingual-canonicalization.test.mjs'
+      - '.github/workflows/r04-pr328-targeted-live.yml'
+permissions:
+  contents: read
+concurrency:
+  group: r04-pr328-targeted-live-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  exact-revision-recall:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      R04_BASELINE_SHA: c1cd6e4151b8b39a8783fe5214f65a809f093e0b
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+      PYTHON_WORKER_URL: ''
+      NAWAA_PY_LIVE_ENABLED: '0'
+      SERPAPI_API_KEY: ''
+      NAWAA_GOOGLE_SHOPPING_RESULTS_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check exact classifier and bounded-corpus script
+        run: |
+          node --check scripts/r04-pr328-targeted-live.mjs
+          node --check src/search-query.mjs
+          node --check src/search-result-intelligence.mjs
+          node --test tests/r04-root-multilingual-canonicalization.test.mjs tests/r04-spanish-funda-real-topten.test.mjs tests/search-multilingual-accessory-identity.test.mjs
+      - name: Materialize exact untouched main as independent live baseline
+        run: |
+          test "$(git rev-parse HEAD)" != "$R04_BASELINE_SHA"
+          git cat-file -e "$R04_BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/r04-pr328-baseline" "$R04_BASELINE_SHA"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/r04-pr328-baseline/node_modules"
+          echo "R04_BASELINE_DIR=$RUNNER_TEMP/r04-pr328-baseline" >> "$GITHUB_ENV"
+      - name: One paired public-source acquisition and principal-proof check
+        run: node scripts/r04-pr328-targeted-live.mjs
+      - name: Persist full exact-SHA evidence on either pass or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r04-pr328-targeted-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-pr328-targeted-live-evidence.json
+          retention-days: 14
+          if-no-files-found: warn

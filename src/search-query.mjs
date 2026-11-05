@@ -1,3 +1,85 @@
+// R04 source-neutral, curated multilingual retail vocabulary.
+// A translation model is NOT used: only these unambiguous structural retail
+// concepts may be canonicalized. The same transformation runs on the shopper
+// query, merchant search query and merchant-owned sold-title evidence.
+// Never translate model identifiers, sizes, prices, availability or claims.
+//
+// Longer phrases precede their constituents so "funda para" cannot leave
+// the Spanish function word "para" as a fabricated variant constraint.
+// Language is not inferred from the storefront hostname.
+const RETAIL_EQUIVALENCES=Object.freeze([
+  // Spanish: physical sold subjects and unambiguous buyer descriptors.
+  ["fundas protectoras para","protective cases"],
+  ["funda protectora para","protective case"],
+  ["fundas para","cases"],
+  ["funda para","case"],
+  ["fundas","cases"],
+  ["funda","case"],
+  ["protector de pantalla","screen protector"],
+  ["protectores de pantalla","screen protectors"],
+  ["cargadores para","chargers"],
+  ["cargador para","charger"],
+  ["cargadores","chargers"],
+  ["cargador","charger"],
+  ["auriculares inalámbricos","wireless headphones"],
+  ["auriculares inalambricos","wireless headphones"],
+  ["auriculares","headphones"],
+  ["reloj inteligente","smartwatch"],
+  ["ordenadores portátiles","laptops"],
+  ["ordenador portátil","laptop"],
+  ["telefono movil","phone"],
+  ["teléfono móvil","phone"],
+  ["teléfono","phone"],
+  ["telefono","phone"],
+  ["sin sulfatos","sulfate free"],
+  ["sin sulfato","sulfate free"],
+  // French: preserve the ingredient-free constraint; do not reduce it
+  // to the product category shampoo alone.
+  ["shampoings sans sulfate","sulfate free shampoos"],
+  ["shampoing sans sulfate","sulfate free shampoo"],
+  ["sans sulfates","sulfate free"],
+  ["sans sulfate","sulfate free"],
+  ["shampoings","shampoos"],
+  ["shampoing","shampoo"],
+  ["chaussures de randonnée","hiking shoes"],
+  ["chaussures de randonnee","hiking shoes"],
+  ["chaussures","shoes"],
+  ["randonnée","hiking"],
+  ["randonnee","hiking"],
+  ["imperméables","waterproof"],
+  ["impermeables","waterproof"],
+  ["imperméable","waterproof"],
+  ["impermeable","waterproof"],
+  ["écouteurs sans fil","wireless earbuds"],
+  ["écouteurs","earbuds"],
+  ["sans fil","wireless"],
+  ["coques pour","cases"],
+  ["coque pour","case"],
+  ["coques","cases"],
+  ["coque","case"],
+  // German: strictly product/attribute terms, no guessed brand equivalence.
+  ["schutzhüllen","cases"],
+  ["schutzhülle","case"],
+  ["kopfhörer","headphones"],
+  ["kabellos","wireless"],
+  ["laufschuhe","running shoes"],
+]);
+
+const aliases=new Map();
+for(const [original,canonical] of RETAIL_EQUIVALENCES){
+  if(aliases.has(original))throw Error("DUPLICATE_RETAIL_EQUIVALENCE");
+  aliases.set(original,canonical);
+}
+const escapeRetailRegex=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+const sorted=[...aliases.keys()].sort((a,b)=>b.length-a.length||a.localeCompare(b));
+const pattern=new RegExp("(^| )("+sorted.map(escapeRetailRegex).join("|")+")(?= |$)","gu");
+
+function canonicalizeForeignRetailTerms(value=""){
+  const text=String(value||"");
+  if(!text)return text;
+  return text.replace(pattern,(_,prefix,original)=>prefix+aliases.get(original));
+}
+
 // Shared by the API and browser: aliases affect matching and provider queries alike.
 const ALIASES = [
   // R04-P0: structural Arabic retail concepts are required by live source titles.
@@ -96,6 +178,7 @@ export function normalizeSearchQuery(value = "") {
       text = text.replace(pattern, "$1" + canonical);
     }
   }
+  text=canonicalizeForeignRetailTerms(text);
   if (/\b(?:iphone|galaxy)\b/.test(text)) text = text.replace(/\b(64|128|256|512|1024)(?= |$)(?!\s+(?:gb|tb)\b)/g, "$1gb");
   return text.replace(/(^| )(?:ابغي|ابي|اريد|ابحث|عن|لي|بافضل|افضل|ارخص|سعر|اشتري|please|find)(?= |$)/g, " ")
     .replace(/\b(iphone|airpods|ps)\s*(\d+)/g, "$1 $2")
@@ -186,10 +269,14 @@ export const PRODUCT_CATEGORIES = [
 // captured in the R04 actual LIVE first-ten evidence. Only the *primary* sold
 // item preceding an explicit "with/including" bundle boundary is inspected:
 // a real console/phone with an included accessory stays a principal product.
+// Package inclusion is not limited to English merchant titles. Only
+// standalone marker words separate the primary sold subject from included
+// extras. The title-leading item still must prove its own physical identity.
+const INCLUDED_PACKAGE_MARKER=/\b(?:with|including|includes|con|avec|mit)\b/;
 function detectedRetailPeripheral(offer = {}) {
   const retail = normalizeSearchQuery(String(offer.title || ""));
   if (!retail) return null;
-  const subject=retail.split(/\b(?:with|including|includes)\b/,1)[0];
+  const subject=retail.split(INCLUDED_PACKAGE_MARKER,1)[0];
   // A standalone watch band/strap/case compatible with Apple Watch is an
   // accessory, not the complete watch. Inspect SOLD subject, never included
   // bundled accessories after "with". Observed Jarir accessory titles.
@@ -345,12 +432,17 @@ function productCategoryWithDescription(offer, gaming) {
   if(hpClaim && !computerSubjectBeforeClaim) return 'accessory';
   if (isVerifiedLaptopCarryBundle(offer)) return 'laptop';
   if (isEvidencedCompleteLaptop(offer)) return 'laptop';
-  // A complete title-leading smartphone may include a free screen protector.
-  // The INCLUDED accessory does not replace the sold handset subject.
-  const primary=normalizedRetailTitle.split(/\b(?:with|including|includes)\b/,1)[0];
-  if (/^(?:(?:apple )?iphone \d+|samsung galaxy s\d+)/.test(primary) &&
-      /\b(?:smartphone|phone|handset)\b/.test(primary) &&
-      !/\b(?:screen protectors?|photo stick|case|cover|digitizer)\b/.test(primary))
+  // Protect the SOLD full handset when its merchant title includes a
+  // separately listed accessory after an explicit package-inclusion marker.
+  // A standalone case "for Galaxy" has the case in the primary subject and
+  // remains an accessory, even if its compatibility metadata names a phone.
+  const primary=normalizedRetailTitle.split(INCLUDED_PACKAGE_MARKER,1)[0];
+  const titleLeadingPhone=/^(?:(?:apple )?iphone \d+|samsung galaxy s\d+)/.test(primary);
+  const physicalPhoneClaim=/\b(?:smartphone|phone|handset)\b/.test(primary);
+  const completePackageClaim=INCLUDED_PACKAGE_MARKER.test(normalizedRetailTitle) &&
+    /\b\d+(?:gb|tb)\b/.test(primary);
+  if (titleLeadingPhone && (physicalPhoneClaim||completePackageClaim) &&
+      !/\b(?:screen protectors?|photo stick|case|cover|digitizer|chargers?|repair|replacement)\b/.test(primary))
     return 'phone';
   let urlSemantic = "";
   try {
@@ -929,8 +1021,21 @@ export function assessOfferMatch(query, offer, preparedIntent = null, preparedCo
   // A console sold *with* its drive is not an accessory. The same phrase
   // on a separate "Disc Drive for PS5" listing must still be rejected.
   const includedConsoleDrive = description.kind === "console" && CONSOLE_WITH_INCLUDED_DRIVE.test(title);
+  // The full multilingual package title contains the *included* charger or
+  // case; counting that noun as the sold product was a false accessory veto.
+  // Restrict the exemption to a title-leading, capacity-evidenced handset
+  // whose seller explicitly separates the extras. Every standalone accessory
+  // keeps the original whole-title strictness.
+  const physicalRetail=normalizeSearchQuery(offer?.title||"");
+  const includedPrimary=physicalRetail.split(INCLUDED_PACKAGE_MARKER,1)[0];
+  const completePhoneWithExtras=offerCategory==="phone" &&
+    INCLUDED_PACKAGE_MARKER.test(physicalRetail) &&
+    /^(?:(?:apple )?iphone \d+|samsung galaxy s\d+)/.test(includedPrimary) &&
+    /\b\d+(?:gb|tb)\b/.test(includedPrimary) &&
+    !/\b(?:cases?|covers?|chargers?|protectors?|replacement|repair)\b/.test(includedPrimary);
+  const accessoryEvidenceText=completePhoneWithExtras?includedPrimary:title;
   const titleHasAccessory = !isVerifiedLaptopCarryBundle(offer) &&
-    !(watchSeriesIntent&&!wholeWatchUnverified) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(title, term));
+    !(watchSeriesIntent&&!wholeWatchUnverified) && !includedConsoleDrive && !(description.kind === "console" && (GENUINE_CONSOLE_BUNDLE(title) || explicitlyIncludedConsoleAccessory(normalizeSearchQuery(offer?.title || ""), offer?.title))) && NORMALIZED_ACCESSORY_TERMS.some((term) => hasNormalizedPhrase(accessoryEvidenceText, term));
   if (!queryHasAccessoryIntent && titleHasAccessory) confidence *= 0.12;
 
   // For brand-only searches, prefer the brand's primary editorial categories and
