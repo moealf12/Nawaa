@@ -44,6 +44,11 @@ def summary_for(query, result, elapsed_ms):
     unclassified = [p for p in complete if p.get("intent_match") == "unclassified"]
     diagnostics = result.get("diagnostics", [])
     http_search = [d for d in diagnostics if d.get("method") == "search-html"]
+    pdp_evidence = [d for d in diagnostics if d.get("method") == "pdp-evidence"]
+    evidence_outcomes = {}
+    for diagnostic in pdp_evidence:
+        code = str(diagnostic.get("status") or "UNKNOWN")
+        evidence_outcomes[code] = evidence_outcomes.get(code, 0) + 1
     access_stop = [d for d in diagnostics if d.get("status") in STOP_STATUSES]
     if exact_parity:
         acceptance = "PASS_EXACT_WITH_PDP_PARITY"
@@ -67,6 +72,7 @@ def summary_for(query, result, elapsed_ms):
         "unclassified_intent_complete": len(unclassified),
         "single_source_unverified": len(single_source),
         "price_conflicts": sum(p.get("price_status") == "conflict" for p in products),
+        "pdp_evidence_outcomes": evidence_outcomes,
         "access_denied_or_challenged": bool(access_stop),
         "search_attempts": len([d for d in http_search if d.get("status") in ("OK","HTTP_ERROR","BLOCKED_OR_RATE_LIMITED","CHALLENGE_PAGE")]),
         "header_fallback": any(d.get("status") == "TRANSIENT_HTTP_HEADER_FALLBACK_ONCE" for d in diagnostics),
@@ -134,6 +140,10 @@ async def main():
         "total_exact_intent_complete":sum(r["exact_intent_complete"] for r in ran),
         "total_exact_intent_pdp":sum(r["exact_intent_pdp_parity"] for r in ran),
         "total_intent_mismatch_complete":sum(r["mismatched_intent_complete"] for r in ran),
+        "pdp_evidence_outcomes": {
+            status: sum(r["pdp_evidence_outcomes"].get(status, 0) for r in ran)
+            for status in sorted({status for r in ran for status in r["pdp_evidence_outcomes"]})
+        },
         "total_complete_products":sum(r["complete_usd_image_asin"] for r in ran),
         "total_pdp_correlated":sum(r["pdp_correlated"] for r in ran),
         "header_fallback_queries":sum(r["header_fallback"] for r in ran),
