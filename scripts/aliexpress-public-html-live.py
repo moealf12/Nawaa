@@ -137,7 +137,19 @@ def normalize_query(raw):
 def parsed_search_cards(html, query):
     facts = {"parser": None, "sourceItems": 0, "rejected": {},
              "accepted": 0, "explicitCurrency": 0, "priceRanges": 0,
-             "productImages": 0, "productLinks": 0, "samples": []}
+             "productImages": 0, "productLinks": 0, "samples": [],
+             "markupSignals": {
+                 "didaAssignments": html.count("_dida_config_._init_data_"),
+                 "initDataTokens": html.count("_init_data_"),
+                 "productV3Tokens": html.count("productV3"),
+                 "redirectedIdTokens": html.count("redirectedId"),
+                 "productDetailUrlTokens": html.count("productDetailUrl"),
+                 "itemListTokens": html.count("itemList"),
+                 "searchResultTokens": html.count("searchResult"),
+                 "htmlScriptElements": html.count("<script"),
+                 "jsonLdElements": html.count("application/ld+json"),
+                 "itemLinks": len(re.findall(r"/item/\d{10,20}\.html", html)),
+             }}
     soup = BeautifulSoup(html, "html.parser")
     valid_links = {}
     for anchor in soup.select('a[href*="/item/"]')[:550]:
