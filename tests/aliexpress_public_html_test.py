@@ -67,6 +67,43 @@ class AliExpressEvidenceTests(unittest.TestCase):
             self.assertEqual(stats["rejected"]["SOURCE_PDP_LINK_IDENTITY_UNVERIFIED"], 1)
         self.assertIsNone(probe.product_link(None, PID))
 
+    def test_embedded_productv3_fallback_without_init_data_wrapper(self):
+        item = {
+            "redirectedId": PID, "productId": PID, "itemType": "productV3",
+            "title": {"displayTitle": TITLE},
+            "prices": {"salePrice": {"minPrice": "19.99", "currencyCode": "SAR"}},
+            "image": {"imgUrl": IMAGE},
+            "productDetailUrl": URL,
+        }
+        html = "<html><script>window.__search = " + json.dumps(item) + ";</script></html>"
+        stats, cards = probe.parsed_search_cards(html, "Bluetooth")
+        self.assertEqual(stats["parser"], "ALIEXPRESS_STRUCTURED_PRODUCTV3_OBJECTS")
+        self.assertEqual(stats["sourceItems"], 1)
+        self.assertEqual(stats["accepted"], 1)
+        self.assertEqual(cards[0]["priceOriginal"], "19.99")
+        self.assertEqual(cards[0]["currency"], "SAR")
+
+    def test_product_id_is_never_promoted_to_a_guessed_url(self):
+        item = {
+            "redirectedId": PID, "productId": PID, "itemType": "productV3",
+            "title": {"displayTitle": TITLE},
+            "prices": {"salePrice": {"minPrice": "19.99", "currencyCode": "SAR"}},
+            "image": {"imgUrl": IMAGE},
+        }
+        html = "<html><script>window.__search = " + json.dumps(item) + ";</script></html>"
+        stats, cards = probe.parsed_search_cards(html, "Bluetooth")
+        self.assertEqual(cards, [])
+        self.assertEqual(
+            stats["rejected"]["SOURCE_PDP_LINK_IDENTITY_UNVERIFIED"], 1
+        )
+        source_url = "https://ar.aliexpress.com/item/" + PID + ".html"
+        with_link = html.replace(
+            "</html>", '<a href="' + source_url + '">same item</a></html>'
+        )
+        _, cards = probe.parsed_search_cards(with_link, "Bluetooth")
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["sourceUrl"], source_url)
+
     def test_sale_price_currency_and_image_required(self):
         for price, currency, image in (
             ("1e3", "USD", IMAGE),
