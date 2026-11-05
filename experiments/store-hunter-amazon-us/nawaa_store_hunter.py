@@ -493,6 +493,7 @@ def parse_amazon_us_pdp(html: str, page: str) -> list[Product]:
         if image:
             break
     issues = [price_problem] if price_problem else ["USD_INFERRED_FROM_AMAZON_US_CONTEXT"]
+    issues.append("AMAZON_PDP_ASIN_PROOF")
     if not image:
         issues.append("AMAZON_PDP_PRODUCT_IMAGE_NOT_FOUND")
     return [Product(title=title, url=f"https://www.amazon.com/dp/{asin}", sku=asin,
@@ -591,32 +592,58 @@ def parse_meta_product(html: str, page: str) -> list[Product]:
                     price_status="candidate" if amount and currency else "unresolved")]
 
 
+def _critical_variant_specs(title: str) -> tuple[frozenset[str], frozenset[str]]:
+    """Only explicit SKU-distinguishing storage/variant specs, not marketing numbers."""
+    t = clean_str(title).casefold()
+    storage = frozenset(re.findall(r"\b\d+(?:\.\d+)?\s*(?:gb|tb)\b", t))
+    family = ("iphone" if re.search(r"\biphone\s*\d+\b", t) else
+              "galaxy" if re.search(r"\bgalaxy\s*s\d+\b", t) else
+              "ps5" if re.search(r"\b(?:ps5|playstation\s*5)\b", t) else "")
+    variants = frozenset(re.findall(
+        r"\b(?:ultra|pro|max|plus|mini|fe|digital\s+edition|disc\s+edition)\b", t
+    )) if family else frozenset()
+    return storage, variants
+
+
 def pdp_identity_matches(base: Product, candidate: Product) -> bool:
-    """Never borrow pricing from a recommended/related product on the PDP."""
-    if base.sku and candidate.sku and base.sku != candidate.sku:
+    """Price can transfer only between the same verifiable item and variant.
+
+    For Amazon's *ASIN-proved main-buybox PDP only*, exact selected/canonical
+    ASIN is stronger than noisy title tokens (marketing numerals/dates vary).
+    Variant-relevant storage, color, and family edition conflicts still veto.
+    All other candidates retain conservative title-token agreement.
+    """
+    if base.sku and candidate.sku and base.sku.upper() != candidate.sku.upper():
         return False
     if normalize_product_url(base.url) != normalize_product_url(candidate.url):
-        # A shared SKU can match an equivalent canonical URL only if both
-        # sources explicitly publish it.
-        if not (base.sku and candidate.sku and base.sku == candidate.sku):
+        if not (base.sku and candidate.sku and base.sku.upper() == candidate.sku.upper()):
             return False
     left = set(re.findall(r"[\w]+", base.title.casefold(), re.UNICODE))
     right = set(re.findall(r"[\w]+", candidate.title.casefold(), re.UNICODE))
     if not left or not right:
         return False
-    digits_left = set(re.findall(r"\d+", base.title))
-    digits_right = set(re.findall(r"\d+", candidate.title))
-    if digits_left != digits_right:
-        return False
-    # Require high token agreement to avoid accidental color/model borrowing.
-    overlap = len(left & right) / max(1, min(len(left), len(right)))
-    if overlap < 0.75:
-        return False
-    colors = {"black", "white", "blue", "red", "green", "pink", "purple", "silver", "gold", "gray", "grey",
-              "اسود", "أسود", "ابيض", "أبيض", "احمر", "أحمر", "ازرق", "أزرق", "اخضر", "أخضر", "وردي"}
+    colors = {"black", "white", "blue", "red", "green", "pink", "purple", "silver", "gold",
+              "gray", "grey", "اسود", "أسود", "ابيض", "أبيض", "احمر", "أحمر", "ازرق", "أزرق", "اخضر", "أخضر", "وردي"}
     if (left & colors) and (right & colors) and (left & colors) != (right & colors):
         return False
-    return True
+    proved_amazon = (
+        candidate.method == "amazon-us-pdp-main-buybox"
+        and base.sku and candidate.sku and base.sku.upper() == candidate.sku.upper()
+        and host(candidate.url) in {"amazon.com", "www.amazon.com"}
+        and "AMAZON_PDP_ASIN_PROOF" in candidate.issues
+    )
+    if proved_amazon:
+        base_storage, base_editions = _critical_variant_specs(base.title)
+        pdp_storage, pdp_editions = _critical_variant_specs(candidate.title)
+        if base_storage and pdp_storage and base_storage != pdp_storage:
+            return False
+        if base_editions != pdp_editions:
+            return False
+        return True
+    # Existing strict fallback for all other stores and weaker PDP evidence.
+    if set(re.findall(r"\d+", base.title)) != set(re.findall(r"\d+", candidate.title)):
+        return False
+    return len(left & right) / max(1, min(len(left), len(right))) >= 0.75
 
 
 def has_challenge(html: str) -> bool:
