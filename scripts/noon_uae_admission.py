@@ -67,9 +67,15 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
     currency_corroboration = corroborate_selected_pdp_offer_amount(
         ast.get("candidateRecords"), valid_product_offers
     )
-    # An integer-rendered PLP cannot certify exact fractional PDP cents.
-    # Preserve the exact amount but never silently round it to acceptance.
-    same_offer_amount = precision_evidence["exactEqualityAttested"]
+    # A rounded/abbreviated PLP card cannot attest fractional cents, but
+    # an exact offer-code/SKU-matched source amount corroborated by same-SKU
+    # Product JSON-LD is independent PDP evidence of the precise price.
+    # Keep PLP display precision as separate diagnostic evidence, not a
+    # source-of-truth amount or an automatic authorization to publish.
+    same_offer_amount = bool(
+        precision_evidence["exactEqualityAttested"]
+        or currency_corroboration["sourceOfferAmountProductPriceCorroborated"]
+    )
     currency_per_offer = bool(
         cross.get("sameOfferCurrencyAttested") is True
         and ast.get("exactOfferWithExplicitSkuCurrencyPrice") is True
