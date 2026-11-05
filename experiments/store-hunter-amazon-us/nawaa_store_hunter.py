@@ -612,7 +612,8 @@ def parse_meta_product(html: str, page: str) -> list[Product]:
 def _critical_variant_specs(title: str) -> tuple[frozenset[str], frozenset[str]]:
     """Only explicit SKU-distinguishing storage/variant specs, not marketing numbers."""
     t = clean_str(title).casefold()
-    storage = frozenset(re.findall(r"\b\d+(?:\.\d+)?\s*(?:gb|tb)\b", t))
+    storage = frozenset(re.sub(r"\s+", "", amount) for amount in
+                        re.findall(r"\b\d+(?:\.\d+)?\s*(?:gb|tb)\b", t))
     family = ("iphone" if re.search(r"\biphone\s*\d+\b", t) else
               "galaxy" if re.search(r"\bgalaxy\s*s\d+\b", t) else
               "ps5" if re.search(r"\b(?:ps5|playstation\s*5)\b", t) else "")
