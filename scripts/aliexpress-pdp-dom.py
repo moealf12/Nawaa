@@ -153,29 +153,47 @@ def read_pdp_dom_evidence(html, item_id, page_url):
 
     candidates = []
 
-    # Independent head metadata: explicit amount AND currency, not two
-    # unrelated "prices" from discounts/recommendations.
+    # Independent head metadata: reject duplicate/conflicting amount or
+    # currency tags rather than silently accepting only the first tag.
     for prefix in ("product:price:", "og:price:"):
-        amount = document.select_one(
-            'head meta[property="' + prefix + 'amount"][content]'
-        )
-        currency = document.select_one(
-            'head meta[property="' + prefix + 'currency"][content]'
-        )
+        amounts = [
+            field_value(node) for node in document.select(
+                'head meta[property="' + prefix + 'amount"][content]'
+            )[:12]
+        ]
+        currencies = [
+            field_value(node) for node in document.select(
+                'head meta[property="' + prefix + 'currency"][content]'
+            )[:12]
+        ]
+        if len(set(amounts)) > 1 or len(set(currencies)) > 1:
+            base["state"] = "DOM_PRICE_EVIDENCE_CONFLICT"
+            return base
         pair = price_pair(
-            field_value(amount), field_value(currency),
+            amounts[0] if amounts else None,
+            currencies[0] if currencies else None,
             "DOM_HEAD_" + prefix.replace(":", "_").upper(),
         )
         if pair:
             candidates.append(pair)
 
-    # Microdata: price and currency must be within a single schema.org/Product
-    # scope (never one recommendation's price plus the page's currency).
-    scopes = document.select(
+    # Microdata and widget data are restricted to the product's main region.
+    # An unscoped related-products carousel outside main never owns the PDP
+    # price. On pages without <main>, microdata requires an exact item URL.
+    scope_root = main or document
+    scopes = scope_root.select(
         '[itemscope][itemtype*="schema.org/Product"], '
         '[itemscope][itemtype*="schema.org/product"]'
     )[:8]
     for scope in scopes:
+        item_url = first_attr(scope, "itemid")
+        if not item_url:
+            url_node = scope.select_one('[itemprop="url"]')
+            item_url = (first_attr(url_node, "href")
+                        or first_attr(url_node, "content"))
+        if (item_url and canonical_item_id(item_url, page_url) != str(item_id)
+                or not main and not item_url):
+            continue
         amount = scope.select_one('[itemprop="price"]')
         currency = scope.select_one('[itemprop="priceCurrency"]')
         pair = price_pair(
@@ -185,8 +203,8 @@ def read_pdp_dom_evidence(html, item_id, page_url):
             candidates.append(pair)
 
     # Merchant-rendered widget: product ID, current price, and currency
-    # must all belong to one product-root element.
-    for root in document.select("[data-product-id][data-price-current][data-currency]")[:20]:
+    # must all belong to one product-root element in the PDP's main region.
+    for root in scope_root.select("[data-product-id][data-price-current][data-currency]")[:20]:
         if first_attr(root, "data-product-id") != str(item_id):
             continue
         pair = price_pair(
