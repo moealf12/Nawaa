@@ -19,7 +19,7 @@ test("Google Shopping: bound to actual search input and query lifecycle, never a
   assert.match(js,/els\.input\.addEventListener\("input",\s*\(\)\s*=>\s*updateGoogleShoppingDiscovery\(els\.input\.value\)\)/);
   assert.match(js,/async function runSearch\(rawQuery\)[\s\S]*?updateGoogleShoppingDiscovery\(query\)/);
   assert.match(js,/els\.googleShoppingLink\.href\s*=\s*external\.href/);
-  assert.match(js,/els\.googleShoppingLink\.removeAttribute\("href"\)/);
+  assert.match(js,/els\.googleShoppingLink\.removeAttribute\?\.\("href"\)/);
   assert.doesNotMatch(js,/fetch\s*\(\s*external\.href\s*\)/);
 });
 
