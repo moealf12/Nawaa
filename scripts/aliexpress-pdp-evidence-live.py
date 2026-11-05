@@ -136,8 +136,10 @@ def classify_redirect_destination(raw_location, current_url, item_id):
             path_class = "SEARCH"
         else:
             path_class = "OTHER"
+        item_match = re.fullmatch(r"/item/(\d{10,20})\.html/?", path)
         return {"targetHostClass": host_class, "targetPathClass": path_class,
                 "targetHost": host if host_class == "OFFICIAL" else None,
+                "targetItemId": item_match.group(1) if host_class == "OFFICIAL" and item_match else None,
                 "hasQuery": bool(target.query)}
     except (ValueError, TypeError):
         return {"targetHostClass": "UNKNOWN", "targetPathClass": "INVALID_URL"}
@@ -166,37 +168,88 @@ def approved_pdp_redirect(raw_location, current_url, item_id):
 
 
 def verify_public_robots(session, target_url, headers):
-    """Fail closed on robots read errors, malformed domains or disallowed PDPs."""
-    host = urlsplit(target_url).hostname
-    if host not in ALLOWED_PDP_HOSTS:
-        return False, {"step": "robots_policy", "host": host, "state": "HOST_NOT_APPROVED"}
+    """Robots.txt may redirect, but only to approved official robots.txt paths.
+
+    This never treats an HTTP redirect as permission to fetch a PDP. The policy
+    retrieved from an approved redirected URL still controls the original
+    requested product path and is never replaced by permissive defaults.
+    """
+    requested_host = urlsplit(target_url).hostname
+    if requested_host not in ALLOWED_PDP_HOSTS:
+        return False, {
+            "step": "robots_policy", "host": requested_host, "state": "HOST_NOT_APPROVED"
+        }
     started = time.monotonic()
-    stage = {"step": "robots_policy", "host": host}
+    current_robots = "https://" + requested_host + "/robots.txt"
+    stage = {"step": "robots_policy", "host": requested_host,
+             "policyRedirectsFollowed": 0}
+    visited = set()
     try:
-        response = session.get(
-            "https://" + host + "/robots.txt",
-            headers={**headers, "accept": "text/plain"},
-            timeout=12, allow_redirects=False,
-        )
-        data = response.content
-        stage["status"] = response.status_code
-        stage["bytes"] = len(data)
-        valid = (response.status_code == 200 and 0 < len(data) <= 150000
-                 and urlsplit(str(response.url)).hostname == host)
-        if valid:
+        for hop in range(3):
+            if current_robots in visited:
+                stage["state"] = "ROBOTS_REDIRECT_LOOP"
+                break
+            visited.add(current_robots)
+            response = session.get(
+                current_robots,
+                headers={**headers, "accept": "text/plain"},
+                timeout=12, allow_redirects=False,
+            )
+            stage["status"] = response.status_code
+            stage["bytes"] = len(response.content)
+            final = urlsplit(str(response.url))
+            expected = urlsplit(current_robots)
+            if final.hostname != expected.hostname:
+                stage["state"] = "ROBOTS_RESPONSE_ORIGIN_MISMATCH"
+                break
+            if response.status_code in REDIRECT_STATUSES:
+                location = response.headers.get("location")
+                if not isinstance(location, str) or len(location) > 2048:
+                    stage["state"] = "ROBOTS_REDIRECT_MISSING_LOCATION"
+                    break
+                candidate = urlsplit(urljoin(current_robots, location))
+                approved = (
+                    candidate.scheme == "https"
+                    and candidate.hostname in ALLOWED_PDP_HOSTS
+                    and candidate.path == "/robots.txt"
+                    and not candidate.query and not candidate.fragment
+                    and not candidate.username and not candidate.password
+                    and candidate.port in (None, 443)
+                )
+                if not approved:
+                    stage["state"] = "ROBOTS_REDIRECT_NOT_APPROVED"
+                    break
+                if hop >= 2:
+                    stage["state"] = "ROBOTS_REDIRECT_HOP_LIMIT"
+                    break
+                next_robots = "https://" + candidate.hostname + "/robots.txt"
+                if next_robots in visited:
+                    stage["state"] = "ROBOTS_REDIRECT_LOOP"
+                    break
+                stage["policyRedirectsFollowed"] += 1
+                current_robots = next_robots
+                continue
+            valid = (
+                response.status_code == 200
+                and 0 < len(response.content) <= 150000
+            )
+            if not valid:
+                stage["state"] = "POLICY_UNAVAILABLE"
+                break
             policy = RobotFileParser()
             policy.parse(response.text.splitlines())
-            allowed = policy.can_fetch(_shared.USER_AGENT.split("/", 1)[0], target_url)
+            allowed = policy.can_fetch(
+                _shared.USER_AGENT.split("/", 1)[0], target_url
+            )
             stage["state"] = "ALLOWED" if allowed else "DISALLOWED"
-        else:
-            allowed = False
-            stage["state"] = "POLICY_UNAVAILABLE"
+            stage["resolvedPolicyHost"] = expected.hostname
+            stage["elapsedMs"] = round((time.monotonic() - started) * 1000)
+            return allowed, stage
     except Exception as exc:
-        allowed = False
         stage["state"] = "TRANSPORT_FAILURE"
         stage["exceptionType"] = type(exc).__name__[:60]
     stage["elapsedMs"] = round((time.monotonic() - started) * 1000)
-    return allowed, stage
+    return False, stage
 
 
 def probe_item(item_id):
