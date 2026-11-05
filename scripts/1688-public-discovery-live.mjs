@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Strictly live / non-publishing 1688 public discovery gate.
-// One robots.txt GET, then up to eight serialized public search-page GETs.
+// At most three same-path robots.txt redirect hops, then up to eight public search GETs.
 // No auth spoofing, proxy, alternate headers, retries, cookies, or browser escalation.
 import {writeFile} from "node:fs/promises";
 import {robotsDecision,inspect1688Html} from "../src/1688-public-discovery.mjs";
@@ -32,7 +32,7 @@ async function readLimited(res) {
 }
 async function request(url, ms=6000) {
   const started=performance.now();
-  // Fixed endpoint, query does not control host; no redirect follows.
+  // Fixed endpoint, query does not control host; redirects are handled only for robots.
   const res = await fetch(url,{redirect:"manual",signal:AbortSignal.timeout(ms),headers:{
     accept:"text/html,application/xhtml+xml,text/plain;q=0.8",
     "user-agent":UA,
@@ -41,6 +41,7 @@ async function request(url, ms=6000) {
   const body=res.status===200?await readLimited(res):"";
   if(res.status!==200) await res.body?.cancel().catch(()=>{});
   return {status:res.status,finalUrl:res.url||url,contentType,body,
+    redirectLocation:res.headers.get('location')||null,
     durationMs:Math.round(performance.now()-started)};
 }
 function errorClass(e) {
@@ -56,25 +57,52 @@ const report = {
   sourceId:"1688-cn", sourceUrl:ROOT,
   live:true, fixtureData:false, customerPublished:false,
   authorizedFeedTested:false, independentPdpPriceVerified:0,
-  saudiDeliveryVerified:false, requestBudget:1+QUERIES.length,
+  saudiDeliveryVerified:false, requestBudget:3+QUERIES.length,
   attempts:0, cases:[], robots:null, stopReason:null, conclusion:"NOT_RUN",
 };
 try {
   let robotText;
-  try {
-    const robots = await request(ROOT+"/robots.txt");
-    report.attempts++;
-    report.robots={status:robots.status,durationMs:robots.durationMs,
-      bytes:Buffer.byteLength(robots.body)};
-    if(robots.status!==200 || !robots.contentType.includes("text/plain")) {
-      report.stopReason = "ROBOTS_UNAVAILABLE_OR_INVALID_CONTENT";
-    } else {
-      robotText=robots.body;
+  let robotsUrl=ROOT+"/robots.txt";
+  for(let hop=0; hop<3; hop++) {
+    try {
+      const robots=await request(robotsUrl);
+      report.attempts++;
+      report.robots={status:robots.status,durationMs:robots.durationMs,
+        bytes:Buffer.byteLength(robots.body),
+        host:new URL(robotsUrl).hostname,
+        redirectHop:hop,
+      };
+      if(robots.status>=300 && robots.status<400) {
+        const redirect=robots.redirectLocation;
+        let next=null;
+        try {
+          if(redirect) next=new URL(redirect,robotsUrl);
+          // Robots applies to original s.1688.com origin even after redirect.
+          // Follow only an HTTPS robots.txt on a first-party 1688 host.
+          if(!next || next.protocol!=="https:" || next.pathname!=="/robots.txt" ||
+             next.search || next.username || next.password ||
+             !(next.hostname==="1688.com" || next.hostname.endsWith(".1688.com")) ||
+             next.href===robotsUrl) next=null;
+        } catch {next=null;}
+        report.robots.redirectHost=next?.hostname||null;
+        report.robots.redirectPath=next?.pathname||null;
+        if(!next) { report.stopReason="ROBOTS_REDIRECT_NOT_TO_VERIFIED_FILE";break; }
+        robotsUrl=next.href;
+        if(hop===2) report.stopReason="ROBOTS_TOO_MANY_REDIRECTS";
+        continue;
+      }
+      if(robots.status!==200 || !robots.contentType.toLowerCase().includes("text/plain")) {
+        report.stopReason="ROBOTS_UNAVAILABLE_OR_INVALID_CONTENT";
+      } else {
+        robotText=robots.body;
+      }
+      break;
+    } catch(e) {
+      report.attempts++;
+      report.robots={status:null,errorClass:errorClass(e)};
+      report.stopReason="ROBOTS_FETCH_FAILED";
+      break;
     }
-  } catch(e) {
-    report.attempts++;
-    report.robots={status:null,errorClass:errorClass(e)};
-    report.stopReason="ROBOTS_FETCH_FAILED";
   }
   if(robotText!==undefined) {
     for (const intent of QUERIES) {
