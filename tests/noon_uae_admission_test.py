@@ -235,5 +235,45 @@ class AdmissionGateTests(unittest.TestCase):
 
 
 
+    def test_fractional_offer_amount_corrob_is_true_without_fake_plp_precision(self):
+        report = live_report()
+        report["tanstackTsrAst"]["candidateRecords"][0]["priceCents"] = 197905
+        report["jsonLd"] = {"matchedSkuOffers": [
+            {"currency": "AED", "price": "1979.05"}
+        ]}
+        result = gate(report)
+        self.assertTrue(result["gates"]["same_offer_amount_verified"])
+        self.assertEqual(result["pricePrecisionEvidence"]["deltaCents"], 5)
+        self.assertFalse(result["pricePrecisionEvidence"]["exactEqualityAttested"])
+        self.assertTrue(
+            result["productScopedCurrencyCorroboration"][
+                "sourceOfferAmountProductPriceCorroborated"
+            ]
+        )
+        self.assertFalse(result["gates"]["same_offer_currency_aed_verified"])
+        self.assertFalse(result["customerPublishable"])
+
+    def test_fractional_offer_amount_without_matching_pdp_product_is_blocked(self):
+        report = live_report()
+        report["tanstackTsrAst"]["candidateRecords"][0]["priceCents"] = 197905
+        report["jsonLd"] = {"matchedSkuOffers": [
+            {"currency": "AED", "price": "1979.00"}
+        ]}
+        result = gate(report)
+        self.assertFalse(result["gates"]["same_offer_amount_verified"])
+
+    def test_offer_with_conflicting_pdp_product_currencies_cannot_pass(self):
+        report = live_report()
+        report["tanstackTsrAst"]["candidateRecords"][0]["priceCents"] = 197905
+        report["jsonLd"] = {"matchedSkuOffers": [
+            {"currency": "AED", "price": "1979.05"},
+            {"currency": "USD", "price": "1979.05"},
+        ]}
+        result = gate(report)
+        self.assertFalse(result["gates"]["same_offer_amount_verified"])
+        self.assertFalse(result["customerPublishable"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
