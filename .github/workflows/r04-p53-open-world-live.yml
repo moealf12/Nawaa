@@ -1,0 +1,50 @@
+name: NAWAA R04 P53 Open-World Live Merchant Matrix
+on:
+  pull_request:
+    paths:
+      - 'server/server.mjs'
+      - 'src/search-query.mjs'
+      - 'server/match.mjs'
+      - 'server/open-world-recall-policy.mjs'
+      - 'tests/r04-p53-open-world-recall.test.mjs'
+      - 'scripts/r04-p53-open-world-live.mjs'
+      - '.github/workflows/r04-p53-open-world-live.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r04-p53-open-world-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  non-frozen-real-merchant-intents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+      NAWAA_PY_LIVE_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Enforce open-world safety and runner integrity
+        run: |
+          node --check scripts/r04-p53-open-world-live.mjs
+          node --check server/open-world-recall-policy.mjs
+          node --test tests/r04-p53-open-world-recall.test.mjs
+      - name: Probe 12 out-of-corpus requests against actual public merchants
+        run: node scripts/r04-p53-open-world-live.mjs
+      - name: Archive actual observed results, including structural failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r04-p53-open-world-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-p53-open-world-live-evidence.json
+          retention-days: 14
+          if-no-files-found: warn
