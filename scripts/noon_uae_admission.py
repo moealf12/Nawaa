@@ -56,6 +56,17 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
     precision_evidence = interpret_price_surfaces(
         r.get("plpDisplayedPrice"), source_current_price.get("priceCents")
     )
+    valid_product_offers = []
+    jsonld = _dict(r.get("jsonLd"))
+    for item in jsonld.get("matchedSkuOffers", [])[:30]:
+        if isinstance(item, dict):
+            valid_product_offers.append({
+                "priceCents": cents(item.get("price")),
+                "currency": item.get("currency"),
+            })
+    currency_corroboration = corroborate_selected_pdp_offer_amount(
+        ast.get("candidateRecords"), valid_product_offers
+    )
     # An integer-rendered PLP cannot certify exact fractional PDP cents.
     # Preserve the exact amount but never silently round it to acceptance.
     same_offer_amount = precision_evidence["exactEqualityAttested"]
