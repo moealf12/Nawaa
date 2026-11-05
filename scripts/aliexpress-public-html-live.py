@@ -164,6 +164,7 @@ def parsed_search_cards(html, query):
     facts = {"parser": None, "sourceItems": 0, "rejected": {},
              "accepted": 0, "explicitCurrency": 0, "priceRanges": 0,
              "productImages": 0, "productLinks": 0, "samples": [],
+             "rejectedImageHosts": {}, "rejectedImageFieldShapes": {},
              "markupSignals": {
                  "didaAssignments": html.count("_dida_config_._init_data_"),
                  "initDataTokens": html.count("_init_data_"),
@@ -248,9 +249,25 @@ def parsed_search_cards(html, query):
             reject("INVALID_VARIANT_PRICE_RANGE")
             continue
         image_obj = item.get("image")
-        image = product_image(image_obj.get("imgUrl")) if isinstance(image_obj, dict) else None
+        raw_image = image_obj.get("imgUrl") if isinstance(image_obj, dict) else None
+        image = product_image(raw_image)
         if not image:
             reject("TRUSTED_IMAGE_MISSING")
+            shape = ",".join(sorted(str(key)[:36] for key in image_obj)[:5]) if isinstance(image_obj, dict) else type(image_obj).__name__
+            if shape and len(facts["rejectedImageFieldShapes"]) < 8:
+                facts["rejectedImageFieldShapes"][shape] = (
+                    facts["rejectedImageFieldShapes"].get(shape, 0) + 1
+                )
+            candidate = ("https:" + raw_image) if isinstance(raw_image, str) and raw_image.startswith("//") else raw_image
+            try:
+                host = urlsplit(candidate).hostname if isinstance(candidate, str) else None
+            except ValueError:
+                host = None
+            host = host if isinstance(host, str) and re.fullmatch(r"[a-z0-9.-]{1,120}", host) else "<no-valid-host>"
+            if host in facts["rejectedImageHosts"] or len(facts["rejectedImageHosts"]) < 8:
+                facts["rejectedImageHosts"][host] = (
+                    facts["rejectedImageHosts"].get(host, 0) + 1
+                )
             continue
         source_url = item.get("productDetailUrl") or item.get("productUrl")
         url = product_link(source_url, pid) or valid_links.get(pid)
