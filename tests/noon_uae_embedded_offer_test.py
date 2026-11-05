@@ -114,5 +114,43 @@ class EmbeddedEvidenceTests(unittest.TestCase):
         self.assertEqual(len(r["offerCandidateRecords"]), 1)
 
 
+    def test_same_sku_in_two_fields_is_valid_identity(self):
+        rec = record(sku=SKU, skuConfig=SKU)
+        out = inspect(script(rec))
+        self.assertTrue(out["samePriceOfferAttested"])
+        evidence = out["offerCandidateRecords"][0]
+        self.assertTrue(evidence["skuExplicitInOfferRecord"])
+        self.assertGreaterEqual(evidence["skuAliasCount"], 2)
+        self.assertFalse(evidence["skuAliasesConflict"])
+
+    def test_conflicting_sku_fields_are_never_accepted(self):
+        rec = record(sku="N12345678A", skuConfig=SKU)
+        out = inspect(script(rec))
+        self.assertFalse(out["samePriceOfferAttested"])
+        self.assertTrue(out["offerCandidateRecords"][0]["skuAliasesConflict"])
+
+    def test_sale_price_is_current_not_original_list_price(self):
+        rec = record(price="3999.00", sale_price="2099.05")
+        out = inspect(script(rec))
+        self.assertFalse(out["samePriceOfferAttested"])
+        candidate = out["offerCandidateRecords"][0]
+        self.assertEqual(candidate["priceKind"], "saleprice")
+        self.assertEqual(candidate["priceCents"], 209905)
+        self.assertEqual(candidate["regularListPriceCents"], 399900)
+        self.assertEqual(candidate["deltaCents"], 5)
+
+    def test_exact_sale_price_can_match_without_publishing(self):
+        rec = record(price="3999.00", sale_price="2099.00")
+        out = inspect(script(rec))
+        self.assertTrue(out["samePriceOfferAttested"])
+        self.assertFalse(out["customerPublishable"])
+
+    def test_invalid_sale_price_does_not_fallback_to_list_price(self):
+        rec = record(price="2099.00", sale_price="invalid")
+        out = inspect(script(rec))
+        self.assertFalse(out["samePriceOfferAttested"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
