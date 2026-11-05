@@ -4,7 +4,10 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from noon_uae_price_policy import assess_offer, cents, corroborate_sources, aed_to_sar_estimate  # noqa: E402
+from noon_uae_price_policy import (  # noqa: E402
+    assess_offer, cents, corroborate_sources, aed_to_sar_estimate,
+    aed_sar_card_preview,
+)
 
 SKU = "N40633047A"
 OFFER = "f24643243856845e"
@@ -83,6 +86,37 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(aed_to_sar_estimate("0.01"), "0.01")
         for invalid in (None, True, -5, "1e3", "2,099.00", "NaN"):
             self.assertIsNone(aed_to_sar_estimate(invalid))
+
+    def test_aed_sar_card_preview(self):
+        live_card = aed_sar_card_preview(
+            "2099.05", market="AE", explicit_aed_label=True
+        )
+        self.assertEqual(live_card["sourceCurrencyVerified"], "AED")
+        self.assertEqual(live_card["convertedSarApprox"], "2147.33")
+        self.assertIsNone(live_card["sarScenarioIfAED"])
+        self.assertEqual(live_card["fxRateAsOf"], "2026-11-05")
+        self.assertFalse(live_card["customerPublishable"])
+
+        unverified = aed_sar_card_preview(
+            "2099.05", market="AE", explicit_aed_label=False
+        )
+        self.assertIsNone(unverified["sourceCurrencyVerified"])
+        self.assertIsNone(unverified["convertedSarApprox"])
+        self.assertEqual(unverified["sarScenarioIfAED"], "2147.33")
+        self.assertFalse(unverified["customerPublishable"])
+        for unsafe_market in ("SA", "US", "", None):
+            untrusted = aed_sar_card_preview(
+                "100.00", market=unsafe_market, explicit_aed_label=True
+            )
+            self.assertIsNone(untrusted["convertedSarApprox"])
+            self.assertIsNone(untrusted["sarScenarioIfAED"])
+        for invalid in ("NaN", "-1", "2000,00", None, True):
+            self.assertIsNone(aed_sar_card_preview(
+                invalid, market="AE", explicit_aed_label=True
+            )["convertedSarApprox"])
+        self.assertIsNone(aed_sar_card_preview(
+            "123.45", market="AE", explicit_aed_label="true"
+        )["convertedSarApprox"])
 
     def test_cent_precision_exact(self):
         self.assertEqual(cents("2099.05"), 209905)
