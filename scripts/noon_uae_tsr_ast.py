@@ -13,7 +13,7 @@ import esprima
 
 from noon_uae_embedded_offer import candidate_objects
 
-MAX_SCRIPT_CHARS = 260_000
+MAX_SCRIPT_CHARS = 512_000  # bounded; live valid Arabic-audio SSR was 262,580
 MAX_SCRIPTS = 10
 MAX_AST_NODES = 60000
 MAX_ALIASES = 20000
@@ -102,6 +102,8 @@ def inspect_tsr_ast(soup, *, sku, offer_code, plp_price):
         "tsrScriptCount": 0,
         "parsedScriptCount": 0,
         "parseFailureCount": 0,
+        "oversizedOfferTsrScriptCount": 0,
+        "maxOfferTsrScriptChars": 0,
         "astNodesInspected": 0,
         "resolvedAliasCount": 0,
         "objectExpressionsInspected": 0,
@@ -116,9 +118,16 @@ def inspect_tsr_ast(soup, *, sku, offer_code, plp_price):
         return report
     for tag in soup.find_all("script", limit=140):
         body = tag.string or tag.get_text()
-        if not isinstance(body, str) or not body or len(body) > MAX_SCRIPT_CHARS:
+        if not isinstance(body, str) or not body:
             continue
         if "self.$R" not in body and "$_TSR" not in body:
+            continue
+        if len(body) > MAX_SCRIPT_CHARS:
+            if offer_code in body:
+                report["oversizedOfferTsrScriptCount"] += 1
+                report["maxOfferTsrScriptChars"] = max(
+                    report["maxOfferTsrScriptChars"], len(body),
+                )
             continue
         if report["tsrScriptCount"] >= MAX_SCRIPTS:
             break
@@ -126,6 +135,9 @@ def inspect_tsr_ast(soup, *, sku, offer_code, plp_price):
         if offer_code not in body:
             continue
         report["offerCodePresentInTsrScript"] = True
+        report["maxOfferTsrScriptChars"] = max(
+            report["maxOfferTsrScriptChars"], len(body),
+        )
         try:
             ast = esprima.parseScript(body, tolerant=True)
         except Exception:
