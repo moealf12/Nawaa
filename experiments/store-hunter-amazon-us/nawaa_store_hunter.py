@@ -43,6 +43,12 @@ CARD_SELECTORS = (
 PRODUCT_PATHS = ("/product/", "/products/", "/p/", "/dp/", "/item/", "/prod/")
 BLOCK_PHRASES = ("verify you are human", "checking your browser", "captcha", "access denied", "unusual traffic", "security check", "robot check", "cf-challenge")
 
+# In-process robots cache reduces redundant public-source requests. Only a
+# successfully fetched robots policy or true 404 is cached; access failures
+# NEVER become an implicit allow. Policy is refreshed after two minutes.
+_ROBOTS_CACHE: dict[str, tuple[float, RobotFileParser]] = {}
+_ROBOTS_TTL_SECONDS = 120.0
+
 
 @dataclass
 class Product:
@@ -838,15 +844,24 @@ class Scraper:
     async def prepare(self):
         ensure_public_url(self.origin)
         url = self.origin + "/robots.txt"
+        cached = _ROBOTS_CACHE.get(self.origin)
+        if cached and cached[0] > time.monotonic():
+            self._robots = cached[1]
+            self.log("robots", url, "cache_hit")
+            return
+        # Drop expired policy before making a new network request.
+        _ROBOTS_CACHE.pop(self.origin, None)
         try:
             response = await self._raw_get(url)
             if response.status_code == 404:
                 self._robots = RobotFileParser()
                 self._robots.parse([])
+                _ROBOTS_CACHE[self.origin] = (time.monotonic() + _ROBOTS_TTL_SECONDS, self._robots)
                 self.log("robots", url, "missing_allow")
             elif response.status_code == 200:
                 self._robots = RobotFileParser()
                 self._robots.parse(response.text.splitlines())
+                _ROBOTS_CACHE[self.origin] = (time.monotonic() + _ROBOTS_TTL_SECONDS, self._robots)
                 self.log("robots", url, "parsed")
             else:
                 self._robots_blocked = True
@@ -1055,7 +1070,13 @@ class Scraper:
         await self.prepare()
         if self._robots_blocked:
             return self.result([], "robots_unavailable")
-        homepage = await self.fetch("homepage", self.store_url + "/")
+        # Amazon with a caller-supplied search URL does not require a
+        # homepage probe for platform detection. Save one request per query.
+        if host(self.origin) in {"amazon.com", "www.amazon.com"} and self.search_url:
+            homepage = None
+            self.log("homepage", self.store_url + "/", "SKIPPED_EXPLICIT_SEARCH_URL")
+        else:
+            homepage = await self.fetch("homepage", self.store_url + "/")
         home_lower = (homepage or "").lower()
         products: list[Product] = []
         if "shopify" in home_lower:
