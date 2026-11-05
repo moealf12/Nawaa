@@ -283,8 +283,29 @@ def parsed_search_cards(html, query):
                     facts["rejectedImageHosts"].get(host, 0) + 1
                 )
             continue
-        source_url = item.get("productDetailUrl") or item.get("productUrl")
-        url = product_link(source_url, pid) or valid_links.get(pid)
+        # A non-product campaign URL must not shadow a second, genuine PDP
+        # URL from this same source card. Never invent a URL from productId.
+        primary = item.get("productDetailUrl")
+        secondary = item.get("productUrl")
+
+        def explicit_different_item(raw):
+            if not isinstance(raw, str):
+                return False
+            found = re.search(r"/item/(\\d{10,20})\\.html", raw)
+            return bool(
+                found and found.group(1) != pid
+                and product_link(raw, found.group(1))
+            )
+
+        if explicit_different_item(primary):
+            reject("SOURCE_PDP_LINK_IDENTITY_UNVERIFIED")
+            continue
+        first = product_link(primary, pid)
+        second_conflict = explicit_different_item(secondary)
+        url = first or (
+            None if second_conflict else
+            product_link(secondary, pid) or valid_links.get(pid)
+        )
         if not url:
             reject("SOURCE_PDP_LINK_IDENTITY_UNVERIFIED")
             continue
