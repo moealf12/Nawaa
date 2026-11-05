@@ -1,0 +1,62 @@
+name: AliExpress Authorized Public HTML Live Extraction
+
+on:
+  push:
+    branches:
+      - experiment/aliexpress-public-html-connector-20261105
+    paths:
+      - "scripts/aliexpress-public-html-live.py"
+      - "tests/aliexpress-public-html.test.py"
+      - ".github/workflows/aliexpress-public-html-live.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aliexpress-authorized-html-live
+  cancel-in-progress: true
+
+jobs:
+  merchant-ssr-evidence:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - query_id: earbuds
+            query: "wireless earbuds"
+          - query_id: phone-case
+            query: "phone case"
+          - query_id: usb-c
+            query: "usb c cable"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install bounded free public-HTML parser dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+      - name: Validate parser and offer integrity before the live request
+        run: |
+          python -m py_compile scripts/aliexpress-public-html-live.py tests/aliexpress-public-html.test.py
+          ruff check --select E4,E7,E9,F scripts/aliexpress-public-html-live.py tests/aliexpress-public-html.test.py
+          python -m unittest discover -s tests -p "aliexpress-public-html.test.py" -v
+      - name: Fetch real AliExpress public HTML once, without proxy or CAPTCHA replay
+        env:
+          HEAD_SHA: ${{ github.sha }}
+          ALIEXPRESS_QUERY_ID: ${{ matrix.query_id }}
+          ALIEXPRESS_SEARCH_QUERY: ${{ matrix.query }}
+        run: python scripts/aliexpress-public-html-live.py
+      - name: Retain JSON diagnostics even when merchant access fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aliexpress-live-${{ matrix.query_id }}
+          path: aliexpress-live-*.json
+          if-no-files-found: warn
+          retention-days: 14
