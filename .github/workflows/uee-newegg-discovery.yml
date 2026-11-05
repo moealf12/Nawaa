@@ -1,0 +1,17 @@
+name: UEE Newegg public discovery
+on:
+  push:
+    branches: [uee-isolated-live-smoke-20261105]
+    paths: ['uee-sandbox/newegg-discovery.mjs','.github/workflows/uee-newegg-discovery.yml']
+permissions:
+  contents: read
+jobs:
+  discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node uee-sandbox/newegg-discovery.mjs
