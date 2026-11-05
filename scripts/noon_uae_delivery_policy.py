@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
+from noon_uae_partner_attestation import verify_partner_delivery_envelope
+
 SKU = re.compile(r"(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)", re.I)
 OFFER = re.compile(r"[A-Za-z0-9-]{1,100}")
 
@@ -27,7 +29,8 @@ def _fresh_timestamp(source_time, now_utc, ttl_seconds):
     return -60 <= seconds <= ttl_seconds
 
 
-def attest_saudi_delivery(*, sku, offer_code, evidence=None, now_utc=None):
+def attest_saudi_delivery(*, sku, offer_code, evidence=None, now_utc=None,
+                          trusted_public_keys=None):
     """Proof of *country eligibility* only, never actual regional checkout price.
 
     Do not accept country/locale/global badge as a delivery quote. Keep 'false'
@@ -41,11 +44,18 @@ def attest_saudi_delivery(*, sku, offer_code, evidence=None, now_utc=None):
         "shippingFeeKnown": False,
         "customerPublishable": False,
     }
-    if not isinstance(evidence, dict):
+    if evidence is None:
         return result
     if not SKU.fullmatch(str(sku or "")) or not OFFER.fullmatch(str(offer_code or "")):
         result["state"] = "IDENTITY_INVALID"
         return result
+    quote = verify_partner_delivery_envelope(
+        evidence, trusted_public_keys=trusted_public_keys,
+    )
+    if quote is None:
+        result["state"] = "UNSIGNED_OR_UNTRUSTED_DELIVERY_EVIDENCE"
+        return result
+    evidence = quote
     if evidence.get("market") != "AE":
         result["state"] = "WRONG_SOURCE_MARKET"
         return result
@@ -53,9 +63,7 @@ def attest_saudi_delivery(*, sku, offer_code, evidence=None, now_utc=None):
             or evidence.get("offerCode") != offer_code):
         result["state"] = "OFFER_IDENTITY_MISMATCH"
         return result
-    if evidence.get("sourceKind") not in (
-        "merchant_offer_delivery_quote", "authorized_offer_delivery_feed",
-    ):
+    if evidence.get("sourceKind") != "authorized_offer_delivery_feed":
         result["state"] = "NON_AUTHORITATIVE_DELIVERY_HINT"
         return result
     # Product snippets saying "Ships to KSA" are hints, not a selected
