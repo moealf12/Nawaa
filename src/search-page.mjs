@@ -1145,6 +1145,7 @@ function renderProduct(product, query) {
     });
   });
   $("#loadMoreRemote")?.addEventListener("click",()=>loadMoreRemote(query));
+  observeRemoteMore(query);
   document.querySelector('.selected-comparison')?.addEventListener('toggle',event=>{ if (event.target.isConnected === false) return; if (state.comparisonOpen !== event.target.open) { state.comparisonOpen=event.target.open; if (!event.target.open) renderProduct(product,query); } });
   $("#availabilityFilter")?.addEventListener("change", event => { state.availability = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
   $("#merchantFilter")?.addEventListener("change", event => { state.merchant = event.target.value; state.visibleCounts = {}; state.selectorSelection = {}; state.selectedGroupKey = null; state.comparisonOpen = false; renderProduct(product, query); });
@@ -1253,6 +1254,24 @@ function mergeSearchOffers(current = [], incoming = []) {
   return [...merged.values()];
 }
 
+let remoteMoreObserver = null;
+function observeRemoteMore(query) {
+  remoteMoreObserver?.disconnect();
+  remoteMoreObserver = null;
+  const button = document.querySelector("#loadMoreRemote");
+  if (!button || state.remoteLoading || state.remoteExhausted ||
+      !(state.overflowCursor || state.nextCursor) || typeof IntersectionObserver === "undefined") return;
+  remoteMoreObserver = new IntersectionObserver((entries, observer) => {
+    if (!entries.some(entry => entry.isIntersecting)) return;
+    observer.disconnect();
+    remoteMoreObserver = null;
+    if (state.query !== query || state.remoteLoading || state.remoteExhausted ||
+        !(state.overflowCursor || state.nextCursor)) return;
+    void loadMoreRemote(query);
+  }, { rootMargin: "0px 0px 320px 0px", threshold: 0 });
+  remoteMoreObserver.observe(button);
+}
+
 async function loadMoreRemote(query) {
   if (!(state.nextCursor || state.overflowCursor) || state.remoteLoading || !state.product) return;
   const apiBase = String(window.NAWAA_API_BASE || "").replace(/\/$/, "");
@@ -1263,6 +1282,7 @@ async function loadMoreRemote(query) {
   els.status.textContent = state.overflowCursor ? "نسترجع بقية النتائج المكتشفة…" : "نوسّع البحث إلى مصادر ونتائج إضافية…";
 
   let completionStatus=null;
+  let lastPageSucceeded=false;
   try {
     let cursor = state.nextCursor;
     let pageCursor = state.overflowCursor;
@@ -1294,6 +1314,7 @@ async function loadMoreRemote(query) {
       }
       lastData = data;
     }
+    lastPageSucceeded=true;
     state.nextCursor = cursor;
     state.overflowCursor = pageCursor;
     state.remoteExhausted = !(cursor || pageCursor);
@@ -1326,6 +1347,8 @@ async function loadMoreRemote(query) {
     if (requestId === state.requestId) {
       state.remoteLoading = false;
       if (state.product) renderProduct(state.product,query);
+      // Re-arm only after a successful page; failures remain manual-retry only.
+      if (lastPageSucceeded && !state.remoteExhausted) observeRemoteMore(query);
       // The product re-render updates the generic status; preserve the real
       // pagination outcome (especially 410 expiry and partial source failures).
       if(completionStatus) els.status.textContent=completionStatus;
@@ -1358,6 +1381,8 @@ async function runSearch(rawQuery) {
   state.resultWindowCapped = false;
   state.remoteLoading = false;
   state.remoteExhausted = false;
+  remoteMoreObserver?.disconnect();
+  remoteMoreObserver = null;
   saveRecent(query);
 
   if (isLikelyUrl(query)) {

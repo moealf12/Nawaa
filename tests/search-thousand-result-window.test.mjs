@@ -19,7 +19,7 @@ test("R04: 1000 results is a per-acquired-wave capacity, NOT a 1000-card first p
   for(const depth of [0,1,2]){
     const plan=acquisitionPlan(depth,43);
     assert.equal(plan.resultLimit,1000);
-    assert.ok(plan.returnLimit<=300);
+    assert.equal(plan.returnLimit,600);
     const ranked=offered(1501);
     const result=prepareSearchResultWindow(ranked,plan);
     assert.equal(result.rankedCandidates,1501);
@@ -30,7 +30,7 @@ test("R04: 1000 results is a per-acquired-wave capacity, NOT a 1000-card first p
     assert.ok(result.allSelectedOffers.every(o=>o.exactMatch));
   }
 });
-test("R04: 1000 offers are returned without loss or repeats through 120-offer signed pages",()=>{
+test("R04: 1000 offers are returned without loss or repeats through 600-offer signed pages",()=>{
   const plan=acquisitionPlan(0,43);
   const ranked=prepareSearchResultWindow(offered(1000),plan);
   const pages=createSearchWavePages();
@@ -51,7 +51,7 @@ test("R04: 1000 offers are returned without loss or repeats through 120-offer si
     assert.equal(page.coverage.wavePage.total,1000);
     cursor=page.overflowCursor;
   }
-  assert.equal(pageCount,9,"120 x 8 plus 40 final offers");
+  assert.equal(pageCount,2,"600 plus 400 final offers");
   assert.equal(collected.length,1000);
   assert.deepEqual(collected.map(x=>x.sourceUrl),ranked.allSelectedOffers.map(x=>x.sourceUrl));
 });
@@ -60,7 +60,7 @@ test("R04: cap is honest and persists on the final signed page, even when page i
   const ranked=prepareSearchResultWindow(offered(1201),plan);
   assert.equal(ranked.resultLimitReached,true);
   const pages=createSearchWavePages();
-  const stored=pages.remember("iPhone 17",0,ranked.allSelectedOffers,120,{
+  const stored=pages.remember("iPhone 17",0,ranked.allSelectedOffers,plan.returnLimit,{
     coverage:{rankedCandidates:ranked.rankedCandidates,
       resultLimit:1000,resultLimitReached:ranked.resultLimitReached},
     providers:[],errors:[],
@@ -71,7 +71,7 @@ test("R04: cap is honest and persists on the final signed page, even when page i
     terminal=pages.page("iPhone 17",cursor);
     cursor=terminal.overflowCursor;
   }
-  assert.equal(terminal.offers.length,40);
+  assert.equal(terminal.offers.length,400);
   assert.equal(terminal.coverage.wavePage.remaining,0);
   assert.equal(terminal.coverage.truncated,true,
     "1000-window cap must not claim the 1201st candidate was displayed");

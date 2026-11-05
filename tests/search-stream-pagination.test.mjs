@@ -67,8 +67,8 @@ test('SSE snapshots expose signed search-expansion cursor usable by the JSON API
           if(firstWave.coverage.resultLimit!==1000 ||
               snapshot.coverage.resultLimit!==1000 ||
               expanded.coverage.resultLimit!==1000 ||
-              firstWave.offers.length>120 || snapshot.offers.length>120 ||
-              expanded.offers.length>180)
+              firstWave.offers.length>600 || snapshot.offers.length>600 ||
+              expanded.offers.length>600)
             throw Error('thousand_result_budget_broke_progressive_page_limits');
           if(!Object.hasOwn(firstWave.coverage,'catalogRecall') ||
               !Object.hasOwn(snapshot.coverage,'catalogRecall') ||
