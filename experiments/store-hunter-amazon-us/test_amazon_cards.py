@@ -514,3 +514,36 @@ class AmazonPdpRootCauseRegressions(unittest.TestCase):
         out=parse_amazon_us_pdp(html,f"https://www.amazon.com/dp/{asin}")
         self.assertIsNone(out[0].price)
         self.assertIn("AMAZON_PDP_PRIMARY_PRICE_NOT_EVIDENCED",out[0].issues)
+
+
+class AmazonPdpPerRequestHeaderSafetyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_alternate_pdp_accept_is_one_request_only(self):
+        import httpx
+        from unittest.mock import patch
+        import nawaa_store_hunter as m
+        sent=[]
+        def handler(req):
+            sent.append((req.headers.get("user-agent"),req.headers.get("accept"),
+                         req.headers.get("accept-language")))
+            return httpx.Response(200,text="<html>public</html>")
+        scraper=m.Scraper("https://www.amazon.com","audio",1,1,"never")
+        await scraper._client.aclose()
+        scraper._client=httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),follow_redirects=False,
+            headers={"User-Agent":m.USER_AGENT,"Accept":"text/html"})
+        with patch.object(m,"ensure_public_url",side_effect=lambda u,origin=None:u), \
+             patch.object(scraper,"permitted",return_value=True):
+            first=await scraper.fetch(
+                "pdp-header-ab","https://www.amazon.com/dp/B0C3HCD34R",
+                headers={"Accept":"text/html,application/xhtml+xml",
+                         "Accept-Language":"en-US,en;q=0.8"})
+            second=await scraper.fetch("product-detail","https://www.amazon.com/dp/B0C3HCD34R")
+        await scraper.close()
+        self.assertEqual(first,"<html>public</html>")
+        self.assertEqual(second,"<html>public</html>")
+        self.assertEqual(len(sent),2)
+        self.assertEqual([x[0] for x in sent],[m.USER_AGENT,m.USER_AGENT])
+        self.assertEqual(sent[0][1],"text/html,application/xhtml+xml")
+        self.assertEqual(sent[0][2],"en-US,en;q=0.8")
+        self.assertEqual(sent[1][1],"text/html")
+        self.assertIsNone(sent[1][2])
