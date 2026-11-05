@@ -9,6 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+      - name: Live product extraction
+        run: node uee-sandbox/live-product-probe.mjs
       - name: Probe live HTTPS from GitHub runner
         shell: bash
         run: |
