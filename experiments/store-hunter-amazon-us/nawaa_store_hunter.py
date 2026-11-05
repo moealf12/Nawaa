@@ -1129,8 +1129,14 @@ class Scraper:
                 if not body:
                     self.log("pdp-evidence", product.url, "PDP_HTTP_OR_HTML_UNAVAILABLE")
                     return
-                candidates = (parse_jsonld(body, product.url) + parse_microdata(body, product.url)
-                              + parse_meta_product(body, product.url) + parse_amazon_us_pdp(body, product.url))
+                # Amazon's PDP can carry suggested products and offer metadata.
+                # Never let weak title-only JSON-LD or OG/meta prices certify
+                # the current ASIN. Only the selected-ASIN-proved main buy-box
+                # parser can produce Amazon price evidence.
+                is_amazon = host(self.origin) in {"www.amazon.com", "amazon.com"}
+                candidates = (parse_amazon_us_pdp(body, product.url) if is_amazon else
+                              parse_jsonld(body, product.url) + parse_microdata(body, product.url)
+                              + parse_meta_product(body, product.url))
                 # Evidence from a PDP is associated only if SKU or URL aligns.
                 matches = [p for p in candidates if pdp_identity_matches(product, p)]
                 if not matches:
@@ -1154,10 +1160,7 @@ class Scraper:
                         headers={"Accept": "text/html,application/xhtml+xml;q=0.9,application/xml;q=0.8,*/*;q=0.5",
                                  "Accept-Language": "en-US,en;q=0.8"})
                     if retried_body:
-                        retried = (parse_jsonld(retried_body, product.url)
-                                   + parse_microdata(retried_body, product.url)
-                                   + parse_meta_product(retried_body, product.url)
-                                   + parse_amazon_us_pdp(retried_body, product.url))
+                        retried = parse_amazon_us_pdp(retried_body, product.url)
                         retried_matches = [p for p in retried if pdp_identity_matches(product, p)]
                         if retried_matches:
                             matches = retried_matches
