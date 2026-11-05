@@ -34,9 +34,10 @@ jobs:
           node --test tests/r04-p51-schemaorg-condition.test.mjs
   real-merchant-condition:
     needs: [condition-negative-controls]
+    # These three source-owned PDPs never contact Render production.
+    # Isolate their limited probe from the published-API 36-intent queue.
     concurrency:
-      group: nawaa-production-live-probes
-      queue: max
+      group: nawaa-p51-merchant-probe-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 8
