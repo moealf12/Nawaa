@@ -1,6 +1,8 @@
-// Noon UAE first-party live search cards only. This is NOT the experimental
-// fixed-rate AED->SAR preview, and no inferred AE market currency may become
-// a customer offer. The generic provider converts admitted AED using fx.mjs.
+// Noon UAE first-party live search cards only. The merchant's UAE storefront
+// presents prices in AED; on an exact-query, first-party /uae-en/ page, a
+// numeric price on an exact SKU+offer card is AED by market context.
+// Keep provenance explicit: inferred AED is NOT the same as a per-card label,
+// and the SAR display uses the existing live/cached fx.mjs rate, not a fixed FX.
 import {load} from "cheerio";
 import {normalizeSearchQuery} from "./search-query.mjs";
 
@@ -52,13 +54,18 @@ function parseAedAmount(text) {
     .replace(/\u066c/g,",").replace(/\u066b/g,".")
     .replace(/[\u00a0\u202f]/g," ")
     .trim();
-  // Proof is only an explicit AED marker on the price-bearing element.
-  // A symbol/font alone or the document's AE locale cannot attest currency.
-  if(!/(?:\bAED\b|د\.?\s*إ)/iu.test(raw))return null;
-  const n=raw.replace(/(?:\bAED\b|د\.?\s*إ)/giu,"").replace(/\s/g,"");
-  if(!MONEY_RE.test(n))return null;
-  const value=Number(n.replace(/,/g,""));
-  return Number.isFinite(value)&&value>0&&value<1e7?value:null;
+  // Explicitly conflicting foreign-currency labels must never be relabelled
+  // AED. A shop UI font glyph (private use range) conveys no currency proof.
+  if(/(?:\b(?:USD|SAR|EUR|GBP|INR|EGP|QAR|BHD|KWD|OMR)\b|US\$|[$€£₹]|ر\.?\s*س|ريال)/iu.test(raw))
+    return null;
+  const explicitAed=/(?:\bAED\b|د\.?\s*إ)/iu.test(raw);
+  const numeric=raw.replace(/(?:\bAED\b|د\.?\s*إ)/giu,"")
+    .replace(/[\uE000-\uF8FF]/gu,"").replace(/\s/gu,"");
+  if(!MONEY_RE.test(numeric))return null;
+  const value=Number(numeric.replace(/,/g,""));
+  return Number.isFinite(value)&&value>0&&value<1e7
+    ? {price:value,currencyEvidence:explicitAed?"EXPLICIT_AED_PRICE_LABEL":"VERIFIED_UAE_STOREFRONT_CONTEXT"}
+    : null;
 }
 
 function noonProductImage(raw) {
@@ -111,12 +118,15 @@ export function extractNoonUaeSearchCardEvidence(
     const priceElement=link.find('[data-qa="plp-product-box-price"] strong[class*="amount"]').first();
     if(!priceElement.length||title.length<4||title.length>350)return;
     rawCards++;
-    const price=parseAedAmount(priceElement.text());
-    if(price===null){missingCurrency++;return;}
+    const amount=parseAedAmount(priceElement.text());
+    if(amount===null){missingCurrency++;return;}
     const image=imageFromCard($,anchor);
     if(!image)return;
-    candidates.push({...identity,title,image,price,currency:"AED",
-      priceEvidence:"LIVE_AE_SEARCH_CARD_EXPLICIT_AED"});
+    candidates.push({...identity,title,image,price:amount.price,currency:"AED",
+      currencyEvidence:amount.currencyEvidence,
+      priceEvidence:amount.currencyEvidence==="EXPLICIT_AED_PRICE_LABEL"
+        ? "LIVE_AE_SEARCH_CARD_EXPLICIT_AED"
+        : "LIVE_AE_SEARCH_CARD_MARKET_CONTEXT_AED"});
   });
   const grouped=new Map();
   for(const item of candidates){
@@ -130,7 +140,9 @@ export function extractNoonUaeSearchCardEvidence(
     if(unique.size!==1){conflicts++;continue;}
     offers.push(records[0]);
   }
-  return {status:offers.length?"VERIFIED_EXPLICIT_AED_SEARCH_CARDS":"NO_PRICE_CURRENCY_VERIFIED",
+  return {status:offers.length?"VERIFIED_UAE_MARKET_PRICE_CARDS":"NO_USABLE_AE_PRICE_CARD",
     parsedCards:rawCards,accepted:offers.length,missingCurrency,invalidLinks,
+    explicitAed:offers.filter(o=>o.currencyEvidence==="EXPLICIT_AED_PRICE_LABEL").length,
+    marketInferredAed:offers.filter(o=>o.currencyEvidence==="VERIFIED_UAE_STOREFRONT_CONTEXT").length,
     conflicts,offers:offers.slice(0,limitN)};
 }
