@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-from decimal import Decimal, InvalidOperation
 
 from noon_uae_price_policy import cents
 
@@ -123,13 +122,11 @@ def candidate_objects(decoded, *, sku, offer_code, plp_price):
 
 def _iter_objects(script, content_type):
     decoder = json.JSONDecoder()
-    parsed = 0
-    failures = 0
     if content_type in ("application/ld+json", "application/json"):
         try:
             yield json.loads(script), "json_script"
         except (TypeError, ValueError):
-            failures += 1
+            pass
     for pattern in (ASSIGNMENT, JSON_PARSE):
         for match in list(pattern.finditer(script))[:MAX_JSON_PARSE_ATTEMPTS]:
             tail = script[match.end():]
@@ -143,9 +140,8 @@ def _iter_objects(script, content_type):
                 else:
                     obj, _ = decoder.raw_decode(tail)
                     yield obj, "js_json_assignment"
-                parsed += 1
-            except (TypeError, ValueError, json.JSONDecodeError):
-                failures += 1
+            except (TypeError, ValueError):
+                pass
     return
 
 
