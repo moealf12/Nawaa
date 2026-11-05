@@ -1,0 +1,20 @@
+name: UEE Newegg browser live
+on:
+  push:
+    branches: [uee-isolated-live-smoke-20261105]
+    paths: ['uee-sandbox/polyglot/newegg_browser.py','.github/workflows/uee-newegg-browser.yml']
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - run: python uee-sandbox/polyglot/newegg_browser.py
