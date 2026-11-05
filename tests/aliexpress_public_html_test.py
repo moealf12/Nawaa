@@ -148,6 +148,16 @@ class AliExpressEvidenceTests(unittest.TestCase):
         self.assertEqual(cards, [])
         self.assertEqual(stats["rejected"]["QUERY_NOT_RELEVANT"], 1)
 
+    def test_mismatched_embedded_product_ids_never_inherit_another_price(self):
+        html = search_html()
+        html = html.replace(
+            '"redirectedId": "' + PID + '"',
+            '"redirectedId": "3256812557229083"'
+        )
+        stats, cards = probe.parsed_search_cards(html, "Bluetooth")
+        self.assertEqual(cards, [])
+        self.assertEqual(stats["rejected"]["EMBEDDED_PRODUCT_ID_CONFLICT"], 1)
+
     def test_challenge_is_not_a_zero_inventory_snapshot(self):
         self.assertEqual(
             probe.classify_html("<html>_____tmd_____ recaptcha</html>"),
