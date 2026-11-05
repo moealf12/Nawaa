@@ -1027,7 +1027,10 @@ class Scraper:
                     if not body:
                         continue
                     absolute_page = str(httpx.URL(page_url, params=current))
-                    parsed = parse_jsonld(body, absolute_page) + parse_html_cards(body, absolute_page, self.origin, self.maximum)
+                    # Inspect up to 4x the display cap WITHOUT multiplying
+                    # outbound HTTP requests. PDP calls remain capped below.
+                    scan_cap = min(self.maximum * 4, 40)
+                    parsed = parse_jsonld(body, absolute_page) + parse_html_cards(body, absolute_page, self.origin, scan_cap)
                     self.log("search-extract", absolute_page, "PARSED", len(parsed))
                     products.extend(parsed)
                     if not parsed and page_num == 1 and self.browser in {"auto", "always"}:
@@ -1038,6 +1041,17 @@ class Scraper:
                             products.extend(found)
                             self.log("render-extract", absolute_page, "PARSED", len(found))
         products = self.merge(products)
+        # Prioritize identity matches BEFORE spending the bounded PDP budget.
+        # No category is silently deleted; the original requested max cap
+        # still applies and every retained product carries its match status.
+        early_rank = {"exact": 0, "related": 1, "unclassified": 2, "mismatch": 3}
+        for product in products:
+            product.intent_match, product.intent_reasons, product.condition = classify_product_intent(
+                self.query, product.title)
+        products.sort(key=lambda p: (early_rank.get(p.intent_match, 2),
+                                     0 if p.price and p.currency else 1,
+                                     0 if p.image else 1))
+        products = products[:self.maximum]
         # PDP enrichment only for discovered links; respect page budgets.
         unresolved = (products if self.pdp == "all" else
                       [p for p in products if not p.price or not p.image] if self.pdp == "missing" else [])
