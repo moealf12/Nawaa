@@ -1,0 +1,30 @@
+name: NAWAA Noon UAE Python lock materialization
+on:
+  pull_request:
+    paths:
+      - "workers/python-intelligence/pyproject.toml"
+      - ".github/workflows/noon-uae-lock-materialization.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install verified uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.0"
+      - name: Generate and check Python 3.12 lock
+        run: |
+          uv lock --project workers/python-intelligence --python 3.12
+          uv sync --project workers/python-intelligence --python 3.12 --locked --no-dev --no-editable
+          workers/python-intelligence/.venv/bin/python -c "import curl_cffi, httpx, bs4, lxml; print('NOON_AE_DEPENDENCIES_OK')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noon-ae-python-uvlock
+          path: workers/python-intelligence/uv.lock
+          if-no-files-found: error
+          retention-days: 1
