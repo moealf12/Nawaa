@@ -151,6 +151,12 @@ export function createGoogleShoppingResultsClient({
     if(pending.has(key))return pending.get(key);
     if(calls>=monthlyCap)return {status:429,body:{error:"shopping_monthly_budget_exhausted",cards:[]}};
     if(hourlyCalls>=hourlyCap)return {status:429,body:{error:"shopping_hourly_budget_exhausted",cards:[]}};
+    // Reserve a local budget slot synchronously BEFORE asynchronous free-plan
+    // verification, so unrelated queries cannot race through this local cap.
+    calls++;
+    hourlyCalls++;
+    const action=(async()=>{
+      try{
     // Verify current provider account on every cache miss. The account API is
     // documented as free of charge. No cached permission to spend free credits.
     // Concurrent instances are still bounded by the upstream Free plan and
@@ -165,10 +171,7 @@ export function createGoogleShoppingResultsClient({
         cards:[],
       }
     };
-    calls++; // count BEFORE attempting upstream request; do not retry errors
-    hourlyCalls++;
-    const action=(async()=>{
-      try{
+      
         const target=buildSerpApiGoogleShoppingUrl(q,{key:apiKey});
         const response=await fetchImpl(target.href,{
           method:"GET",signal:AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
