@@ -25,6 +25,22 @@ REQUEST_ID = re.compile(r"^[0-9a-f-]{36}$")
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
+class NoonSourceError(ValueError):
+    """Bounded, non-sensitive diagnostics; no URLs, cookies, query or HTML."""
+
+    def __init__(self, code: str, stage: str, *, http_status=None, elapsed_ms=None):
+        super().__init__(code)
+        self.stage = stage if stage in ("warmup_uae", "uae_search_html") else "unknown"
+        self.http_status = http_status if type(http_status) is int and 100 <= http_status <= 599 else None
+        self.elapsed_ms = (min(60_000, max(0, elapsed_ms))
+                           if type(elapsed_ms) is int else None)
+
+    def diagnostic(self):
+        return {"stage": self.stage,
+                "httpStatus": self.http_status,
+                "elapsedMs": self.elapsed_ms}
+
+
 def request_url(query: str) -> str:
     if not isinstance(query, str) or not (2 <= len(query) <= MAX_QUERY):
         raise ValueError("INVALID_QUERY")
@@ -66,26 +82,42 @@ def collect(query: str, budget_ms: int) -> tuple[str, str]:
     max_s = min(budget_ms, MAX_NETWORK_MS) / 1000
     with requests.Session(impersonate="chrome") as session:
         for url in (ORIGIN + "/uae-en/", target):
+            stage = "uae_search_html" if url == target else "warmup_uae"
+            stage_started = time.monotonic()
+            def elapsed():
+                return round((time.monotonic() - stage_started) * 1000)
             remaining = max_s - (time.monotonic() - started)
             if remaining < 0.25:
-                raise ValueError("SOURCE_HTTP_TIMEOUT")
+                raise NoonSourceError("SOURCE_HTTP_TIMEOUT", stage, elapsed_ms=elapsed())
             try:
                 response = session.get(
                     url, timeout=min(remaining, 3.2), allow_redirects=False,
                     headers={"accept": "text/html,application/xhtml+xml"},
                 )
             except Exception:
-                raise ValueError("SOURCE_TRANSPORT_FAILURE") from None
+                raise NoonSourceError("SOURCE_TRANSPORT_FAILURE", stage,
+                                      elapsed_ms=elapsed()) from None
+            status = int(response.status_code)
+            if status == 403:
+                raise NoonSourceError("HTTP_403_ACCESS_DENIED", stage,
+                                      http_status=status, elapsed_ms=elapsed())
+            if status == 429:
+                raise NoonSourceError("HTTP_429_RATE_LIMITED", stage,
+                                      http_status=status, elapsed_ms=elapsed())
             if url != target:
-                if response.status_code == 403:
-                    raise ValueError("HTTP_403_ACCESS_DENIED")
-                if response.status_code == 429:
-                    raise ValueError("HTTP_429_RATE_LIMITED")
-                if response.status_code != 200 or urlsplit(str(response.url)).netloc != "www.noon.com":
-                    raise ValueError("SOURCE_WARMUP_UNAVAILABLE")
+                actual = urlsplit(str(response.url))
+                if (status != 200 or actual.scheme != "https" or
+                        actual.netloc != "www.noon.com" or
+                        actual.path.rstrip("/") != "/uae-en" or actual.query):
+                    raise NoonSourceError("SOURCE_WARMUP_UNAVAILABLE", stage,
+                                          http_status=status, elapsed_ms=elapsed())
                 continue
-            return attested_result(response, target)
-    raise ValueError("SOURCE_HTML_UNAVAILABLE")
+            try:
+                return attested_result(response, target)
+            except ValueError as exc:
+                raise NoonSourceError(str(exc), stage,
+                                      http_status=status, elapsed_ms=elapsed()) from None
+    raise NoonSourceError("SOURCE_HTML_UNAVAILABLE", "uae_search_html")
 
 
 # Field selection and query/market verification are ported from the
@@ -240,9 +272,12 @@ def main() -> int:
         code = str(exc) if isinstance(exc, ValueError) else "SOURCE_TRANSPORT_FAILURE"
         if not re.fullmatch(r"[A-Z0-9_]{3,70}", code):
             code = "SOURCE_TRANSPORT_FAILURE"
-        respond({"schemaVersion": SCHEMA, "sourceId": SOURCE,
-                 "requestId": request_id, "status": "ERROR",
-                 "errorCode": code})
+        payload = {"schemaVersion": SCHEMA, "sourceId": SOURCE,
+                   "requestId": request_id, "status": "ERROR",
+                   "errorCode": code}
+        if isinstance(exc, NoonSourceError):
+            payload["sourceDiagnostic"] = exc.diagnostic()
+        respond(payload)
     return 0
 
 
