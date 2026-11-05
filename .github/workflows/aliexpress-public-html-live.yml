@@ -6,7 +6,9 @@ on:
       - experiment/aliexpress-public-html-connector-20261105
     paths:
       - "scripts/aliexpress-public-html-live.py"
-      - "tests/aliexpress-public-html.test.py"
+      - "scripts/aliexpress-pdp-evidence-live.py"
+      - "tests/aliexpress_public_html_test.py"
+      - "tests/aliexpress_pdp_evidence_test.py"
       - ".github/workflows/aliexpress-public-html-live.yml"
   workflow_dispatch:
 
@@ -24,12 +26,12 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - query_id: earbuds
-            query: "wireless earbuds"
-          - query_id: phone-case
-            query: "phone case"
-          - query_id: usb-c
-            query: "usb c cable"
+          - query_id: gaming-ar
+            query: "Gaming"
+            host: "ar.aliexpress.com"
+          - query_id: headphones-global
+            query: "headphones"
+            host: "www.aliexpress.com"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -41,22 +43,67 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check --only-binary=:all: \
             curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
-      - name: Validate parser and offer integrity before the live request
+      - name: Validate all AliExpress source and PDP parsing contracts
         run: |
-          python -m py_compile scripts/aliexpress-public-html-live.py tests/aliexpress-public-html.test.py
-          ruff check --select E4,E7,E9,F scripts/aliexpress-public-html-live.py tests/aliexpress-public-html.test.py
-          python -m unittest discover -s tests -p "aliexpress-public-html.test.py" -v
-      - name: Fetch real AliExpress public HTML once, without proxy or CAPTCHA replay
+          python -m py_compile scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          ruff check --select E4,E7,E9,F \
+            scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          python -m unittest discover -s tests -p "aliexpress*_test.py" -v
+      - name: Fetch verified source search HTML once without CAPTCHA token replay
         env:
           HEAD_SHA: ${{ github.sha }}
           ALIEXPRESS_QUERY_ID: ${{ matrix.query_id }}
           ALIEXPRESS_SEARCH_QUERY: ${{ matrix.query }}
+          ALIEXPRESS_SEARCH_HOST: ${{ matrix.host }}
         run: python scripts/aliexpress-public-html-live.py
-      - name: Retain JSON diagnostics even when merchant access fails
+      - name: Preserve bounded source evidence on failure and success
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aliexpress-live-${{ matrix.query_id }}
+          name: aliexpress-search-${{ matrix.query_id }}
           path: aliexpress-live-*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  merchant-pdp-evidence:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - item_id: "1005012743543835"
+          - item_id: "1005009157591241"
+          - item_id: "1005006995890595"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install bounded free public-HTML parser dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+      - name: Verify PDP source code and identity regressions
+        run: |
+          python -m py_compile scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          ruff check --select E4,E7,E9,F \
+            scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          python -m unittest discover -s tests -p "aliexpress*_test.py" -v
+      - name: Check real item PDP using clean URL only
+        env:
+          ALIEXPRESS_ITEM_ID: ${{ matrix.item_id }}
+        run: python scripts/aliexpress-pdp-evidence-live.py
+      - name: Preserve bounded PDP evidence on failure and success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aliexpress-pdp-${{ matrix.item_id }}
+          path: aliexpress-pdp-*.json
           if-no-files-found: warn
           retention-days: 14
