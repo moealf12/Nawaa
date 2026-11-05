@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 ORIGIN = "https://www.aliexpress.com"
+SEARCH_HOSTS = frozenset({"www.aliexpress.com", "ar.aliexpress.com"})
 USER_AGENT = "NAWAA-PublicSourceIndexer/1.0 (+https://github.com/moealf12/Nawaa)"
 MAX_HTML = 5_000_000
 MAX_JSON_SCAN = 2_500_000
@@ -268,7 +269,7 @@ def fetch_html(session, url, label, report):
         stage["contentType"] = str(response.headers.get("content-type") or "")[:80]
         stage["responseBytes"] = len(body)
         final = urlsplit(str(response.url))
-        stage["originPinned"] = final.hostname == "www.aliexpress.com"
+        stage["originPinned"] = final.hostname == urlsplit(url).hostname
         if response.status_code == 200 and stage["originPinned"] and (
             "html" in stage["contentType"].lower()) and 0 < len(body) <= MAX_HTML:
             content = body.decode("utf-8", errors="replace")
@@ -286,7 +287,10 @@ def fetch_html(session, url, label, report):
 
 
 def robots_allowed(session, target, report):
-    url = ORIGIN + "/robots.txt"
+    host = urlsplit(target).hostname
+    if host not in SEARCH_HOSTS:
+        return False
+    url = "https://" + host + "/robots.txt"
     started = time.monotonic()
     report["requestsAttempted"] += 1
     stage = {"step": "robots_policy"}
@@ -297,7 +301,7 @@ def robots_allowed(session, target, report):
         stage["status"] = response.status_code
         stage["responseBytes"] = len(response.content)
         if (response.status_code == 200 and 0 < len(response.content) <= 150000
-                and urlsplit(str(response.url)).hostname == "www.aliexpress.com"):
+                and urlsplit(str(response.url)).hostname == host):
             parser = RobotFileParser()
             parser.parse(response.text.splitlines())
             permitted = parser.can_fetch(USER_AGENT.split("/", 1)[0], target)
@@ -319,13 +323,17 @@ def main():
         raise SystemExit("INVALID_QUERY")
     if not VALID_QUERY_ID.fullmatch(query_id):
         raise SystemExit("INVALID_QUERY_ID")
+    search_host = os.getenv("ALIEXPRESS_SEARCH_HOST", "www.aliexpress.com").strip()
+    if search_host not in SEARCH_HOSTS:
+        raise SystemExit("INVALID_SEARCH_HOST")
     slug = quote("-".join(query.split()), safe="-")
-    search_url = ORIGIN + "/w/wholesale-" + slug + ".html"
+    search_url = "https://" + search_host + "/w/wholesale-" + slug + ".html"
     report = {
         "schema": "nawaa.aliexpress.live-html-proof.v1",
         "observedUtc": datetime.now(timezone.utc).isoformat(),
         "headSha": os.getenv("HEAD_SHA", ""), "queryId": query_id,
         "query": query, "source": "aliexpress-cn",
+        "searchHost": search_host,
         "requestsAttempted": 0, "retries": 0, "proxyUsed": False,
         "captchaSolved": False, "customerPublishable": False,
         "stages": [], "conclusion": "NOT_STARTED",
