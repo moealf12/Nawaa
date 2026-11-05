@@ -17,6 +17,8 @@ from urllib.parse import urljoin, urlsplit, parse_qs, urlencode
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 
+from noon_uae_price_policy import aed_sar_card_preview
+
 BASE = "https://www.noon.com"
 QUERY = os.getenv("NOON_SEARCH_QUERY", "").strip()
 QUERY_ID = os.getenv("NOON_QUERY_ID", "").strip()
@@ -43,6 +45,7 @@ report = {
     "customerPublishable": False,
     "pdpPriceVerified": False,
     "source": "noon-uae-html",
+    "fxPreviewMode": "INDICATIVE_AED_SAR_ONLY_NO_CUSTOMER_PUBLICATION",
     "stages": [],
     "conclusion": "NOT_STARTED",
 }
@@ -175,6 +178,8 @@ def extract(html):
         "pricedCards": 0,
         "completeCards": 0,
         "observedCurrencyLabelCount": 0,
+        "sarApproxCardsWithExplicitAed": 0,
+        "sarConditionalScenarioCards": 0,
         "candidateSample": [],
         "structureSample": [],
         "imageAttributeSample": [],
@@ -227,9 +232,16 @@ def extract(html):
             "observedPrice": amount[0],
             "currencyHeaderRequested": "AED",
             "currencyLabelInPrice": amount[1],
+            "fxPreview": aed_sar_card_preview(
+                f"{amount[0]:.2f}", market="AE", explicit_aed_label=amount[1]
+            ),
             "pdpPriceVerified": False,
             "customerPublishable": False,
         }
+        if candidate["fxPreview"]["convertedSarApprox"] is not None:
+            output["sarApproxCardsWithExplicitAed"] += 1
+        elif candidate["fxPreview"]["sarScenarioIfAED"] is not None:
+            output["sarConditionalScenarioCards"] += 1
         candidates.append(candidate)
     output["completeCards"] = len(candidates)
     output["candidateSample"] = candidates[:3] if context_matched else []
