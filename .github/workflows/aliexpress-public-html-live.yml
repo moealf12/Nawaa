@@ -1,0 +1,136 @@
+name: AliExpress Authorized Public HTML Live Extraction
+
+on:
+  push:
+    branches:
+      - experiment/aliexpress-public-html-connector-20261105
+    paths:
+      - "scripts/aliexpress-public-html-live.py"
+      - "scripts/aliexpress-node-parity-live.mjs"
+      - "src/aliexpress-search-evidence.mjs"
+      - "server/providers/free-storefronts.mjs"
+      - "tests/aliexpress-native-structured.test.mjs"
+      - "scripts/aliexpress-pdp-evidence-live.py"
+      - "tests/aliexpress_public_html_test.py"
+      - "tests/aliexpress_pdp_evidence_test.py"
+      - ".github/workflows/aliexpress-public-html-live.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aliexpress-authorized-html-live
+  cancel-in-progress: true
+
+jobs:
+  merchant-ssr-evidence:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - query_id: gaming-ar
+            query: "Gaming"
+            host: "ar.aliexpress.com"
+          - query_id: headphones-global
+            query: "headphones"
+            host: "www.aliexpress.com"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install bounded free public-HTML parser dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+      - name: Validate all AliExpress source and PDP parsing contracts
+        run: |
+          python -m py_compile scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          ruff check --select E4,E7,E9,F \
+            scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          python -m unittest discover -s tests -p "aliexpress*_test.py" -v
+          node --test tests/aliexpress-native-structured.test.mjs
+      - name: Fetch verified source search HTML once without CAPTCHA token replay
+        env:
+          HEAD_SHA: ${{ github.sha }}
+          ALIEXPRESS_QUERY_ID: ${{ matrix.query_id }}
+          ALIEXPRESS_SEARCH_QUERY: ${{ matrix.query }}
+          ALIEXPRESS_SEARCH_HOST: ${{ matrix.host }}
+          NAWAA_ALIEXPRESS_NODE_PARITY: "1"
+        run: python scripts/aliexpress-public-html-live.py
+      - name: Compare native Node and Python against identical live merchant HTML
+        env:
+          ALIEXPRESS_QUERY_ID: ${{ matrix.query_id }}
+          ALIEXPRESS_SEARCH_QUERY: ${{ matrix.query }}
+        run: node scripts/aliexpress-node-parity-live.mjs
+      - name: Remove ephemeral raw merchant HTML and full card snapshots
+        if: always()
+        run: rm -f nawaa-aliexpress-parity-*.html nawaa-aliexpress-parity-*.cards.json
+      - name: Preserve bounded source evidence on failure and success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aliexpress-search-${{ matrix.query_id }}
+          path: aliexpress-live-*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  merchant-pdp-evidence:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - item_id: "1005012743543835"
+            host: "ar.aliexpress.com"
+            host_slug: "ar"
+          - item_id: "1005009157591241"
+            host: "ar.aliexpress.com"
+            host_slug: "ar"
+          - item_id: "1005006995890595"
+            host: "ar.aliexpress.com"
+            host_slug: "ar"
+          - item_id: "1005012743543835"
+            host: "www.aliexpress.com"
+            host_slug: "www"
+          - item_id: "1005012743543835"
+            host: "www.aliexpress.us"
+            host_slug: "us"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install bounded free public-HTML parser dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+      - name: Verify PDP source code and identity regressions
+        run: |
+          python -m py_compile scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          ruff check --select E4,E7,E9,F \
+            scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          python -m unittest discover -s tests -p "aliexpress*_test.py" -v
+      - name: Check real item PDP using clean URL only
+        env:
+          ALIEXPRESS_ITEM_ID: ${{ matrix.item_id }}
+          ALIEXPRESS_PDP_HOST: ${{ matrix.host }}
+        run: python scripts/aliexpress-pdp-evidence-live.py
+      - name: Preserve bounded PDP evidence on failure and success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aliexpress-pdp-${{ matrix.item_id }}-${{ matrix.host_slug }}
+          path: aliexpress-pdp-*.json
+          if-no-files-found: warn
+          retention-days: 14
