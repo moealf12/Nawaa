@@ -35,6 +35,7 @@ Response (shape illustrative, **not a claim that 1688's official API uses this s
       "titleEn": "Phone case",
       "image": "https://cbu01.alicdn.com/img/ibank/example.jpg",
       "currency": "CNY",
+      "priceObservedAt": "2026-11-05T00:00:00Z",
       "minimumOrderQuantity": 1,
       "priceTiers": [
         {"minQuantity": 1, "unitPriceCny": 20},
@@ -47,7 +48,7 @@ Response (shape illustrative, **not a claim that 1688's official API uses this s
 }
 ```
 
-Only `offerId` (6–20 digits) is used to construct a canonical 1688 product URL. The supplier can optionally provide `skuId`, `brand`, `modelNumber`, `titleAr`, and `titleEn`. A trusted feed must bind quantity, SKU, currency, price and observation together. Missing MOQ or one-piece price = no retail offer. A price-range floor or a 10-unit price is not a one-unit price.
+Only `offerId` (6–20 digits) is used to construct a canonical 1688 product URL. The supplier can optionally provide `skuId`, `brand`, `modelNumber`, `titleAr`, and `titleEn`. A trusted feed must bind quantity, SKU, currency, price and observation together. Missing MOQ or one-piece price = no retail offer. Missing, future-dated, or older-than-one-hour price evidence is rejected; ingestion time never refreshes stale prices. The timestamp in the sample is illustrative, not a live observation. A price-range floor or a 10-unit price is not a one-unit price.
 
 ## Explicit activation conditions (do not set yet)
 
