@@ -1,7 +1,8 @@
 """Offline source-identity and HTML admission tests for the Noon UAE worker."""
 import unittest
 from types import SimpleNamespace
-from nawaa_py.noon_ae_search import request_url, attested_result, extract_cards, numeric_price
+from unittest.mock import patch
+from nawaa_py.noon_ae_search import request_url, attested_result, extract_cards, numeric_price, collect, NoonSourceError
 
 class NoonUaeTransportContracts(unittest.TestCase):
     def response(self, *, url=None, status=200, content=b"<html lang='en-AE'></html>",
@@ -82,6 +83,45 @@ class NoonUaeTransportContracts(unittest.TestCase):
         self.assertEqual(numeric_price("٣٬٣٩٩٫٥٠"),3399.5)
         self.assertIsNone(numeric_price("3,399 4,599"))
         self.assertIsNone(numeric_price("USD 3,399"))
+
+    def test_403_is_attributed_to_exact_warmup_or_search_stage_without_retry(self):
+        class Session:
+            def __init__(self, statuses):
+                self.statuses = statuses
+                self.requested = []
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def get(self, url, **kwargs):
+                self.requested.append(url)
+                status = self.statuses[len(self.requested)-1]
+                return SimpleNamespace(
+                    status_code=status,url=url,content=b"<html></html>",
+                    headers={"content-type":"text/html"},
+                )
+        for codes, expected_stage, attempted in [
+            ([403],"warmup_uae",1),
+            ([200,403],"uae_search_html",2),
+            ([200,429],"uae_search_html",2),
+        ]:
+            session=Session(codes)
+            with patch("curl_cffi.requests.Session",return_value=session):
+                with self.assertRaises(NoonSourceError) as ctx:
+                    collect("laptop",5600)
+            e=ctx.exception
+            self.assertEqual(e.stage,expected_stage)
+            self.assertEqual(e.http_status,codes[-1])
+            self.assertEqual(len(session.requested),attempted)
+            self.assertGreaterEqual(e.elapsed_ms,0)
+            self.assertEqual(e.diagnostic()["stage"],expected_stage)
+            self.assertNotIn("query",e.diagnostic())
+            self.assertNotIn("url",e.diagnostic())
+            self.assertNotIn("content",e.diagnostic())
+
+    def test_source_error_filters_unbounded_or_invalid_diagnostic_values(self):
+        error=NoonSourceError("HTTP_403_ACCESS_DENIED","arbitrary-source-url",
+                              http_status=999,elapsed_ms=-100)
+        self.assertEqual(error.diagnostic(),
+          {"stage":"unknown","httpStatus":None,"elapsedMs":0})
 
 if __name__=="__main__":
     unittest.main()
