@@ -6,6 +6,12 @@ on:
       - experiment/noon-ae-sa-catalog-proof-20261105
     paths:
       - "scripts/noon-uae-pdp-evidence-discovery-live.py"
+      - "scripts/noon_uae_embedded_offer.py"
+      - "scripts/noon_uae_request_policy.py"
+      - "scripts/noon_uae_price_policy.py"
+      - "tests/noon_uae_embedded_offer_test.py"
+      - "tests/noon_uae_request_policy_test.py"
+      - "tests/noon_uae_price_policy_test.py"
       - ".github/workflows/noon-uae-pdp-evidence-discovery.yml"
   workflow_dispatch:
 
@@ -31,8 +37,10 @@ jobs:
             curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
       - name: Verify syntax and Python correctness
         run: |
-          python -m py_compile scripts/noon-uae-pdp-evidence-discovery-live.py scripts/noon_uae_price_policy.py
-          ruff check --select E4,E7,E9,F scripts/noon-uae-pdp-evidence-discovery-live.py scripts/noon_uae_price_policy.py
+          python -m py_compile scripts/noon-uae-pdp-evidence-discovery-live.py scripts/noon_uae_price_policy.py scripts/noon_uae_embedded_offer.py scripts/noon_uae_request_policy.py tests/noon_uae_embedded_offer_test.py tests/noon_uae_request_policy_test.py
+          ruff check --select E4,E7,E9,F scripts/noon-uae-pdp-evidence-discovery-live.py scripts/noon_uae_price_policy.py scripts/noon_uae_embedded_offer.py scripts/noon_uae_request_policy.py tests/noon_uae_embedded_offer_test.py tests/noon_uae_request_policy_test.py
+      - name: Strict price and source-request safety contracts
+        run: python -m unittest discover -s tests -p 'noon_uae_*_test.py' -v
       - name: Actual live offer-linked PDP source structure
         env:
           PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
