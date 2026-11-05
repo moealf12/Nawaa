@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {retainAcquiredStorefrontOffers} from "../server/search-offer-admission.mjs";
-import {filterQueryOffers} from "../src/search-query.mjs";
+import {filterQueryOffers,assessOfferMatch} from "../src/search-query.mjs";
 import {classifyResultGroup} from "../src/search-result-intelligence.mjs";
 
 const offer=(title,overrides={})=>({
@@ -23,7 +23,7 @@ test("R04 boundary: priced accessories survive early source filtering but never 
   assert.equal(result.queryFilter.relatedRetained,1);
   const item=result.offers[0];
   assert.equal(item.exactMatch,false);
-  const classified=classifyResultGroup(query,{bestOffer:item});
+  const classified=classifyResultGroup(query,{bestOffer:{...item,...assessOfferMatch(query,item)}});
   assert.equal(classified.lane,"accessory");
   assert.equal(item.productPrice,169.5);
   assert.equal(item.sourceUrl,caseOffer.sourceUrl);
@@ -53,12 +53,26 @@ test("R04 boundary: strict source-proven principal and other valid related produ
   assert.equal(result.offers.length,2);
   const direct=result.offers.find(x=>x.productPrice===3199);
   const accessory=result.offers.find(x=>x.productPrice===69);
-  assert.equal(direct.exactMatch,true);
-  assert.equal(classifyResultGroup(query,{bestOffer:direct}).lane,"direct");
+  assert.equal(direct.exactMatch,false,"merchant search card never receives fake exact certification");
+  assert.equal(assessOfferMatch(query,direct).exactMatch,true);
+  assert.equal(classifyResultGroup(query,{bestOffer:{...direct,...assessOfferMatch(query,direct)}}).lane,"direct");
   assert.equal(accessory.exactMatch,false);
-  assert.notEqual(classifyResultGroup(query,{bestOffer:accessory}).lane,"direct");
+  assert.notEqual(classifyResultGroup(query,{bestOffer:{...accessory,...assessOfferMatch(query,accessory)}}).lane,"direct");
   assert.equal(product.exactMatch,false,"never mutate independently acquired merchant evidence");
   assert.equal(related.exactMatch,false);
+});
+
+test("R04 boundary: cannot resurrect wrong-model cards or perfume packaging on generic category search",()=>{
+  const wrong=offer("Samsung Galaxy S26 256GB");
+  const same=offer("Samsung Galaxy S25 256GB");
+  const model=retainAcquiredStorefrontOffers("galaxy s25 256gb",[wrong,same]);
+  assert.deepEqual(model.offers.map(x=>x.title),[same.title]);
+  const broad=retainAcquiredStorefrontOffers("perfume",[
+    offer("Niceone Musk Eau De Perfume"),
+    offer("Empty Perfume Bottle Atomizer"),
+  ]);
+  assert.deepEqual(broad.offers.map(x=>x.title),["Niceone Musk Eau De Perfume"]);
+  assert.equal(broad.queryFilter.relatedRetained,0);
 });
 
 test("R04 boundary: the live adapter must actually call central admission before customer publication",async()=>{
