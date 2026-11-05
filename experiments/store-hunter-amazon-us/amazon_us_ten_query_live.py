@@ -111,6 +111,7 @@ async def main():
     run_start = time.monotonic()
     data=[]
     stopped_reason=None
+    consecutive_search_503=0
     for i,query in enumerate(QUERIES, 1):
         if stopped_reason:
             data.append({"query":query,"status":"NOT_RUN","acceptance":"SKIPPED_SAFETY_STOP",
@@ -123,9 +124,16 @@ async def main():
         print("INTENT "+json.dumps(concise, ensure_ascii=False, sort_keys=True),flush=True)
         if record["access_denied_or_challenged"]:
             stopped_reason="Explicit 403/429, challenge or robots denial; stopped further probing"
-        # Moderate load and keep the exact search count observable.
+        # When the *two bounded attempts* still yield HTTP 503, pause before
+        # the NEXT independent intent rather than amplifying a failing wave.
+        # This is pacing only: no extra retries and no masking of failed intents.
+        latest_search = record.get("search_diagnostics", [])[-1:] or []
+        terminal_503 = bool(latest_search and latest_search[0].get("status") == "HTTP_ERROR"
+                            and latest_search[0].get("detail") == "503")
+        consecutive_search_503 = consecutive_search_503 + 1 if terminal_503 else 0
         if i < len(QUERIES) and not stopped_reason:
-            await asyncio.sleep(1.5)
+            delay = min(8.0, 2.0 + consecutive_search_503 * 2.0) if terminal_503 else 1.5
+            await asyncio.sleep(delay)
     ran=[r for r in data if r.get("status")!="NOT_RUN"]
     report={
         "experiment":"NAWAA Amazon US Store Hunter — 10 real intents",
