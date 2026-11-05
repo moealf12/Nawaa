@@ -399,6 +399,15 @@ def main():
                 else:
                     stats, cards = parsed_search_cards(html, query)
                     report["extraction"] = stats
+                    if os.getenv("NAWAA_ALIEXPRESS_NODE_PARITY") == "1":
+                        # Ephemeral same-run handoff. These raw merchant bytes
+                        # are NEVER uploaded as a CI artifact or logged.
+                        with open("nawaa-aliexpress-parity-" + query_id + ".html",
+                                  "w", encoding="utf8") as handle:
+                            handle.write(html)
+                        with open("nawaa-aliexpress-parity-" + query_id + ".cards.json",
+                                  "w", encoding="utf8") as handle:
+                            json.dump(cards, handle, ensure_ascii=False)
                     report["conclusion"] = (
                         "LIVE_ALIEXPRESS_PRODUCT_CARDS_EXTRACTED" if cards else
                         "SEARCH_HTML_WITHOUT_TRUSTED_PRICE_IMAGE_LINK_CARDS"
