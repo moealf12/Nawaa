@@ -7,11 +7,11 @@ const url="https://www.noon.com/uae-en/search/?q=laptop";
 const pdp="/uae-en/laptop-16gb-512gb/N70312362V/p/?o=offerA01";
 const photo="https://f.nooncdn.com/p/na-item-0001.jpg";
 const card=(o={})=>{
-  const {href=pdp,name="Pro Laptop 16GB 512GB",price="AED 2,499.50",src=photo}=o;
+  const {href=pdp,name="Pro Laptop 16GB 512GB",price="AED 2,499.50",src=photo,secondary="https://f.nooncdn.com/p/secondary.jpg"}=o;
   return '<a href="'+href+'">'+
     '<div data-qa="plp-product-box-name">'+name+'</div>'+
     '<div data-qa="plp-product-box-price"><strong class="amount">'+price+'</strong></div>'+
-    '<picture><source srcset="'+src+' 800w, https://f.nooncdn.com/p/secondary.jpg 1200w"/></picture>'+
+    '<picture><source srcset="'+src+' 800w, '+secondary+' 1200w"/></picture>'+
   '</a>';
 };
 const document=(cards,{lang="en-AE",heading=q}={})=>
@@ -47,7 +47,7 @@ test("Noon UAE rejects foreign domain, Saudi SKU URL, missing offer code and unt
     card({href:"/saudi-en/laptop-16gb-512gb/N70312362V/p/?o=offerA01"}),
     card({href:"/uae-en/laptop-16gb-512gb/N70312362V/p/"}),
     card({href:"/uae-en/laptop-16gb-512gb/N70312362V/p/?o=offerA01&o=offerA02"}),
-    card({src:"https://evil.example/p/image.jpg"}),
+    card({src:"https://evil.example/p/image.jpg",secondary:"https://evil.example/p/secondary.jpg"}),
   ];
   const x=extract(bad);
   assert.equal(x.accepted,0);
