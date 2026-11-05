@@ -1,29 +1,49 @@
-# Google Shopping first — NAWAA staged discovery integration (2026-11-05)
+# Google Shopping → NAWAA internal card integration (staged, 2026-11-05)
 
-**Priority:** Google Shopping before Banggood. Banggood remains independent Draft PR #320, deferred.
+**Project priority:** Google Shopping first. Banggood PR #320 remains on hold.
 
-**Scope:** Browser-initiated external Shopping discovery using the customer's precise NAWAA product query, **not** server-side crawling, merchant-offer ingestion, or price comparison. No production activation or merge is authorized.
+## Truthful scope
 
-## Current verification
-- Google public robots: https://www.google.com/robots.txt
-  - `User-agent: *` blocks `/search`, `/shopping/search`, and most `/shopping` paths for automated crawlers.
-- Google Search machine-generated traffic policies: https://developers.google.com/search/docs/essentials/spam-policies
-- Official Merchant API: https://developers.google.com/merchant/api/overview
-  - Operates on accessible Merchant Center accounts and their product/inventory data. It is **not** a public Google Shopping cross-merchant product search API.
-- Shopping prices may be location-sensitive and should be confirmed with the merchant: https://support.google.com/googleshopping/answer/15456476
+NAWAA now has code for two distinct Google Shopping experiences:
 
-## Implemented stage
-- `src/google-shopping-discovery.mjs`: canonical query normalization, output encoded with `URLSearchParams`, fixed Google domain, Arabic/Saudi localization, rejects pasted URLs/control characters/overlong strings.
-- `search.html`: optional Google Shopping discovery lane, distinguished from NAWAA's priced offers. Visible only for meaningful valid query text; a user must click the external link to navigate.
-- `src/search-page.mjs`: keeps the link in sync with text input and submitted query; no fetch to Google, no SSE or search registry coupling.
-- `tests/google-shopping-discovery.test.mjs`, `tests/google-shopping-search-ui.test.mjs` and `scripts/google-shopping-browser-smoke.mjs`: pure URL safety tests, DOM/source isolation contracts, and real mobile+desktop browser smoke with **all outbound external traffic blocked**.
-- No new provider registration, no false price assertions, no image/merchant scraping, no database changes, no dependence on a paid API/proxy.
+1. **External link handoff:** free browser navigation by a shopper to Google Shopping using their query.
+2. **In-NAWAA observation cards:** a server-only SerpApi Google Shopping Results API client that accepts a customer search term, retrieves structured Google Shopping listing data (when enabled and keyed), validates the product-page identity, then displays up to 24 external cards in NAWAA's own search page.
 
-## Next engineering path for source-backed Google-like shopping comparison
-A link to Google's results is useful exploration, but does not satisfy the product requirement of in-NAWAA ranked merchant prices. To attain that, implement direct merchant authorized catalog/product feeds and first-party PDP parity with actual verified SKU, price, currency and timestamp. Google Merchant API alone will not supply a general public Shopping search result set. Any actual Google Shopping product data integration needs a separate legitimate source/license or official approved access scope; no unsupported endpoint assumptions.
+**This is not an official Google API, not direct Google scraping by NAWAA, not Google Merchant API and not merchant-PDP price verification.** Cards show only the search listing's observed price text and never contribute to the cheapest-price ranking. No offer UPSERT, no SSE merge, no index write, no price-history entry, no source registry registration.
 
-## Release acceptance
-1. Tests run against exact PR head SHA. Browser must confirm mobile and desktop lane appears on valid query and hides on a product URL.
-2. Link target must be `https://www.google.com/search`; `tbm=shop`; exact query; locale `gl=sa,hl=ar`. It is an outbound *manual* discovery link only.
-3. Never include `google-shopping` in `configuredProviders`, normalized offers, observed prices, or source coverage totals. No cached Shopping snippets.
-4. Leave `main`, Render, and scheduled NAWAA source jobs untouched. **Draft / DO NOT MERGE** until project owner explicitly requests it.
+## Technical evidence and selection
+
+- Official Google Merchant API https://developers.google.com/merchant/api : manages authorized Merchant Center account products, not all Google Shopping search results.
+- SerpApi Google Shopping search results schema https://serpapi.com/shopping-results : `shopping_results` with `title`, `source`, `product_id`, `product_link`, `price`, `extracted_price`, `thumbnail`.
+- SerpApi plans https://serpapi.com/pricing : public Free plan of 250 searches/month and up to 50 throughput per hour. This is NOT unlimited. The code reserves a margin at max 200 attempted requests/month and 40 attempted requests/hour **per running server instance** and caches matching query responses for 90 seconds.
+- SerpApi's own cache is allowed by default to reduce quota consumption. Its returned search data may be older than the retrieval timestamp; customer-facing prices are explicitly unverified and should not be treated as current checkout prices.
+- SerpApi terms https://serpapi.com/legal : downstream display/use rights remain a separate release/legal acceptance item. **Do not deploy the provider-backed cards in production until the account/usage rights are accepted.**
+- Google public robots https://www.google.com/robots.txt disallows automated crawling of search/Shopping pages; this candidate never requests those pages directly.
+
+## Code and evidence
+
+- `server/google-shopping-results.mjs`: fixed SerpApi HTTPS endpoint, no user URL selection, server-only key; validate query, Google canonical product URL and matching numeric ID, safe image origin, title, merchant label, currency text, duplicates, response body length and timeout. Per-process quota, per-IP endpoint rate limit, 90-second in-memory result caching and in-flight request dedupe. No retries.
+- `server/server.mjs`: `GET /api/discovery/google-shopping?q=<encoded>` uses that client, blocked by default without an active key, explicit `no-store` response and rate limiting. The SerpApi key is never shipped to the browser. Adds `/src/google-shopping-cards.mjs` to public JS allowlist.
+- `src/google-shopping-cards.mjs`: escaped HTML, safe Google product link and safe image origins. Separately labeled unverified results without misleading comparisons.
+- `search.html` and `src/search-page.mjs`: customer manually selects “عرض المنتجات والأسعار داخل نواة”. One request per action, client-side cancellation on query change, safe failure states and no automatic credit consumption for every typed character. External Google Shopping link remains available.
+- `tests/google-shopping-discovery.test.mjs`, `tests/google-shopping-search-ui.test.mjs`, `tests/google-shopping-results.test.mjs`: unit and integration guards. Chromium smoke covers 390px mobile and 1366px desktop with a **deterministic sample provider response; this is not live shopping evidence**.
+- `scripts/google-shopping-serpapi-live.mjs`: a bounded **real** SerpApi attempt on exact PR SHA only if `SERPAPI_API_KEY` secret is provided; never persists raw products/key or falsely labels a skipped attempt as success.
+- `.github/workflows/google-shopping-discovery.yml`: runs contracts, real Chrome UI, and a secret-gated live single-category search with a machine-readable result artifact.
+
+## Configuration (NO secrets in source)
+
+- GitHub Actions secret: `SERPAPI_API_KEY` (testing).
+- Server environment in the intended service: `SERPAPI_API_KEY` plus `NAWAA_GOOGLE_SHOPPING_RESULTS_ENABLED=1` (production/staging activation **not** performed by this PR).
+- If either is missing, API returns HTTP 503 with `google_shopping_not_configured`; no source queries or fabricated cards.
+- The budget counter is per process and resets after a restart; it **is not a globally persistent payment barrier**. For unlimited scale, a shared rate/quota store and a paid plan would be needed. Keep the SerpApi account on the strictly free plan with no auto-renewal.
+- Upstream rate, account rights, Google product IDs and actual SKU/PDP parity require live acceptance. Zero-fake policy: no tests based on fixtures may substitute for live source evidence.
+
+## Gate and rollout
+
+1. Exact-head CI tests pass. Verify no regression in production static routes and normal NAWAA search/SSE.
+2. Inject the real SerpApi free-tier API key via encrypted runner secret; run actual Google Shopping keyword and verify at least one canonical Google Shopping product with displayed title, merchant label and price text. No API key was present in the first CI live attempt (observed `NOT_TESTED_API_KEY_UNAVAILABLE`), so live acquisition **has not been certified**.
+3. Repeat source-backed checks for Arabic and English cross-category queries and confirm actual Saudi locale; reject empty/foreign-language/incorrect-currency claims.
+4. Confirm legal/usage rights and source freshness. If direct merchant prices should be ranked against Jarir/eXtra, separately fetch and verify each merchant first-party PDP, exact SKU, currency, stock and MOQ where applicable. This is *not* provided by the Shopping snippets alone.
+5. Do not merge/activate/deploy until the project owner explicitly directs it.
+
+**Banggood stays on hold. Main and Render LIVE remain unchanged.**
