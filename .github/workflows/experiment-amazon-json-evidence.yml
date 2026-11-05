@@ -1,8 +1,8 @@
 name: EXPERIMENT Amazon US JSON and JSON-LD Evidence (no-deploy)
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [main]
+  push:
+    branches:
+      - experiment/store-hunter-amazon-us-isolated-20261105
     paths:
       - experiments/store-hunter-amazon-us/amazon_us_json_jsonld_probe.py
       - experiments/store-hunter-amazon-us/amazon_us_inline_json_forensics.py
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   json-pdp-evidence:
-    if: github.event_name == 'pull_request' && github.head_ref == 'experiment/store-hunter-amazon-us-isolated-20261105'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/experiment/store-hunter-amazon-us-isolated-20261105'
     runs-on: macos-15
     timeout-minutes: 8
     steps:
