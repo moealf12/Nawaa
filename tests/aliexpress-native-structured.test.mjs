@@ -97,6 +97,31 @@ test("real exact-ID anchor recovers a source-backed PDP when item object points 
   ]) assert.equal(extract(html(campaign)+spoof,"Bluetooth",{},norm).length,0);
 });
 
+test("merchant-supplied second PDP URL recovers item obscured by campaign primary",()=>{
+  const secondary="https://www.aliexpress.com/item/"+ID+".html";
+  const product={...base,productDetailUrl:"https://www.aliexpress.com/p/BundleDeals2.html",
+    productUrl:secondary};
+  const diag={};
+  const cards=extract(html(product),"Bluetooth",diag,norm);
+  assert.equal(cards.length,1);
+  assert.equal(new URL(cards[0].sourceUrl).pathname,"/item/"+ID+".html");
+  assert.equal(cards[0].customerPublishable,false);
+  assert.equal(cards[0].pdpPriceVerified,false);
+  assert.equal(diag.rejectedProductLinks,0);
+});
+
+test("explicit different-item primary PDP cannot be silently overridden by fallback",()=>{
+  const secondary="https://www.aliexpress.com/item/"+ID+".html";
+  const corrupted={...base,
+    productDetailUrl:"https://www.aliexpress.com/item/3256812557229083.html",
+    productUrl:secondary};
+  const diag={};
+  const cards=extract(html(corrupted),"Bluetooth",diag,norm);
+  assert.equal(cards.length,0);
+  assert.equal(diag.rejectedReasons.SOURCE_PDP_LINK_IDENTITY_UNVERIFIED,1);
+  assert.equal(diag.rejectionSamples[0].reason,"product_id_mismatch");
+});
+
 test("full itemList hydration retains products regardless of redirectedId property order",()=>{
   const otherId="1005012743543836";
   const first={
