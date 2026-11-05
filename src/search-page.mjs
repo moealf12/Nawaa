@@ -1341,7 +1341,7 @@ function updateGoogleShoppingDiscovery(rawQuery) {
   const external = googleShoppingDiscoveryDescriptor(rawQuery);
   if (!external) {
     els.googleShopping.hidden = true;
-    els.googleShoppingLink.removeAttribute("href");
+    els.googleShoppingLink.removeAttribute?.("href");
     return;
   }
   els.googleShoppingLink.href = external.href;
