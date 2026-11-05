@@ -11,6 +11,7 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
@@ -21,6 +22,7 @@ from noon_uae_embedded_offer import inspect_offer_scripts
 from noon_uae_request_policy import classify_source_response
 from noon_uae_tsr_ast import inspect_tsr_ast
 from noon_uae_delivery_policy import attest_saudi_delivery
+from noon_uae_admission import evaluate_noon_uae_admission
 
 BASE = "https://www.noon.com"
 SEARCH = BASE + "/uae-en/search/?" + urlencode({"q": "PlayStation 5"})
@@ -642,6 +644,8 @@ except Exception as exc:
     REPORT["conclusion"] = error_class(exc)
     REPORT["fatalType"] = type(exc).__name__[:50]
 finally:
+    REPORT["observedUtc"] = datetime.now(timezone.utc).isoformat()
+    REPORT["admission"] = evaluate_noon_uae_admission(REPORT)
     with open(REPORT_PATH, "w", encoding="utf8") as f:
         json.dump(REPORT, f, indent=2, ensure_ascii=False)
         f.write("\n")
