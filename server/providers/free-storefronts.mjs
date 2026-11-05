@@ -2080,7 +2080,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
         productLinkTrust:store.id === "aliexpress-cn" ? aliexpressProductLinkTrust : null,
         ...(aliexpressPublicationHeld?{aliexpressPublicationGate:{
           status:"LIVE_SEARCH_CARD_ONLY_PDP_PARITY_UNVERIFIED",
-          customerPublishable:false, sourceCurrencyObserved:true,
+          customerPublishable:false, sourceCurrencyObserved:directSearchOffers.length>0,
           unpublishedCatalogCandidates:directSearchOffers.length,
           pdpPriceVerified:false, shippingToSaudiVerified:false,
         }}:{}),
