@@ -560,3 +560,58 @@ class AmazonStorageFormattingParityTests(unittest.TestCase):
                     url=f"https://www.amazon.com/dp/{asin}",sku=asin,
                     method="amazon-us-pdp-main-buybox",issues=["AMAZON_PDP_ASIN_PROOF"])
         self.assertTrue(pdp_identity_matches(plp,pdp))
+
+
+class AmazonSelectedAsinPriceProvenanceTests(unittest.IsolatedAsyncioTestCase):
+    """A JSON-LD Product offer is not automatically the selected Amazon buybox."""
+    async def _run(self, listing_price: bool):
+        from unittest.mock import AsyncMock, patch
+        import nawaa_store_hunter as m
+        asin="B0C3HCD34R"
+        title="Soundcore Q20i Wireless Bluetooth Black Headphones"
+        price_html='<span class="a-price"><span class="a-offscreen">$44.99</span></span>' if listing_price else ""
+        card=(f'<div data-component-type="s-search-result" data-asin="{asin}">'
+              f'<h2><a href="/dp/{asin}">{title}</a></h2>'
+              '<img class="s-image" src="https://m.media-amazon.com/images/I/main.jpg"/>'
+              + price_html + '</div>')
+        # This deliberately has a tempting *wrong* price from the PDP schema
+        # but the ASIN-verified buybox has no main-offer price at all.
+        pdp=(f'<link rel="canonical" href="https://www.amazon.com/dp/{asin}">'
+             f'<input id="ASIN" value="{asin}"><span id="productTitle">{title}</span>'
+             f'<script type="application/ld+json">{{"@context":"https://schema.org",'
+             f'"@type":"Product","name":"{title}","url":"https://www.amazon.com/dp/{asin}",'
+             '"offers":{"@type":"Offer","price":"4.99","priceCurrency":"USD"}}</script>'
+             '<div id="ProductSpecs-1"><span class="a-price">'
+             '<span class="a-offscreen">$4.99</span></span></div>')
+        calls=[]
+        async def fake_fetch(method,url,params=None,headers=None):
+            calls.append(method)
+            if method=="homepage": return "<html></html>"
+            if method=="search-html": return card
+            if method in ("product-detail","product-detail-price-retry"): return pdp
+            raise AssertionError(method)
+        scraper=m.Scraper("https://www.amazon.com","wireless headphones",1,1,"never","all")
+        scraper.prepare=AsyncMock()
+        scraper.fetch=fake_fetch
+        scraper.search_targets=lambda _:[("https://www.amazon.com/s",{"k":"wireless headphones"})]
+        with patch.object(m.asyncio,"sleep",new_callable=AsyncMock):
+            result=await scraper.search()
+        await scraper.close()
+        return result,calls
+
+    async def test_json_ld_wrong_price_cannot_clear_valid_listing_price(self):
+        result,calls=await self._run(True)
+        p=result["products"][0]
+        self.assertEqual(p["price"],"44.99")
+        self.assertEqual(p["price_status"],"single_source_unverified")
+        self.assertNotIn("LISTING_PDP_PRICE_CONFLICT",p["issues"])
+        self.assertIn("product-detail-price-retry",calls)
+        self.assertTrue(any(d["status"]=="PDP_MAIN_PRICE_NOT_EVIDENCED"
+                            for d in result["diagnostics"]))
+
+    async def test_json_ld_offer_cannot_invent_missing_listing_price(self):
+        result,_=await self._run(False)
+        p=result["products"][0]
+        self.assertIsNone(p["price"])
+        self.assertEqual(p["price_status"],"unresolved")
+        self.assertNotEqual(p["price_evidence"],"listing_pdp_agree")
