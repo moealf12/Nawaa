@@ -24,7 +24,7 @@ const report={
 };
 const filename="google-shopping-authorized-direct-live.json";
 const MAX_BYTES=1_200_000;
-async function fetchHtml(url){
+async function fetchHtml(url,{redirectsLeft=1,history=[]}={}){
   const u=new URL(url);
   if(u.origin!=="https://www.google.com")throw Error("INVALID_ORIGIN");
   report.attemptedNetworkRequests++;
@@ -35,9 +35,19 @@ async function fetchHtml(url){
       accept:"text/html,application/xhtml+xml",
     },
   });
+  if([301,302,307,308].includes(response.status)&&response.headers.has("location")){
+    const next=new URL(response.headers.get("location"),url);
+    const nextHistory=[...history,{status:response.status,host:next.hostname,path:next.pathname}];
+    if(redirectsLeft>0&&next.origin==="https://www.google.com"&&
+       /^\/(?:search|shopping(?:\/search)?)$/.test(next.pathname)){
+      return fetchHtml(next.href,{redirectsLeft:redirectsLeft-1,history:nextHistory});
+    }
+    return {http:response.status,contentType:response.headers.get("content-type"),
+      bytes:0,html:"",redirect:true,redirectHistory:nextHistory};
+  }
   if(response.status!==200||!String(response.headers.get("content-type")).includes("text/html"))
     return {http:response.status,contentType:response.headers.get("content-type"),
-      bytes:0,html:"",redirect:response.headers.has("location")};
+      bytes:0,html:"",redirect:response.headers.has("location"),redirectHistory:history};
   const chunks=[];let size=0;
   const advertised=Number(response.headers.get("content-length"));
   if(Number.isFinite(advertised)&&advertised>MAX_BYTES)throw Error("RESPONSE_TOO_LARGE");
@@ -47,7 +57,7 @@ async function fetchHtml(url){
     chunks.push(Buffer.from(part));
   }
   return {http:response.status,contentType:"text/html",bytes:size,
-    html:Buffer.concat(chunks).toString("utf8"),redirect:false};
+    html:Buffer.concat(chunks).toString("utf8"),redirect:false,redirectHistory:history};
 }
 try{
   if(authorized){
@@ -60,6 +70,7 @@ try{
         evidence.http=result.http;
         evidence.bytes=result.bytes;
         evidence.redirect=result.redirect;
+        evidence.redirectHistory=result.redirectHistory||[];
         if(result.http===200&&result.html){
           const parsed=extractAuthorizedGoogleShoppingHtml(result.html,{
             query:intent.query,sourceUrl:url,
