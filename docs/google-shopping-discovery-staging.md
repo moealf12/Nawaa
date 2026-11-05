@@ -17,6 +17,10 @@ NAWAA now has code for two distinct Google Shopping experiences:
 - SerpApi Google Shopping search results schema https://serpapi.com/shopping-results : `shopping_results` with `title`, `source`, `product_id`, `product_link`, `price`, `extracted_price`, `thumbnail`.
 - SerpApi plans https://serpapi.com/pricing : public Free plan of 250 searches/month and up to 50 throughput per hour. This is NOT unlimited. The code reserves a margin at max 200 attempted requests/month and 40 attempted requests/hour **per running server instance** and caches matching query responses for 90 seconds.
 - SerpApi's own cache is allowed by default to reduce quota consumption. Its returned search data may be older than the retrieval timestamp; customer-facing prices are explicitly unverified and should not be treated as current checkout prices.
+- Zero-cost assurance (Nov 5, 2026): `server/serpapi-free-plan-guard.mjs` verifies the live SerpApi Account API `https://serpapi.com/account.json` **before every cache miss**. The account endpoint itself is documented as free and does not consume search credits: https://serpapi.com/account-api .
+- This verification requires an affirmative **Free / $0** account, exact 250 monthly and 50 hourly entitlements, over **50 monthly** and under **40 hourly** used, with fail-closed handling for changed plans, missing fields, quota exhaustion, API errors or invalid JSON. It returns no account identifiers or credentials to customers.
+- Account-wide checks reduce multi-instance quota risks, whereas per-process counters alone reset with deployment. **No contract can guarantee unlimited Google Shopping results at $0**; the UI must remain honest if the free quota is insufficient.
+- Verify that the signed-up account does not have payment details or automatic paid renewal and that its Free plan permits NAWAA's intended commercial use before activation. Account API free-plan checking is a technical spend guard, not proof of legal licensing or contractual no-billing.
 - SerpApi terms https://serpapi.com/legal : downstream display/use rights remain a separate release/legal acceptance item. **Do not deploy the provider-backed cards in production until the account/usage rights are accepted.**
 - Google public robots https://www.google.com/robots.txt disallows automated crawling of search/Shopping pages; this candidate never requests those pages directly.
 
@@ -35,7 +39,7 @@ NAWAA now has code for two distinct Google Shopping experiences:
 - GitHub Actions secret: `SERPAPI_API_KEY` (testing).
 - Server environment in the intended service: `SERPAPI_API_KEY` plus `NAWAA_GOOGLE_SHOPPING_RESULTS_ENABLED=1` (production/staging activation **not** performed by this PR).
 - If either is missing, API returns HTTP 503 with `google_shopping_not_configured`; no source queries or fabricated cards.
-- The budget counter is per process and resets after a restart; it **is not a globally persistent payment barrier**. For unlimited scale, a shared rate/quota store and a paid plan would be needed. Keep the SerpApi account on the strictly free plan with no auto-renewal.
+- The in-process budget counter resets after a restart. Each upstream request is additionally gated against current provider-wide Free-plan entitlement and remaining allowance. This is **not** proof that an external account could never bill if the account itself is configured to purchase extra usage. For unlimited scale, a shared rate/quota store and a paid plan would be needed. Keep the SerpApi account on the strictly free plan with no auto-renewal.
 - Upstream rate, account rights, Google product IDs and actual SKU/PDP parity require live acceptance. Zero-fake policy: no tests based on fixtures may substitute for live source evidence.
 
 ## Gate and rollout
