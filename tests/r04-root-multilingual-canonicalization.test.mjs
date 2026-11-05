@@ -48,8 +48,11 @@ test("R04 root: unrelated French, Spanish and German structural terms share one 
     ["auriculares inalámbricos","Wireless Headphones"],
     ["écouteurs sans fil","Wireless Earbuds"],
     ["protector de pantalla samsung","Samsung Screen Protector"],
-    ["ordenador portátil","Laptop"],
   ];
+  // A translated generic laptop word does not certify a laptop chassis
+  // without source-owned model/spec evidence. Retain that established gate.
+  assert.equal(normalizeSearchQuery("ordenador portátil"),"laptop");
+  assert.equal(presentable("ordenador portátil",offer("Laptop")).evidence.exactMatch,false);
   for(const [query,title] of cases){
     const product=offer(title);
     const canonical=normalizeSearchQuery(query);
