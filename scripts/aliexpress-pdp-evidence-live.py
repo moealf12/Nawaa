@@ -29,7 +29,7 @@ sys.modules[_spec.name] = _shared
 _spec.loader.exec_module(_shared)
 
 MAX_PDP_BYTES = 3_500_000
-PDP_HOST = "www.aliexpress.com"
+PDP_HOST = "ar.aliexpress.com"
 BASE = "https://" + PDP_HOST
 CHALLENGE = _shared.CHALLENGE
 
@@ -125,7 +125,7 @@ def probe_item(item_id):
         }
         robots_started = time.monotonic()
         try:
-            robots = sess.get(BASE + "/robots.txt", headers=headers, timeout=12, allow_redirects=False)
+            robots = sess.get(BASE + "/robots.txt", headers={**headers, "accept": "text/plain"}, timeout=12, allow_redirects=False)
             robots_ok = robots.status_code == 200 and 0 < len(robots.content) <= 150000
             policy = RobotFileParser()
             if robots_ok:
