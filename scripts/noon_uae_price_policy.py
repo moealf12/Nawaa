@@ -154,25 +154,37 @@ def aed_to_sar_estimate(price_aed):
 AED_TO_SAR_ESTIMATE_AS_OF = "2026-11-05"
 
 
-def aed_sar_card_preview(price, *, market, explicit_aed_label):
-    """Diagnostic-only conversion for an observed PLP card.
+def aed_sar_card_preview(
+    price, *, market, explicit_aed_label, market_context_verified=False
+):
+    """Approximate AE storefront amount in SAR without asserting offer currency.
 
-    Never assert AED from the source route or from product-level evidence.
-    Unattested currency yields a clearly conditional scenario, not a display
-    price. No branch authorizes a customer offer or live exchange quote.
+    A validated UAE storefront context is sufficient for a clearly labeled
+    indicative conversion, not for merchant price/offer attestation. Explicit
+    AED in the card remains stronger evidence and is tracked separately.
+    No conversion outside a verified AE search context unless per-card AED
+    is explicitly observed. Nothing here publishes offers to customers.
     """
     valid_market = market == "AE"
     valid_price = cents(price) is not None
-    attested = valid_market and valid_price and explicit_aed_label is True
+    observed = valid_market and valid_price and explicit_aed_label is True
+    inferred = (
+        valid_market and valid_price and market_context_verified is True
+        and explicit_aed_label is False
+    )
     scenario = aed_to_sar_estimate(price) if valid_market and valid_price else None
     return {
-        "sourceCurrencyVerified": "AED" if attested else None,
+        "sourceCurrencyVerified": "AED" if observed else None,
+        "sourceCurrencyAssumedForDisplay": "AED" if inferred else None,
         "sourceCurrencyEvidence": (
-            "EXPLICIT_PLP_PRICE_LABEL" if attested else
-            "NO_PER_CARD_AED_ATTESTATION"
+            "EXPLICIT_PLP_PRICE_LABEL" if observed else
+            "VERIFIED_AE_STOREFRONT_CONTEXT_INFERENCE" if inferred else
+            "INSUFFICIENT_PER_CARD_OR_MARKET_CURRENCY_EVIDENCE"
         ),
-        "convertedSarApprox": scenario if attested else None,
-        "sarScenarioIfAED": scenario if scenario is not None and not attested else None,
+        "convertedSarApprox": scenario if observed or inferred else None,
+        "sarScenarioIfAED": (
+            scenario if scenario is not None and not (observed or inferred) else None
+        ),
         "fxRateAedSar": str(AED_TO_SAR_ESTIMATE_RATE) if scenario is not None else None,
         "fxRateAsOf": AED_TO_SAR_ESTIMATE_AS_OF if scenario is not None else None,
         "fxKind": "FIXED_INDICATIVE_REFERENCE_NOT_LIVE",
