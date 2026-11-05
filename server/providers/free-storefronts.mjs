@@ -1,4 +1,24 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
+// Every STORES.productPath entry is a *pathname* pattern. Testing it against
+// an absolute https:// URL always fails for anchored /^\\// expressions
+// (for example PcComponentes /product slug), silently rejecting priced cards
+// and discovery links before source and model validation.
+// Keep URL ownership checks at call sites; never accept an arbitrary host.
+function matchesStoreProductPath(value,store){
+  try{
+    const url=new URL(value);
+    if(url.protocol!=="https:"||url.username||url.password)return false;
+    const rule=store?.productPath;
+    if(!(rule instanceof RegExp))return false;
+    // Preserve existing patterns that deliberately include query suffixes.
+    // A stateful future regex must not leak lastIndex between merchant cards.
+    rule.lastIndex=0;
+    const matched=rule.test(url.pathname+url.search);
+    rule.lastIndex=0;
+    return matched;
+  }catch{return false;}
+}
+
 import {retainAcquiredStorefrontOffers} from "../search-offer-admission.mjs";
 import {readAmazonHtmlStream} from "../amazon-body-stream.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
@@ -1047,7 +1067,7 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
     let sourceUrl = null;
     try { if (rawUrl) sourceUrl = new URL(String(rawUrl).replace(/\\u002F/gi,"/").replace(/\\\//g,"/"), searchUrl).href; } catch {}
     const image = node.image ?? node.imageUrl ?? node.mainImageUrl ?? node.thumbnail ?? node?.images?.[0]?.url ?? null;
-    if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && store.productPath.test(sourceUrl) && Number.isFinite(price) && price > 0 && /^[A-Z]{3}$/.test(currency)) {
+    if (title && sourceUrl && sameHost(sourceUrl, searchUrl) && matchesStoreProductPath(sourceUrl,store) && Number.isFinite(price) && price > 0 && /^[A-Z]{3}$/.test(currency)) {
       const hay = normalizeSearchQuery(title + " " + sourceUrl);
       const hits = tokens.filter(t => hay.includes(t)).length;
       const key = canonicalizeCandidateUrl(sourceUrl) + "|" + price;
@@ -1079,82 +1099,33 @@ export function extractEmbeddedSearchOffers(html, searchUrl, store, query) {
   return offers;
 }
 
-// Price-bearing Schema.org search evidence, shared by the public storefronts.
-// This remains a fallback for the existing source-specific parsers. Never turn
-// AggregateOffer.lowPrice or a price-less product recommendation into an offer.
 function extractJsonLdSearchOffers(html, searchUrl, store, query) {
-  const tokens=normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
-  const offers=[];const seen=new Set();
-  const scripts=String(html||"").match(/<script\b(?=[^>]*\btype\s*=\s*["']application\/ld\+json(?:\s*;[^"']*)?["'])[^>]*>[\s\S]*?<\/script\s*>/gi)||[];
-  const isType=(value,expected)=>{
-    const types=Array.isArray(value)?value:[value];
-    return types.some(type=>typeof type==="string" &&
-      type.split(/[\/#]/).at(-1).toLowerCase()===expected);
-  };
-  const positivePrice=value=>{
-    if(typeof value==="number")return Number.isFinite(value)&&value>0?value:null;
-    // Schema.org decimal amounts are unformatted values. Localized/grouped
-    // strings are ambiguous without an attested locale; never guess them.
-    if(typeof value!=="string"||!/^\d+(?:\.\d{1,2})?$/.test(value.trim()))return null;
-    const price=Number(value.trim());
-    return Number.isFinite(price)&&price>0?price:null;
-  };
-  const canonicalProductUrl=value=>{
-    if(typeof value!=="string"||!value.trim())return null;
-    try{
-      const url=new URL(value,searchUrl);
-      if(url.protocol!=="https:"||url.username||url.password||
-         !sameHost(url.href,searchUrl)||!store.productPath.test(url.href))return null;
-      return canonicalizeCandidateUrl(url.href);
-    }catch{return null;}
-  };
-  const visit=(node,depth=0)=>{
-    if(!node||depth>18)return;
-    if(Array.isArray(node)){for(const item of node)visit(item,depth+1);return;}
+  const tokens = normalizeSearchQuery(query).split(" ").filter(t=>t.length>=2);
+  const offers=[]; const seen=new Set();
+  const scripts=String(html||"").match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi)||[];
+  const visit=(node)=>{
+    if(!node)return;
+    if(Array.isArray(node)){ for(const item of node) visit(item); return; }
     if(typeof node!=="object")return;
-    if(isType(node["@type"],"itemlist")&&Array.isArray(node.itemListElement))
-      for(const item of node.itemListElement)visit(item?.item||item,depth+1);
-    if(isType(node["@type"],"product")){
-      const title=typeof node.name==="string"?node.name.replace(/\s+/g," ").trim():"";
-      const rawOffers=Array.isArray(node.offers)?node.offers:[node.offers];
-      const entries=rawOffers.filter(x=>x&&typeof x==="object"&&
-        !isType(x["@type"],"aggregateoffer"));
-      // Multiple competing seller/variant prices cannot identify a single
-      // buyable search card. Only one standalone Offer is source-attested.
-      if(title&&entries.length===1){
-        const offer=entries[0];
-        const spec=offer.priceSpecification;
-        const unit=spec&&typeof spec==="object"&&!Array.isArray(spec)&&
-          (spec["@type"]==null||isType(spec["@type"],"unitpricespecification"))?spec:null;
-        const hasOwnPrice=offer.price!==null&&offer.price!==undefined;
-        const price=positivePrice(hasOwnPrice?offer.price:unit?.price);
-        const currency=String(offer.priceCurrency||unit?.priceCurrency||"").trim().toUpperCase();
-        // Conflicting currency declarations are not a price proof.
-        const currenciesAgree=!unit?.priceCurrency||!offer.priceCurrency||
-          String(unit.priceCurrency).toUpperCase()===String(offer.priceCurrency).toUpperCase();
-        const productUrl=canonicalProductUrl(node.url);
-        const pricedUrl=canonicalProductUrl(offer.url);
-        const sourceUrl=productUrl||pricedUrl;
-        const urlsAgree=!node.url||!offer.url||(productUrl&&pricedUrl&&productUrl===pricedUrl);
-        const hay=normalizeSearchQuery(title);
-        const hits=tokens.filter(t=>hay.includes(t)).length;
-        if(price&&/^[A-Z]{3}$/.test(currency)&&currenciesAgree&&sourceUrl&&urlsAgree&&
-           (tokens.length<=1||hits/tokens.length>=0.2)){
-          const key=sourceUrl+"|"+price+"|"+currency;
-          if(!seen.has(key)){
-            seen.add(key);
-            offers.push({productId:String(node.sku||node.productID||sourceUrl),
-              title,image:Array.isArray(node.image)?node.image[0]:node.image||null,
-              price,currency,sourceUrl});
-          }
-        }
+    const type=String(node["@type"]||"").toLowerCase();
+    if(type==="itemlist" && Array.isArray(node.itemListElement)){ for(const item of node.itemListElement) visit(item?.item||item); }
+    if(type==="product"){
+      const title=String(node.name||"").replace(/\s+/g," ").trim();
+      const offer=Array.isArray(node.offers)?node.offers[0]:node.offers;
+      const price=Number(offer?.price ?? offer?.lowPrice);
+      const currency=String(offer?.priceCurrency||"").toUpperCase();
+      let sourceUrl=node.url || offer?.url || null;
+      try { if(sourceUrl) sourceUrl=new URL(sourceUrl,searchUrl).href; } catch { sourceUrl=null; }
+      const hay=normalizeSearchQuery(title); const hits=tokens.filter(t=>hay.includes(t)).length;
+      if(title && sourceUrl && Number.isFinite(price) && price>0 && currency && (tokens.length<=1 || hits/tokens.length>=0.2)){
+        const key=sourceUrl+"|"+price; if(!seen.has(key)){seen.add(key); offers.push({productId:String(node.sku||node.productID||sourceUrl),title,image:Array.isArray(node.image)?node.image[0]:node.image||null,price,currency,sourceUrl});}
       }
     }
-    if(Array.isArray(node["@graph"]))visit(node["@graph"],depth+1);
+    if(Array.isArray(node["@graph"])) visit(node["@graph"]);
   };
   for(const script of scripts){
-    const body=script.replace(/^<script\b[^>]*>/i,"").replace(/<\/script\s*>$/i,"").trim();
-    try{visit(JSON.parse(body));}catch{}
+    const body=script.replace(/^<script\b[^>]*>/i,"").replace(/<\/script>$/i,"").trim();
+    try { visit(JSON.parse(body)); } catch {}
   }
   return offers;
 }
@@ -1166,7 +1137,7 @@ export function extractProductLinks(html, searchUrl, store, query, limit = Infin
   const addCandidate = (rawUrl, rawLabel = "") => {
     let url;
     try { url = new URL(decodeHtml(rawUrl).replace(/\\u002F/gi, "/").replace(/\\\//g, "/"), searchUrl).href; } catch { return; }
-    if (!sameHost(url, searchUrl) || !store.productPath.test(url)) return;
+    if (!sameHost(url, searchUrl) || !matchesStoreProductPath(url,store)) return;
     // Product discovery must never promote static assets (images/fonts/etc.) to
     // product pages even when a loose storefront regex happens to match them.
     try {
@@ -1856,7 +1827,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           // An embedded Product/Offer can be off-domain advertising or a
           // marketplace recommendation. It never owns this EU merchant's price.
           .filter(offer => !store.euSource ||
-            (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)));
+            (sameHost(offer.sourceUrl, searchUrl) && matchesStoreProductPath(offer.sourceUrl,store)));
         const merged = []; const seen = new Set();
         for (const offer of [...embedded, ...jsonLd]) {
           const key = canonicalizeCandidateUrl(offer.sourceUrl || "") + "|" + Number(offer.price) + "|" + String(offer.currency || "");
@@ -1961,7 +1932,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const jsonLdOffers = html && !htmlFirstOffers.length && !primarySearchOffers.length
       ? extractJsonLdSearchOffers(html, searchPageFinalUrl || searchUrl, store, query)
         .filter(offer => !store.euSource ||
-          (sameHost(offer.sourceUrl, searchUrl) && store.productPath.test(offer.sourceUrl)))
+          (sameHost(offer.sourceUrl, searchUrl) && matchesStoreProductPath(offer.sourceUrl,store)))
       : [];
     // A generic JSON-LD fallback could revive a recommendation's price after
     // Noon-specific SKU/seller/variant binding rejected it. Keep this source
