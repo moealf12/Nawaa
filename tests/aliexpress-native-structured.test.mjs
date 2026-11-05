@@ -121,6 +121,14 @@ test("full itemList hydration retains products regardless of redirectedId proper
   assert.equal(d.customerPublishable,false);
 });
 
+test("different embedded productId and redirectedId cannot inherit each other's offer",()=>{
+  const changed={...base, redirectedId:"3256812557229083"};
+  const diagnostics={};
+  assert.equal(extract(html(changed),"Bluetooth",diagnostics,norm).length,0);
+  assert.equal(diagnostics.rejectedReasons.EMBEDDED_PRODUCT_ID_CONFLICT,1);
+  assert.equal(diagnostics.customerPublishable,false);
+});
+
 test("top-level legacy salePrice remains recognized, without allowing unrelated originalPrice",()=>{
   const item={...base,prices:undefined,salePrice:{minPrice:11.25,currencyCode:"SAR"}};
   assert.equal(extract(html(item),"Bluetooth",{},norm)[0].price,11.25);
