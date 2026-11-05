@@ -15,6 +15,8 @@ on:
       - "src/google-shopping-cards.mjs"
       - "server/server.mjs"
       - "tests/google-shopping-results.test.mjs"
+      - "tests/serpapi-zero-cost-guard.test.mjs"
+      - "server/serpapi-free-plan-guard.mjs"
   workflow_dispatch:
 
 permissions:
@@ -36,7 +38,7 @@ jobs:
       - name: Install locked dependencies without postinstall
         run: npm ci --ignore-scripts
       - name: Validate exact links, query isolation and UI contracts
-        run: node --test tests/google-shopping-discovery.test.mjs tests/google-shopping-search-ui.test.mjs tests/google-shopping-results.test.mjs
+        run: node --test tests/google-shopping-discovery.test.mjs tests/google-shopping-search-ui.test.mjs tests/google-shopping-results.test.mjs tests/serpapi-zero-cost-guard.test.mjs
       - name: Use temporary Playwright for actual browser DOM assertions
         run: npm install --no-save --no-package-lock --ignore-scripts playwright@1.64.1
       - name: Resolve native Chrome
