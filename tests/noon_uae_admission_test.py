@@ -115,17 +115,52 @@ class AdmissionGateTests(unittest.TestCase):
         self.assertEqual(gate(None)["passingCount"], 0)
         self.assertFalse(gate(None)["customerPublishable"])
 
-    def test_even_synthetic_all_other_gates_do_not_grant_publish(self):
+    def test_unknown_saudi_delivery_is_optional_for_uae_offers(self):
+        r = live_report()
+        r["crossSurfaceCorroboration"]["sameOfferCurrencyAttested"] = True
+        r["tanstackTsrAst"]["exactOfferWithExplicitSkuCurrencyPrice"] = True
+        result = gate(r)
+        self.assertEqual(result["requiredCount"], 7)
+        self.assertEqual(result["optionalDelivery"]["status"], "NOT_VERIFIED")
+        self.assertFalse(result["optionalDelivery"]["affectsReleaseAdmission"])
+        self.assertEqual(result["missing"], ["independent_long_window_stability"])
+        self.assertNotIn("saudi_country_delivery_authenticated", result["missing"])
+        self.assertNotIn("saudi_destination_city_verified", result["missing"])
+        self.assertFalse(result["customerPublishable"])
+
+    def test_verified_ineligible_shipping_does_not_block_uae_offer(self):
         r = live_report()
         r["crossSurfaceCorroboration"]["sameOfferCurrencyAttested"] = True
         r["tanstackTsrAst"]["exactOfferWithExplicitSkuCurrencyPrice"] = True
         r["saudiDeliveryEvidence"] = {
-            "sourceEvidenceValid": True,
-            "countryEligible": True,
+            "sourceEvidenceValid": True, "countryEligible": False,
+            "cityEligible": False,
+        }
+        result = gate(r)
+        self.assertEqual(result["optionalDelivery"]["status"], "VERIFIED_INELIGIBLE_TO_SA")
+        self.assertEqual(result["missing"], ["independent_long_window_stability"])
+        self.assertFalse(result["customerPublishable"])
+
+    def test_verified_saudi_eligibility_is_optional_not_release_condition(self):
+        r = live_report()
+        r["saudiDeliveryEvidence"] = {
+            "sourceEvidenceValid": True, "countryEligible": True,
             "cityEligible": True,
         }
         result = gate(r)
-        self.assertEqual(result["missing"], ["independent_long_window_stability"])
+        self.assertEqual(result["optionalDelivery"]["status"], "VERIFIED_ELIGIBLE_TO_SA")
+        self.assertEqual(result["requiredCount"], 7)
+        self.assertFalse(result["optionalDelivery"]["affectsReleaseAdmission"])
+
+    def test_price_currency_and_source_remain_blockers_regardless_of_delivery(self):
+        r = live_report()
+        r["saudiDeliveryEvidence"] = {
+            "sourceEvidenceValid": True, "countryEligible": True,
+            "cityEligible": True,
+        }
+        result = gate(r)
+        self.assertIn("same_offer_currency_aed_verified", result["missing"])
+        self.assertIn("independent_long_window_stability", result["missing"])
         self.assertFalse(result["customerPublishable"])
 
 
