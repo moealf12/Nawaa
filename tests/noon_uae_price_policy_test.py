@@ -103,6 +103,34 @@ class PolicyTests(unittest.TestCase):
         self.assertIsNone(unverified["sourceCurrencyVerified"])
         self.assertIsNone(unverified["convertedSarApprox"])
         self.assertEqual(unverified["sarScenarioIfAED"], "2147.33")
+        self.assertIsNone(unverified["sourceCurrencyAssumedForDisplay"])
+
+        market_context = aed_sar_card_preview(
+            "2099.05", market="AE", explicit_aed_label=False,
+            market_context_verified=True,
+        )
+        self.assertEqual(market_context["convertedSarApprox"], "2147.33")
+        self.assertEqual(market_context["sourceCurrencyAssumedForDisplay"], "AED")
+        self.assertIsNone(market_context["sourceCurrencyVerified"])
+        self.assertIsNone(market_context["sarScenarioIfAED"])
+        self.assertEqual(
+            market_context["sourceCurrencyEvidence"],
+            "VERIFIED_AE_STOREFRONT_CONTEXT_INFERENCE"
+        )
+        self.assertFalse(market_context["customerPublishable"])
+
+        # Never trust non-boolean claims or wrong-country context.
+        claim = aed_sar_card_preview(
+            "2099.05", market="AE", explicit_aed_label=False,
+            market_context_verified="true",
+        )
+        self.assertIsNone(claim["convertedSarApprox"])
+        for country in ("SA", "US", "", None):
+            bad = aed_sar_card_preview(
+                "2099.05", market=country, explicit_aed_label=False,
+                market_context_verified=True,
+            )
+            self.assertIsNone(bad["convertedSarApprox"])
         self.assertFalse(unverified["customerPublishable"])
         for unsafe_market in ("SA", "US", "", None):
             untrusted = aed_sar_card_preview(
