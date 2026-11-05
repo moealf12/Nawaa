@@ -132,6 +132,8 @@ test("P54: only source-native exact identifier is shortened for unknown-script m
   assert.equal(plan.constraintsPreserved,false);
   assert.equal(plan.finalMatchMustUseOriginal,true);
   assert.equal(planSourceNativeModelQuery(input,{allowModelRecall:false}).mode,"ORIGINAL_QUERY");
+  assert.equal(planSourceNativeModelQuery("Laptop",{allowModelRecall:true}).query,"Laptop");
+  assert.equal(planSourceNativeModelQuery("MÉCANIQUE 32",{allowModelRecall:true}).query,"MÉCANIQUE 32");
   for(const q of [
     "English induction motor RF111",
     "iPhone 17 256GB",
