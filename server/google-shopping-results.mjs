@@ -155,7 +155,9 @@ export function createGoogleShoppingResultsClient({
     // documented as free of charge. No cached permission to spend free credits.
     // Concurrent instances are still bounded by the upstream Free plan and
     // deliberately generous reserve; no paid-account usage is ever allowed.
-    const freePlan=await freeAccountCheck({apiKey,fetchImpl});
+    let freePlan;
+    try {freePlan=await freeAccountCheck({apiKey,fetchImpl});}
+    catch {freePlan={allowed:false,reason:"ACCOUNT_VERIFICATION_UNAVAILABLE"};}
     if(!freePlan?.allowed) return {
       status:503,body:{
         error:"GOOGLE_SHOPPING_ZERO_COST_GUARD",
