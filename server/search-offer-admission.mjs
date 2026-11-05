@@ -45,11 +45,10 @@ export function createSearchOfferAdmission(query,{legacyFloor=0.35}={}){
 export function retainAcquiredStorefrontOffers(query,offers=[]){
   const strict=filterQueryOffers(query,offers);
   const intent=parseSearchIntent(query);
-  if(!intent.model)return {...strict,queryFilter:{...strict.queryFilter,relatedRetained:0}};
+  if(!intent.model)return strict;
   const accepted=new Set(strict.offers);
   const assess=createOfferMatchAssessor(query);
   const admit=createSearchOfferAdmission(query);
-  let relatedRetained=0;
   const retained=[];
   for(const original of offers){
     if(accepted.has(original)){
@@ -67,10 +66,9 @@ export function retainAcquiredStorefrontOffers(query,offers=[]){
     // Preserve the old source-to-server contract; only downstream recomputes
     // exactness. The candidate is transient evidence for the admission decision.
     retained.push(original);
-    relatedRetained++;
   }
   return {offers:retained,queryFilter:{
     input:offers.length,retained:retained.length,
-    removed:offers.length-retained.length,relatedRetained,
+    removed:offers.length-retained.length,
   }};
 }
