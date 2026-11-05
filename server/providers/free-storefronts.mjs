@@ -15,6 +15,7 @@ import {storefrontSourceFailure} from "../../src/storefront-error-evidence.mjs";
 import {createRuntimeSourceFetcher} from "../source-transport.mjs";
 import {merchantRequestHeaders} from "../../src/source-http-profile.mjs";
 import {retiredSourceRecord} from "../../src/source-retirement.mjs";
+import {planUnknownCategorySpecialists} from "../open-world-source-planner.mjs";
 import {diagnoseAmazonGermanyHtml} from "../../src/europe-source-diagnostics.mjs";
 import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../src/amazon-de-price-gate.mjs";
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
@@ -2160,6 +2161,23 @@ export function configuredFreeStorefronts() {
   return STORES.map(({id,name,countryCode,countryNameAr}) => ({id,name,countryCode,countryNameAr}));
 }
 
+// The stable first-wave registry excludes only the TWO sources that already
+// run in dedicated core tasks (Amazon SA and Virgin AE). A later denied-store
+// list must not shift this baseline and make another retailer a hidden retry.
+export function planFreeStorefrontSpecialistBackfill(query,{
+  firstWaveStoreLimit=16,excludedStoreIds=[],maxStores=6,
+}={}){
+  const initialExcluded=new Set(["amazon-sa","virgin-ae"]);
+  const firstWave=routeFreeStorefronts(query,Infinity,{stable:true})
+    .filter(entry=>!initialExcluded.has(entry.store.id))
+    .slice(0,Math.max(0,Math.min(64,Math.floor(firstWaveStoreLimit))))
+    .map(entry=>entry.store.id);
+  return planUnknownCategorySpecialists({
+    query,stores:STORES,alreadySearchedIds:[...firstWave,...initialExcluded],
+    excludedStoreIds,maxStores,
+  });
+}
+
 export async function searchFreeStorefronts(query, options = {}) {
   // Search a broad merchant set, but bound product-page fan-out per merchant.
   // Diversity comes from more stores, not dozens of serial product resolutions inside one store.
@@ -2167,14 +2185,24 @@ export async function searchFreeStorefronts(query, options = {}) {
   const storeLimit = Number.isFinite(requestedStoreLimit) && requestedStoreLimit >= 0 ? Math.floor(requestedStoreLimit) : 16;
   const storeOffset = Math.max(0, Math.floor(Number(options.storeOffset) || 0));
   const excludedStoreIds = new Set(Array.isArray(options.excludeStoreIds) ? options.excludeStoreIds : []);
-  const routes = routeFreeStorefronts(
-      query,
-      storeOffset + storeLimit + excludedStoreIds.size,
-      {stable:options.stableRouting === true}
-    )
-    .filter((entry) => !excludedStoreIds.has(entry.store.id))
-    .slice(storeOffset, storeOffset + storeLimit);
-  const stores = routes.map((entry) => entry.store);
+  const specialistPlan=options.exploreUnknownSpecialists===true
+    ? planFreeStorefrontSpecialistBackfill(query,{
+      firstWaveStoreLimit:options.firstWaveStoreLimit ?? 16,
+      excludedStoreIds:[...excludedStoreIds],
+      maxStores:storeLimit,
+    }) : null;
+  const routes=specialistPlan?.storeIds?.length
+    ? specialistPlan.storeIds.map((id,rank)=>({
+      store:STORES.find(store=>store.id===id),
+      score:0,reasons:["open_world_specialist"],rank:rank+1,
+    }))
+    : routeFreeStorefronts(
+        query,storeOffset+storeLimit+excludedStoreIds.size,
+        {stable:options.stableRouting===true}
+      )
+      .filter((entry)=>!excludedStoreIds.has(entry.store.id))
+      .slice(storeOffset,storeOffset+storeLimit);
+  const stores=routes.map((entry)=>entry.store);
   const requestedProductPageLimit = Number(options.productPageLimit ?? options.perStore);
   const productPageLimit = Number.isFinite(requestedProductPageLimit) && requestedProductPageLimit > 0
     ? Math.min(20, Math.floor(requestedProductPageLimit))
