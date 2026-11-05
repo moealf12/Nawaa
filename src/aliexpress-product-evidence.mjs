@@ -149,21 +149,19 @@ export function evaluateAliExpressProductEvidence(
 /** Bridge existing diagnostic script outputs to the strict evidence gate.
  * No existing browser or alias trace result has a selected buybox proof.
  */
-export function evaluateAliExpressBrowserDiagnostic(browserReport,options={}) {
-  const id=browserReport?.requestedItemId;
-  const host=browserReport?.requestedHost;
-  const card={
-    productId:id,
-    sourceUrl:typeof host==="string"&&ITEM_ID.test(String(id)) ?
-      "https://"+host+"/item/"+id+".html":null,
-    price:"0",currency:"USD",priceKind:"SEARCH_CARD_MINIMUM_VARIANT_UNVERIFIED",
-    customerPublishable:false,pdpPriceVerified:false,
-  };
-  // A browser-only diagnostic has no attested source search-card price.
-  // Do not create synthetic price evidence from the PDP report.
-  const decision=evaluateAliExpressProductEvidence(
-    {searchCard:card},options
-  );
-  return {...decision,reason:browserReport?.conclusion||
-    "BROWSER_DIAGNOSTIC_WITHOUT_SEARCH_EVIDENCE"};
+export function evaluateAliExpressBrowserDiagnostic(browserReport) {
+  // No browser diagnostic alone proves a source search-card price, selected
+  // SKU, live buybox, or independent corroboration. Never synthesize any
+  // missing input to reach VERIFIED.
+  const original=String(browserReport?.requestedItemId??"");
+  const final=String(browserReport?.domEvidence?.finalItemId||
+    browserReport?.rendering?.finalItemId||"");
+  const reason=typeof browserReport?.conclusion==="string" &&
+    /^[A-Z0-9_]{3,90}$/.test(browserReport.conclusion) ?
+      browserReport.conclusion : "BROWSER_DIAGNOSTIC_WITHOUT_SOURCE_PROOF";
+  return result("UNVERIFIED",reason,{
+    originalItemId:ITEM_ID.test(original)?original:null,
+    finalItemId:ITEM_ID.test(final)?final:null,
+    variantSku:null,
+  });
 }
