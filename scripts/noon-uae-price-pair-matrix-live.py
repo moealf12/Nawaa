@@ -23,6 +23,7 @@ from noon_uae_price_precision import (
 )
 from noon_uae_price_policy import cents
 from noon_uae_tsr_ast import inspect_tsr_ast
+from noon_uae_embedded_offer import inspect_offer_scripts
 
 BASE = "https://www.noon.com"
 QUERIES = ("PlayStation 5", "iPhone 17", "سماعات بلوتوث")
@@ -132,6 +133,57 @@ def choose(html, query):
     return None
 
 
+def hydration_structure(soup, html, *, sku, offer_code):
+    """Report parser coverage for alternate storefront layouts; no raw JS."""
+    summary = {
+        "scriptCount": 0,
+        "inlineScriptCount": 0,
+        "inlineScriptCharsMax": 0,
+        "scriptsContainingSelectedSku": 0,
+        "scriptsContainingSelectedOfferCode": 0,
+        "scriptsContainingTsr": 0,
+        "scriptsContainingTsrAndSelectedOffer": 0,
+        "tsrScriptsOverStaticParserLimit": 0,
+        "rawHtmlOfferOccurrences": html.decode("utf8", "ignore").count(offer_code),
+        "scriptTypesForSelectedOffer": {},
+        "inlineBootstrapIdentifiers": [],
+        "customerPublishable": False,
+    }
+    for tag in soup.find_all("script", limit=200):
+        summary["scriptCount"] += 1
+        txt = tag.string or tag.get_text()
+        if not isinstance(txt, str) or not txt:
+            continue
+        summary["inlineScriptCount"] += 1
+        summary["inlineScriptCharsMax"] = max(
+            summary["inlineScriptCharsMax"], len(txt)
+        )
+        contains_sku = sku in txt
+        contains_offer = offer_code in txt
+        is_tsr = "self.$R" in txt or "$_TSR" in txt
+        summary["scriptsContainingSelectedSku"] += int(contains_sku)
+        summary["scriptsContainingSelectedOfferCode"] += int(contains_offer)
+        summary["scriptsContainingTsr"] += int(is_tsr)
+        summary["scriptsContainingTsrAndSelectedOffer"] += int(
+            is_tsr and contains_offer
+        )
+        summary["tsrScriptsOverStaticParserLimit"] += int(
+            is_tsr and contains_offer and len(txt) > 260000
+        )
+        if contains_offer:
+            typ = str(tag.get("type") or "unspecified")[:55]
+            summary["scriptTypesForSelectedOffer"][typ] = (
+                summary["scriptTypesForSelectedOffer"].get(typ, 0) + 1
+            )
+            # Only structural JavaScript *identifiers*, not literal values.
+            identifiers = re.findall(
+                r"[A-Za-z_$][A-Za-z0-9_$]{2,30}",
+                txt[:240],
+            )
+            summary["inlineBootstrapIdentifiers"] = identifiers[:8]
+    return summary
+
+
 def product_seo(html, item):
     soup = BeautifulSoup(html, "html.parser")
     lang = soup.html.get("lang") if soup.html else ""
@@ -227,6 +279,15 @@ try:
                                 soup, sku=item["sku"], offer_code=item["offerCode"],
                                 plp_price=item["plpPrice"],
                             )
+                            case["hydrationStructure"] = hydration_structure(
+                                soup, pdp, sku=item["sku"],
+                                offer_code=item["offerCode"],
+                            )
+                            case["alternateJsonOffer"] = inspect_offer_scripts(
+                                soup, sku=item["sku"],
+                                offer_code=item["offerCode"],
+                                plp_price=item["plpPrice"],
+                            )
                             current = select_source_current_offer_amount(
                                 ast["candidateRecords"]
                             )
@@ -251,7 +312,17 @@ try:
                             case["sameOfferCurrencyDirectlyVerified"] = False
                             case["sourcePriceSameOfferObserved"] = (
                                 current["priceCents"] is not None
+                                or case["alternateJsonOffer"]["samePriceOfferAttested"] is True
                             )
+                            if not case["sourcePriceSameOfferObserved"]:
+                                structure = case["hydrationStructure"]
+                                case["reason"] = (
+                                    "OFFER_ID_ABSENT_FROM_PDP_INLINE_SCRIPTS"
+                                    if not structure["scriptsContainingSelectedOfferCode"]
+                                    else "TANSTACK_SCRIPT_EXCEEDS_PARSER_BYTE_BUDGET"
+                                    if structure["tsrScriptsOverStaticParserLimit"]
+                                    else "UNRECOGNIZED_INLINE_OFFER_STRUCTURE"
+                                )
         REPORT["cases"].append(case)
     REPORT["sourceAcceptance"] = (
         "THREE_LIVE_PLP_AND_PDP_SOURCES_ACQUIRED"
