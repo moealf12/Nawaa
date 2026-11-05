@@ -1,0 +1,67 @@
+name: NAWAA R04 P52 Two Independent Postmerge 36-Intent Rounds
+on:
+  pull_request:
+    paths:
+      - 'scripts/r04-p52-postmerge-acceptance.mjs'
+      - '.github/workflows/r04-p52-two-round-postmerge.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-r04-p52-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+jobs:
+  real-render-round:
+    name: render-36-round-${{ matrix.round }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        round: [1, 2]
+    concurrency:
+      group: nawaa-production-live-probes
+      queue: max
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NAWAA_EXPECT_LIVE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      NAWAA_R04_ROUND: ${{ matrix.round }}
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate read-only scripts and frozen corpus
+        run: |
+          set -euo pipefail
+          node --check scripts/r04-36-live-corpus-evidence.mjs
+          node --check scripts/r04-p52-postmerge-acceptance.mjs
+          node --test tests/r04-full-corpus-contract.test.mjs
+      - name: Require exact and unchanged main before querying production
+        run: |
+          set -euo pipefail
+          [[ "$NAWAA_EXPECT_LIVE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$NAWAA_EXPECT_LIVE_SHA"
+      - name: Read 36 frozen shopper intents from actual published Render
+        run: node scripts/r04-36-live-corpus-evidence.mjs
+      - name: Fail closed on provenance and strict principal coverage
+        if: always()
+        run: node scripts/r04-p52-postmerge-acceptance.mjs
+      - name: Retain exact-SHA real evidence even if a gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r04-p52-live-36-round-${{ matrix.round }}-${{ github.event.pull_request.base.sha || github.sha }}
+          path: |
+            r04-36-live-corpus-evidence.json
+            r04-postmerge-round-*-gate.json
+          retention-days: 14
+          if-no-files-found: warn
