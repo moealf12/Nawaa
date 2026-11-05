@@ -648,3 +648,70 @@ class AmazonSourceAvailabilityStateTests(unittest.IsolatedAsyncioTestCase):
         await scraper.close()
         self.assertEqual(result["source_availability"],"robots_unavailable")
         self.assertFalse(result["empty_means_out_of_stock"])
+
+
+class AmazonPdpFaultContainmentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_one_pdp_parser_failure_keeps_second_valid_product(self):
+        from unittest.mock import AsyncMock, patch
+        import nawaa_store_hunter as m
+        one="B0C3HCD34R"
+        two="B0CZPLV566"
+        titles={one:"Soundcore Q20i Wireless Headphones Black",
+                two:"Beats Solo 4 Wireless Headphones Black"}
+        def card(asin):
+            return (f'<div data-component-type="s-search-result" data-asin="{asin}">'
+                    f'<h2><a href="/dp/{asin}">{titles[asin]}</a></h2>'
+                    '<span class="a-price"><span class="a-offscreen">$44.99</span></span>'
+                    '<img class="s-image" src="https://m.media-amazon.com/images/I/main.jpg" /></div>')
+        async def fake_fetch(method,url,params=None,headers=None):
+            if method=="homepage":return "<html></html>"
+            if method=="search-html":return card(one)+card(two)
+            if method=="product-detail":
+                asin=url.split("/dp/")[-1]
+                return (f'<link rel="canonical" href="https://www.amazon.com/dp/{asin}">'
+                        f'<input id="ASIN" value="{asin}">'
+                        f'<span id="productTitle">{titles[asin]}</span>'
+                        '<div id="corePrice_feature_div"><span class="a-price">'
+                        '<span class="a-offscreen">$44.99</span></span></div>')
+            if method=="product-detail-price-retry":return None
+            raise AssertionError(method)
+        original=m.parse_amazon_us_pdp
+        def fail_first(html,page):
+            if one in page:raise ValueError("synthetic bad HTML for this PDP")
+            return original(html,page)
+        scraper=m.Scraper("https://www.amazon.com","wireless headphones",2,1,"never","all")
+        scraper.prepare=AsyncMock()
+        scraper.fetch=fake_fetch
+        scraper.search_targets=lambda _:[("https://www.amazon.com/s",{"k":"headphones"})]
+        with patch.object(m,"parse_amazon_us_pdp",side_effect=fail_first):
+            result=await scraper.search()
+        await scraper.close()
+        self.assertEqual(result["count"],2)
+        by_asin={p["sku"]:p for p in result["products"]}
+        self.assertIn("PDP_ENRICHMENT_EXCEPTION",by_asin[one]["issues"])
+        self.assertEqual(by_asin[one]["price_source"],"search_only")
+        self.assertEqual(by_asin[two]["price_source"],"search_and_pdp_agree")
+        self.assertTrue(any(d["status"]=="PDP_ENRICHMENT_EXCEPTION"
+                            for d in result["diagnostics"]))
+
+    async def test_cancelled_pdp_is_propagated(self):
+        from unittest.mock import AsyncMock
+        import nawaa_store_hunter as m
+        import asyncio
+        asin="B0C3HCD34R"
+        title="Soundcore Q20i Wireless Headphones"
+        card=f'<div data-component-type="s-search-result" data-asin="{asin}"><h2><a href="/dp/{asin}">{title}</a></h2></div>'
+        async def fake_fetch(method,url,params=None,headers=None):
+            if method=="homepage":return "<html></html>"
+            if method=="search-html":return card
+            if method=="product-detail":raise asyncio.CancelledError()
+            raise AssertionError(method)
+        scraper=m.Scraper("https://www.amazon.com","headphones",1,1,"never","all")
+        scraper.prepare=AsyncMock()
+        scraper.fetch=fake_fetch
+        scraper.search_targets=lambda _:[("https://www.amazon.com/s",{"k":"headphones"})]
+        try:
+            with self.assertRaises(asyncio.CancelledError):
+                await scraper.search()
+        finally:
+            await scraper.close()
