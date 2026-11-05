@@ -2,7 +2,8 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import https from "node:https";
 import { moneyToSAR } from "./fx.mjs";
-import { normalizeCondition, normalizeAvailability, parseMoney } from "./provider-utils.mjs";
+import { normalizeAvailability, parseMoney } from "./provider-utils.mjs";
+import {resolveAssociatedItemCondition} from "./product-condition-evidence.mjs";
 import { extractDomainProduct } from "./domain-adapters.mjs";
 import { extractThomannProduct, isThomannProductUrl } from "./thomann-adapter.mjs";
 import { productPageRequestHeaders } from "../src/source-http-profile.mjs";
@@ -664,8 +665,10 @@ export async function resolveProductUrl(url, options = {}) {
   const country = inferCountry(finalUrl, originalCurrency);
   // The Amazon DE marketplace location cannot establish a third-party seller's country.
   const amazonSeller=amazonDeDeclaredSellerAttribution(product);
-  const rawCondition = product && product.itemCondition || "";
-  const condition = normalizeCondition(rawCondition);
+  // Offer.itemCondition attests the actual selected selling offer; product-
+  // level and offer-level conflicts are NOT certified as new or used.
+  const {condition,evidence:conditionEvidence}=
+    resolveAssociatedItemCondition(product,offer);
 
   return {
     provider: "url-resolver",
@@ -750,7 +753,8 @@ export async function resolveProductUrl(url, options = {}) {
       amazonDeMarketplace:amazonSeller?.marketplace||null,
       shopifyProductFound: candidates.some(entry=>entry.product?.shopifyVariantEvidence === true) || (selected?.strategy === "storefront_data" && /shopify/i.test(JSON.stringify(extracted.diagnostics))),
       structuredPriceFound: originalPrice !== null,
-      structuredCurrencyFound: Boolean(originalCurrency)
+      structuredCurrencyFound: Boolean(originalCurrency),
+      conditionEvidence
     }
   };
 }

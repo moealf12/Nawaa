@@ -47,9 +47,46 @@ export function parseMoney(value) {
   return Number.isFinite(num) && num >= 0 ? num : null;
 }
 
+// The Schema.org OfferItemCondition value is an exact enumeration, not a
+// word to discover inside arbitrary external URLs. Google Merchant Center
+// accepts the canonical schema.org URLs or bare member names.
+const SCHEMA_ITEM_CONDITIONS=Object.freeze({
+  newcondition:"new",
+  usedcondition:"used",
+  refurbishedcondition:"refurbished",
+  // Damaged goods must never be silently presented as new or equivalent used.
+  damagedcondition:"unknown",
+});
+
 export function normalizeCondition(value = "") {
-  const v = String(value).toLowerCase().replace(/[_-]+/g," ").trim();
-  if (!v) return "unknown";
+  // An @id-only linked enumeration is supported; a larger object may contain
+  // conflicting evidence and must not be string-coerced to "[object Object]".
+  if(value && typeof value==="object"){
+    if(Array.isArray(value)||Object.keys(value).length!==1||
+       !Object.hasOwn(value,"@id"))return "unknown";
+    value=value["@id"];
+  }
+  if(typeof value!=="string"||value.length>256)return "unknown";
+  const raw=value.trim();
+  if(!raw)return "unknown";
+  const bare=raw.match(/^([A-Za-z]+Condition)$/);
+  if(bare)return SCHEMA_ITEM_CONDITIONS[bare[1].toLowerCase()]||"unknown";
+  // A URL from a random hostname or with query/hash is not product-condition
+  // evidence, even when a path or query parameter contains the word "new".
+  if(/^[a-z][a-z0-9+.-]*:/i.test(raw)){
+    if(!/^https?:\/\//i.test(raw))return "unknown";
+    let parsed;
+    try{parsed=new URL(raw);}catch{return "unknown";}
+    if(!["http:","https:"].includes(parsed.protocol)||
+       parsed.hostname!=="schema.org"||parsed.port||
+       parsed.username||parsed.password||parsed.search||parsed.hash)
+      return "unknown";
+    const token=parsed.pathname.match(/^\/([A-Za-z]+Condition)\/?$/);
+    return token?SCHEMA_ITEM_CONDITIONS[token[1].toLowerCase()]||"unknown":"unknown";
+  }
+  const v=raw.toLowerCase().replace(/[_-]+/g," ");
+  // Negated new-condition descriptions must not certify a new product.
+  if(/\b(?:not|non|never)\s+(?:brand\s+)?new\b/.test(v))return "unknown";
   if (/\b(refurbished?|renewed|remanufactured)\b/.test(v)) return "refurbished";
   if (/\b(open\s*box)\b/.test(v)) return "open_box";
   if (/\b(like\s*new|used|pre\s*owned|second\s*hand)\b/.test(v)) return "used";

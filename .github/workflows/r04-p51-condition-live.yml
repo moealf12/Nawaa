@@ -1,0 +1,68 @@
+name: NAWAA R04 P51 Source-Owned Condition Live Acceptance
+on:
+  pull_request:
+    paths:
+      - 'server/provider-utils.mjs'
+      - 'server/product-condition-evidence.mjs'
+      - 'server/url-resolver.mjs'
+      - 'tests/r04-p51-schemaorg-condition.test.mjs'
+      - 'scripts/r04-p51-live-condition-probe.mjs'
+      - '.github/workflows/r04-p51-condition-live.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nawaa-p51-condition-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  condition-negative-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: |
+          node --check server/provider-utils.mjs
+          node --check server/product-condition-evidence.mjs
+          node --check server/url-resolver.mjs
+          node --check scripts/r04-p51-live-condition-probe.mjs
+          node --test tests/r04-p51-schemaorg-condition.test.mjs
+  real-merchant-condition:
+    needs: [condition-negative-controls]
+    # These three source-owned PDPs never contact Render production.
+    # Isolate their limited probe from the published-API 36-intent queue.
+    concurrency:
+      group: nawaa-p51-merchant-probe-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      DATABASE_URL: ''
+      MEILI_HOST: ''
+      MEILI_MASTER_KEY: ''
+      FIRECRAWL_API_KEY: ''
+      PYTHON_WORKER_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Probe three real public merchant sources, no product fixtures
+        run: node scripts/r04-p51-live-condition-probe.mjs
+      - name: Preserve live condition-source evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nawaa-r04-p51-condition-${{ github.event.pull_request.head.sha || github.sha }}
+          path: r04-p51-live-condition-evidence.json
+          retention-days: 14
+          if-no-files-found: warn

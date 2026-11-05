@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - 'server/server.mjs'
+      - 'server/url-resolver.mjs'
+      - 'server/provider-utils.mjs'
+      - 'server/product-condition-evidence.mjs'
       - 'server/catalog-recall-budget.mjs'
       - 'server/persistence.mjs'
       - 'server/catalog-write-through.mjs'
