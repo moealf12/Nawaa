@@ -1,0 +1,6 @@
+# Replace HOSTNAME with a real DNS name pointing to the OCI VM public IPv4.
+# Open OCI security rules TCP 80 and 443. Never expose internal :8080.
+HOSTNAME {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8080
+}
