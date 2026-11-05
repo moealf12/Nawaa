@@ -23,7 +23,9 @@ const extract=(cards,options={})=>extractNoonUaeSearchCardEvidence(
 
 test("Noon UAE customer parser accepts an exact SKU/offer URL with explicit AED and first-party /p/ image",()=>{
   const x=extract([card()]);
-  assert.equal(x.status,"VERIFIED_EXPLICIT_AED_SEARCH_CARDS");
+  assert.equal(x.status,"VERIFIED_UAE_MARKET_PRICE_CARDS");
+  assert.equal(x.explicitAed,1);
+  assert.equal(x.marketInferredAed,0);
   assert.equal(x.accepted,1);
   assert.equal(x.offers[0].productId,"N70312362V");
   assert.equal(x.offers[0].price,2499.5);
@@ -33,8 +35,21 @@ test("Noon UAE customer parser accepts an exact SKU/offer URL with explicit AED 
   assert.equal(x.offers[0].priceEvidence,"LIVE_AE_SEARCH_CARD_EXPLICIT_AED");
 });
 
-test("Noon UAE market-locale number alone cannot become an AED customer price",()=>{
-  for(const price of ["2,499.50","\uE0002,499.50","2,499.50 AED 1,999","USD 2499.50"]){
+test("Noon UAE admits bare numerical prices as market-inferred AED with distinct provenance",()=>{
+  for(const price of ["2,499.50","\uE0002,499.50","٢٬٤٩٩٫٥٠"]){
+    const x=extract([card({price})]);
+    assert.equal(x.accepted,1);
+    assert.equal(x.offers[0].price,2499.5);
+    assert.equal(x.offers[0].currency,"AED");
+    assert.equal(x.offers[0].currencyEvidence,"VERIFIED_UAE_STOREFRONT_CONTEXT");
+    assert.equal(x.offers[0].priceEvidence,"LIVE_AE_SEARCH_CARD_MARKET_CONTEXT_AED");
+    assert.equal(x.marketInferredAed,1);
+  }
+});
+
+test("Noon UAE rejects foreign currency labels and ambiguous pricing on an AE page",()=>{
+  for(const price of ["2,499.50 AED 1,999","USD 2499.50","SAR 2499.50",
+    "$2499.50","EUR 2499.50","ر.س 2499.50","2,499.50 1,999"]){
     const x=extract([card({price})]);
     assert.deepEqual(x.offers,[]);
     assert.equal(x.missingCurrency,1);
@@ -79,13 +94,15 @@ test("Noon UAE supports Arabic text with an actual explicit dirham code attached
   assert.equal(x.offers[0].price,199.5);
 });
 
-test("Noon UAE parser refuses all offers when no explicit currency is attested, as in the 252-card live run",()=>{
+test("Noon UAE admits unlabeled numeric PLP cards only under first-party exact-query AE context",()=>{
   const html=document(Array.from({length:55},(_,i)=>card({
     href:"/uae-en/laptop-16gb-512gb/N"+String(70000000+i)+"V/p/?o=offer"+i,
     price:"\uE000"+String(1500+i),
     src:"https://f.nooncdn.com/p/p-"+i+".jpg",
   })));
   const x=extractNoonUaeSearchCardEvidence(html,q,{searchUrl:url,finalUrl:url});
-  assert.equal(x.accepted,0);
-  assert.equal(x.missingCurrency,55);
+  assert.equal(x.accepted,55);
+  assert.equal(x.marketInferredAed,55);
+  assert.equal(x.explicitAed,0);
+  assert.equal(x.offers[0].currencyEvidence,"VERIFIED_UAE_STOREFRONT_CONTEXT");
 });
