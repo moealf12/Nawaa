@@ -19,7 +19,7 @@ const baseActual=execFileSync("git",["-C",baselineDir,"rev-parse","HEAD"],{encod
 if(baseActual!==baselineSha||baselineSha===candidateSha)
   throw Error("BASELINE_SHA_MISMATCH");
 const frozen=JSON.parse(readFileSync(new URL("../engineering/execution/search-truth-corpus.json",import.meta.url),"utf8"));
-const original=Array.isArray(frozen)?frozen:frozen.intents||frozen.queries||[];
+const original=Array.isArray(frozen)?frozen:frozen.queryCases||frozen.intents||frozen.queries||[];
 if(original.length!==36||new Set(original.map(x=>x.id)).size!==36)
   throw Error("FROZEN_36_CORPUS_INVALID");
 const open=[
