@@ -78,6 +78,12 @@ test("absent search or PDP cannot infer a price",()=>{
   unresolved({searchCard:baseline().searchCard},"PDP_EVIDENCE_MISSING");
 });
 
+test("cross-script merchant discovery cannot self-assert query relevance",()=>{
+  const d=baseline();
+  d.searchCard.queryRelevanceEvidence="MERCHANT_SEARCH_CROSS_SCRIPT_UNVERIFIED";
+  unresolved(d,"QUERY_RELEVANCE_NOT_ATTESTED");
+});
+
 test("source search card must be original same-ID canonical merchant link",()=>{
   for(const link of [
     ITEM(ALIAS),
