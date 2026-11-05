@@ -97,6 +97,30 @@ test("real exact-ID anchor recovers a source-backed PDP when item object points 
   ]) assert.equal(extract(html(campaign)+spoof,"Bluetooth",{},norm).length,0);
 });
 
+test("full itemList hydration retains products regardless of redirectedId property order",()=>{
+  const otherId="1005012743543836";
+  const first={
+    itemType:"productV3",productId:ID,
+    title:{displayTitle:"Bluetooth Headphones {new}"},
+    redirectedId:ID,image:base.image,prices:base.prices,
+    productDetailUrl:"https://www.aliexpress.us/item/"+ID+".html",
+  };
+  const second={
+    itemType:"productV3",title:{displayTitle:"Bluetooth Speaker"},
+    productId:otherId,prices:base.prices,
+    image:base.image,redirectedId:otherId,
+    productDetailUrl:"https://www.aliexpress.us/item/"+otherId+".html",
+  };
+  const payload={root:{fields:{mods:{itemList:{content:[first,second]}}}}};
+  const live='<script>window._dida_config_._init_data_={data:'+JSON.stringify(payload)+'};</script>';
+  const d={};
+  const cards=extract(live,"Bluetooth",d,norm);
+  assert.deepEqual(cards.map(x=>x.productId),[ID,otherId]);
+  assert.equal(d.parser,"ALIEXPRESS_EMBEDDED_INIT_DATA");
+  assert.equal(d.structuredCandidates,2);
+  assert.equal(d.customerPublishable,false);
+});
+
 test("top-level legacy salePrice remains recognized, without allowing unrelated originalPrice",()=>{
   const item={...base,prices:undefined,salePrice:{minPrice:11.25,currencyCode:"SAR"}};
   assert.equal(extract(html(item),"Bluetooth",{},norm)[0].price,11.25);
