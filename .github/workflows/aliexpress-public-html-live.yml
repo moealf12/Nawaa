@@ -81,6 +81,22 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  full-search-core-branch-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install checked-in backend dependencies without runtime provisioning
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run all Search Core contracts at this exact isolated branch SHA
+        env:
+          NAWAA_TEST_TRANSPORT: fetch
+        run: npm test
+
   # Exact production-import contract, not just the isolated Python adapter.
   native-node-integration:
     runs-on: ubuntu-latest
