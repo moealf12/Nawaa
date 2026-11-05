@@ -810,3 +810,21 @@ class AmazonRequestReductionTests(unittest.IsolatedAsyncioTestCase):
         await scraper.close()
         self.assertEqual(calls,["search-html"])
         self.assertEqual(result["count"],0)
+
+
+class AmazonCliExitCodesTests(unittest.TestCase):
+    def test_transient_search_503_is_nonzero(self):
+        from nawaa_store_hunter import result_exit_code
+        self.assertEqual(result_exit_code({
+            "status":"partial_or_unavailable","source_availability":"transient_failure"}),2)
+
+    def test_robots_denial_is_nonzero(self):
+        from nawaa_store_hunter import result_exit_code
+        self.assertEqual(result_exit_code({
+            "status":"robots_unavailable","source_availability":"robots_unavailable"}),2)
+
+    def test_successful_empty_search_can_be_empty_not_out_of_stock(self):
+        from nawaa_store_hunter import result_exit_code
+        self.assertEqual(result_exit_code({
+            "status":"partial_or_unavailable","source_availability":"search_accessible",
+            "empty_means_out_of_stock":False}),0)
