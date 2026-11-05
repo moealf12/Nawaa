@@ -210,5 +210,30 @@ class AdmissionGateTests(unittest.TestCase):
 
 
 
+    def test_offer_and_same_sku_product_aed_corrob_is_not_direct_currency(self):
+        report = live_report()
+        report["jsonLd"] = {"matchedSkuOffers": [{
+            "currency": "AED", "price": "1979.00",
+        }]}
+        result = gate(report)
+        evidence = result["productScopedCurrencyCorroboration"]
+        self.assertTrue(evidence["sourceOfferAmountProductPriceCorroborated"])
+        self.assertEqual(evidence["productCurrencyCorroborated"], "AED")
+        self.assertFalse(evidence["offerCurrencyDirectlyVerified"])
+        self.assertFalse(result["gates"]["same_offer_currency_aed_verified"])
+        self.assertFalse(result["customerPublishable"])
+
+    def test_different_seo_product_amount_does_not_attest_aed_to_offer(self):
+        report = live_report()
+        report["jsonLd"] = {"matchedSkuOffers": [{
+            "currency": "AED", "price": "1979.05",
+        }]}
+        result = gate(report)
+        evidence = result["productScopedCurrencyCorroboration"]
+        self.assertEqual(evidence["state"], "PDP_PRODUCT_OFFER_AMOUNT_MISMATCH")
+        self.assertFalse(evidence["sourceOfferAmountProductPriceCorroborated"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
