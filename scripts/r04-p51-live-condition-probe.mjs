@@ -17,6 +17,7 @@ const allowedEvidence=new Set([
   "CONFLICTING_OR_UNVERIFIED","UNVERIFIED","ABSENT",
 ]);
 const rows=[];
+let integrityViolations=0;
 for(const [storeId,query] of cases){
   const started=Date.now();
   try{
@@ -54,21 +55,44 @@ for(const [storeId,query] of cases){
       ms:Date.now()-started,candidates:response?.candidates??null,
       offers:offers.length,priced,conditions:counts,evidence,
       sourceFailed:Boolean(response?.diagnostics?.primarySearchError)});
-  }catch{
-    rows.push({storeId,outcome:"SOURCE_PROBE_FAILED",
+  }catch(error){
+    const invariant=new Set([
+      "INVALID_OFFER_CONDITION","INVALID_CONDITION_PROVENANCE",
+      "CONFLICTING_CONDITION_PUBLISHED","UNVERIFIED_OFFER_PROVENANCE",
+    ]).has(error?.message);
+    if(invariant)integrityViolations++;
+    rows.push({storeId,outcome:invariant?"INTEGRITY_CONTRACT_FAILED":"SOURCE_PROBE_FAILED",
       ms:Date.now()-started,offers:0,priced:0,sourceFailed:true});
   }
 }
 const validPriced=rows.reduce((n,r)=>n+(r.priced||0),0);
 const sourceSuccess=rows.filter(r=>r.priced>0).length;
+const counts=rows.reduce((sum,row)=>{
+  const e=row.evidence||{};
+  sum.productOnly+=e.product||0;
+  sum.selectedOffer+=e.offer||0;
+  sum.concordant+=e.concordant||0;
+  sum.conflict+=e.conflict||0;
+  sum.unverified+=e.unverified||0;
+  sum.absent+=e.absent||0;
+  sum.searchCardsWithoutPdpProvenance+=e.unobserved||0;
+  return sum;
+},{productOnly:0,selectedOffer:0,concordant:0,conflict:0,
+   unverified:0,absent:0,searchCardsWithoutPdpProvenance:0});
+const actualConditionProven=counts.productOnly+counts.selectedOffer+counts.concordant;
 const report={schemaVersion:"nawaa.r04.p51.live-condition.v1",
   exactCandidateSha:sha,evidenceMode:"REAL_PUBLIC_MERCHANT_HTTP_NO_MOCKS",
   attemptedStores:rows.length,storeSuccesses:sourceSuccess,
-  verifiedPricedOffers:validPriced,rows,
+  verifiedPricedOffers:validPriced,
+  actualPdpConditionStatements:actualConditionProven,
+  conditionalPdpLiveAcceptance:actualConditionProven>0,
+  integrityViolations,counts,rows,
   caveat:"One small live source sample; no global stock, total-cost or query-recall claims."};
 writeFileSync("r04-p51-live-condition-evidence.json",JSON.stringify(report,null,2));
 console.log("NAWAA_P51_LIVE_CONDITION "+JSON.stringify(report));
-if(sourceSuccess===0){
-  console.error("P51_LIVE_SOURCE_GATE_FAILED: No real priced merchant offers observed.");
+if(sourceSuccess===0 || actualConditionProven===0 || integrityViolations>0){
+  console.error("P51_LIVE_CONDITION_INCONCLUSIVE_OR_INVALID: priced="+
+    validPriced+" conditionStatements="+actualConditionProven+
+    " violations="+integrityViolations);
   process.exitCode=2;
 }
