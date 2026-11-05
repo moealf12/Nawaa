@@ -2,7 +2,7 @@
 // This is NOT an exact-product or price-trust certification. That remains the
 // responsibility of assessOfferMatch, grouping and the client sold-subject
 // taxonomy. Never use merchant, SEO URL or price to rescue a weak offer.
-import {normalizeSearchQuery} from "../src/search-query.mjs";
+import {normalizeSearchQuery,createOfferMatchAssessor} from "../src/search-query.mjs";
 
 const STOP=new Set(["for","with","and","the","from","compatible","replacement",
   "new","used","original","model","in","on","of","a","an","to","by",
@@ -33,4 +33,30 @@ export function createSearchOfferAdmission(query,{legacyFloor=0.35}={}){
     }
     return false;
   };
+}
+
+// A store's priced acquisition is upstream of customer lane classification.
+// The historical storefront filter required an exact/product-compatible match
+// BEFORE the shared admission + presentation stages, silently discarding valid
+// related products that should have appeared under alternatives/accessories.
+// Use the SAME admission policy as server/server.mjs to avoid distinct policies
+// at source and customer boundaries. Non-matching titles still get rejected.
+// Re-score the original evidence; a provider-supplied exactMatch is never trusted.
+// Does not issue network requests or alter merchant price/condition/provenance.
+export function retainAcquiredStorefrontOffers(query,offers=[]){
+  const assess=createOfferMatchAssessor(query);
+  const admit=createSearchOfferAdmission(query);
+  const retained=[];
+  let relatedRetained=0;
+  for(const original of offers){
+    if(!original || typeof original!=="object")continue;
+    const scored={...original,...assess(original)};
+    if(!admit(scored))continue;
+    retained.push(scored);
+    if(!scored.exactMatch)relatedRetained++;
+  }
+  return {offers:retained,queryFilter:{
+    input:offers.length,retained:retained.length,
+    removed:offers.length-retained.length,relatedRetained,
+  }};
 }
