@@ -291,7 +291,7 @@ def parsed_search_cards(html, query):
         def explicit_different_item(raw):
             if not isinstance(raw, str):
                 return False
-            found = re.search(r"/item/(\\d{10,20})\\.html", raw)
+            found = re.search(r"/item/(\d{10,20})\.html", raw)
             return bool(
                 found and found.group(1) != pid
                 and product_link(raw, found.group(1))
