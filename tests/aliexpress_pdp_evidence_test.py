@@ -261,6 +261,74 @@ class PdpEvidenceTests(unittest.TestCase):
         self.assertNotIn(target, calls)
         self.assertFalse(report["customerPublishable"])
 
+    def test_robots_redirect_to_official_robots_policy_is_bounded(self):
+        from unittest.mock import patch
+        url = "https://www.aliexpress.us/item/" + PID + ".html"
+        calls = []
+
+        class Response:
+            def __init__(self, url, status=200, text="", location=None):
+                self.url = url
+                self.status_code = status
+                self.content = text.encode("utf8")
+                self.text = text
+                self.headers = {"content-type": "text/plain"}
+                if location is not None:
+                    self.headers["location"] = location
+
+        class Session:
+            def get(self, url, *, headers, timeout, allow_redirects):
+                calls.append((url, headers["accept"], allow_redirects))
+                if url == "https://www.aliexpress.us/robots.txt":
+                    return Response(url, 302,
+                                    location="https://www.aliexpress.com/robots.txt")
+                if url == "https://www.aliexpress.com/robots.txt":
+                    return Response(url, 200, "User-agent: *\nAllow: /\n")
+                raise AssertionError("Unexpected policy destination")
+
+        ok, stage = pdp.verify_public_robots(Session(), url, {})
+        self.assertTrue(ok)
+        self.assertEqual(stage["policyRedirectsFollowed"], 1)
+        self.assertEqual(stage["resolvedPolicyHost"], "www.aliexpress.com")
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(v[1] == "text/plain" and v[2] is False for v in calls))
+
+        class BadSession:
+            def get(self, url, *, headers, timeout, allow_redirects):
+                return Response(url, 302,
+                                location="https://www.aliexpress.com/login?token=bad")
+
+        ok, stage = pdp.verify_public_robots(BadSession(), url, {})
+        self.assertFalse(ok)
+        self.assertEqual(stage["state"], "ROBOTS_REDIRECT_NOT_APPROVED")
+
+        class DisallowSession(Session):
+            def get(self, url, *, headers, timeout, allow_redirects):
+                resp = super().get(
+                    url, headers=headers, timeout=timeout,
+                    allow_redirects=allow_redirects,
+                )
+                if resp.status_code == 200:
+                    return Response(url, 200, "User-agent: *\nDisallow: /item/\n")
+                return resp
+
+        ok, stage = pdp.verify_public_robots(DisallowSession(), url, {})
+        self.assertFalse(ok)
+        self.assertEqual(stage["state"], "DISALLOWED")
+
+    def test_different_official_redirect_item_id_is_diagnostic_only(self):
+        current = "https://ar.aliexpress.com/item/" + PID + ".html"
+        destination = "https://www.aliexpress.us/item/3256812743543835.html?discount=1"
+        information = pdp.classify_redirect_destination(
+            destination, current, PID
+        )
+        self.assertEqual(information["targetPathClass"], "OTHER_ITEM_PDP")
+        self.assertEqual(information["targetItemId"], "3256812743543835")
+        self.assertIsNone(
+            pdp.approved_pdp_redirect(destination, current, PID)[0]
+        )
+        self.assertNotIn("discount=1", str(information))
+
     def test_challenge_redirect_never_requested_or_price_promoted(self):
         from unittest.mock import patch
         calls = []
