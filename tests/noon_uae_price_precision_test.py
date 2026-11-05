@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from noon_uae_price_precision import (  # noqa: E402
     interpret_price_surfaces, select_source_current_offer_amount,
+    corroborate_selected_pdp_offer_amount,
 )
 
 
@@ -123,6 +124,66 @@ class PrecisionTests(unittest.TestCase):
         result = select_source_current_offer_amount([record])
         self.assertEqual(result["priceCents"], 209905)
         self.assertNotIn("currency", result)
+
+
+
+    def test_offer_pdp_price_corrob_when_plp_is_whole_only(self):
+        records = [{"sameSku": True, "skuExplicitInOfferRecord": True,
+                    "skuAliasesConflict": False, "priceKind": "saleprice",
+                    "priceCents": 209905}]
+        seo = [{"currency": "AED", "priceCents": 209905}]
+        result = corroborate_selected_pdp_offer_amount(records, seo)
+        self.assertTrue(result["sourceOfferAmountProductPriceCorroborated"])
+        self.assertEqual(result["selectedSourceOfferPriceCents"], 209905)
+        self.assertEqual(result["productCurrencyCorroborated"], "AED")
+        self.assertFalse(result["offerCurrencyDirectlyVerified"])
+        self.assertFalse(result["customerPublishable"])
+
+    def test_product_currency_without_same_offer_amount_not_verified(self):
+        records = [{"sameSku": False, "skuExplicitInOfferRecord": False,
+                    "skuAliasesConflict": False, "priceKind": "price",
+                    "priceCents": 209905}]
+        seo = [{"currency": "AED", "priceCents": 209905}]
+        self.assertFalse(
+            corroborate_selected_pdp_offer_amount(
+                records, seo
+            )["sourceOfferAmountProductPriceCorroborated"]
+        )
+
+    def test_pdp_product_not_matching_original_offer_price(self):
+        records = [{"sameSku": True, "skuExplicitInOfferRecord": True,
+                    "skuAliasesConflict": False, "priceKind": "saleprice",
+                    "priceCents": 209905}]
+        seo = [{"currency": "AED", "priceCents": 209900}]
+        result = corroborate_selected_pdp_offer_amount(records, seo)
+        self.assertEqual(result["state"], "PDP_PRODUCT_OFFER_AMOUNT_MISMATCH")
+
+    def test_conflicting_product_currencies_are_rejected(self):
+        records = [{"sameSku": True, "skuExplicitInOfferRecord": True,
+                    "skuAliasesConflict": False, "priceKind": "price",
+                    "priceCents": 339900}]
+        seo = [{"currency": "AED", "priceCents": 339900},
+               {"currency": "USD", "priceCents": 339900}]
+        result = corroborate_selected_pdp_offer_amount(records, seo)
+        self.assertEqual(result["state"], "PDP_PRODUCT_OFFERS_CONFLICTING")
+
+    def test_other_product_market_currency_not_misassigned(self):
+        records = [{"sameSku": True, "skuExplicitInOfferRecord": True,
+                    "skuAliasesConflict": False, "priceKind": "price",
+                    "priceCents": 5900}]
+        seo = [{"currency": "SAR", "priceCents": 5900}]
+        result = corroborate_selected_pdp_offer_amount(records, seo)
+        self.assertEqual(result["state"], "PDP_PRODUCT_CURRENCY_NOT_AED")
+
+    def test_missing_product_seo_does_not_infer_currency_from_uae_path(self):
+        records = [{"sameSku": True, "skuExplicitInOfferRecord": True,
+                    "skuAliasesConflict": False, "priceKind": "price",
+                    "priceCents": 5900}]
+        self.assertFalse(
+            corroborate_selected_pdp_offer_amount(
+                records, []
+            )["sourceOfferAmountProductPriceCorroborated"]
+        )
 
 
 
