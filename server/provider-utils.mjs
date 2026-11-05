@@ -73,7 +73,8 @@ export function normalizeCondition(value = "") {
   if(bare)return SCHEMA_ITEM_CONDITIONS[bare[1].toLowerCase()]||"unknown";
   // A URL from a random hostname or with query/hash is not product-condition
   // evidence, even when a path or query parameter contains the word "new".
-  if(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)){
+  if(/^[a-z][a-z0-9+.-]*:/i.test(raw)){
+    if(!/^https?:\/\//i.test(raw))return "unknown";
     let parsed;
     try{parsed=new URL(raw);}catch{return "unknown";}
     if(!["http:","https:"].includes(parsed.protocol)||
@@ -84,6 +85,8 @@ export function normalizeCondition(value = "") {
     return token?SCHEMA_ITEM_CONDITIONS[token[1].toLowerCase()]||"unknown":"unknown";
   }
   const v=raw.toLowerCase().replace(/[_-]+/g," ");
+  // Negated new-condition descriptions must not certify a new product.
+  if(/\b(?:not|non|never)\s+(?:brand\s+)?new\b/.test(v))return "unknown";
   if (/\b(refurbished?|renewed|remanufactured)\b/.test(v)) return "refurbished";
   if (/\b(open\s*box)\b/.test(v)) return "open_box";
   if (/\b(like\s*new|used|pre\s*owned|second\s*hand)\b/.test(v)) return "used";
