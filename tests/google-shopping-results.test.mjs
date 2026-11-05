@@ -105,7 +105,7 @@ test("Google Shopping: without configured key all requests fail closed before pr
 test("Google Shopping: remote observations delivered from fake provider transport, no key leak",async()=>{
  let called=0;
  const client=createGoogleShoppingResultsClient({
-   enabled:true,apiKey:"example_private_serpapi_key_123456",
+   enabled:true,freeAccountCheck:async()=>({allowed:true}),apiKey:"example_private_serpapi_key_123456",
    fetchImpl:async (url,opts)=>{
      called++;
      assert.equal(new URL(url).host,"serpapi.com");
@@ -129,7 +129,7 @@ test("Google Shopping: remote observations delivered from fake provider transpor
 test("Google Shopping: absolute monthly quota stops additional distinct searches",async()=>{
  let calls=0;
  const client=createGoogleShoppingResultsClient({
-   enabled:true,apiKey:"example_private_serpapi_key_123456",
+   enabled:true,freeAccountCheck:async()=>({allowed:true}),apiKey:"example_private_serpapi_key_123456",
    monthlyCap:1,
    fetchImpl:async()=>{calls++;return new Response(JSON.stringify(body([product()])),{
      headers:{"content-type":"application/json"}})},
@@ -142,7 +142,7 @@ test("Google Shopping: absolute monthly quota stops additional distinct searches
 test("Google Shopping: cap hourly free-tier requests independently of monthly budget",async()=>{
  let calls=0;
  const client=createGoogleShoppingResultsClient({
-   enabled:true,apiKey:"example_private_serpapi_key_123456",
+   enabled:true,freeAccountCheck:async()=>({allowed:true}),apiKey:"example_private_serpapi_key_123456",
    monthlyCap:200,hourlyCap:1,
    fetchImpl:async()=>{calls++;return new Response(JSON.stringify(body([product()])),{
      headers:{"content-type":"application/json"}})},
@@ -158,7 +158,7 @@ test("Google Shopping: cap hourly free-tier requests independently of monthly bu
 test("Google Shopping: concurrent identical queries reuse a single provider call",async()=>{
  let calls=0;
  const client=createGoogleShoppingResultsClient({
-   enabled:true,apiKey:"example_private_serpapi_key_123456",
+   enabled:true,freeAccountCheck:async()=>({allowed:true}),apiKey:"example_private_serpapi_key_123456",
    fetchImpl:async()=>{calls++;await new Promise(r=>setTimeout(r,20));return new Response(JSON.stringify(body([product()])),{
      headers:{"content-type":"application/json"}})},
  });
@@ -174,7 +174,7 @@ test("Google Shopping: reject provider errors, wrong content type and oversized 
    ()=>new Response("{}",{status:429,headers:{"content-type":"application/json"}}),
  ];
  for(const fail of bads){
-   const c=createGoogleShoppingResultsClient({enabled:true,
+   const c=createGoogleShoppingResultsClient({enabled:true,freeAccountCheck:async()=>({allowed:true}),
      apiKey:"example_private_serpapi_key_123456",fetchImpl:async()=>fail()});
    const r=await c.run("iPhone 17");
    assert.equal(r.status,502);
