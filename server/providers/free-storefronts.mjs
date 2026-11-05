@@ -41,6 +41,7 @@ import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../sr
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
+import {extractNoonUaeSearchCardEvidence} from "../../src/noon-ae-search-card-evidence.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -133,7 +134,7 @@ const STORES = [
   },
   {
     id:"noon-ae", name:"noon UAE", countryCode:"AE", countryNameAr:"الإمارات", categories:["*"],
-    search:(q)=>"https://www.noon.com/uae-en/search?q="+encodeURIComponent(q),
+    search:(q)=>"https://www.noon.com/uae-en/search/?q="+encodeURIComponent(q),
     productPath:/\/[^?#]+\/p\/?(?:[?#]|$)|\/p-[A-Z0-9]+(?:[/?#]|$)/i,
   },
   {
@@ -1796,6 +1797,16 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const noonLiveHtmlCards = store.id === "noon-sa" && noonHtmlSearchContextValid
       ? extractNoonSaudiSearchCardEvidence(html,query,{limit:100})
       : null;
+    // Noon UAE experimental HTML collector proved live PLP cards but only
+    // market-inferred AED for 252 cards. The public customer adapter accepts
+    // ONLY a price element explicitly declaring AED on the same offer card.
+    // It never publishes the fixed-rate SAR experiment or context-inferred AED.
+    const noonUaeEvidence = store.id==="noon-ae" && html &&
+      !searchDiagnostics?.blockedReason
+      ? extractNoonUaeSearchCardEvidence(html,query,{
+          searchUrl,finalUrl:searchPageFinalUrl,limit:500,
+        })
+      : null;
     const aliexpressProductLinkTrust = {rejectedProductLinks:0,rejectionSamples:[]};
     const htmlFirstOffers =
       store.id === "aliexpress-cn" ? extractAliExpressSearchOffers(html, query, aliexpressProductLinkTrust) :
@@ -1805,6 +1816,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       store.id === "amazon-sa" ? extractAmazonSearchOffers(html, query, "https://www.amazon.sa") :
       store.id === "amazon-uk" ? extractAmazonSearchOffers(html, query, "https://www.amazon.co.uk", "GBP") :
       store.id === "amazon-de" ? extractAmazonSearchOffers(html, query, "https://www.amazon.de", "EUR") :
+      store.id === "noon-ae" ? (noonUaeEvidence?.offers || []) :
       store.id === "noon-sa" ? (() => {
         // Existing exact-SKU JSON-LD remains valid first-party HTML evidence.
         // If a search page does not embed JSON-LD, use its visible DOM cards
@@ -2026,7 +2038,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     // No secondary PDP probes for Amazon DE while prices are held. Search
     // acquisition is one transparent request, without retries or alternate routes.
     const resolutionLinks = !amazonDePriceHold.customerPublishable ||
-      store.id==="noon-sa" ||
+      (store.id==="noon-sa" || store.id==="noon-ae") ||
       (thomannFamilyRequested && directSearchOffers.length)
       ? [] : recoveryPlan.links;
     const settled = await Promise.allSettled(resolutionLinks.map((candidate) => resolveProductUrl(candidate.url,{signal:options.signal})));
@@ -2114,6 +2126,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       diagnostics:{
         queryFilter,
         ...(noonSearchCardDiagnostics?{noonSearchCards:noonSearchCardDiagnostics}:{}),
+        ...(store.id==="noon-ae"?{noonUaeSearchCards:noonUaeEvidence
+          ? {status:noonUaeEvidence.status,parsedCards:noonUaeEvidence.parsedCards,
+              accepted:noonUaeEvidence.accepted,missingCurrency:noonUaeEvidence.missingCurrency,
+              invalidLinks:noonUaeEvidence.invalidLinks,conflicts:noonUaeEvidence.conflicts}
+          : {status:"SOURCE_HTML_UNAVAILABLE",accepted:0}}:{}),
         ...(store.id==="thomann-de"?{
           variantRejected,
           pdpPriceParity:thomannParity?.diagnostics || [],
