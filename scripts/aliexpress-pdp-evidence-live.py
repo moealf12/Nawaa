@@ -29,7 +29,7 @@ sys.modules[_spec.name] = _shared
 _spec.loader.exec_module(_shared)
 
 MAX_PDP_BYTES = 3_500_000
-PDP_HOST = "ar.aliexpress.com"
+PDP_HOST = os.getenv("ALIEXPRESS_PDP_HOST", "ar.aliexpress.com").strip()
 BASE = "https://" + PDP_HOST
 CHALLENGE = _shared.CHALLENGE
 
@@ -115,6 +115,34 @@ MAX_REDIRECT_HOPS = 2
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
+def classify_redirect_destination(raw_location, current_url, item_id):
+    """Safe, bounded redirect diagnostics: route class only, no tokens or query."""
+    if not isinstance(raw_location, str) or not 0 < len(raw_location) <= 2048:
+        return {"targetHostClass": "UNKNOWN", "targetPathClass": "MISSING_LOCATION"}
+    try:
+        target = urlsplit(urljoin(current_url, raw_location))
+        host = target.hostname or ""
+        host_class = "OFFICIAL" if host in ALLOWED_PDP_HOSTS else "OTHER"
+        path = target.path.lower()
+        if re.fullmatch(r"/item/" + re.escape(item_id) + r"\.html/?", path):
+            path_class = "EXACT_ITEM_PDP"
+        elif re.fullmatch(r"/item/\d{10,20}\.html/?", path):
+            path_class = "OTHER_ITEM_PDP"
+        elif re.search(r"/(?:punish|verify|captcha|login|passport)(?:/|$)", path):
+            path_class = "CHALLENGE_OR_AUTH"
+        elif path in ("", "/"):
+            path_class = "ROOT"
+        elif "/search" in path or path.startswith("/w/"):
+            path_class = "SEARCH"
+        else:
+            path_class = "OTHER"
+        return {"targetHostClass": host_class, "targetPathClass": path_class,
+                "targetHost": host if host_class == "OFFICIAL" else None,
+                "hasQuery": bool(target.query)}
+    except (ValueError, TypeError):
+        return {"targetHostClass": "UNKNOWN", "targetPathClass": "INVALID_URL"}
+
+
 def approved_pdp_redirect(raw_location, current_url, item_id):
     """Classify a merchant redirect; never follow a challenge or generic landing."""
     if not isinstance(raw_location, str) or not 0 < len(raw_location) <= 2048:
@@ -174,6 +202,8 @@ def verify_public_robots(session, target_url, headers):
 def probe_item(item_id):
     if not _shared.ID.fullmatch(item_id):
         raise ValueError("INVALID_ITEM_ID")
+    if PDP_HOST not in ALLOWED_PDP_HOSTS:
+        raise ValueError("PDP_HOST_NOT_APPROVED")
     url = BASE + "/item/" + item_id + ".html"
     report = {
         "schema": "nawaa.aliexpress.pdp-live-evidence.v2",
@@ -230,6 +260,9 @@ def probe_item(item_id):
                         response.headers.get("location"), current, item_id
                     )
                     stage["state"] = reason
+                    stage["redirectTarget"] = classify_redirect_destination(
+                        response.headers.get("location"), current, item_id
+                    )
                     report["stages"].append(stage)
                     if not destination:
                         report["conclusion"] = (
