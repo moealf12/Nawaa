@@ -1266,10 +1266,13 @@ class Scraper:
             if not old.price and p.price and old.price_status != "conflict":
                 old.price, old.currency = p.price, p.currency
                 old.price_status = p.price_status
+                old.price_source = p.price_source
                 old.method += "+" + p.method
             elif old.price and p.price and (old.price, old.currency) != (p.price, p.currency):
                 old.price = None
+                old.currency = None
                 old.price_status = "conflict"
+                old.price_source = "conflict"
                 old.issues.append("SOURCE_PRICE_DISAGREEMENT")
             old.issues.extend(p.issues)
         return list(merged.values())
