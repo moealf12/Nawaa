@@ -61,9 +61,13 @@ def _money(value) -> str | None:
         amount = Decimal(str(value))
     except (TypeError, InvalidOperation, ValueError):
         return None
-    if not amount.is_finite() or amount <= 0 or amount.as_tuple().exponent < -2:
+    if (not amount.is_finite() or amount <= 0 or amount > Decimal("100000000")
+            or amount.as_tuple().exponent < -2):
         return None
-    return format(amount.quantize(Decimal("0.01")), ".2f")
+    try:
+        return format(amount.quantize(Decimal("0.01")), ".2f")
+    except InvalidOperation:
+        return None
 
 
 def parse_featured_offers(payload: object, requested_asins: list[str]) -> list[dict]:
