@@ -41,8 +41,8 @@ import {AMAZON_DE_PUBLICATION_HOLD,amazonDeCustomerPriceDecision} from "../../sr
 import {thomannQueryVariant,thomannVariantMatchesQuery,verifyThomannSearchCards} from "../../src/thomann-product-truth.mjs";
 import {extractNoonSaudiCatalogCards} from "../../src/noon-sa-catalog.mjs";
 import {extractNoonSaudiSearchCardEvidence} from "../../src/noon-sa-search-card-evidence.mjs";
-import {extractNoonUaeSearchCardEvidence} from "../../src/noon-ae-search-card-evidence.mjs";
-import {fetchNoonUaePythonHtml,noonUaePythonEnabled} from "../../src/noon-ae-python-acquisition.mjs";
+import {extractNoonUaeSearchCardEvidence,extractNoonUaeJsonCardEvidence} from "../../src/noon-ae-search-card-evidence.mjs";
+import {fetchNoonUaePythonCards,noonUaePythonEnabled} from "../../src/noon-ae-python-acquisition.mjs";
 
 const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
@@ -1703,6 +1703,7 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
   try {
     let html = "";
     let searchPageFinalUrl = searchUrl;
+    let noonUaeJsonCards = null;
     let searchDiagnostics = null;
     let primarySearchOffers = [];
     let primarySearchError = null;
@@ -1723,14 +1724,14 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
           throw error;
         }
         try{
-          const page=await fetchNoonUaePythonHtml(query,{
+          const page=await fetchNoonUaePythonCards(query,{
             signal:options.signal,
             budgetMs:Math.min(5300,Math.max(2100,Number(options.storeDeadlineMs)||6500)-350),
           });
-          html=page.html;
+          noonUaeJsonCards=page;
           searchPageFinalUrl=page.finalUrl;
-          searchDiagnostics={...searchPageDiagnostics(html,searchUrl,searchPageFinalUrl),
-            acquisitionTransport:"PYTHON_NOON_AE_HTML"};
+          searchDiagnostics={acquisitionTransport:"PYTHON_NOON_AE_JSON",
+            cardRecordsReceived:page.cards.length,blockedReason:null};
           sourceRateLimitGuard.recordNon403(store.id);
         }catch(error){
           if(error?.failureClass==="HTTP_403_ACCESS_DENIED")
@@ -1825,15 +1826,20 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
     const noonLiveHtmlCards = store.id === "noon-sa" && noonHtmlSearchContextValid
       ? extractNoonSaudiSearchCardEvidence(html,query,{limit:100})
       : null;
-    // Noon UAE experimental HTML collector proved live PLP cards but only
-    // market-inferred AED for 252 cards. The public customer adapter accepts
-    // ONLY a price element explicitly declaring AED on the same offer card.
-    // It never publishes the fixed-rate SAR experiment or context-inferred AED.
-    const noonUaeEvidence = store.id==="noon-ae" && html &&
+    // Noon UAE search evidence arrives as first-party HTML or compact JSON
+    // from the local Python collector. Both pass exact SKU/offer, AE-context,
+    // price and image admission before approximate AED->SAR conversion.
+    const noonUaeEvidence = store.id==="noon-ae" &&
       !searchDiagnostics?.blockedReason
-      ? extractNoonUaeSearchCardEvidence(html,query,{
-          searchUrl,finalUrl:searchPageFinalUrl,limit:500,
-        })
+      ? noonUaeJsonCards
+        ? extractNoonUaeJsonCardEvidence(noonUaeJsonCards,query,{
+            searchUrl,finalUrl:searchPageFinalUrl,limit:500,
+          })
+        : html
+          ? extractNoonUaeSearchCardEvidence(html,query,{
+              searchUrl,finalUrl:searchPageFinalUrl,limit:500,
+            })
+          : null
       : null;
     const aliexpressProductLinkTrust = {rejectedProductLinks:0,rejectionSamples:[]};
     const htmlFirstOffers =
@@ -1923,7 +1929,8 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       }
     }
     primarySearchError ||= primarySearchOffers.paginationError || null;
-    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html) {
+    if (!htmlFirstOffers.length && !primarySearchOffers.length && !html &&
+        !(store.id==="noon-ae"&&noonUaePythonEnabled())) {
       // A failed HTML-first transport remains a real provider failure unless a
       // fallback produced verified offers. Never mask it as an empty catalog.
       if (primarySearchError && store.id !== "ikea-sa" && !LANDMARK_BLOOMREACH[store.id]) {
