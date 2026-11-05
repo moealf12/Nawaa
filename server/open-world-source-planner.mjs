@@ -35,7 +35,7 @@ function rotate(list,shift){
  */
 export function planUnknownCategorySpecialists({
   query,stores=[],alreadySearchedIds=[],excludedStoreIds=[],
-  maxStores=MAX_SPECIALISTS,
+  maxStores=MAX_SPECIALISTS,sourceHealth={},
 }={}){
   const normalized=normalizeSearchQuery(query||"");
   if(!normalized)return {storeIds:[],reason:"EMPTY_QUERY",categoryBuckets:0,chosenBuckets:0};
@@ -70,7 +70,21 @@ export function planUnknownCategorySpecialists({
   for(const category of order){
     const storesForCategory=byCategory.get(category).filter(id=>!chosenSet.has(id));
     if(!storesForCategory.length)continue;
-    const id=storesForCategory[hashIndex(normalized+"|"+category,storesForCategory.length)];
+    // Proven reachability may break a same-category tie, but cannot change
+    // the category-diversity budget or erase a merchant from its regular
+    // cursor route. Unknown evidence starts neutral; no guessed ratings.
+    const quality=id=>{
+      const state=sourceHealth?.[id];
+      if(!state||!Number.isFinite(state.attempts)||state.attempts<3)return 0;
+      if(state.coolingDown)return -1;
+      const transport=Number(state.transportSuccessRate);
+      const yieldRate=Number(state.productiveRate);
+      if(!Number.isFinite(transport)||!Number.isFinite(yieldRate))return 0;
+      return Math.max(-1,Math.min(1,transport*0.75+yieldRate*0.25));
+    };
+    const top=Math.max(...storesForCategory.map(quality));
+    const best=storesForCategory.filter(id=>quality(id)>=top-0.000001);
+    const id=best[hashIndex(normalized+"|"+category,best.length)];
     if(chosenSet.has(id))continue;
     chosen.push(id);chosenSet.add(id);chosenBuckets.add(category);
     if(chosen.length>=maximum)break;
