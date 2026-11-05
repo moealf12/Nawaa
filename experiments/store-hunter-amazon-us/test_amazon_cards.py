@@ -216,3 +216,76 @@ class AmazonPdpRecoveryTests(unittest.IsolatedAsyncioTestCase):
         await s.close()
         self.assertEqual(result["products"][0]["price"], None)
         self.assertNotIn("product-detail-price-retry", calls)
+
+
+class AmazonHeaderFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def _exercise(self, codes, method="search-html", final_followup=False):
+        import httpx
+        from unittest.mock import patch
+        import nawaa_store_hunter as m
+        baseline = "text/html,application/json;q=0.9,*/*;q=0.8"
+        requests = []
+        statuses = iter(codes)
+        def handler(req):
+            requests.append({
+                "url": str(req.url), "accept": req.headers.get("accept"),
+                "language": req.headers.get("accept-language"),
+                "user_agent": req.headers.get("user-agent"),
+            })
+            return httpx.Response(next(statuses), text="<html>public</html>")
+        scraper = m.Scraper("https://www.amazon.com", "headphones", 4, 1, "never")
+        await scraper._client.aclose()
+        scraper._client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), follow_redirects=False,
+            headers={"User-Agent": m.USER_AGENT, "Accept": baseline})
+        with patch.object(m, "ensure_public_url", side_effect=lambda u, origin=None: u), \
+             patch.object(scraper, "permitted", return_value=True), \
+             patch.object(m.asyncio, "sleep", new_callable=__import__("unittest").mock.AsyncMock) as sleep:
+            body = await scraper.fetch(method, "https://www.amazon.com/s", {"k": "headphones"})
+            if final_followup:
+                await scraper.fetch("product-detail", "https://www.amazon.com/dp/B0C3HCD34R")
+        diagnostics = [x.status for x in scraper.diagnostics]
+        await scraper.close()
+        return body, requests, diagnostics, sleep.await_count, baseline, m.USER_AGENT
+
+    async def test_transient_503_uses_alternate_once_then_baseline(self):
+        body, reqs, statuses, delays, baseline, ua = await self._exercise([503, 200, 200], final_followup=True)
+        self.assertEqual(body, "<html>public</html>")
+        self.assertEqual(len(reqs), 3)
+        self.assertEqual([r["accept"] == baseline for r in reqs], [True, False, True])
+        self.assertEqual([r["language"] for r in reqs], [None, "en-US,en;q=0.8", None])
+        self.assertTrue(all(r["user_agent"] == ua for r in reqs))
+        self.assertEqual(reqs[0]["url"], reqs[1]["url"])
+        self.assertEqual(delays, 1)
+        self.assertIn("TRANSIENT_HTTP_HEADER_FALLBACK_ONCE", statuses)
+        self.assertIn("HEADER_PROFILE_RESTORED", statuses)
+
+    async def test_second_503_stops_no_unbounded_retry(self):
+        body, reqs, statuses, delays, _, _ = await self._exercise([503, 503])
+        self.assertIsNone(body)
+        self.assertEqual(len(reqs), 2)
+        self.assertEqual(delays, 1)
+        self.assertIn("HTTP_ERROR", statuses)
+
+    async def test_transient_500_502_504_each_bounded(self):
+        for code in (500, 502, 504):
+            with self.subTest(code=code):
+                body, reqs, _, delays, _, _ = await self._exercise([code, 200])
+                self.assertEqual(body, "<html>public</html>")
+                self.assertEqual(len(reqs), 2)
+                self.assertEqual(delays, 1)
+
+    async def test_never_rotate_on_rate_limit_or_denial(self):
+        for code in (401, 403, 404, 429):
+            with self.subTest(code=code):
+                body, reqs, statuses, delays, _, _ = await self._exercise([code])
+                self.assertIsNone(body)
+                self.assertEqual(len(reqs), 1)
+                self.assertEqual(delays, 0)
+                self.assertNotIn("TRANSIENT_HTTP_HEADER_FALLBACK_ONCE", statuses)
+
+    async def test_nonsearch_pdp_503_never_rotates(self):
+        body, reqs, _, delays, _, _ = await self._exercise([503], method="product-detail")
+        self.assertIsNone(body)
+        self.assertEqual(len(reqs), 1)
+        self.assertEqual(delays, 0)
