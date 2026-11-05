@@ -6,11 +6,17 @@ on:
     branches: [main]
     paths:
       - "server/providers/free-storefronts.mjs"
+      - "server/provider-utils.mjs"
+      - "server/product-condition-evidence.mjs"
+      - "server/url-resolver.mjs"
       - "scripts/validate-live-sources.mjs"
       - ".github/workflows/live-source-validation.yml"
   pull_request:
     paths:
       - "server/providers/free-storefronts.mjs"
+      - "server/provider-utils.mjs"
+      - "server/product-condition-evidence.mjs"
+      - "server/url-resolver.mjs"
       - "scripts/validate-live-sources.mjs"
       - ".github/workflows/live-source-validation.yml"
 
