@@ -6,6 +6,10 @@ on:
       - experiment/aliexpress-public-html-connector-20261105
     paths:
       - "scripts/aliexpress-public-html-live.py"
+      - "scripts/aliexpress-node-parity-live.mjs"
+      - "src/aliexpress-search-evidence.mjs"
+      - "server/providers/free-storefronts.mjs"
+      - "tests/aliexpress-native-structured.test.mjs"
       - "scripts/aliexpress-pdp-evidence-live.py"
       - "tests/aliexpress_public_html_test.py"
       - "tests/aliexpress_pdp_evidence_test.py"
@@ -51,13 +55,23 @@ jobs:
             scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
             tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
           python -m unittest discover -s tests -p "aliexpress*_test.py" -v
+          node --test tests/aliexpress-native-structured.test.mjs
       - name: Fetch verified source search HTML once without CAPTCHA token replay
         env:
           HEAD_SHA: ${{ github.sha }}
           ALIEXPRESS_QUERY_ID: ${{ matrix.query_id }}
           ALIEXPRESS_SEARCH_QUERY: ${{ matrix.query }}
           ALIEXPRESS_SEARCH_HOST: ${{ matrix.host }}
+          NAWAA_ALIEXPRESS_NODE_PARITY: "1"
         run: python scripts/aliexpress-public-html-live.py
+      - name: Compare native Node and Python against identical live merchant HTML
+        env:
+          ALIEXPRESS_QUERY_ID: ${{ matrix.query_id }}
+          ALIEXPRESS_SEARCH_QUERY: ${{ matrix.query }}
+        run: node scripts/aliexpress-node-parity-live.mjs
+      - name: Remove ephemeral raw merchant HTML and full card snapshots
+        if: always()
+        run: rm -f nawaa-aliexpress-parity-*.html nawaa-aliexpress-parity-*.cards.json
       - name: Preserve bounded source evidence on failure and success
         if: always()
         uses: actions/upload-artifact@v4
