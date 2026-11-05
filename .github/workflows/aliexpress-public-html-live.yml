@@ -81,7 +81,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # PDP attempts remain on-demand: previously verified search is not made
+  # RED by expected CAPTCHA/identity/robots blocks in unrelated PDPs.
   merchant-pdp-evidence:
+    if: github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       max-parallel: 1
