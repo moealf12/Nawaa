@@ -73,6 +73,9 @@ export function evaluateAliExpressProductEvidence(
      !validCurrency(searchCard.currency))
     return result("UNVERIFIED","SEARCH_PRICE_NOT_ATTESTED",base);
 
+  if(searchCard.queryRelevanceEvidence !== "TITLE_TOKEN_OVERLAP")
+    return result("UNVERIFIED","QUERY_RELEVANCE_NOT_ATTESTED",base);
+
   if(!pdpEvidence||typeof pdpEvidence!=="object")
     return result("UNVERIFIED","PDP_EVIDENCE_MISSING",base);
   const acquisition=pdpEvidence.acquisition;
