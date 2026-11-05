@@ -6,13 +6,15 @@ on:
       - ".github/workflows/noon-uae-lock-materialization.yml"
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   lock:
     runs-on: ubuntu-latest
     timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Install verified uv
         uses: astral-sh/setup-uv@v6
         with:
@@ -22,6 +24,18 @@ jobs:
           uv lock --project workers/python-intelligence --python 3.12
           uv sync --project workers/python-intelligence --python 3.12 --locked --no-dev --no-editable
           workers/python-intelligence/.venv/bin/python -c "import curl_cffi, httpx, bs4, lxml; print('NOON_AE_DEPENDENCIES_OK')"
+      - name: Commit reproducible Python dependency lock to PR head
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add workers/python-intelligence/uv.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "build(noon-ae): lock curl-cffi for portable Python 3.12 runtime"
+            git push origin "HEAD:refs/heads/$PR_BRANCH"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: noon-ae-python-uvlock
