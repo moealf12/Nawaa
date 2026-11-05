@@ -1140,7 +1140,9 @@ class Scraper:
         # PDP enrichment only for discovered links; respect page budgets.
         unresolved = (products if self.pdp == "all" else
                       [p for p in products if not p.price or not p.image] if self.pdp == "missing" else [])
-        sem = asyncio.Semaphore(3)
+        # Amazon acquisition has shown unstable 503 waves. Bound concurrent
+        # detail-page requests to 2 to avoid bursts; do not increase retries.
+        sem = asyncio.Semaphore(2 if host(self.origin) in {"amazon.com", "www.amazon.com"} else 3)
 
         async def enrich(product: Product):
             if not same_store(product.url, self.origin):
