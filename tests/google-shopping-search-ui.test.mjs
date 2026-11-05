@@ -27,8 +27,12 @@ test("Google Shopping: no registry/provider/source coupling or migration of pric
   const registry=await readFile(new URL("../src/source-registry.mjs",import.meta.url),"utf8");
   const config=await readFile(new URL("../server/source-config.mjs",import.meta.url),"utf8");
   const server=await readFile(new URL("../server/server.mjs",import.meta.url),"utf8");
-  for(const text of [registry,config,server])
+  for(const text of [registry,config])
     assert.doesNotMatch(text,/google-shopping|googleShoppingDiscovery/);
+  const publicModuleEntry='["/src/google-shopping-discovery.mjs", "src/google-shopping-discovery.mjs"],';
+  assert.ok(server.includes(publicModuleEntry),
+    "Render may serve the public client module, but never treat Shopping as a provider");
+  assert.doesNotMatch(server.replace(publicModuleEntry,""),/google-shopping|googleShoppingDiscovery/);
   const d=googleShoppingDiscoveryDescriptor("PS5 Pro");
   assert.equal(d.returnsOffers,false);
   assert.equal(d.comparableWithNawaa,false);
