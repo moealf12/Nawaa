@@ -1,0 +1,31 @@
+name: UEE isolated adaptive browser live
+on:
+  push:
+    branches: [uee-isolated-live-smoke-20261105]
+    paths: ['uee-sandbox/polyglot/browser_live.py','uee-sandbox/polyglot/generic_dom.py','.github/workflows/uee-adaptive-browser.yml']
+permissions:
+  contents: read
+jobs:
+  adaptive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install DOM and browser dependencies
+        run: |
+          python -m pip install beautifulsoup4 lxml playwright
+          python -m playwright install --with-deps chromium
+      - name: Test real browser JavaScript rendering
+        run: python uee-sandbox/polyglot/browser_live.py
+      - name: Test generic product parser on live HTML
+        run: |
+          python - <<'PY'
+          import json,subprocess,urllib.request
+          url='https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html'
+          html=urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'UEE-ResearchBot/0.4'}),timeout=15).read().decode()
+          p=subprocess.run(['python','uee-sandbox/polyglot/generic_dom.py'],input=json.dumps({'html':html,'url':url}),capture_output=True,text=True,check=True)
+          print('UEE_GENERIC_DOM '+json.dumps({'url':url,'candidates':json.loads(p.stdout)}))
+          PY
