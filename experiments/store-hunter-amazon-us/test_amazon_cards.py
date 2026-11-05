@@ -289,3 +289,79 @@ class AmazonHeaderFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(body)
         self.assertEqual(len(reqs), 1)
         self.assertEqual(delays, 0)
+
+
+class AmazonIntentRelevanceTests(unittest.TestCase):
+    """Adversarial title examples only: not live result evidence."""
+    def classify(self, query, title):
+        from nawaa_store_hunter import classify_product_intent
+        return classify_product_intent(query, title)
+
+    def test_ps5_portal_not_console(self):
+        match, reasons, _ = self.classify("PlayStation 5 console", "PlayStation 5 Portal Remote Player")
+        self.assertEqual(match, "mismatch")
+        self.assertIn("ACCESSORY_NOT_PS5_CONSOLE", reasons)
+
+    def test_ps5_console_without_price_still_correct_type(self):
+        match, _, _ = self.classify("PlayStation 5 console", "PlayStation 5 Console 1TB")
+        self.assertEqual(match, "exact")
+
+    def test_ps5_digital_console_not_disc_drive(self):
+        match, _, _ = self.classify("PS5 disc drive", "PlayStation 5 Digital Edition PS5 Slim Console")
+        self.assertNotEqual(match, "exact")
+
+    def test_ps5_external_ssd_not_disc_drive(self):
+        match, reasons, _ = self.classify("PS5 disc drive", "Seagate Game Drive PS5 NVMe SSD 2TB")
+        self.assertEqual(match, "mismatch")
+        self.assertIn("SSD_STORAGE_NOT_DISC_DRIVE", reasons)
+
+    def test_actual_disc_drive_passes(self):
+        match, _, _ = self.classify("PS5 disc drive", "PlayStation Disc Drive For PS5 Digital Edition Consoles slim")
+        self.assertEqual(match, "exact")
+
+    def test_laptop_8gb_does_not_satisfy_16gb(self):
+        match, reasons, _ = self.classify("laptop 16GB RAM", "Lenovo 15.6 Inch Essential Laptop 8GB DDR5 128GB Storage")
+        self.assertEqual(match, "mismatch")
+        self.assertIn("RAM_CAPACITY_CONFLICT", reasons)
+
+    def test_laptop_16gb_unified_memory_is_valid(self):
+        match, _, _ = self.classify("laptop 16GB RAM", "MacBook Air 13-inch Laptop 16GB Unified Memory")
+        self.assertEqual(match, "exact")
+
+    def test_laptop_unknown_ram_is_unclassified(self):
+        match, _, _ = self.classify("laptop 16GB RAM", "High Performance Laptop 1TB SSD")
+        self.assertEqual(match, "unclassified")
+
+    def test_iphone17_pro_not_base_variant(self):
+        match, _, _ = self.classify("iPhone 17", "iPhone 17 Pro US Version 256GB")
+        self.assertEqual(match, "related")
+
+    def test_iphone_renewed_condition_is_preserved(self):
+        match, _, condition = self.classify("iPhone 17", "iPhone 17 US Version 512GB Renewed Premium")
+        self.assertEqual(match, "exact")
+        self.assertEqual(condition, "renewed_premium")
+
+    def test_s25_ultra_related_to_base(self):
+        match, _, _ = self.classify("Samsung Galaxy S25", "Samsung Galaxy S25 Ultra 256GB")
+        self.assertEqual(match, "related")
+
+    def test_4k_monitor_not_tv(self):
+        match, _, _ = self.classify("4K monitor", "Sony Bravia 55-inch 4K UHD Smart TV")
+        self.assertEqual(match, "mismatch")
+
+    def test_robot_vacuum(self):
+        match, _, _ = self.classify("robot vacuum", "roborock robot vacuum and mop")
+        self.assertEqual(match, "exact")
+
+    def test_wireless_earbuds_related_to_overear(self):
+        match, _, _ = self.classify("wireless headphones", "Wireless Earbuds Bluetooth In-ear Headset")
+        self.assertEqual(match, "related")
+
+    def test_arabic_bluetooth_audio(self):
+        match, _, _ = self.classify("سماعات بلوتوث", "JBL True Wireless Earbuds Bluetooth 5.3")
+        self.assertEqual(match, "exact")
+
+    def test_unfamiliar_search_is_not_falsely_exact(self):
+        match, reasons, _ = self.classify("rare keyboard 65% layout", "gaming mouse pad")
+        self.assertEqual(match, "unclassified")
+        self.assertIn("NO_EXPLICIT_INTENT_RULE", reasons)
