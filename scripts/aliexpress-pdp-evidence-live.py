@@ -29,7 +29,7 @@ sys.modules[_spec.name] = _shared
 _spec.loader.exec_module(_shared)
 
 MAX_PDP_BYTES = 3_500_000
-PDP_HOST = "ar.aliexpress.com"
+PDP_HOST = "www.aliexpress.com"
 BASE = "https://" + PDP_HOST
 CHALLENGE = _shared.CHALLENGE
 
