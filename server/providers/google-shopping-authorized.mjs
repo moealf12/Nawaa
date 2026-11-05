@@ -27,14 +27,15 @@ function absHttps(raw,base=SHOPPING_ORIGIN){
     return u;
   }catch{return null;}
 }
-export function merchantProductLink(raw){
+export function merchantProductLink(raw,depth=0){
+  if(depth>2)return null;
   const u=absHttps(raw);
   if(!u)return null;
   if(u.hostname==="www.google.com"||u.hostname==="google.com"){
     if(u.pathname!=="/url")return null;
     const target=u.searchParams.get("url")||u.searchParams.get("q");
     if(!target)return null;
-    return merchantProductLink(target);
+    return merchantProductLink(target,depth+1);
   }
   if(u.hostname.endsWith(".google.com")||u.hostname.endsWith(".googleusercontent.com")||
     u.hostname.endsWith(".gstatic.com")||u.hostname.endsWith(".googleadservices.com")||
@@ -52,8 +53,13 @@ export function productImageUrl(raw){
   if(/^https?:\/\/(?:127\.|10\.|192\.168\.)/.test(u.href))return null;
   return u.href;
 }
+function westernizeNumerals(v){
+  return String(v).replace(/[٠-٩]/g,ch=>String(ch.codePointAt(0)-0x660))
+    .replace(/[۰-۹]/g,ch=>String(ch.codePointAt(0)-0x6f0))
+    .replaceAll("٬",",").replaceAll("٫",".");
+}
 function explicitMoney(raw){
-  const s=trimText(raw,100);
+  const s=westernizeNumerals(trimText(raw,100));
   if(!s||/(?:\/mo\b|per month|شهري|تقسيط)/i.test(s))return null;
   const currencies=[
     ["SAR",/(?:SAR|ر\.?\s*س\.?|ريال\s*سعودي)/iu],
