@@ -2,6 +2,7 @@
 // This is NOT a verified merchant provider. Never ingest these observations into
 // NAWAA offers, SSE, canonical prices, persisted history or lowest-price ranking.
 import { normalizeGoogleShoppingDiscoveryQuery } from "../src/google-shopping-discovery.mjs";
+import { checkSerpApiFreeAccount } from "./serpapi-free-plan-guard.mjs";
 
 const API_ENDPOINT="https://serpapi.com/search.json";
 const MAX_JSON_BYTES=900_000;
@@ -128,6 +129,7 @@ export function createGoogleShoppingResultsClient({
   clock=()=>Date.now(),
   monthlyCap=MONTHLY_CAP,
   hourlyCap=HOURLY_CAP,
+  freeAccountCheck=checkSerpApiFreeAccount,
 }={}){
   let month=null,calls=0,hour=null,hourlyCalls=0;
   const cache=new Map();
@@ -149,6 +151,18 @@ export function createGoogleShoppingResultsClient({
     if(pending.has(key))return pending.get(key);
     if(calls>=monthlyCap)return {status:429,body:{error:"shopping_monthly_budget_exhausted",cards:[]}};
     if(hourlyCalls>=hourlyCap)return {status:429,body:{error:"shopping_hourly_budget_exhausted",cards:[]}};
+    // Verify current provider account on every cache miss. The account API is
+    // documented as free of charge. No cached permission to spend free credits.
+    // Concurrent instances are still bounded by the upstream Free plan and
+    // deliberately generous reserve; no paid-account usage is ever allowed.
+    const freePlan=await freeAccountCheck({apiKey,fetchImpl});
+    if(!freePlan?.allowed) return {
+      status:503,body:{
+        error:"GOOGLE_SHOPPING_ZERO_COST_GUARD",
+        reason:String(freePlan?.reason||"ACCOUNT_VERIFICATION_UNAVAILABLE"),
+        cards:[],
+      }
+    };
     calls++; // count BEFORE attempting upstream request; do not retry errors
     hourlyCalls++;
     const action=(async()=>{
