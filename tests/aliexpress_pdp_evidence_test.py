@@ -78,6 +78,41 @@ class PdpEvidenceTests(unittest.TestCase):
             "NO_UNAMBIGUOUS_EXACT_ID_PRODUCT_JSONLD",
         )
 
+    def test_robots_accepts_plain_text_and_pdp_accepts_html(self):
+        from unittest.mock import patch
+
+        observed = []
+        robots = "User-agent: *\nAllow: /\n"
+
+        class Response:
+            def __init__(self, url, raw, content_type):
+                self.url = url
+                self.content = raw.encode("utf8")
+                self.text = raw
+                self.status_code = 200
+                self.headers = {"content-type": content_type}
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def get(self, url, *, headers, timeout, allow_redirects):
+                observed.append((url, headers["accept"]))
+                if url.endswith("/robots.txt"):
+                    return Response(url, robots, "text/plain")
+                return Response(url, html_for(), "text/html")
+
+        with patch.object(pdp.requests, "Session", return_value=Session()):
+            report = pdp.probe_item(PID)
+        self.assertEqual(report["stages"][0]["state"], "ALLOWED")
+        self.assertEqual(report["stages"][1]["state"], "PDP_HTML_RECEIVED")
+        self.assertEqual(observed[0][1], "text/plain")
+        self.assertIn("text/html", observed[1][1])
+        self.assertEqual(report["conclusion"], "PDP_PRODUCT_JSONLD_PRICE_CANDIDATE")
+
     def test_url_marketing_price_never_generates_product_evidence(self):
         html = '<html><head><meta property="og:title" content="Headphones"></head>' \
                "<body>pdp_npi=6%40dis%21SAR%2157.97%216.29</body></html>"
