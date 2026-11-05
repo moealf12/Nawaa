@@ -1124,12 +1124,15 @@ class Scraper:
             async with sem:
                 body = await self.fetch("product-detail", product.url)
                 if not body:
+                    self.log("pdp-evidence", product.url, "PDP_HTTP_OR_HTML_UNAVAILABLE")
                     return
                 candidates = (parse_jsonld(body, product.url) + parse_microdata(body, product.url)
                               + parse_meta_product(body, product.url) + parse_amazon_us_pdp(body, product.url))
                 # Evidence from a PDP is associated only if SKU or URL aligns.
                 matches = [p for p in candidates if pdp_identity_matches(product, p)]
                 if not matches:
+                    self.log("pdp-evidence", product.url, "PDP_IDENTITY_PROOF_NOT_MATCHED",
+                             detail=f"candidates={len(candidates)}; asins={sum(bool(p.sku) for p in candidates)}")
                     return
                 prices = {(p.price, p.currency) for p in matches if p.price and p.currency}
                 # One bounded recovery if a valid Amazon PDP has identity and
@@ -1155,13 +1158,18 @@ class Scraper:
                             prices = {(p.price, p.currency) for p in matches if p.price and p.currency}
                             if len(prices) == 1:
                                 product.issues.append("AMAZON_PDP_RETRY_PRICE_RECOVERED")
+                if not prices:
+                    self.log("pdp-evidence", product.url, "PDP_MAIN_PRICE_NOT_EVIDENCED",
+                             detail="identity_matched; primary_offer_missing_or_conflicted")
                 if len(prices) > 1:
+                    self.log("pdp-evidence", product.url, "PDP_MULTIPLE_PRICES_CONFLICT")
                     product.price = None
                     product.price_status = "conflict"
                     product.issues.append("PDP_PRICE_CONFLICT")
                 elif len(prices) == 1:
                     price, currency = next(iter(prices))
                     if product.price and product.currency and (price, currency) != (product.price, product.currency):
+                        self.log("pdp-evidence", product.url, "PDP_LISTING_PRICE_DISAGREEMENT")
                         product.price = None
                         product.price_status = "conflict"
                         product.issues.append("LISTING_PDP_PRICE_CONFLICT")
@@ -1171,6 +1179,9 @@ class Scraper:
                         # A PDP alone is NOT listing-to-PDP price parity.
                         product.price_status = ("evidence_correlated" if had_listing_price
                                                 else "single_source_unverified")
+                        self.log("pdp-evidence", product.url,
+                                 "PDP_LISTING_PRICE_MATCH" if had_listing_price
+                                 else "PDP_PRICE_ONLY_UNCORRELATED")
                 if not product.image:
                     product.image = next((p.image for p in matches if p.image), None)
                 if not product.sku:
