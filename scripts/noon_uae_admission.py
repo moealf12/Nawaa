@@ -9,7 +9,9 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from noon_uae_price_policy import cents
+from noon_uae_price_precision import (
+    interpret_price_surfaces, select_source_current_offer_amount,
+)
 
 SKU = re.compile(r"(?:N\d{8}[AV]|Z[A-Z0-9]{20}Z)", re.I)
 REQUIRED_STAGES = ("warmup", "plp_live", "one_offer_linked_pdp")
@@ -46,19 +48,15 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
     ast = _dict(r.get("tanstackTsrAst"))
     cross = _dict(r.get("crossSurfaceCorroboration"))
     delivery = _dict(r.get("saudiDeliveryEvidence"))
-    current_price_cents = cents(r.get("plpDisplayedPrice"))
-    records = [
-        item for item in ast.get("candidateRecords", [])
-        if isinstance(item, dict) and
-        item.get("sameSku") is True and
-        item.get("skuExplicitInOfferRecord") is True and
-        item.get("skuAliasesConflict") is False and
-        type(item.get("priceCents")) is int
-    ] if isinstance(ast.get("candidateRecords"), list) else []
-    prices = {item["priceCents"] for item in records}
-    same_offer_amount = bool(
-        current_price_cents is not None and prices == {current_price_cents}
+    source_current_price = select_source_current_offer_amount(
+        ast.get("candidateRecords")
     )
+    precision_evidence = interpret_price_surfaces(
+        r.get("plpDisplayedPrice"), source_current_price.get("priceCents")
+    )
+    # An integer-rendered PLP cannot certify exact fractional PDP cents.
+    # Preserve the exact amount but never silently round it to acceptance.
+    same_offer_amount = precision_evidence["exactEqualityAttested"]
     currency_per_offer = bool(
         cross.get("sameOfferCurrencyAttested") is True
         and ast.get("exactOfferWithExplicitSkuCurrencyPrice") is True
@@ -114,6 +112,8 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
     return {
         "schema": "nawaa.noon-uae.admission-gate.v2",
         "sourceMarket": "AE",
+        "pricePrecisionEvidence": precision_evidence,
+        "sourceOfferPriceStatus": source_current_price.get("state"),
         "gates": gates,
         "requiredGateNames": list(required_gate_names),
         "optionalGateNames": list(optional_gate_names),
