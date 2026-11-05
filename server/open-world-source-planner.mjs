@@ -14,7 +14,6 @@ const ALL_CATEGORIES=new Set([
   "baby","home","furniture","kitchen","office","sports","grocery",
   "pet","automotive","coffee","vacuum","printer","projector",
 ]);
-const hasOwn=(obj,key)=>Object.prototype.hasOwnProperty.call(obj,key);
 function safeStoreId(value){
   return typeof value==="string"&&/^[a-z0-9][a-z0-9-]{1,79}$/.test(value);
 }
@@ -49,6 +48,7 @@ export function planUnknownCategorySpecialists({
     throw Error("R04_P54_INVALID_SOURCE_REGISTRY");
   const maximum=Number.isInteger(maxStores)
     ? Math.max(0,Math.min(MAX_SPECIALISTS,maxStores)):0;
+  if(maximum===0)return {storeIds:[],reason:"BUDGET_DISABLED",categoryBuckets:0,chosenBuckets:0};
   const blocked=new Set([...alreadySearchedIds,...excludedStoreIds]);
   const candidates=stores.filter(s=>safeStoreId(s?.id)&&
     !blocked.has(s.id)&&eligibleCategories(s).length);
@@ -65,7 +65,6 @@ export function planUnknownCategorySpecialists({
   const buckets=[...byCategory.keys()].sort();
   const order=rotate(buckets,hashIndex(normalized,buckets.length));
   const chosen=[],chosenSet=new Set(),chosenBuckets=new Set();
-  const seen=new Set();
   // First attempt one approved specialist from distinct category buckets;
   // later slots never repeat a merchant because it serves several categories.
   for(const category of order){
