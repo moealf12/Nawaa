@@ -14,6 +14,10 @@ on:
       - "scripts/aliexpress-pdp-dom.py"
       - "tests/aliexpress_pdp_dom_test.py"
       - "scripts/aliexpress-browser-dom-live.py"
+      - "src/aliexpress-product-evidence.mjs"
+      - "tests/aliexpress-product-evidence.test.mjs"
+      - "scripts/aliexpress-product-evidence-live.mjs"
+      - "scripts/aliexpress-10-intent-live.py"
       - "scripts/aliexpress-browser-dom-smoke.py"
       - "tests/aliexpress_browser_dom_test.py"
       - "tests/aliexpress_public_html_test.py"
@@ -83,6 +87,58 @@ jobs:
         with:
           name: aliexpress-search-${{ matrix.query_id }}
           path: aliexpress-live-*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Broad live category recall is observed, not guaranteed. One policy
+  # read plus at most ten sequential public searches. No PDP fan-out.
+  merchant-ten-intent-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install bounded source HTML parser
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+      - name: Enforce matrix source budget and source syntax
+        run: |
+          python -m py_compile scripts/aliexpress-10-intent-live.py
+          ruff check --select E4,E7,E9,F scripts/aliexpress-10-intent-live.py
+      - name: Check ten real intents without inventing PDP prices
+        env:
+          HEAD_SHA: \${{ github.sha }}
+        run: |
+          python scripts/aliexpress-10-intent-live.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("aliexpress-10-intent-live-matrix.json").read_text())
+          assert len(data["queries"]) == data["queryCount"] == 10
+          assert data["requestsAttempted"] <= 11
+          assert data["retries"] == 0
+          assert data["proxyUsed"] is False
+          assert data["customerPublishable"] is False
+          assert data["pdpPriceVerified"] is False
+          assert data["productsAccepted"] == sum(x["accepted"] for x in data["queries"])
+          assert all(x["customerPublishable"] is False for x in data["queries"])
+          print("NAWAA_ALIEXPRESS_MATRIX_SUMMARY",json.dumps({
+              "queried": data["queryCount"],
+              "queriesWithTrustedSearchCards": data["queriesWithTrustedSearchCards"],
+              "searchCardsOnly": data["productsAccepted"],
+              "pdpPriceVerified": False,
+              "customerPublishable": False
+          }))
+          PY
+      - name: Retain only bounded 10-intent metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aliexpress-10-intent-live
+          path: aliexpress-10-intent-live-matrix.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -228,6 +284,13 @@ jobs:
           assert data["conclusion"] != "NOT_STARTED"
           print("NAWAA_ALIEXPRESS_CHROMIUM_LIVE_GUARD PASS")
           PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run real browser result through native evidence decision gate
+        env:
+          ALIEXPRESS_ITEM_ID: "1005012743543835"
+        run: node scripts/aliexpress-product-evidence-live.mjs
       - name: Retain bounded privacy-safe DOM evidence only
         if: always()
         uses: actions/upload-artifact@v4
