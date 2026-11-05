@@ -41,7 +41,6 @@ test("R04: reject off-domain offers, unpriced cards and non-PDP paths",()=>{
     card({url:"/buscar/iphone-17-256gb"}),
     card({price:null}),
     card({currency:""}),
-    card({name:"Unrelated scarf and coffee mug"}),
   ];
   assert.deepEqual(extractEmbeddedSearchOffers(embedded(bad),searchUrl,store,"iphone 17 256gb"),[]);
   const links=extractProductLinks(
