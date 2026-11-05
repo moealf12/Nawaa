@@ -365,3 +365,65 @@ class AmazonIntentRelevanceTests(unittest.TestCase):
         match, reasons, _ = self.classify("rare keyboard 65% layout", "gaming mouse pad")
         self.assertEqual(match, "unclassified")
         self.assertIn("NO_EXPLICIT_INTENT_RULE", reasons)
+
+
+class AmazonLiveFalsePositiveRegressions(unittest.TestCase):
+    """Real observed product titles (structure only), not mocked live outcomes."""
+    def classify(self, q, title):
+        from nawaa_store_hunter import classify_product_intent
+        return classify_product_intent(q, title)
+
+    def test_football_video_game_disc_is_not_ps5_console(self):
+        title = "EA SPORTS FC 27 Standard Edition PlayStation5 |Physical Disc I VideoGame |English"
+        match, reason, _ = self.classify("PlayStation 5 console", title)
+        self.assertEqual(match, "mismatch")
+        self.assertIn("GAME_OR_REMOTE_PLAYER_NOT_PS5_CONSOLE", reason)
+
+    def test_nba_game_title_cannot_claim_console(self):
+        match, _, _ = self.classify("PlayStation 5 console", "NBA 2K27 - PlayStation 5")
+        self.assertNotEqual(match, "exact")
+
+    def test_portal_remote_player_not_console(self):
+        match, _, _ = self.classify("PlayStation 5 console", "PlayStation 5 Portal Remote Player")
+        self.assertEqual(match, "mismatch")
+
+    def test_console_bundle_with_controllers_remains_console(self):
+        match, _, _ = self.classify(
+            "PlayStation 5 console",
+            "Sony PlayStation 5 Pro 2TB SSD Digital Console with Two Controllers and Charging Bundle"
+        )
+        self.assertEqual(match, "exact")
+
+    def test_controller_for_ps5_console_is_not_console(self):
+        match, _, _ = self.classify(
+            "PlayStation 5 console", "DualSense Wireless Controller for PlayStation 5 Console"
+        )
+        self.assertEqual(match, "mismatch")
+
+    def test_ps5_optical_repair_kit_is_not_complete_disc_addon(self):
+        match, reasons, _ = self.classify(
+            "PS5 disc drive",
+            "TOMSIN Disc Drive Replacement for Sony PlayStation 5 KEM-497AAA Optical Drive Accessories Repair Kit"
+        )
+        self.assertEqual(match, "related")
+        self.assertIn("PS5_DISC_DRIVE_REPAIR_PART_NOT_COMPLETE_ADDON", reasons)
+
+    def test_ps5_drive_connector_module_is_not_complete_addon(self):
+        match, reasons, _ = self.classify(
+            "PS5 disc drive",
+            "Blu-ray DVD Disc Drive Connector Module for PS5 CFI-1200 Replacement"
+        )
+        self.assertEqual(match, "related")
+
+    def test_original_ps5_disc_addon_stays_exact(self):
+        match, _, _ = self.classify(
+            "PS5 disc drive", "PlayStation Disc Drive For PS5 Digital Edition Consoles (slim)"
+        )
+        self.assertEqual(match, "exact")
+
+    def test_s25_fe_is_variant_not_base(self):
+        match, reasons, _ = self.classify(
+            "Samsung Galaxy S25", "Galaxy S25 FE 128GB Jet Black"
+        )
+        self.assertEqual(match, "related")
+        self.assertIn("GALAXY_S25_MODEL_VARIANT_DIFFERENT", reasons)
