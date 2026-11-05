@@ -38,7 +38,7 @@ export function inferSoldSubjectRole(title=""){
  const retailSubject=String(title).split(/\s+(?:\+|&)\s+/u,1)[0];
  const primary=normalizeSearchQuery(retailSubject)
    .replace(/\bcompatible with\b/g,"compatible_to")
-   .split(/\b(?:with|including|includes)\b/,1)[0].trim();
+   .split(/\b(?:with|including|includes|con|avec|mit)\b/,1)[0].trim();
  const whole=PRINCIPAL.test(primary);
  const documentation=GUIDE.test(primary)||
    /\b(?:for beginners|for seniors|learn to|how to use)\b/.test(primary);
