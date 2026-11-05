@@ -131,6 +131,11 @@ async def main():
         terminal_503 = bool(latest_search and latest_search[0].get("status") == "HTTP_ERROR"
                             and latest_search[0].get("detail") == "503")
         consecutive_search_503 = consecutive_search_503 + 1 if terminal_503 else 0
+        # Treat repeated terminal HTTP 503 as source-level admission failure.
+        # Do not escalate through more headers, additional search routes or
+        # repeated probing when upstream signals ongoing unavailability.
+        if consecutive_search_503 >= 3:
+            stopped_reason = "SEARCH_503_CIRCUIT_OPEN_AFTER_THREE_CONSECUTIVE_FAILURES"
         if i < len(QUERIES) and not stopped_reason:
             delay = min(8.0, 2.0 + consecutive_search_503 * 2.0) if terminal_503 else 1.5
             await asyncio.sleep(delay)
