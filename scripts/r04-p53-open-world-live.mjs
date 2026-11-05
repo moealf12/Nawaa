@@ -94,17 +94,28 @@ try{
 }
 const observed=rows.filter(r=>r.status==="OBSERVED").length;
 const principalQueries=rows.filter(r=>r.principals>0).length;
+// A successful HTTP response is NOT successful product recall. An empty
+// principal is acceptable as a clean bounded-source miss only if the source
+// wave is complete and no related but unverified offer is being mislabeled.
+const unresolved=rows.filter(r=>r.status!=="OBSERVED"||
+  (r.principals===0 &&
+   (r.partial===true||r.sourceErrors!==0||r.offers>0)));
+const cleanEmpty=rows.filter(r=>r.status==="OBSERVED"&&r.principals===0&&
+  r.offers===0&&r.partial===false&&r.sourceErrors===0);
+const structuralPass=observed===cases.length&&
+  rows.every(r=>r.deadlineExceeded===false);
 const result={schemaVersion:"nawaa.r04.p53.open-world-live.v1",
   exactCandidateSha:sha,execution:"DISPOSABLE_LOCAL_CANDIDATE_REAL_MERCHANT_HTTP",
   queryCount:cases.length,observed,principalQueries,
-  relatedOnlyQueries:rows.filter(r=>r.status==="OBSERVED"&&r.principals===0).map(r=>r.id),
+  unresolvedQueryIds:unresolved.map(r=>r.id),
+  cleanBoundedSourceEmptyIds:cleanEmpty.map(r=>r.id),
+  structuralContractPass:structuralPass,
   sourceErrorEvents:rows.reduce((n,r)=>n+(r.sourceErrors||0),0),
   deadlineExceededQueries:rows.filter(r=>r.deadlineExceeded).map(r=>r.id),
   rows,independentProductTruthCertified:false,globalCoverageCertified:false,
-  verdict:observed===cases.length&&principalQueries>=1&&
-    rows.every(r=>r.deadlineExceeded===false)
-      ?"LIVE_STRUCTURAL_PASS":"LIVE_OPEN_WORLD_INCOMPLETE",
+  verdict:structuralPass&&unresolved.length===0
+    ?"BOUNDED_OPEN_WORLD_RECALL_PASS":"OPEN_WORLD_RECALL_NO_GO",
 };
 writeFileSync("r04-p53-open-world-live-evidence.json",JSON.stringify(result,null,2));
 console.log("NAWAA_P53_OPEN_WORLD_SUMMARY "+JSON.stringify(result));
-if(result.verdict!=="LIVE_STRUCTURAL_PASS")process.exitCode=1;
+if(result.verdict!=="BOUNDED_OPEN_WORLD_RECALL_PASS")process.exitCode=1;
