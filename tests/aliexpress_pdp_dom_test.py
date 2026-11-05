@@ -168,6 +168,34 @@ class DomPriceContractTests(unittest.TestCase):
         self.assertIsNone(evidence["priceCandidate"])
         self.assertGreater(evidence["visiblePriceElements"], 0)
 
+    def test_conflicting_duplicate_head_prices_never_choose_first(self):
+        conflicting = (
+            '<meta property="product:price:amount" content="19.95">'
+        )
+        evidence = dom.read_pdp_dom_evidence(
+            page(extra_head=conflicting), ITEM, URL
+        )
+        self.assertEqual(evidence["state"], "DOM_PRICE_EVIDENCE_CONFLICT")
+        self.assertIsNone(evidence["priceCandidate"])
+
+    def test_recommendation_outside_main_never_becomes_primary_price(self):
+        recommendation = (
+            '<aside itemscope itemtype="https://schema.org/Product">'
+            '<meta itemprop="price" content="0.99">'
+            '<meta itemprop="priceCurrency" content="USD">'
+            '</aside>'
+            '<div data-product-id="' + ITEM + '" '
+            'data-price-current="0.99" data-currency="USD"></div>'
+        )
+        raw = page(price=None, currency=None).replace(
+            "</body>", recommendation + "</body>"
+        )
+        evidence = dom.read_pdp_dom_evidence(raw, ITEM, URL)
+        self.assertEqual(
+            evidence["state"], "DOM_CURRENT_PRICE_WITH_EXPLICIT_CURRENCY_MISSING"
+        )
+        self.assertIsNone(evidence["priceCandidate"])
+
     def test_malformed_large_document_and_wrong_requested_id_fail_closed(self):
         self.assertEqual(
             dom.read_pdp_dom_evidence("x" * 3_500_001, ITEM, URL)["state"],
