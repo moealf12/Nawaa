@@ -155,3 +155,22 @@ test("P54: query shortening cannot reclassify product, merge conditions or overw
   assert.match(source,/extractEmbeddedSearchOffers\(html, searchPageFinalUrl \|\| searchUrl, store, query\)/);
   assert.match(source,/filterQueryOffers\(matchingQuery,/);
 });
+
+test("P54: empirical reachability breaks specialist ties but never overrides category cap",()=>{
+  const list=[
+    {id:"blocked-tech",categories:["network"]},
+    {id:"working-tech",categories:["network"]},
+    {id:"books",categories:["book"]},
+  ];
+  const health={
+    "blocked-tech":{attempts:12,transportSuccessRate:.1,productiveRate:0,coolingDown:true},
+    "working-tech":{attempts:12,transportSuccessRate:.95,productiveRate:.8,coolingDown:false},
+  };
+  const p=planUnknownCategorySpecialists({
+    query:"rare electronic apparatus XX600",stores:list,
+    sourceHealth:health,maxStores:2,
+  });
+  assert.ok(p.storeIds.includes("working-tech"));
+  assert.ok(!p.storeIds.includes("blocked-tech"));
+  assert.ok(p.storeIds.length<=2);
+});
