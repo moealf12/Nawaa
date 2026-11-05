@@ -67,6 +67,21 @@ test("safe original merchant URLs only; Google redirector may unwrap only HTTPS 
  assert.equal(productImageUrl("javascript:alert(1)"),null);
  assert.equal(productImageUrl("http://store.example/1.png"),null);
 });
+test("Arabic-Indic and Eastern Arabic prices are normalized without changing currency",()=>{
+ for(const label of ["١٬٢٩٩ ر.س","۱٬۲۹۹ ر.س"]){
+   const html=DOM.replace("SAR 1299.00",label);
+   const r=extractAuthorizedGoogleShoppingHtml(html,{query:"سماعات بلوتوث",sourceUrl:SOURCE});
+   assert.equal(r.cards.length,1);
+   assert.equal(r.cards[0].numericAmount,1299);
+   assert.equal(r.cards[0].currency,"SAR");
+ }
+});
+test("redirect nesting is bounded and cannot loop indefinitely",()=>{
+ let link="https://merchant.example/product";
+ for(let i=0;i<5;i++)link="https://www.google.com/url?q="+encodeURIComponent(link);
+ assert.equal(merchantProductLink(link),null);
+});
+
 test("blocked/interstitial HTML must not produce price cards",()=>{
  for(const title of ["Update your browser to continue","Our systems have detected unusual traffic","Captcha challenge"]){
    const r=extractAuthorizedGoogleShoppingHtml(JSONLD.replace("<title>Shopping</title>","<title>"+title+"</title>"),{
