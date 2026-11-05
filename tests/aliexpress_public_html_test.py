@@ -18,7 +18,7 @@ IMAGE = "https://ae04.alicdn.com/kf/realproduct.jpg"
 
 
 def search_html(*, price="19.99", currency="USD", url=URL, image=IMAGE,
-                max_price=None):
+                max_price=None, alternate_url=None):
     item = {
         "productId": PID, "redirectedId": PID, "itemType": "productV3",
         "title": {"displayTitle": TITLE},
@@ -28,6 +28,8 @@ def search_html(*, price="19.99", currency="USD", url=URL, image=IMAGE,
     }
     if max_price is not None:
         item["prices"]["salePrice"]["maxPrice"] = max_price
+    if alternate_url is not None:
+        item["productUrl"] = alternate_url
     payload = {"root": {"fields": {"mods": {"itemList": {"content": [item]}}}}}
     return (
         "<html><body><script>"
@@ -66,6 +68,31 @@ class AliExpressEvidenceTests(unittest.TestCase):
             self.assertEqual(cards, [], url)
             self.assertEqual(stats["rejected"]["SOURCE_PDP_LINK_IDENTITY_UNVERIFIED"], 1)
         self.assertIsNone(probe.product_link(None, PID))
+
+    def test_valid_second_merchant_link_recovers_campaign_primary(self):
+        actual = "https://www.aliexpress.com/item/" + PID + ".html"
+        stats, cards = probe.parsed_search_cards(
+            search_html(
+                url="https://www.aliexpress.com/p/BundleDeals2.html",
+                alternate_url=actual,
+            ),
+            "Bluetooth",
+        )
+        self.assertEqual(stats["accepted"], 1)
+        self.assertEqual(cards[0]["sourceUrl"], actual)
+        self.assertFalse(cards[0]["customerPublishable"])
+
+    def test_explicit_different_item_primary_blocks_fallback(self):
+        correct = "https://www.aliexpress.com/item/" + PID + ".html"
+        wrong = "https://www.aliexpress.com/item/3256812557229083.html"
+        stats, cards = probe.parsed_search_cards(
+            search_html(url=wrong, alternate_url=correct),
+            "Bluetooth",
+        )
+        self.assertEqual(cards, [])
+        self.assertEqual(
+            stats["rejected"]["SOURCE_PDP_LINK_IDENTITY_UNVERIFIED"], 1
+        )
 
     def test_embedded_productv3_fallback_without_init_data_wrapper(self):
         item = {
