@@ -165,6 +165,9 @@ def extract(html):
         return " ".join(text.casefold().split())
 
     context_matched = normalize_intent(heading_txt) == normalize_intent(QUERY)
+    ae_context_verified = (context_matched and soup.html is not None and
+                           str(soup.html.get("lang") or "").strip().casefold()
+                           in ("en-ae", "ar-ae"))
     anchors = soup.select('a[href*="/p/"]')[:MAX_ANCHORS]
     output = {
         "heading": heading_txt[:120],
@@ -179,6 +182,7 @@ def extract(html):
         "completeCards": 0,
         "observedCurrencyLabelCount": 0,
         "sarApproxCardsWithExplicitAed": 0,
+        "sarApproxCardsFromMarketContext": 0,
         "sarConditionalScenarioCards": 0,
         "candidateSample": [],
         "structureSample": [],
@@ -233,13 +237,16 @@ def extract(html):
             "currencyHeaderRequested": "AED",
             "currencyLabelInPrice": amount[1],
             "fxPreview": aed_sar_card_preview(
-                f"{amount[0]:.2f}", market="AE", explicit_aed_label=amount[1]
+                f"{amount[0]:.2f}", market="AE", explicit_aed_label=amount[1],
+                market_context_verified=ae_context_verified
             ),
             "pdpPriceVerified": False,
             "customerPublishable": False,
         }
-        if candidate["fxPreview"]["convertedSarApprox"] is not None:
+        if candidate["fxPreview"]["sourceCurrencyVerified"] == "AED":
             output["sarApproxCardsWithExplicitAed"] += 1
+        elif candidate["fxPreview"]["sourceCurrencyAssumedForDisplay"] == "AED":
+            output["sarApproxCardsFromMarketContext"] += 1
         elif candidate["fxPreview"]["sarScenarioIfAED"] is not None:
             output["sarConditionalScenarioCards"] += 1
         candidates.append(candidate)
