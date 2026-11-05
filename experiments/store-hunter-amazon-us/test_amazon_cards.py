@@ -548,3 +548,15 @@ class AmazonPdpPerRequestHeaderSafetyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[0][2],"en-US,en;q=0.8")
         self.assertEqual(sent[1][1],"text/html")
         self.assertIsNone(sent[1][2])
+
+
+class AmazonStorageFormattingParityTests(unittest.TestCase):
+    def test_asin_same_storage_gb_spacing_not_false_variant_conflict(self):
+        from nawaa_store_hunter import Product, pdp_identity_matches
+        asin="B0G4RRVKQS"
+        plp=Product(title="Apple iPhone 17 256GB Black",
+                    url=f"https://www.amazon.com/dp/{asin}",sku=asin)
+        pdp=Product(title="Apple iPhone 17 256 GB Black",
+                    url=f"https://www.amazon.com/dp/{asin}",sku=asin,
+                    method="amazon-us-pdp-main-buybox",issues=["AMAZON_PDP_ASIN_PROOF"])
+        self.assertTrue(pdp_identity_matches(plp,pdp))
