@@ -48,7 +48,6 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
                       r.get("selection", {}).get("state") == "SINGLE_LIVE_OFFER_SELECTED"
                       if isinstance(r.get("selection"), dict) else False)
     ast = _dict(r.get("tanstackTsrAst"))
-    cross = _dict(r.get("crossSurfaceCorroboration"))
     delivery = _dict(r.get("saudiDeliveryEvidence"))
     source_current_price = select_source_current_offer_amount(
         ast.get("candidateRecords")
@@ -76,9 +75,12 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
         precision_evidence["exactEqualityAttested"]
         or currency_corroboration["sourceOfferAmountProductPriceCorroborated"]
     )
-    currency_per_offer = bool(
-        cross.get("sameOfferCurrencyAttested") is True
-        and ast.get("exactOfferWithExplicitSkuCurrencyPrice") is True
+    # Do not trust independently asserted booleans in the diagnostic JSON.
+    # Direct offer AED requires an actual parsed same-offer record PLUS
+    # consistent exact-SKU/exact-price Product JSON-LD evidence.
+    currency_per_offer = (
+        currency_corroboration.get("offerCurrencyDirectlyVerified") is True
+        and currency_corroboration.get("currencyEvidenceTier") == "OFFER_DIRECT"
     )
     country_shippable = bool(
         delivery.get("sourceEvidenceValid") is True and
@@ -134,6 +136,7 @@ def evaluate_noon_uae_admission(report, *, now_utc=None, max_age_s=900):
         "pricePrecisionEvidence": precision_evidence,
         "sourceOfferPriceStatus": source_current_price.get("state"),
         "productScopedCurrencyCorroboration": currency_corroboration,
+        "currencyEvidenceTier": currency_corroboration.get("currencyEvidenceTier"),
         "gates": gates,
         "requiredGateNames": list(required_gate_names),
         "optionalGateNames": list(optional_gate_names),
