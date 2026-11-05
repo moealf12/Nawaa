@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from noon_uae_price_policy import assess_offer, cents  # noqa: E402
+from noon_uae_price_policy import assess_offer, cents, corroborate_sources  # noqa: E402
 
 SKU = "N40633047A"
 OFFER = "f24643243856845e"
@@ -82,6 +82,47 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(cents("2099.00"), 209900)
         self.assertEqual(cents("0.01"), 1)
         self.assertEqual(cents("99999999.99"), 9999999999)
+
+
+    def test_product_level_aed_corrob_is_not_same_offer_currency(self):
+        ast = [{"sameSku": True, "skuExplicitInOfferRecord": True,
+                "skuAliasesConflict": False, "priceKind": "saleprice",
+                "priceCents": 197900, "currency": None}]
+        ld = [{"currency": "AED", "price": "1979.00"}]
+        v = corroborate_sources(
+            plp_price="1979", ast_candidates=ast, jsonld_offers=ld
+        )
+        self.assertEqual(
+            v["state"], "OFFER_PRICE_PRODUCT_AED_CORROBORATED_CURRENCY_NOT_PER_OFFER"
+        )
+        self.assertTrue(v["productCurrencyCorroborated"])
+        self.assertFalse(v["sameOfferCurrencyAttested"])
+        self.assertFalse(v["customerPublishable"])
+
+    def test_conflicting_same_offer_prices_never_pass(self):
+        ast = [
+            {"sameSku": True, "skuExplicitInOfferRecord": True,
+             "skuAliasesConflict": False, "priceKind": "saleprice",
+             "priceCents": x}
+            for x in (197900, 197905)
+        ]
+        v = corroborate_sources(
+            plp_price="1979", ast_candidates=ast,
+            jsonld_offers=[{"currency": "AED", "price": "1979"}]
+        )
+        self.assertEqual(v["state"], "CONFLICTING_OFFER_PRICE_EVIDENCE")
+        self.assertFalse(v["customerPublishable"])
+
+    def test_product_level_currency_cannot_override_wrong_offer(self):
+        ast = [{"sameSku": False, "skuExplicitInOfferRecord": False,
+                "skuAliasesConflict": False, "priceKind": "saleprice",
+                "priceCents": 197900, "currency": "AED"}]
+        v = corroborate_sources(
+            plp_price="1979", ast_candidates=ast,
+            jsonld_offers=[{"currency": "AED", "price": "1979"}]
+        )
+        self.assertEqual(v["state"], "SOURCE_OFFER_PRICE_NOT_MATCHED")
+
 
 
 if __name__ == "__main__":
