@@ -56,6 +56,14 @@ export async function parse1688Catalog(payload, {
     if (moq > 1) { fail("WHOLESALE_ONLY"); continue; }
     const tier = oneUnitPrice(item);
     if (!tier) { fail("SINGLE_UNIT_PRICE_UNVERIFIED"); continue; }
+    // Source observation time must be independently supplied by the feed.
+    // Ingestion time cannot refresh an old catalog quote into a live price.
+    const quotedAtMs = Date.parse(item.priceObservedAt);
+    const nowMs = Date.parse(observedAt);
+    if (!Number.isFinite(quotedAtMs) || !Number.isFinite(nowMs) ||
+        quotedAtMs > nowMs + 300_000 || nowMs - quotedAtMs > 3_600_000) {
+      fail("PRICE_EVIDENCE_STALE_OR_MISSING"); continue;
+    }
     const sku = title(item.skuId ?? item.variantId ?? "") || "";
     const key = id + ":" + sku;
     if (seen.has(key)) { fail("DUPLICATE"); continue; }
@@ -77,12 +85,13 @@ export async function parse1688Catalog(payload, {
       priceConfidence: "incomplete", productPrice: fx.value, originalProductPrice: tier.amount,
       originalCurrency: "CNY", currency: "SAR",
       shipping: null, importCost: null, tax: null, mandatoryFees: 0, discount: 0,
-      deliveryDays: null, observedAt, dataKind: "live",
+      deliveryDays: null, observedAt: new Date(quotedAtMs).toISOString(), dataKind: "live",
       fx: { rate: fx.rate, source: fx.source, observedAt: fx.observedAt },
       specs: { modelNumber: title(item.modelNumber), brand: title(item.brand), sku },
       sourceMeta: {
         productId: id, skuId: sku || null, minimumOrderQuantity: 1,
         priceEvidence: tier.evidence, quotedQuantity: 1,
+        priceObservedAt: new Date(quotedAtMs).toISOString(),
         sourceDataChannel: "AUTHORIZED_CATALOG",
         shippingStatus: "FORWARDER_OR_UNVERIFIED",
         requiresSaudiDeliveryVerification: true, originalTitle: title(item.title),
