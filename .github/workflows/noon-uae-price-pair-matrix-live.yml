@@ -1,0 +1,54 @@
+name: Noon UAE LIVE Multi-Category PDP Price Matrix
+
+on:
+  push:
+    branches:
+      - experiment/noon-ae-sa-catalog-proof-20261105
+    paths:
+      - "scripts/noon-uae-price-pair-matrix-live.py"
+      - "scripts/noon_uae_price_precision.py"
+      - "scripts/noon_uae_tsr_ast.py"
+      - "tests/noon_uae_tsr_ast_test.py"
+      - "tests/noon_uae_price_precision_test.py"
+      - ".github/workflows/noon-uae-price-pair-matrix-live.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noon-uae-price-pair-matrix
+  cancel-in-progress: true
+
+jobs:
+  live-product-offer-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pinned diagnostic dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+          python -m pip install --disable-pip-version-check esprima==4.0.1
+      - name: Source implementation compile, lint and precision contracts
+        run: |
+          python -m py_compile scripts/noon-uae-price-pair-matrix-live.py scripts/noon_uae_price_precision.py scripts/noon_uae_tsr_ast.py
+          ruff check --select E4,E7,E9,F scripts/noon-uae-price-pair-matrix-live.py scripts/noon_uae_price_precision.py scripts/noon_uae_tsr_ast.py
+          python -m unittest discover -s tests -p noon_uae_price_precision_test.py -v
+          python -m unittest discover -s tests -p noon_uae_tsr_ast_test.py -v
+      - name: Source LIVE (3 categories, max 9 requests, no retries)
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
+        run: python scripts/noon-uae-price-pair-matrix-live.py
+      - name: Retain actual source price-pair evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-uae-live-3-category-price-pairs
+          path: noon-uae-live-price-pair-matrix.json
+          retention-days: 14
+          if-no-files-found: warn

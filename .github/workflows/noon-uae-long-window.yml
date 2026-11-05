@@ -1,0 +1,62 @@
+name: Noon UAE Long-Window Source Evidence (Experimental)
+
+on:
+  push:
+    branches:
+      - experiment/noon-ae-sa-catalog-proof-20261105
+    paths:
+      - "scripts/noon_uae_long_window.py"
+      - "tests/noon_uae_long_window_test.py"
+      - ".github/workflows/noon-uae-long-window.yml"
+  workflow_dispatch:
+
+# No schedule on experimental branch: GitHub cron only runs on default
+# branch. This workflow does not secretly affect NAWAA production.
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: noon-uae-long-window-source-evidence
+  cancel-in-progress: true
+
+jobs:
+  evidence-only-no-publishing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pinned source-probe dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: \
+            curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
+      - name: Verify analysis code and deterministic tests
+        run: |
+          python -m py_compile scripts/noon_uae_long_window.py tests/noon_uae_long_window_test.py
+          ruff check --select E4,E7,E9,F scripts/noon_uae_long_window.py tests/noon_uae_long_window_test.py
+          python -m unittest discover -s tests -p noon_uae_long_window_test.py -v
+      - name: One bounded REAL source session snapshot (max six GETs)
+        id: snapshot
+        continue-on-error: true
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.sha }}
+        run: python scripts/noon-uae-stability-live.py
+      - name: Compare independent historical GitHub LIVE artifacts
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: python scripts/noon_uae_long_window.py
+      - name: Archive current source observations plus long-window decision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: noon-uae-session-stability
+          path: |
+            noon-uae-stability-live.json
+            noon-uae-long-window-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
