@@ -828,3 +828,50 @@ class AmazonCliExitCodesTests(unittest.TestCase):
         self.assertEqual(result_exit_code({
             "status":"partial_or_unavailable","source_availability":"search_accessible",
             "empty_means_out_of_stock":False}),0)
+
+
+class AmazonFirecrawlLiveDOMRegressionTests(unittest.TestCase):
+    """Minimal DOM structures derived from live Firecrawl basic-proxy observation.
+
+    Observed 2026-11-05: corePrice_feature_div carries selected-ASIN
+    apex-pricetopay-value $44.99 while apex desktop also shows $69.99 list
+    price. These are local regression samples, NOT live offer fixtures.
+    """
+    def html(self, extra="", prices="$44.99"):
+        return ('''<link rel="canonical" href="https://www.amazon.com/soundcore-Cancelling-Headphones-Bluetooth-Transparency/dp/B0C3HCD34R">
+        <h1><span id="productTitle">soundcore by Anker Q20i Hybrid Active Noise Cancelling Headphones, Black</span></h1>
+        <div id="corePrice_feature_div" data-csa-c-asin="B0C3HCD34R">
+          <span class="a-price apex-pricetopay-value"><span class="a-offscreen">'''
+          + prices + '''</span></span></div>
+        <div id="apex_desktop" data-csa-c-asin="B0C3HCD34R">
+           <div id="corePriceDisplay_desktop_feature_div" data-csa-c-asin="B0C3HCD34R">
+             <span class="a-price apex-pricetopay-value"><span class="a-offscreen">'''
+          + prices + '''</span></span>
+             <span class="a-price a-text-price"><span class="a-offscreen">$69.99</span></span>
+           </div>''' + extra + '''</div>''')
+
+    def test_realistic_amazon_primary_vs_reference_price(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        html=self.html('<div id="recommendations"><span class="a-price">'
+                       '<span class="a-offscreen">$89.99</span></span></div>')
+        p=parse_amazon_us_pdp(html,"https://www.amazon.com/dp/B0C3HCD34R")[0]
+        self.assertEqual(p.price,"44.99")
+        self.assertEqual(p.currency,"USD")
+        self.assertIn("AMAZON_PDP_PRIMARY_PRICE_SOURCE_COREPRICE_FEATURE",p.issues)
+        self.assertNotIn("AMAZON_PDP_MULTIPLE_BUYBOX_PRICES",p.issues)
+
+    def test_strong_primary_conflict_stays_rejected(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        html=self.html().replace(
+            '<span class="a-price apex-pricetopay-value"><span class="a-offscreen">$44.99</span></span></div>',
+            '<span class="a-price apex-pricetopay-value"><span class="a-offscreen">$47.99</span></span></div>',1)
+        p=parse_amazon_us_pdp(html,"https://www.amazon.com/dp/B0C3HCD34R")[0]
+        self.assertIsNone(p.price)
+        self.assertEqual(p.currency,None)
+        self.assertIn("AMAZON_PDP_MULTIPLE_BUYBOX_PRICES",p.issues)
+
+    def test_seo_canonical_accepted_without_hidden_selected_input(self):
+        from nawaa_store_hunter import parse_amazon_us_pdp
+        p=parse_amazon_us_pdp(self.html(),"https://www.amazon.com/dp/B0C3HCD34R")[0]
+        self.assertEqual(p.sku,"B0C3HCD34R")
+        self.assertIn("AMAZON_PDP_ASIN_PROOF",p.issues)
