@@ -11,6 +11,8 @@ on:
       - "server/providers/free-storefronts.mjs"
       - "tests/aliexpress-native-structured.test.mjs"
       - "scripts/aliexpress-pdp-evidence-live.py"
+      - "scripts/aliexpress-pdp-dom.py"
+      - "tests/aliexpress_pdp_dom_test.py"
       - "tests/aliexpress_public_html_test.py"
       - "tests/aliexpress_pdp_evidence_test.py"
       - ".github/workflows/aliexpress-public-html-live.yml"
@@ -49,11 +51,11 @@ jobs:
             curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
       - name: Validate all AliExpress source and PDP parsing contracts
         run: |
-          python -m py_compile scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
-            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          python -m py_compile scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py scripts/aliexpress-pdp-dom.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py tests/aliexpress_pdp_dom_test.py
           ruff check --select E4,E7,E9,F \
-            scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
-            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+            scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py scripts/aliexpress-pdp-dom.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py tests/aliexpress_pdp_dom_test.py
           python -m unittest discover -s tests -p "aliexpress*_test.py" -v
           node --test tests/aliexpress-native-structured.test.mjs
       - name: Fetch verified source search HTML once without CAPTCHA token replay
@@ -160,6 +162,7 @@ jobs:
               "aliasCandidate": doc.get("aliasCandidate"),
               "pdpPriceVerifiedForOriginalItem": False,
               "customerPublishable": False,
+              "domState": doc.get("productIdentity", {}).get("dom", {}).get("state"),
           }))
           PY
       - name: Upload bounded alias-state evidence
@@ -208,11 +211,11 @@ jobs:
             curl_cffi==0.17.0 beautifulsoup4==4.15.0 ruff
       - name: Verify PDP source code and identity regressions
         run: |
-          python -m py_compile scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
-            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+          python -m py_compile scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py scripts/aliexpress-pdp-dom.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py tests/aliexpress_pdp_dom_test.py
           ruff check --select E4,E7,E9,F \
-            scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py \
-            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py
+            scripts/aliexpress-public-html-live.py scripts/aliexpress-pdp-evidence-live.py scripts/aliexpress-pdp-dom.py \
+            tests/aliexpress_public_html_test.py tests/aliexpress_pdp_evidence_test.py tests/aliexpress_pdp_dom_test.py
           python -m unittest discover -s tests -p "aliexpress*_test.py" -v
       - name: Check real item PDP using clean URL only
         env:
