@@ -1,4 +1,5 @@
 import { resolveProductUrl } from "../url-resolver.mjs";
+import {retainAcquiredStorefrontOffers} from "../search-offer-admission.mjs";
 import {readAmazonHtmlStream} from "../amazon-body-stream.mjs";
 import { assessOfferMatch, normalizeSearchQuery, parseSearchIntent, filterQueryOffers, queryMatchReasons, BRAND_CATEGORY_PRIORITIES } from "../../src/search-query.mjs";
 import { sourceReliability } from "../source-reliability.mjs";
@@ -2039,7 +2040,11 @@ async function searchStore(store, query, perStore = Infinity, matchingQuery = qu
       ? allOffers.filter(offer=>thomannVariantMatchesQuery(matchingQuery,offer.title,offer.sourceUrl))
       : allOffers;
     const variantRejected = allOffers.length - variantEligible.length;
-    const {offers:filteredOffers,queryFilter} = filterQueryOffers(matchingQuery, variantEligible);
+    // Preserve already-priced, title-evidenced related items for the central
+    // alternatives/accessories lanes. Requiring exact match HERE discards them
+    // irreversibly before retainRelatedOffers() can classify customer results.
+    // Thomann's physical-variant constraint above remains a hard safety gate.
+    const {offers:filteredOffers,queryFilter} = retainAcquiredStorefrontOffers(matchingQuery, variantEligible);
     const queryFilterSamples = allOffers
       .filter((offer) => !filteredOffers.includes(offer))
       .slice(0,5)

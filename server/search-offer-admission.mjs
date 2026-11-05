@@ -2,7 +2,7 @@
 // This is NOT an exact-product or price-trust certification. That remains the
 // responsibility of assessOfferMatch, grouping and the client sold-subject
 // taxonomy. Never use merchant, SEO URL or price to rescue a weak offer.
-import {normalizeSearchQuery} from "../src/search-query.mjs";
+import {normalizeSearchQuery,parseSearchIntent,filterQueryOffers,queryMatchReasons,createOfferMatchAssessor} from "../src/search-query.mjs";
 
 const STOP=new Set(["for","with","and","the","from","compatible","replacement",
   "new","used","original","model","in","on","of","a","an","to","by",
@@ -33,4 +33,42 @@ export function createSearchOfferAdmission(query,{legacyFloor=0.35}={}){
     }
     return false;
   };
+}
+
+// Keep source-owned transport evidence unchanged. Only the central server may
+// certify exactMatch from an assessed product; the raw provider still returns
+// exactMatch:false, even for an otherwise verified full device.
+// Search cards filtered out for an EXPLICIT model may include safe accessories
+// for the same model. Retain those as related, but never admit conflicting
+// models/capacities. Broad category queries keep the original strict boundary
+// (e.g. "perfume" must not publish a standalone empty atomizer).
+export function retainAcquiredStorefrontOffers(query,offers=[]){
+  const strict=filterQueryOffers(query,offers);
+  const intent=parseSearchIntent(query);
+  if(!intent.model)return strict;
+  const accepted=new Set(strict.offers);
+  const assess=createOfferMatchAssessor(query);
+  const admit=createSearchOfferAdmission(query);
+  const retained=[];
+  for(const original of offers){
+    if(accepted.has(original)){
+      retained.push(original);
+      continue;
+    }
+    if(!original || typeof original!=="object")continue;
+    // Exact conflicts are not "alternative price observations" for the
+    // requested product. They stay excluded rather than consuming its page.
+    const reasons=queryMatchReasons(query,original);
+    if(reasons.includes("model_conflict")||reasons.includes("capacity_conflict"))
+      continue;
+    const candidate={...original,...assess(original)};
+    if(!admit(candidate))continue;
+    // Preserve the old source-to-server contract; only downstream recomputes
+    // exactness. The candidate is transient evidence for the admission decision.
+    retained.push(original);
+  }
+  return {offers:retained,queryFilter:{
+    input:offers.length,retained:retained.length,
+    removed:offers.length-retained.length,
+  }};
 }
