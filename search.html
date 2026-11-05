@@ -72,6 +72,16 @@
     .status{font-size:11px;color:#73889b;white-space:nowrap}
     .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
     .chips button.active{color:var(--sky)}
+    /* External discovery is not a merchant, price feed or ranked NAWAA offer. */
+    .google-shopping-discovery{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:18px;padding:16px 18px;border:1px solid rgba(119,185,255,.26);background:linear-gradient(115deg,rgba(119,185,255,.075),rgba(255,255,255,.015));border-radius:18px}
+    .google-shopping-discovery[hidden]{display:none}
+    .google-shopping-discovery__copy{min-width:0}
+    .google-shopping-discovery__copy strong{display:block;font-size:13px;color:#e7f4ff;margin-bottom:3px}
+    .google-shopping-discovery__copy p{margin:0;color:#9db0c3;font-size:11px;line-height:1.65}
+    .google-shopping-discovery__link{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-height:44px;padding:11px 17px;border:1px solid rgba(119,185,255,.4);border-radius:13px;background:#eaf4ff;color:#07111d;font-size:12px;font-weight:800;text-align:center}
+    .google-shopping-discovery__link:hover{background:#fff}
+    .google-shopping-discovery__link:focus-visible{outline:3px solid var(--sky);outline-offset:3px}
+    @media(max-width:620px){.google-shopping-discovery{flex-direction:column;align-items:stretch}.google-shopping-discovery__link{width:100%}}
     .url-hint{margin-top:26px;border:1px solid rgba(119,185,255,.24);background:rgba(119,185,255,.045);border-radius:24px;padding:22px;display:flex;gap:28px;align-items:center;justify-content:space-between}
     .url-hint[hidden]{display:none}
     .url-hint strong{display:block;font-size:19px;margin:6px 0}.url-hint p{margin:0;color:var(--muted);font-size:12px;max-width:760px}
@@ -622,6 +632,14 @@
             <button type="button" data-mode="fastest">الأسرع</button>
             <button type="button" data-mode="local">محلي أولًا</button>
           </div>
+
+          <section class="google-shopping-discovery" id="googleShoppingDiscovery" aria-label="استكشاف خارجي عبر Google Shopping" hidden>
+            <div class="google-shopping-discovery__copy">
+              <strong>بحث أوسع عبر Google Shopping</strong>
+              <p>افتح نفس استعلامك في Google Shopping بشكل اختياري. النتائج والأسعار هناك خارج تحقق نواة ولا تدخل في ترتيب الأرخص.</p>
+            </div>
+            <a class="google-shopping-discovery__link" id="googleShoppingDiscoverLink" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">استكشف في Google Shopping ↗</a>
+          </section>
 
           <div class="url-hint" id="urlHint" hidden></div>
           <div class="results" id="results"></div>
