@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests
-from noon_uae_price_policy import assess_offer, cents
+from noon_uae_price_policy import assess_offer, cents, corroborate_sources
 from noon_uae_embedded_offer import inspect_offer_scripts
 from noon_uae_request_policy import classify_source_response
 from noon_uae_tsr_ast import inspect_tsr_ast
@@ -538,6 +538,11 @@ try:
                         )
                         REPORT["tsrAstSameOfferPriceAttested"] = bool(
                             REPORT["tanstackTsrAst"]["samePriceOfferAttested"]
+                        )
+                        REPORT["crossSurfaceCorroboration"] = corroborate_sources(
+                            plp_price=item["plpPrice"],
+                            ast_candidates=REPORT["tanstackTsrAst"]["candidateRecords"],
+                            jsonld_offers=REPORT["jsonLd"]["matchedSkuOffers"],
                         )
                         REPORT["embeddedSameOfferPriceAttested"] = bool(
                             REPORT["parsedEmbeddedOfferEvidence"]["samePriceOfferAttested"]
