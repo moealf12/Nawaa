@@ -1,0 +1,74 @@
+name: Google Shopping Authorized Direct HTTP & Extractor
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/google-shopping-authorized-html.yml"
+      - "server/providers/google-shopping-authorized.mjs"
+      - "scripts/google-shopping-authorized-live.mjs"
+      - "scripts/google-shopping-authorized-browser-live.mjs"
+      - "tests/google-shopping-authorized-html.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-shopping-authorized-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authorized-html-experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install locked Node.js dependencies
+        run: npm ci --ignore-scripts
+      - name: Validate parser, merchant URL, price, image and data isolation
+        run: node --test tests/google-shopping-authorized-html.test.mjs
+      - name: Probe two authorized Google Shopping queries, no proxy/API key
+        env:
+          NAWAA_GOOGLE_SHOPPING_DIRECT_AUTHORIZED: "1"
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/google-shopping-authorized-live.mjs
+      - name: Assert no ranking or price publication
+        run: |
+          node --input-type=module -e '
+          import {readFileSync} from "node:fs";
+          const a=JSON.parse(readFileSync("google-shopping-authorized-direct-live.json","utf8"));
+          if(!a.authorizationToggle||a.attemptedNetworkRequests<2||a.attemptedNetworkRequests>4||
+             a.verifiedPdpPrices!==0||a.rankableOffers!==0||
+             a.runs.length!==2)process.exit(1);
+          console.log(JSON.stringify({state:a.state,candidates:a.candidateCardsWithAllFields,
+             requests:a.attemptedNetworkRequests,verifiedPdpPrices:a.verifiedPdpPrices}));
+          '
+      - name: Install temporary Playwright for non-stealth browser verification
+        run: npm install --no-save --no-package-lock --ignore-scripts playwright@1.64.1
+      - name: Resolve native Chrome for live Shopping page hydration
+        run: |
+          if command -v google-chrome-stable >/dev/null; then
+            echo "NAWAA_CHROME_EXECUTABLE=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "NAWAA_CHROME_EXECUTABLE=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          else
+            npx playwright install chromium
+          fi
+      - name: Live Chromium — two Google Shopping queries with normal identity
+        env:
+          NAWAA_GOOGLE_SHOPPING_DIRECT_AUTHORIZED: "1"
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/google-shopping-authorized-browser-live.mjs
+      - name: Upload exact-head, secret-free live evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-shopping-authorized-extraction-evidence
+          path: |
+            google-shopping-authorized-direct-live.json
+            google-shopping-authorized-browser-live.json
+          retention-days: 14
+          if-no-files-found: warn
