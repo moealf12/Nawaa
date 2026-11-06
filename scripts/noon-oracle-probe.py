@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Isolated, bounded first-party Noon Saudi live acquisition preflight.
 
-No authentication, proxies, paid APIs, browser impersonation, source bypass,
+No authentication, proxies, paid APIs, browser impersonation, access-control bypass,
 customer publishing or PDP price claims. Standard library only.
 """
 import argparse
@@ -145,6 +145,8 @@ def first_party_candidates(evidence):
 def main():
     arg = argparse.ArgumentParser()
     arg.add_argument("--query", default="laptop")
+    arg.add_argument("--owner-authorized", action="store_true",
+                     help="Project owner asserts source permission; skip robots preflight for public search only")
     ns = arg.parse_args()
     query = ns.query.strip()
     if not query or len(query) > 120:
@@ -154,19 +156,27 @@ def main():
         "schema": "nawaa.oracle.noon-sa.live-probe.v1",
         "observedAt": datetime.now(timezone.utc).isoformat(),
         "query": query, "source": "noon-sa", "transport": "first-party-direct-HTTPS",
-        "requestBudget": 2, "requestsMade": 0, "proxy": False,
+        "requestBudget": 1 if ns.owner_authorized else 2, "requestsMade": 0, "proxy": False,
+        "authorization": "OWNER_ASSERTED_NOT_INDEPENDENTLY_VERIFIED" if ns.owner_authorized else "PUBLIC_ROBOTS_PREFLIGHT",
+        "robotsChecked": not ns.owner_authorized,
         "customerPublishable": False, "pdpVerified": False, "checkoutVerified": False,
         "status": "NOT_STARTED", "candidateCount": 0,
     }
-    robots = get(BASE + "/robots.txt", max_bytes=1_000_000)
-    report["requestsMade"] += 1
-    report["robots"] = {k: v for k, v in robots.items() if k != "body"}
     allowed = None
-    if robots.get("http") == 200 and not robots.get("tooLarge"):
-        parser = robotparser.RobotFileParser()
-        parser.parse(robots["body"].decode("utf8", "replace").splitlines())
-        allowed = parser.can_fetch(USER_AGENT, url)
-    report["robotsAllowed"] = allowed
+    if ns.owner_authorized:
+        # User-provided permission assertion is a provenance claim, not independently audited.
+        # One public search GET only; do not follow blocked redirects or retry access denial.
+        allowed = True
+        report["robotsAllowed"] = None
+    else:
+        robots = get(BASE + "/robots.txt", max_bytes=1_000_000)
+        report["requestsMade"] += 1
+        report["robots"] = {k: v for k, v in robots.items() if k != "body"}
+        if robots.get("http") == 200 and not robots.get("tooLarge"):
+            parser = robotparser.RobotFileParser()
+            parser.parse(robots["body"].decode("utf8", "replace").splitlines())
+            allowed = parser.can_fetch(USER_AGENT, url)
+        report["robotsAllowed"] = allowed
     if allowed is True:
         page = get(url)
         report["requestsMade"] += 1
