@@ -81,3 +81,20 @@ test("an unauthorized task/branch receipt is rejected even with a valid digest",
   const x=clone();x.events[2].branch="main";reseal(x.events);
   assert.ok(errors(x).some(s=>s.includes("identity mismatch")));
 });
+
+test("handoff must fail closed when it claims GO or invents extracted prices",()=>{
+  const x=clone();
+  const handoff=x.events.find(e=>e.type==="HANDOFF");
+  assert.ok(handoff,"handoff receipt must be present after the Oracle probe");
+  handoff.details.decision="GO";
+  handoff.details.sourcePriceCount=100;
+  reseal(x.events);
+  assert.ok(errors(x).some(s=>s.includes("handoff cannot claim success")));
+});
+test("handoff must retain exact HTTP/1 and HTTP/2 diagnostic job references",()=>{
+  const x=clone();
+  const handoff=x.events.find(e=>e.type==="HANDOFF");
+  handoff.details.diagnosticJobs=[];
+  reseal(x.events);
+  assert.ok(errors(x).some(s=>s.includes("handoff cannot claim success")));
+});
