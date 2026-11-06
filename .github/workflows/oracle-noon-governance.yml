@@ -37,6 +37,20 @@ jobs:
         run: node --test tests/oracle-handshake.test.mjs
       - name: Python static check (no network)
         run: python3 -m py_compile scripts/noon-oracle-probe.py
+      - name: Enforce isolated changed-file scope
+        run: |
+          set -euo pipefail
+          base=$(node -p "JSON.parse(require('fs').readFileSync('engineering/oracle-agent/manifest.json','utf8')).baseMainSha")
+          git fetch --no-tags --depth=1 origin "$base"
+          while IFS= read -r file; do
+            case "$file" in
+              engineering/oracle-agent/*|scripts/verify-oracle-handshake.mjs|scripts/noon-oracle-probe.py|tests/oracle-handshake.test.mjs|.github/workflows/oracle-noon-governance.yml)
+                echo "SCOPE_ALLOWED: $file" ;;
+              *)
+                echo "::error::OUT_OF_SCOPE_CHANGE: $file"
+                exit 1 ;;
+            esac
+          done < <(git diff --name-only "$base" HEAD)
       - name: Remote main SHA fence
         run: |
           set -euo pipefail
