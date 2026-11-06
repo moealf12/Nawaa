@@ -11,7 +11,9 @@ const RULES=new Map([
   ["BASELINE_ATTESTED",new Set(["INTENT_REGISTERED"])],
   ["LIVE_PROBE_RECORDED",new Set(["BASELINE_ATTESTED"])],
   ["LIVE_DIAGNOSTIC_RECORDED",new Set(["LIVE_PROBE_RECORDED"])],
-  ["HANDOFF",new Set(["LIVE_PROBE_RECORDED","LIVE_DIAGNOSTIC_RECORDED"])],
+  ["AUTHORIZATION_SCOPE_ASSERTED",new Set(["HANDOFF"])],
+  ["AUTHORIZED_LIVE_PROBE_RECORDED",new Set(["AUTHORIZATION_SCOPE_ASSERTED"])],
+  ["HANDOFF",new Set(["LIVE_PROBE_RECORDED","LIVE_DIAGNOSTIC_RECORDED","AUTHORIZED_LIVE_PROBE_RECORDED"])],
 ]);
 const OUTCOMES=new Set([
   "ROBOTS_NOT_CONFIRMED_STOP","ROBOTS_DISALLOWED_STOP","SOURCE_ACCESS_DENIED",
@@ -44,9 +46,16 @@ export function validateOracleHandshake(manifest,events,{currentMainSha=null,str
   if(manifest.scope!=="oracle-only/noon-sa/live-evidence")fail("scope","unexpected");
   const p=manifest.liveProbePolicy;
   if(!obj(p)||p.firstPartyOnly!==true||p.source!=="https://www.noon.com"||
-      p.market!=="saudi-en"||p.queryBudget!==1||p.maxHttpRequests!==2||
-      p.timeoutSeconds!==12||p.maxResponseBytes!==2000000||p.retries!==0||
-      p.proxy!==false||p.accessDenialStop!==true||p.robotsFailClosed!==true||
+      p.market!=="saudi-en"||p.queryBudget!==1||p.maxHttpRequests!==1||
+      p.timeoutSeconds!==15||p.maxResponseBytes!==2000000||p.retries!==0||
+      p.proxy!==false||p.accessDenialStop!==true||p.robotsFailClosed!==false||
+      p.robotsMode!=="owner-authorization-assertion-skip"||
+      !obj(p.authorization)||
+      p.authorization.status!=="PROJECT_OWNER_ASSERTED_NOT_INDEPENDENTLY_VERIFIED"||
+      p.authorization.recordedDate!=="2026-11-06"||
+      p.authorization.scope!=="public Noon Saudi search HTML only"||
+      !Array.isArray(p.authorization.exclude)||
+      !["authentication","private API","anti-access-control circumvention"].every(x=>p.authorization.exclude.includes(x))||
       p.priceCustomerPublishable!==false)fail("liveProbePolicy","unsafe or changed");
   const allowed=[
     "engineering/oracle-agent/","scripts/verify-oracle-handshake.mjs",
@@ -105,6 +114,34 @@ export function validateOracleHandshake(manifest,events,{currentMainSha=null,str
         fail(at+".details","search HTML evidence incomplete");
       if(d.pdpVerified!==false||d.checkoutVerified!==false)
         fail(at+".details","unverified parity claim");
+    }
+    if(event.type==="AUTHORIZATION_SCOPE_ASSERTED"){
+      const d=event.details;
+      if(d.claim!=="PROJECT_OWNER_ASSERTED_NOT_INDEPENDENTLY_VERIFIED"||
+         d.independentlyVerified!==false||
+         d.scope!=="public Noon Saudi search HTML only"||
+         d.robotsPreflightRequired!==false||
+         d.productionPublishable!==false||
+         d.baseMainSha!==manifest.baseMainSha)
+        fail(at+".details","authorization assertion scope or provenance missing");
+    }
+    if(event.type==="AUTHORIZED_LIVE_PROBE_RECORDED"){
+      const d=event.details;
+      if(!/^job_[A-Z0-9]{15,50}$/.test(d.gatewayJobId||"")||
+         d.authorizationClaim!=="OWNER_ASSERTED_NOT_INDEPENDENTLY_VERIFIED"||
+         d.source!=="noon-sa"||d.query!=="laptop"||
+         d.robotsChecked!==false||d.httpRequests!==1||
+         d.proxy!==false||d.customerPublished!==false||
+         d.pdpVerified!==false||d.checkoutVerified!==false||
+         !["SEARCH_ACCESS_UNAVAILABLE","SOURCE_ACCESS_DENIED",
+           "SEARCH_HTML_OBSERVED_NOT_PRICE_CERTIFIED"].includes(d.outcome))
+        fail(at+".details","authorized live evidence invalid");
+      if(d.outcome==="SEARCH_HTML_OBSERVED_NOT_PRICE_CERTIFIED" &&
+         (d.searchHttp!==200||!SHA64.test(d.responseSha256||"")))
+        fail(at+".details","authorized response lacks independently observed HTML hash");
+      if(d.outcome==="SEARCH_ACCESS_UNAVAILABLE" &&
+         (d.searchHttp!==null||d.candidateCount!==0))
+        fail(at+".details","timeout must not claim search prices");
     }
     if(event.type==="HANDOFF"){
       const d=event.details;
