@@ -18,9 +18,13 @@ function reseal(events){
 }
 test("recorded Oracle handshake validates with exact current main",()=>{
   assert.deepEqual(errors(clone()),[]);
-  assert.equal(original.events.length,3);
-  assert.equal(original.events.at(-1).details.sourceTaskStatus,"blocked");
-  assert.equal(original.events.at(-1).details.candidateCount,0);
+  assert.ok(original.events.length>=3);
+  assert.equal(original.events[0].type,"INTENT_REGISTERED");
+  assert.equal(original.events[1].type,"BASELINE_ATTESTED");
+  const probe=original.events.find(event=>event.type==="LIVE_PROBE_RECORDED");
+  assert.ok(probe,"real Oracle attempt must remain recorded");
+  assert.equal(probe.details.sourceTaskStatus,"blocked");
+  assert.equal(probe.details.candidateCount,0);
 });
 test("missing external main proof fails closed",()=>{
   const x=clone();
