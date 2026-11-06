@@ -106,6 +106,14 @@ export function validateOracleHandshake(manifest,events,{currentMainSha=null,str
       if(d.pdpVerified!==false||d.checkoutVerified!==false)
         fail(at+".details","unverified parity claim");
     }
+    if(event.type==="HANDOFF"){
+      const d=event.details;
+      if(d.decision!=="NO_GO"||d.sourcePriceCount!==0||
+         d.customerPublished!==false||d.mainMerged!==false||
+         d.productionDeployed!==false||!Array.isArray(d.diagnosticJobs)||
+         !["job_01M6QGDY0V00M8RHCGW1S4D732","job_01M6QGEBPD00398XJB2075K4A4"].every(id=>d.diagnosticJobs.includes(id)))
+        fail(at+".details","handoff cannot claim success or omit failed transport evidence");
+    }
     previous=event.eventHash;
     last=event.type;
   }
