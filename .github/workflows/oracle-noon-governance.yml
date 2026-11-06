@@ -1,0 +1,50 @@
+name: NAWAA Oracle Noon SA isolated governance
+on:
+  push:
+    branches:
+      - experiment/oracle-noon-sa-governance-20261106
+    paths:
+      - engineering/oracle-agent/**
+      - scripts/verify-oracle-handshake.mjs
+      - scripts/noon-oracle-probe.py
+      - tests/oracle-handshake.test.mjs
+      - .github/workflows/oracle-noon-governance.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: oracle-noon-sa-governance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  evidence-and-handshake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Exact commit checkout
+        env:
+          EXPECTED: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Structural immutable-handshake verifier
+        run: node scripts/verify-oracle-handshake.mjs --structure-only
+      - name: Negative controls (SHA, evidence tampering, source policy, budgets)
+        run: node --test tests/oracle-handshake.test.mjs
+      - name: Python static check (no network)
+        run: python3 -m py_compile scripts/noon-oracle-probe.py
+      - name: Remote main SHA fence
+        run: |
+          set -euo pipefail
+          expected=$(node -p "JSON.parse(require('fs').readFileSync('engineering/oracle-agent/manifest.json','utf8')).baseMainSha")
+          actual=$(git ls-remote https://github.com/moealf12/Nawaa.git refs/heads/main | cut -f1)
+          test -n "$actual"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::MAIN_DRIFT detected; governance handshake must be reconciled"
+            exit 1
+          fi
+          echo "MAIN_BASELINE_ATTESTED=$actual"
