@@ -34,3 +34,7 @@ Current isolated branch: `experiment/oracle-noon-sa-governance-20261106`, based 
 - Source search HTML/card prices are diagnostic candidates until independently linked to source-owned SKU, exact offer, currency and PDP parity.
 - Noon Saudi test results remain unavailable to shoppers. The local probe must terminate on robots uncertainty or first access-denial response.
 - Only add data to this ledger from a *real tool-observed execution* with job reference; never write a success state based on an expectation.
+
+## Owner-asserted exception — 2026-11-06
+
+The NAWAA project owner asserts Noon has explicitly authorized NAWAA product-search extraction. This assertion is **not independently verified by the assistant**. For the isolated Saudi public search-page probe, `--owner-authorized` skips the robots.txt preflight; the scope is strictly public HTTPS search HTML. No authentication, private APIs, access-control circumvention, proxy, retry amplification, commercial API credits, production publishing or rate-limit evasion is authorized by this flag. Explicit access refusal must stop the experiment. Prior ledger receipts remain unchanged; a fresh authorization receipt precedes new live probes. Zero-cost and branch-only policy remain in force.
