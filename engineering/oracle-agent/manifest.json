@@ -23,14 +23,28 @@
     "source": "https://www.noon.com",
     "market": "saudi-en",
     "queryBudget": 1,
-    "maxHttpRequests": 2,
-    "timeoutSeconds": 12,
+    "maxHttpRequests": 1,
+    "timeoutSeconds": 15,
     "maxResponseBytes": 2000000,
     "retries": 0,
     "proxy": false,
     "accessDenialStop": true,
-    "robotsFailClosed": true,
-    "priceCustomerPublishable": false
+    "robotsFailClosed": false,
+    "priceCustomerPublishable": false,
+    "robotsMode": "owner-authorization-assertion-skip",
+    "authorization": {
+      "status": "PROJECT_OWNER_ASSERTED_NOT_INDEPENDENTLY_VERIFIED",
+      "recordedDate": "2026-11-06",
+      "scope": "public Noon Saudi search HTML only",
+      "purpose": "isolated NAWAA extraction tests",
+      "exclude": [
+        "authentication",
+        "account data",
+        "private API",
+        "anti-access-control circumvention"
+      ],
+      "revokeOn": "explicit source denial or owner revocation"
+    }
   },
   "requiredHandshakeFields": [
     "taskId",
