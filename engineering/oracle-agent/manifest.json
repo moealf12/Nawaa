@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "nawaa.oracle-governance.v1",
+  "taskId": "OCI-NOON-SA-20261106",
+  "repo": "moealf12/Nawaa",
+  "branch": "experiment/oracle-noon-sa-governance-20261106",
+  "baseMainSha": "698a8bdb1d912a04598d655b93b64dc54ac841ca",
+  "scope": "oracle-only/noon-sa/live-evidence",
+  "allowedPaths": [
+    "engineering/oracle-agent/",
+    "scripts/verify-oracle-handshake.mjs",
+    "scripts/noon-oracle-probe.py",
+    "tests/oracle-handshake.test.mjs",
+    ".github/workflows/oracle-noon-governance.yml"
+  ],
+  "noMainWrites": true,
+  "noMerge": true,
+  "noDeploy": true,
+  "noProductionDataWrites": true,
+  "noPaidResources": true,
+  "autonomousAgentEnabled": false,
+  "liveProbePolicy": {
+    "firstPartyOnly": true,
+    "source": "https://www.noon.com",
+    "market": "saudi-en",
+    "queryBudget": 1,
+    "maxHttpRequests": 2,
+    "timeoutSeconds": 12,
+    "maxResponseBytes": 2000000,
+    "retries": 0,
+    "proxy": false,
+    "accessDenialStop": true,
+    "robotsFailClosed": true,
+    "priceCustomerPublishable": false
+  },
+  "requiredHandshakeFields": [
+    "taskId",
+    "branch",
+    "baseMainSha",
+    "observedAt",
+    "prevHash",
+    "eventHash"
+  ]
+}
