@@ -72,6 +72,37 @@
     .status{font-size:11px;color:#73889b;white-space:nowrap}
     .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
     .chips button.active{color:var(--sky)}
+    /* External discovery is not a merchant, price feed or ranked NAWAA offer. */
+    .google-shopping-discovery{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:18px;padding:16px 18px;border:1px solid rgba(119,185,255,.26);background:linear-gradient(115deg,rgba(119,185,255,.075),rgba(255,255,255,.015));border-radius:18px}
+    .google-shopping-discovery[hidden]{display:none}
+    .google-shopping-discovery__copy{min-width:0}
+    .google-shopping-discovery__copy strong{display:block;font-size:13px;color:#e7f4ff;margin-bottom:3px}
+    .google-shopping-discovery__copy p{margin:0;color:#9db0c3;font-size:11px;line-height:1.65}
+    .google-shopping-discovery__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .google-shopping-discovery__actions>button{cursor:pointer}
+    .google-shopping-results{margin-top:18px;padding:18px;border-radius:21px;border:1px solid rgba(119,185,255,.22);background:rgba(7,17,29,.22)}
+    .google-shopping-results[hidden]{display:none}
+    .google-shopping-results__head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}
+    .google-shopping-results__head strong{font-size:17px}.google-shopping-results__head span{font-size:11px;color:#9db0c3}
+    .google-shopping-results__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+    .google-shopping-card{display:flex;flex-direction:column;min-width:0;border:1px solid rgba(255,255,255,.12);border-radius:18px;overflow:hidden;background:rgba(12,26,40,.85)}
+    .google-shopping-card__image{height:160px;display:grid;place-items:center;background:#fff}
+    .google-shopping-card__image img{width:100%;height:100%;object-fit:contain;padding:13px}
+    .google-shopping-card__fallback{color:#596c83;font-size:11px}
+    .google-shopping-card__info{display:flex;flex-direction:column;gap:7px;padding:14px;flex:1}
+    .google-shopping-card__info strong{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+    .google-shopping-card__info small{font-size:11px;color:#9baec7}
+    .google-shopping-card__price{font-size:19px;font-weight:800;color:#f7fbff}
+    .google-shopping-card__disclaimer{font-size:10px;line-height:1.6;color:#f4cb6b}
+    .google-shopping-card__info a{display:flex;align-items:center;justify-content:center;min-height:44px;margin-top:auto;padding:9px;border-radius:11px;border:1px solid rgba(119,185,255,.3);background:rgba(119,185,255,.08);color:#dbeaff;font-size:11px;font-weight:700;text-align:center}
+    .google-shopping-results__status{color:#9db0c3;font-size:12px;min-height:18px;margin:10px 0 0}
+    .google-shopping-discovery__actions .google-shopping-discovery__link{white-space:normal}
+    @media(max-width:620px){.google-shopping-discovery__actions{display:grid;grid-template-columns:1fr}.google-shopping-results__head{flex-direction:column;align-items:flex-start}.google-shopping-results__grid{grid-template-columns:repeat(2,minmax(0,1fr))}.google-shopping-card__image{height:130px}}
+    @media(max-width:390px){.google-shopping-results__grid{grid-template-columns:minmax(0,1fr)}}
+    .google-shopping-discovery__link{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-height:44px;padding:11px 17px;border:1px solid rgba(119,185,255,.4);border-radius:13px;background:#eaf4ff;color:#07111d;font-size:12px;font-weight:800;text-align:center}
+    .google-shopping-discovery__link:hover{background:#fff}
+    .google-shopping-discovery__link:focus-visible{outline:3px solid var(--sky);outline-offset:3px}
+    @media(max-width:620px){.google-shopping-discovery{flex-direction:column;align-items:stretch}.google-shopping-discovery__link{width:100%}}
     .url-hint{margin-top:26px;border:1px solid rgba(119,185,255,.24);background:rgba(119,185,255,.045);border-radius:24px;padding:22px;display:flex;gap:28px;align-items:center;justify-content:space-between}
     .url-hint[hidden]{display:none}
     .url-hint strong{display:block;font-size:19px;margin:6px 0}.url-hint p{margin:0;color:var(--muted);font-size:12px;max-width:760px}
@@ -622,6 +653,23 @@
             <button type="button" data-mode="fastest">الأسرع</button>
             <button type="button" data-mode="local">محلي أولًا</button>
           </div>
+
+          <section class="google-shopping-discovery" id="googleShoppingDiscovery" aria-label="استكشاف خارجي عبر Google Shopping" hidden>
+            <div class="google-shopping-discovery__copy">
+              <strong>بحث أوسع عبر Google Shopping</strong>
+              <p>استكشف بطاقات المنتجات والأسعار المعلنة من Google Shopping داخل نواة، أو افتح البحث لدى Google. الأسعار غير موثقة من المتاجر ولا تدخل في ترتيب الأرخص.</p>
+            </div>
+            <div class="google-shopping-discovery__actions"><button type="button" class="google-shopping-discovery__link" id="googleShoppingFetchBtn">عرض المنتجات والأسعار داخل نواة</button><a class="google-shopping-discovery__link" id="googleShoppingDiscoverLink" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">استكشف في Google Shopping ↗</a></div>
+          </section>
+
+          <section id="googleShoppingCardsSection" class="google-shopping-results" aria-label="منتجات Google Shopping غير الموثقة" hidden>
+            <div class="google-shopping-results__head">
+              <strong>نتائج Google Shopping</strong>
+              <span>أسعار معلنة من مصدر خارجي · لم تتحقق نواة من سعر المتجر أو SKU</span>
+            </div>
+            <div id="googleShoppingCards" class="google-shopping-results__grid" aria-live="polite"></div>
+            <p id="googleShoppingCardsStatus" class="google-shopping-results__status" role="status"></p>
+          </section>
 
           <div class="url-hint" id="urlHint" hidden></div>
           <div class="results" id="results"></div>
